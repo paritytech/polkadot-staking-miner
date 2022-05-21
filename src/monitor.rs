@@ -3,6 +3,7 @@ use pallet_election_provider_multi_phase::RawSolution;
 use sp_runtime::Perbill;
 use std::sync::Arc;
 use subxt::{BasicError as SubxtError, TransactionStatus};
+use tokio::sync::Mutex;
 
 macro_rules! monitor_cmd_for {
 	($runtime:tt) => {
@@ -16,6 +17,7 @@ macro_rules! monitor_cmd_for {
 				}?;
 
 				let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
+				let round = Arc::new(Mutex::new(None));
 
 				loop {
 					let at = tokio::select! {
@@ -51,22 +53,24 @@ macro_rules! monitor_cmd_for {
 
 					// Spawn task and non-recoverable errors are sent back to the main task
 					// such as if the connection has been closed.
-					tokio::spawn(send_and_watch_extrinsic(
+					tokio::spawn(mine_and_submit_solution(
 							tx.clone(),
 							at,
 							api.clone(),
 							signer.clone(),
 							config.clone(),
+							round.clone(),
 					));
 				}
 
 				/// Construct extrinsic at given block and watch it.
-				async fn send_and_watch_extrinsic(
+				async fn mine_and_submit_solution(
 					tx: tokio::sync::mpsc::UnboundedSender<Error>,
 					at: Header,
 					api: $crate::chain::$runtime::RuntimeApi,
 					signer: Arc<Signer>,
 					config: MonitorConfig,
+					prev_round: Arc<Mutex<Option<u32>>>,
 				) {
 					/*async fn flatten<T>(handle: tokio::task::JoinHandle<Result<T, Error>>) -> Result<T, Error> {
 					  match handle.await {
@@ -92,16 +96,6 @@ macro_rules! monitor_cmd_for {
 						return;
 					}
 
-					let (solution, score, size) =
-						match crate::helpers::[<mine_solution_$runtime>](&api, Some(hash), config.solver)
-						.await {
-							Ok(s) => s,
-							Err(e) => {
-								kill_main_task_if_critical_err(&tx, e);
-								return;
-							}
-						};
-
 					let round = match api.storage().election_provider_multi_phase().round(Some(hash)).await {
 						Ok(round) => round,
 						Err(e) => {
@@ -112,16 +106,27 @@ macro_rules! monitor_cmd_for {
 						},
 					};
 
-					if let Err(e) = ensure_signed_phase(&api, hash).await {
-						log::debug!(
-							target: LOG_TARGET,
-							"ensure_signed_phase failed: {:?}; skipping block: {}",
-							e,
-							at.number
-						);
-						kill_main_task_if_critical_err(&tx, e);
-						return;
-					}
+					// As a solution is attempted to be submitted lock reject later blocks from proceeding.
+					// Until we know whether the current solution was successful or not.
+					let mut round_lock = prev_round.lock().await;
+
+					match *round_lock {
+						None => (),
+						Some(r) if round > r => (),
+						_ => return,
+					};
+
+
+					let (solution, score, size) =
+					match crate::helpers::[<mine_solution_$runtime>](&api, Some(hash), config.solver)
+					.await {
+						Ok(s) => s,
+						Err(e) => {
+							kill_main_task_if_critical_err(&tx, e);
+							return;
+						}
+					};
+
 
 					log::info!(target: LOG_TARGET, "mined solution with {:?} size: {:?} round: {:?}", score, size, round);
 
@@ -137,30 +142,41 @@ macro_rules! monitor_cmd_for {
 						};
 
 
-					if let Err(e) = ensure_no_better_solution(&api, hash, score, config.submission_strategy).await {
-						log::debug!(
-							target: LOG_TARGET,
-							"ensure_no_better_solution failed: {:?}; skipping block: {}",
-							e,
-							at.number
-						);
-						kill_main_task_if_critical_err(&tx, e);
-						return;
-					}
+						if let Err(e) = ensure_signed_phase(&api, hash).await {
+							log::debug!(
+								target: LOG_TARGET,
+								"ensure_signed_phase failed: {:?}; skipping block: {}",
+								e,
+								at.number
+							);
+							kill_main_task_if_critical_err(&tx, e);
+							return;
+						}
 
 
-					if let Err(e) = ensure_no_previous_solution(&api, hash, signer.account_id()).await {
-						log::debug!(
-							target: LOG_TARGET,
-							"ensure_no_previous_solution failed: {:?}; skipping block: {}",
-							e,
-							at.number
-						);
+						if let Err(e) = ensure_no_previous_solution(&api, hash, signer.account_id()).await {
+							log::debug!(
+								target: LOG_TARGET,
+								"ensure_no_previous_solution failed: {:?}; skipping block: {}",
+								e,
+								at.number
+							);
 
-						kill_main_task_if_critical_err(&tx, e);
-						return;
-					}
+							kill_main_task_if_critical_err(&tx, e);
+							return;
+						}
 
+
+						if let Err(e) = ensure_no_better_solution(&api, hash, score, config.submission_strategy).await {
+							log::debug!(
+								target: LOG_TARGET,
+								"ensure_no_better_solution failed: {:?}; skipping block: {}",
+								e,
+								at.number
+							);
+							kill_main_task_if_critical_err(&tx, e);
+							return;
+						}
 
 
 					// This might fail with outdated nonce let it just crash if that happens.
@@ -174,7 +190,7 @@ macro_rules! monitor_cmd_for {
 					};
 
 
-					loop {
+					let result = loop {
 						let status = match status_sub.next_item().await {
 							Some(Ok(status)) => status,
 							Some(Err(err)) => {
@@ -185,15 +201,13 @@ macro_rules! monitor_cmd_for {
 									err
 								);
 								kill_main_task_if_critical_err(&tx, err.into());
-								break;
+								break false;
 							},
 							None => {
-								log::error!(target: LOG_TARGET, "watch submit extrinsic at {:?} closed", hash,);
-								break;
+								log::error!(target: LOG_TARGET, "watch submit extrinsic at {:?} closed", hash);
+								break false;
 							},
 						};
-
-						log::info!("status: {:?}", status);
 
 						match status {
 							TransactionStatus::Ready
@@ -201,30 +215,34 @@ macro_rules! monitor_cmd_for {
 								| TransactionStatus::Future => (),
 							TransactionStatus::InBlock(details) => {
 								log::info!(target: LOG_TARGET, "included at {:?}", details.block_hash());
-								let events = details.wait_for_success().await.unwrap();
+								let events = details.fetch_events().await.expect("events should exist");
 
 								let solution_stored = events.find_first::<$crate::chain::$runtime::epm::events::SolutionStored>();
 
 								if let Ok(Some(event)) = solution_stored {
 									log::info!(target: LOG_TARGET, "included at {:?}", event);
 								} else {
-									log::error!(target: LOG_TARGET, "no SolutionStored event emitted");
-									break
+									log::warn!(target: LOG_TARGET, "no SolutionStored event emitted");
+									break false;
 								}
-								break
+								break true
 							},
 							TransactionStatus::Retracted(hash) => {
 								log::info!(target: LOG_TARGET, "Retracted at {:?}", hash);
 							},
 							TransactionStatus::Finalized(details) => {
 								log::info!(target: LOG_TARGET, "Finalized at {:?}", details.block_hash());
-								break
+								break true;
 							}
 							_ => {
 								log::warn!(target: LOG_TARGET, "Stopping listen due to other status {:?}", status);
-								break
+								break false;
 							},
 						}
+					};
+
+					if result {
+						*round_lock = Some(round);
 					}
 
 				}
@@ -288,17 +306,20 @@ macro_rules! monitor_cmd_for {
 						.signed_submission_indices(Some(at))
 						.await?;
 
+					log::debug!(target: LOG_TARGET, "submitted solutions: {:?}", indices.0);
+
 					for (other_score, _) in indices.0 {
 						if !score.strict_threshold_better(other_score, epsilon) {
+							log::debug!(target: LOG_TARGET, "score: {:?}, other_score: {:?}, worse at: {:?}", score, other_score, at);
 							return Err(Error::BetterScoreExist);
 						}
+						log::debug!(target: LOG_TARGET, "score: {:?}, other_score: {:?}, better at: {:?}", score, other_score, at);
 					}
 
 					Ok(())
 
 				}
 			}
-
 		}
 	}
 }
