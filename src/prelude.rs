@@ -20,34 +20,47 @@
 //! It is actually easy to convert the rest as well, but it'll be a lot of noise in our codebase,
 //! needing to sprinkle `any_runtime` in a few extra places.
 
-/// The account id type.
-pub type AccountId = core_primitives::AccountId;
-/// The block number type.
-pub type BlockNumber = core_primitives::BlockNumber;
-/// The balance type.
-pub type Balance = core_primitives::Balance;
-/// The index of an account.
-pub type Index = core_primitives::AccountIndex;
-/// The hash type. We re-export it here, but we can easily get it from block as well.
-pub type Hash = core_primitives::Hash;
-/// The header type. We re-export it here, but we can easily get it from block as well.
-pub type Header = core_primitives::Header;
+use frame_support::{traits::ConstU32, weights::Weight};
 
-pub use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
+/// The account id type.
+pub type AccountId = subxt::sp_core::crypto::AccountId32;
+/// The header type. We re-export it here, but we can easily get it from block as well.
+pub type Header = subxt::sp_runtime::generic::Header<u32, subxt::sp_runtime::traits::BlakeTwo256>;
+/// The header type. We re-export it here, but we can easily get it from block as well.
+pub type Hash = subxt::sp_core::H256;
+
+pub use subxt::{
+	sp_core,
+	sp_runtime::traits::{Block as BlockT, Header as HeaderT},
+};
 
 /// Default URI to connect to.
 pub const DEFAULT_URI: &str = "wss://rpc.polkadot.io:443";
 /// The logging target.
 pub const LOG_TARGET: &str = "staking-miner";
 
-/// The election provider pallet.
-pub use pallet_election_provider_multi_phase as EPM;
-
-/// The externalities type.
-pub type Ext = sp_io::TestExternalities;
-
 /// The key pair type being used. We "strongly" assume sr25519 for simplicity.
-pub type Pair = sp_core::sr25519::Pair;
+pub type Pair = subxt::sp_core::sr25519::Pair;
 
-/// A dynamic token type used to represent account balances.
-pub type Token = sub_tokens::dynamic::DynamicToken;
+pub use pallet_election_provider_multi_phase::{Miner, MinerConfig};
+
+pub type Signer = subxt::PairSigner<subxt::DefaultConfig, subxt::sp_core::sr25519::Pair>;
+
+pub use sp_runtime::Perbill;
+
+pub type BoundedVec = frame_support::BoundedVec<AccountId, MaxVotesPerVoter>;
+
+frame_support::parameter_types! {
+	// TODO: this is part of the metadata check again if we can fetch this from subxt.
+	// TODO: check with Kian.
+	pub BlockWeights: frame_system::limits::BlockWeights = frame_system::limits::BlockWeights
+		::with_sensible_defaults(u64::MAX, Perbill::from_percent(75));
+	pub static MaxWeight: Weight = BlockWeights::get().max_block;
+}
+
+// TODO check with Kian.
+pub type MaxLength = ConstU32<4294967295>;
+// TODO check with Kian.
+pub type MaxVotesPerVoter = ConstU32<256>;
+
+pub use crate::error::Error;
