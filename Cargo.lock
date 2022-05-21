@@ -682,19 +682,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "env_logger"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b2cf0344971ee6c64c31be0d530793fba457d322dfec2810c453d0ef228f9c3"
-dependencies = [
- "atty",
- "humantime",
- "log",
- "regex",
- "termcolor",
-]
-
-[[package]]
 name = "environmental"
 version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1064,9 +1051,6 @@ name = "hashbrown"
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab5ef0d4909ef3724cc8cce6ccc8572c5c817592e9285f5464f8e86f8bd3726e"
-dependencies = [
- "ahash",
-]
 
 [[package]]
 name = "hashbrown"
@@ -1154,12 +1138,6 @@ name = "httparse"
 version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "496ce29bb5a52785b44e0f7ca2847ae0bb839c9bd28f69acac9b99d461c0c04c"
-
-[[package]]
-name = "humantime"
-version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 
 [[package]]
 name = "ident_case"
@@ -1358,16 +1336,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67c21572b4949434e4fc1e1978b99c5f77064153c59d998bf13ecd96fb5ecba7"
 
 [[package]]
-name = "kvdb"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a301d8ecb7989d4a6e2c57a49baca77d353bdbf879909debe3f375fe25d61f86"
-dependencies = [
- "parity-util-mem",
- "smallvec",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1460,15 +1428,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "abb12e687cfb44aa40f41fc3978ef76448f9b6038cad6aef4259d3c095a2382e"
 dependencies = [
  "cfg-if",
-]
-
-[[package]]
-name = "lru"
-version = "0.7.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32613e41de4c47ab04970c348ca7ae7382cf116625755af070b008a15516a889"
-dependencies = [
- "hashbrown 0.11.2",
 ]
 
 [[package]]
@@ -1732,23 +1691,6 @@ dependencies = [
  "sp-std 4.0.0 (git+https://github.com/paritytech/substrate?branch=master)",
  "static_assertions",
  "strum",
-]
-
-[[package]]
-name = "pallet-transaction-payment"
-version = "4.0.0-dev"
-source = "git+https://github.com/paritytech/substrate?branch=master#7a28c62246406839b746af2201309d0ed9a3f526"
-dependencies = [
- "frame-support",
- "frame-system",
- "parity-scale-codec",
- "scale-info",
- "serde",
- "smallvec",
- "sp-core 6.0.0 (git+https://github.com/paritytech/substrate?branch=master)",
- "sp-io 6.0.0 (git+https://github.com/paritytech/substrate?branch=master)",
- "sp-runtime 6.0.0 (git+https://github.com/paritytech/substrate?branch=master)",
- "sp-std 4.0.0 (git+https://github.com/paritytech/substrate?branch=master)",
 ]
 
 [[package]]
@@ -2145,23 +2087,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49b3de9ec5dc0a3417da371aab17d729997c15010e7fd24ff707773a33bddb64"
 
 [[package]]
-name = "remote-externalities"
-version = "0.10.0-dev"
-source = "git+https://github.com/paritytech/substrate?branch=master#7a28c62246406839b746af2201309d0ed9a3f526"
-dependencies = [
- "env_logger",
- "jsonrpsee",
- "log",
- "parity-scale-codec",
- "serde",
- "serde_json",
- "sp-core 6.0.0 (git+https://github.com/paritytech/substrate?branch=master)",
- "sp-io 6.0.0 (git+https://github.com/paritytech/substrate?branch=master)",
- "sp-runtime 6.0.0 (git+https://github.com/paritytech/substrate?branch=master)",
- "sp-version",
-]
-
-[[package]]
 name = "rfc6979"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2249,19 +2174,6 @@ name = "ryu"
 version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3f6f92acf49d1b98f7a81226834412ada05458b7364277387724a237f062695"
-
-[[package]]
-name = "sc-transaction-pool-api"
-version = "4.0.0-dev"
-source = "git+https://github.com/paritytech/substrate?branch=master#7a28c62246406839b746af2201309d0ed9a3f526"
-dependencies = [
- "futures",
- "log",
- "serde",
- "sp-blockchain",
- "sp-runtime 6.0.0 (git+https://github.com/paritytech/substrate?branch=master)",
- "thiserror",
-]
 
 [[package]]
 name = "scale-info"
@@ -2641,43 +2553,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sp-blockchain"
-version = "4.0.0-dev"
-source = "git+https://github.com/paritytech/substrate?branch=master#7a28c62246406839b746af2201309d0ed9a3f526"
-dependencies = [
- "futures",
- "log",
- "lru",
- "parity-scale-codec",
- "parking_lot",
- "sp-api",
- "sp-consensus",
- "sp-database",
- "sp-runtime 6.0.0 (git+https://github.com/paritytech/substrate?branch=master)",
- "sp-state-machine 0.12.0 (git+https://github.com/paritytech/substrate?branch=master)",
- "thiserror",
-]
-
-[[package]]
-name = "sp-consensus"
-version = "0.10.0-dev"
-source = "git+https://github.com/paritytech/substrate?branch=master#7a28c62246406839b746af2201309d0ed9a3f526"
-dependencies = [
- "async-trait",
- "futures",
- "futures-timer",
- "log",
- "parity-scale-codec",
- "sp-core 6.0.0 (git+https://github.com/paritytech/substrate?branch=master)",
- "sp-inherents",
- "sp-runtime 6.0.0 (git+https://github.com/paritytech/substrate?branch=master)",
- "sp-state-machine 0.12.0 (git+https://github.com/paritytech/substrate?branch=master)",
- "sp-std 4.0.0 (git+https://github.com/paritytech/substrate?branch=master)",
- "sp-version",
- "thiserror",
-]
-
-[[package]]
 name = "sp-core"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2807,15 +2682,6 @@ dependencies = [
  "quote",
  "sp-core-hashing 4.0.0 (git+https://github.com/paritytech/substrate?branch=master)",
  "syn",
-]
-
-[[package]]
-name = "sp-database"
-version = "4.0.0-dev"
-source = "git+https://github.com/paritytech/substrate?branch=master#7a28c62246406839b746af2201309d0ed9a3f526"
-dependencies = [
- "kvdb",
- "parking_lot",
 ]
 
 [[package]]
@@ -3338,11 +3204,8 @@ dependencies = [
  "jsonrpsee",
  "log",
  "pallet-election-provider-multi-phase",
- "pallet-transaction-payment",
  "parity-scale-codec",
  "paste",
- "remote-externalities",
- "sc-transaction-pool-api",
  "scale-info",
  "serde",
  "serde_json",
