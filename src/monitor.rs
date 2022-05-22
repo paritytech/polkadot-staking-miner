@@ -106,8 +106,9 @@ macro_rules! monitor_cmd_for {
 						},
 					};
 
-					// As a solution is attempted to be submitted lock reject later blocks from proceeding.
-					// Until we know whether the current solution was successful or not.
+					// When solution is attempted to be submitted lock the current round.
+					// To reject later blocks from proceeding because only one solution per
+					// round needs to be submitted.
 					let mut round_lock = prev_round.lock().await;
 
 					match *round_lock {
@@ -117,6 +118,7 @@ macro_rules! monitor_cmd_for {
 					};
 
 
+					let now = std::time::Instant::now();
 					let (solution, score, size) =
 					match crate::helpers::[<mine_solution_$runtime>](&api, Some(hash), config.solver)
 					.await {
@@ -128,7 +130,7 @@ macro_rules! monitor_cmd_for {
 					};
 
 
-					log::info!(target: LOG_TARGET, "mined solution with {:?} size: {:?} round: {:?}", score, size, round);
+					log::trace!(target: LOG_TARGET, "Mined solution with {:?} size: {:?} round: {:?}, took: {} ms", score, size, round, now.elapsed().as_millis());
 
 					let xt = match api
 						.tx()
@@ -142,44 +144,43 @@ macro_rules! monitor_cmd_for {
 						};
 
 
-						if let Err(e) = ensure_signed_phase(&api, hash).await {
-							log::debug!(
-								target: LOG_TARGET,
-								"ensure_signed_phase failed: {:?}; skipping block: {}",
-								e,
-								at.number
-							);
-							kill_main_task_if_critical_err(&tx, e);
-							return;
-						}
+					let now = std::time::Instant::now();
+					if let Err(e) = ensure_signed_phase(&api, hash).await {
+						log::debug!(
+							target: LOG_TARGET,
+							"ensure_signed_phase failed: {:?}; skipping block: {}",
+							e,
+							at.number
+						);
+						kill_main_task_if_critical_err(&tx, e);
+						return;
+					}
 
 
-						if let Err(e) = ensure_no_previous_solution(&api, hash, signer.account_id()).await {
-							log::debug!(
-								target: LOG_TARGET,
-								"ensure_no_previous_solution failed: {:?}; skipping block: {}",
-								e,
-								at.number
-							);
+					if let Err(e) = ensure_no_previous_solution(&api, hash, signer.account_id()).await {
+						log::debug!(
+							target: LOG_TARGET,
+							"ensure_no_previous_solution failed: {:?}; skipping block: {}",
+							e,
+							at.number
+						);
 
-							kill_main_task_if_critical_err(&tx, e);
-							return;
-						}
-
-
-						if let Err(e) = ensure_no_better_solution(&api, hash, score, config.submission_strategy).await {
-							log::debug!(
-								target: LOG_TARGET,
-								"ensure_no_better_solution failed: {:?}; skipping block: {}",
-								e,
-								at.number
-							);
-							kill_main_task_if_critical_err(&tx, e);
-							return;
-						}
+						kill_main_task_if_critical_err(&tx, e);
+						return;
+					}
 
 
-					// This might fail with outdated nonce let it just crash if that happens.
+					if let Err(e) = ensure_no_better_solution(&api, hash, score, config.submission_strategy).await {
+						log::debug!(
+							target: LOG_TARGET,
+							"ensure_no_better_solution failed: {:?}; skipping block: {}",
+							e,
+							at.number
+						);
+						kill_main_task_if_critical_err(&tx, e);
+						return;
+					}
+
 					let mut status_sub = match xt.sign_and_submit_then_watch_default(&*signer).await {
 						Ok(sub) => sub,
 						Err(e) => {
@@ -189,6 +190,8 @@ macro_rules! monitor_cmd_for {
 						}
 					};
 
+
+					log::trace!(target: LOG_TARGET, "Solution validity verification took: {} ms", now.elapsed().as_millis());
 
 					let result = loop {
 						let status = match status_sub.next_item().await {
@@ -310,10 +313,8 @@ macro_rules! monitor_cmd_for {
 
 					for (other_score, _) in indices.0 {
 						if !score.strict_threshold_better(other_score, epsilon) {
-							log::debug!(target: LOG_TARGET, "score: {:?}, other_score: {:?}, worse at: {:?}", score, other_score, at);
 							return Err(Error::BetterScoreExist);
 						}
-						log::debug!(target: LOG_TARGET, "score: {:?}, other_score: {:?}, better at: {:?}", score, other_score, at);
 					}
 
 					Ok(())
@@ -329,19 +330,28 @@ monitor_cmd_for!(kusama);
 monitor_cmd_for!(westend);
 
 fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>, err: Error) {
-	use jsonrpsee::core::Error as RpcError;
+	use jsonrpsee::{core::Error as RpcError, types::error::CallError};
 
-	log::debug!(target: LOG_TARGET, "closing task: {:?}", err);
+	log::trace!(target: LOG_TARGET, "closing task: {:?}", err);
 
 	match err {
-		Error::Subxt(SubxtError::InvalidMetadata(e)) => {
-			let _ = tx.send(Error::Subxt(SubxtError::InvalidMetadata(e)));
+		Error::Subxt(SubxtError::Rpc(RpcError::Call(CallError::Custom(e)))) => {
+			const BAD_EXTRINSIC_FORMAT: i32 = 1001;
+			const VERIFICATION_ERROR: i32 = 1002;
+
+			// Check if the transaction gets fatal errors from `author` RPC.
+			// It's possible to get other errors such as outdated nonce and similar
+			// but then it should be possible to try again in the next block or round.
+			if e.code() == BAD_EXTRINSIC_FORMAT || e.code() == VERIFICATION_ERROR {
+				let _ =
+					tx.send(Error::Subxt(SubxtError::Rpc(RpcError::Call(CallError::Custom(e)))));
+			}
 		},
-		Error::Subxt(SubxtError::Metadata(e)) => {
-			let _ = tx.send(Error::Subxt(SubxtError::Metadata(e)));
-		},
-		Error::Subxt(SubxtError::Rpc(RpcError::RestartNeeded(e))) => {
-			let _ = tx.send(Error::Subxt(SubxtError::Rpc(RpcError::RestartNeeded(e))));
+		Error::Subxt(SubxtError::Rpc(RpcError::RequestTimeout)) |
+		Error::Subxt(SubxtError::Rpc(RpcError::Call(CallError::Failed(_)))) => (),
+		// Regard the rest of subxt errors has fatal (including rpc)
+		Error::Subxt(e) => {
+			let _ = tx.send(Error::Subxt(e));
 		},
 		_ => (),
 	}

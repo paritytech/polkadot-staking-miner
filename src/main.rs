@@ -232,12 +232,7 @@ async fn main() -> Result<(), Error> {
 	let Opt { uri, seed_or_path, command } = Opt::parse();
 	log::debug!(target: LOG_TARGET, "attempting to connect to {:?}", uri);
 
-	// TODO: fix unwrap
-	let rpc = WsClientBuilder::default()
-		.max_request_body_size(u32::MAX)
-		.build(uri)
-		.await
-		.unwrap();
+	let rpc = WsClientBuilder::default().max_request_body_size(u32::MAX).build(uri).await?;
 
 	let client = subxt::ClientBuilder::new().set_client(rpc).build().await?;
 	let runtime_version = client.rpc().runtime_version(None).await?;
