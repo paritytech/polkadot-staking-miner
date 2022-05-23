@@ -65,15 +65,12 @@ pub mod westend {
 
 	pub type ExtrinsicParams = subxt::PolkadotExtrinsicParamsBuilder<subxt::DefaultConfig>;
 
-	pub type RuntimeApi = runtime::RuntimeApi<
-		subxt::DefaultConfig,
-		subxt::PolkadotExtrinsicParams<subxt::DefaultConfig>,
-	>;
+	pub type RuntimeApi =
+		runtime::RuntimeApi<subxt::DefaultConfig, subxt::PolkadotExtrinsicParams<subxt::DefaultConfig>>;
 
 	pub mod epm {
 		pub use super::{
-			runtime::election_provider_multi_phase::*,
-			runtime_types::pallet_election_provider_multi_phase::*,
+			runtime::election_provider_multi_phase::*, runtime_types::pallet_election_provider_multi_phase::*,
 		};
 	}
 }
@@ -140,15 +137,12 @@ pub mod polkadot {
 
 	pub type ExtrinsicParams = subxt::PolkadotExtrinsicParamsBuilder<subxt::DefaultConfig>;
 
-	pub type RuntimeApi = runtime::RuntimeApi<
-		subxt::DefaultConfig,
-		subxt::PolkadotExtrinsicParams<subxt::DefaultConfig>,
-	>;
+	pub type RuntimeApi =
+		runtime::RuntimeApi<subxt::DefaultConfig, subxt::PolkadotExtrinsicParams<subxt::DefaultConfig>>;
 
 	pub mod epm {
 		pub use super::{
-			runtime::election_provider_multi_phase::*,
-			runtime_types::pallet_election_provider_multi_phase::*,
+			runtime::election_provider_multi_phase::*, runtime_types::pallet_election_provider_multi_phase::*,
 		};
 	}
 }
@@ -215,15 +209,12 @@ pub mod kusama {
 
 	pub type ExtrinsicParams = subxt::PolkadotExtrinsicParamsBuilder<subxt::DefaultConfig>;
 
-	pub type RuntimeApi = runtime::RuntimeApi<
-		subxt::DefaultConfig,
-		subxt::PolkadotExtrinsicParams<subxt::DefaultConfig>,
-	>;
+	pub type RuntimeApi =
+		runtime::RuntimeApi<subxt::DefaultConfig, subxt::PolkadotExtrinsicParams<subxt::DefaultConfig>>;
 
 	pub mod epm {
 		pub use super::{
-			runtime::election_provider_multi_phase::*,
-			runtime_types::pallet_election_provider_multi_phase::*,
+			runtime::election_provider_multi_phase::*, runtime_types::pallet_election_provider_multi_phase::*,
 		};
 	}
 }
