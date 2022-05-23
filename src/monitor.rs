@@ -335,16 +335,15 @@ fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>
 			// It's possible to get other errors such as outdated nonce and similar
 			// but then it should be possible to try again in the next block or round.
 			if e.code() == BAD_EXTRINSIC_FORMAT || e.code() == VERIFICATION_ERROR {
-				let _ =
-					tx.send(Error::Subxt(SubxtError::Rpc(RpcError::Call(CallError::Custom(e)))));
+				let _ = tx.send(Error::Subxt(SubxtError::Rpc(RpcError::Call(CallError::Custom(e)))));
 			}
-		},
-		Error::Subxt(SubxtError::Rpc(RpcError::RequestTimeout)) |
-		Error::Subxt(SubxtError::Rpc(RpcError::Call(CallError::Failed(_)))) => (),
+		}
+		Error::Subxt(SubxtError::Rpc(RpcError::RequestTimeout))
+		| Error::Subxt(SubxtError::Rpc(RpcError::Call(CallError::Failed(_)))) => (),
 		// Regard the rest of subxt errors has fatal (including rpc)
 		Error::Subxt(e) => {
 			let _ = tx.send(Error::Subxt(e));
-		},
+		}
 		_ => (),
 	}
 }

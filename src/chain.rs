@@ -59,8 +59,7 @@ pub mod westend {
 
 	#[subxt::subxt(
 		runtime_metadata_path = "artifacts/westend.scale",
-		derive_for_all_types = "Clone, Debug, PartialEq",
-		derive_for_type(type = "sp_core::crypto::AccountId32", derive = "Eq, Ord, PartialOrd")
+		derive_for_all_types = "Clone, Debug, Eq, PartialEq"
 	)]
 	pub mod runtime {
 		#[subxt(substitute_type = "westend_runtime::NposCompactSolution16")]
@@ -82,18 +81,16 @@ pub mod westend {
 	pub use runtime::runtime_types;
 
 	pub type ExtrinsicParams = subxt::PolkadotExtrinsicParamsBuilder<subxt::DefaultConfig>;
-	pub type RuntimeApi = runtime::RuntimeApi<
-		subxt::DefaultConfig,
-		subxt::PolkadotExtrinsicParams<subxt::DefaultConfig>,
-	>;
+
+	pub type RuntimeApi =
+		runtime::RuntimeApi<subxt::DefaultConfig, subxt::PolkadotExtrinsicParams<subxt::DefaultConfig>>;
 
 	pub mod epm {
 		use super::*;
 		pub type BoundedVoters = Vec<(AccountId, VoteWeight, BoundedVec<AccountId, static_types::MaxVotesPerVoter>)>;
 		pub type Snapshot = (BoundedVoters, Vec<AccountId>, u32);
 		pub use super::{
-			runtime::election_provider_multi_phase::*,
-			runtime_types::pallet_election_provider_multi_phase::*,
+			runtime::election_provider_multi_phase::*, runtime_types::pallet_election_provider_multi_phase::*,
 		};
 	}
 }
@@ -148,8 +145,7 @@ pub mod polkadot {
 
 	#[subxt::subxt(
 		runtime_metadata_path = "artifacts/polkadot.scale",
-		derive_for_all_types = "Clone, Debug, PartialEq",
-		derive_for_type(type = "sp_core::crypto::AccountId32", derive = "Eq, Ord, PartialOrd")
+		derive_for_all_types = "Clone, Debug, Eq, PartialEq"
 	)]
 	pub mod runtime {
 		#[subxt(substitute_type = "polkadot_runtime::NposCompactSolution16")]
@@ -172,18 +168,15 @@ pub mod polkadot {
 
 	pub type ExtrinsicParams = subxt::PolkadotExtrinsicParamsBuilder<subxt::DefaultConfig>;
 
-	pub type RuntimeApi = runtime::RuntimeApi<
-		subxt::DefaultConfig,
-		subxt::PolkadotExtrinsicParams<subxt::DefaultConfig>,
-	>;
+	pub type RuntimeApi =
+		runtime::RuntimeApi<subxt::DefaultConfig, subxt::PolkadotExtrinsicParams<subxt::DefaultConfig>>;
 
 	pub mod epm {
 		use super::*;
 		pub type BoundedVoters = Vec<(AccountId, VoteWeight, BoundedVec<AccountId, static_types::MaxVotesPerVoter>)>;
 		pub type Snapshot = (BoundedVoters, Vec<AccountId>, u32);
 		pub use super::{
-			runtime::election_provider_multi_phase::*,
-			runtime_types::pallet_election_provider_multi_phase::*,
+			runtime::election_provider_multi_phase::*, runtime_types::pallet_election_provider_multi_phase::*,
 		};
 	}
 }
@@ -238,8 +231,7 @@ pub mod kusama {
 
 	#[subxt::subxt(
 		runtime_metadata_path = "artifacts/kusama.scale",
-		derive_for_all_types = "Clone, Debug, PartialEq",
-		derive_for_type(type = "sp_core::crypto::AccountId32", derive = "Eq, Ord, PartialOrd")
+		derive_for_all_types = "Clone, Debug, Eq, PartialEq"
 	)]
 	pub mod runtime {
 		#[subxt(substitute_type = "kusama_runtime::NposCompactSolution24")]
@@ -262,18 +254,15 @@ pub mod kusama {
 
 	pub type ExtrinsicParams = subxt::PolkadotExtrinsicParamsBuilder<subxt::DefaultConfig>;
 
-	pub type RuntimeApi = runtime::RuntimeApi<
-		subxt::DefaultConfig,
-		subxt::PolkadotExtrinsicParams<subxt::DefaultConfig>,
-	>;
+	pub type RuntimeApi =
+		runtime::RuntimeApi<subxt::DefaultConfig, subxt::PolkadotExtrinsicParams<subxt::DefaultConfig>>;
 
 	pub mod epm {
 		use super::*;
 		pub type BoundedVoters = Vec<(AccountId, VoteWeight, BoundedVec<AccountId, static_types::MaxVotesPerVoter>)>;
 		pub type Snapshot = (BoundedVoters, Vec<AccountId>, u32);
 		pub use super::{
-			runtime::election_provider_multi_phase::*,
-			runtime_types::pallet_election_provider_multi_phase::*,
+			runtime::election_provider_multi_phase::*, runtime_types::pallet_election_provider_multi_phase::*,
 		};
 	}
 }

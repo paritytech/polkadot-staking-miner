@@ -3,35 +3,39 @@ use frame_election_provider_support::{PhragMMS, SequentialPhragmen};
 use pallet_election_provider_multi_phase::{SolutionOf, SolutionOrSnapshotSize};
 use sp_npos_elections::{ElectionScore};
 
-macro_rules! mine_solution_for { ($runtime:tt) => {
-	paste::paste! {
-		/// The monitor command.
-		pub(crate) async fn [<mine_solution_$runtime>](
-			api: &chain::$runtime::RuntimeApi,
-			hash: Option<Hash>,
-			solver: Solver
-		) -> Result<(SolutionOf<chain::$runtime::Config>, ElectionScore, SolutionOrSnapshotSize), Error> {
-				let (voters, targets, desired_targets) = [<snapshot_$runtime>](&api, hash).await?;
+macro_rules! mine_solution_for {
+	($runtime:tt) => {
+		paste::paste! {
+				/// The monitor command.
+				pub(crate) async fn [<mine_solution_$runtime>](
+					api: &chain::$runtime::RuntimeApi,
+					hash: Option<Hash>,
+					solver: Solver
+				) -> Result<(SolutionOf<chain::$runtime::Config>, ElectionScore, SolutionOrSnapshotSize), Error> {
 
-				match solver {
-					Solver::SeqPhragmen { iterations } => {
-						BalanceIterations::set(iterations);
-						Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<
-							SequentialPhragmen<AccountId, Accuracy, Balancing>,
-						>(voters, targets, desired_targets)
-					},
-					Solver::PhragMMS { iterations } => {
-						BalanceIterations::set(iterations);
-						Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<PhragMMS<AccountId, Accuracy, Balancing>>(
-							voters,
-							targets,
-							desired_targets,
-						)
-					},
+						let (voters, targets, desired_targets) = [<snapshot_$runtime>](&api, hash).await?;
+
+						match solver {
+							Solver::SeqPhragmen { iterations } => {
+								BalanceIterations::set(iterations);
+								Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<
+									SequentialPhragmen<AccountId, Perbill, Balancing>,
+								>(voters, targets, desired_targets)
+							},
+							Solver::PhragMMS { iterations } => {
+								BalanceIterations::set(iterations);
+								Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<PhragMMS<AccountId, Perbill, Balancing>>(
+									voters,
+									targets,
+									desired_targets,
+								)
+							},
+						}
+						.map_err(|e| Error::Other(format!("{:?}", e)))
 				}
-				.map_err(|e| Error::Other(format!("{:?}", e)))
 		}
-}}}
+	};
+}
 
 macro_rules! snapshot_for { ($runtime:tt) => {
 	paste::paste! {
