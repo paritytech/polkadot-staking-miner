@@ -131,7 +131,7 @@ impl FromStr for SubmissionStrategy {
 			let percent: u32 = s[15..].parse().map_err(|e| format!("{:?}", e))?;
 			Self::ClaimBetterThan(Perbill::from_percent(percent))
 		} else {
-			return Err(s.into())
+			return Err(s.into());
 		};
 		Ok(res)
 	}
@@ -267,14 +267,8 @@ async fn main() -> Result<(), Error> {
 }
 
 fn into_chain_name(rv: subxt::rpc::RuntimeVersion) -> String {
-	let json = rv
-		.other
-		.get("specName")
-		.expect("RuntimeVersion must have specName; qed")
-		.clone();
-	serde_json::from_value::<String>(json)
-		.expect("specName must be String; qed")
-		.to_lowercase()
+	let json = rv.other.get("specName").expect("RuntimeVersion must have specName; qed").clone();
+	serde_json::from_value::<String>(json).expect("specName must be String; qed").to_lowercase()
 }
 
 #[cfg(test)]

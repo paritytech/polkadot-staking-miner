@@ -5,36 +5,39 @@ use sp_npos_elections::{ElectionScore, VoteWeight};
 
 pub(crate) type Snapshot = (Vec<(AccountId, VoteWeight, BoundedVec)>, Vec<AccountId>, u32);
 
-macro_rules! mine_solution_for { ($runtime:tt) => {
-	paste::paste! {
-		/// The monitor command.
-		pub(crate) async fn [<mine_solution_$runtime>](
-			api: &chain::$runtime::RuntimeApi,
-			hash: Option<Hash>,
-			solver: Solver
-		) -> Result<(SolutionOf<chain::$runtime::Config>, ElectionScore, SolutionOrSnapshotSize), Error> {
+macro_rules! mine_solution_for {
+	($runtime:tt) => {
+		paste::paste! {
+				/// The monitor command.
+				pub(crate) async fn [<mine_solution_$runtime>](
+					api: &chain::$runtime::RuntimeApi,
+					hash: Option<Hash>,
+					solver: Solver
+				) -> Result<(SolutionOf<chain::$runtime::Config>, ElectionScore, SolutionOrSnapshotSize), Error> {
 
-				let (voters, targets, desired_targets) = [<snapshot_$runtime>](&api, hash).await?;
+						let (voters, targets, desired_targets) = [<snapshot_$runtime>](&api, hash).await?;
 
-				match solver {
-					Solver::SeqPhragmen { .. } => {
-						//BalanceIterations::set(*iterations);
-						Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<
-							SequentialPhragmen<AccountId, Perbill, Balancing>,
-						>(voters, targets, desired_targets)
-					},
-					Solver::PhragMMS { .. } => {
-						//BalanceIterations::set(*iterations);
-						Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<PhragMMS<AccountId, Perbill, Balancing>>(
-							voters,
-							targets,
-							desired_targets,
-						)
-					},
+						match solver {
+							Solver::SeqPhragmen { .. } => {
+								//BalanceIterations::set(*iterations);
+								Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<
+									SequentialPhragmen<AccountId, Perbill, Balancing>,
+								>(voters, targets, desired_targets)
+							},
+							Solver::PhragMMS { .. } => {
+								//BalanceIterations::set(*iterations);
+								Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<PhragMMS<AccountId, Perbill, Balancing>>(
+									voters,
+									targets,
+									desired_targets,
+								)
+							},
+						}
+						.map_err(|e| Error::Other(format!("{:?}", e)))
 				}
-				.map_err(|e| Error::Other(format!("{:?}", e)))
 		}
-}}}
+	};
+}
 
 macro_rules! snapshot_for { ($runtime:tt) => {
 	paste::paste! {
