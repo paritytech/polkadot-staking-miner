@@ -1,9 +1,7 @@
-use crate::{chain, prelude::*, Balancing, Solver};
+use crate::{chain, prelude::*, Balancing, Solver, BalanceIterations};
 use frame_election_provider_support::{PhragMMS, SequentialPhragmen};
 use pallet_election_provider_multi_phase::{SolutionOf, SolutionOrSnapshotSize};
-use sp_npos_elections::{ElectionScore, VoteWeight};
-
-pub(crate) type Snapshot = (Vec<(AccountId, VoteWeight, BoundedVec)>, Vec<AccountId>, u32);
+use sp_npos_elections::{ElectionScore};
 
 macro_rules! mine_solution_for { ($runtime:tt) => {
 	paste::paste! {
@@ -13,19 +11,18 @@ macro_rules! mine_solution_for { ($runtime:tt) => {
 			hash: Option<Hash>,
 			solver: Solver
 		) -> Result<(SolutionOf<chain::$runtime::Config>, ElectionScore, SolutionOrSnapshotSize), Error> {
-
 				let (voters, targets, desired_targets) = [<snapshot_$runtime>](&api, hash).await?;
 
 				match solver {
-					Solver::SeqPhragmen { .. } => {
-						//BalanceIterations::set(*iterations);
+					Solver::SeqPhragmen { iterations } => {
+						BalanceIterations::set(iterations);
 						Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<
-							SequentialPhragmen<AccountId, Perbill, Balancing>,
+							SequentialPhragmen<AccountId, Accuracy, Balancing>,
 						>(voters, targets, desired_targets)
 					},
-					Solver::PhragMMS { .. } => {
-						//BalanceIterations::set(*iterations);
-						Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<PhragMMS<AccountId, Perbill, Balancing>>(
+					Solver::PhragMMS { iterations } => {
+						BalanceIterations::set(iterations);
+						Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<PhragMMS<AccountId, Accuracy, Balancing>>(
 							voters,
 							targets,
 							desired_targets,
@@ -38,8 +35,7 @@ macro_rules! mine_solution_for { ($runtime:tt) => {
 
 macro_rules! snapshot_for { ($runtime:tt) => {
 	paste::paste! {
-
-	pub(crate) async fn [<snapshot_$runtime>](api: &chain::$runtime::RuntimeApi, hash: Option<Hash>) -> Result<Snapshot, Error> {
+	pub(crate) async fn [<snapshot_$runtime>](api: &chain::$runtime::RuntimeApi, hash: Option<Hash>) -> Result<crate::chain::$runtime::epm::Snapshot, Error> {
 		use crate::chain::$runtime::epm::RoundSnapshot;
 
 		let RoundSnapshot { voters, targets } = api
@@ -47,7 +43,7 @@ macro_rules! snapshot_for { ($runtime:tt) => {
 			.election_provider_multi_phase()
 			.snapshot(hash)
 			.await?
-			.unwrap_or_else(|| RoundSnapshot { voters: Vec::new(), targets: Vec::new() });
+			.unwrap();
 
 		let desired_targets = api
 			.storage()
@@ -59,11 +55,9 @@ macro_rules! snapshot_for { ($runtime:tt) => {
 		let voters: Vec<_> = voters
 			.into_iter()
 			.map(|(a, b, mut c)| {
-				let mut bounded_vec = BoundedVec::default();
-
+				let mut bounded_vec = frame_support::BoundedVec::default();
 				// If this fails just crash the task.
 				bounded_vec.try_append(&mut c.0).unwrap();
-
 				(a, b, bounded_vec)
 			})
 			.collect();

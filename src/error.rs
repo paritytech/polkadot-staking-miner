@@ -18,8 +18,6 @@ pub enum Error {
 	IncorrectPhase,
 	#[error("Submission is already submitted")]
 	AlreadySubmitted,
-	#[error("Invalid runtime version")]
-	VersionMismatch,
 	#[error("Submission strategy not satisfied")]
 	StrategyNotSatisfied,
 	#[error("Submission with better score already exist")]

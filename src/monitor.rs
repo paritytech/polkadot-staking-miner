@@ -72,14 +72,6 @@ macro_rules! monitor_cmd_for {
 					config: MonitorConfig,
 					prev_round: Arc<Mutex<Option<u32>>>,
 				) {
-					/*async fn flatten<T>(handle: tokio::task::JoinHandle<Result<T, Error>>) -> Result<T, Error> {
-					  match handle.await {
-					  Ok(Ok(result)) => Ok(result),
-					  Ok(Err(err)) => Err(err),
-					  Err(err) => panic!("tokio spawn task failed; kill task: {:?}", err),
-					  }
-					  }*/
-
 					let hash = at.hash();
 					log::trace!(target: LOG_TARGET, "new event at #{:?} ({:?})", at.number, hash);
 

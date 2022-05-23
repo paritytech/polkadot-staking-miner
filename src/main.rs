@@ -77,17 +77,17 @@ macro_rules! any_runtime {
 			match $chain {
 				"polkadot" => {
 					#[allow(unused)]
-					use {$crate::chain::polkadot::RuntimeApi, monitor::run_polkadot as monitor_cmd, dry_run::run_polkadot as dry_run_cmd, emergency_solution::run_polkadot as emergency_cmd};
+					use {$crate::chain::polkadot::{RuntimeApi, static_types}, monitor::run_polkadot as monitor_cmd, dry_run::run_polkadot as dry_run_cmd, emergency_solution::run_polkadot as emergency_cmd};
 					$($code)*
 				},
 				"kusama" => {
 					#[allow(unused)]
-					use {$crate::chain::kusama::RuntimeApi, monitor::run_kusama as monitor_cmd, dry_run::run_kusama as dry_run_cmd, emergency_solution::run_kusama as emergency_cmd};
+					use {$crate::chain::kusama::{RuntimeApi, static_types}, monitor::run_kusama as monitor_cmd, dry_run::run_kusama as dry_run_cmd, emergency_solution::run_kusama as emergency_cmd};
 					$($code)*
 				},
 				"westend" => {
 					#[allow(unused)]
-					use {$crate::chain::westend::RuntimeApi, monitor::run_westend as monitor_cmd, dry_run::run_westend as dry_run_cmd, emergency_solution::run_westend as emergency_cmd};
+					use {$crate::chain::westend::{RuntimeApi, static_types}, monitor::run_westend as monitor_cmd, dry_run::run_westend as dry_run_cmd, emergency_solution::run_westend as emergency_cmd};
 					$($code)*
 				}
 				other => Err(Error::Other(format!(
@@ -244,6 +244,22 @@ async fn main() -> Result<(), Error> {
 
 	let outcome = any_runtime!(chain_str, {
 		let api: RuntimeApi = client.to_runtime_api();
+
+		{
+			// maximum weight of the signed submission is exposed from metadata and MUST be this.
+			let max_weight = api.constants().election_provider_multi_phase().signed_max_weight().unwrap();
+			// allow up to 75% of the block size to be used for signed submission, length-wise. This
+			// value can be adjusted a bit if needed.
+			let max_length = Perbill::from_rational(90_u32, 100) * api.constants().system().block_length().unwrap().max.normal;
+			let db_weight = api.constants().system().db_weight().unwrap();
+			static_types::MaxWeight::set(max_weight);
+			static_types::MaxLength::set(max_length);
+			let system_db_weight = frame_support::weights::RuntimeDbWeight {
+				read: db_weight.read,
+				write: db_weight.write
+			};
+			static_types::DbWeight::set(system_db_weight);
+		}
 
 		// Start a new tokio task to perform the runtime updates in the background.
 		let update_client = api.client.updates();
