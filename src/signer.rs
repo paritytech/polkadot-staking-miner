@@ -27,8 +27,8 @@ pub(crate) fn signer_from_string(mut seed_or_path: &str) -> Result<Signer, Error
 		Ok(s) => String::from_utf8(s).map_err(|e| Error::Other(e.to_string()))?,
 		Err(_) => seed_or_path.to_string(),
 	};
-	let seed = seed.trim();
 
+	let seed = seed.trim();
 	let pair = Pair::from_string(seed, None).map_err(Error::Crypto)?;
 
 	Ok(PairSigner::new(pair))

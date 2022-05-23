@@ -19,12 +19,12 @@ macro_rules! mine_solution_for {
 							Solver::SeqPhragmen { iterations } => {
 								BalanceIterations::set(iterations);
 								Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<
-									SequentialPhragmen<AccountId, Perbill, Balancing>,
+									SequentialPhragmen<AccountId, Accuracy, Balancing>,
 								>(voters, targets, desired_targets)
 							},
 							Solver::PhragMMS { iterations } => {
 								BalanceIterations::set(iterations);
-								Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<PhragMMS<AccountId, Perbill, Balancing>>(
+								Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<PhragMMS<AccountId, Accuracy, Balancing>>(
 									voters,
 									targets,
 									desired_targets,
