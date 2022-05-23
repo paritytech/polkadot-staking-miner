@@ -1,4 +1,4 @@
-// Copyright 2021 Parity Technologies (UK) Ltd.
+// Copyright 2021-2022 Parity Technologies (UK) Ltd.
 // This file is part of Polkadot.
 
 // Polkadot is free software: you can redistribute it and/or modify
@@ -20,7 +20,10 @@
 //! It is actually easy to convert the rest as well, but it'll be a lot of noise in our codebase,
 //! needing to sprinkle `any_runtime` in a few extra places.
 
-use frame_support::{traits::ConstU32, weights::Weight};
+// re-exports.
+pub use crate::error::Error;
+pub use pallet_election_provider_multi_phase::{Miner, MinerConfig};
+pub use frame_election_provider_support::VoteWeight;
 
 /// The account id type.
 pub type AccountId = subxt::sp_core::crypto::AccountId32;
@@ -42,25 +45,9 @@ pub const LOG_TARGET: &str = "staking-miner";
 /// The key pair type being used. We "strongly" assume sr25519 for simplicity.
 pub type Pair = subxt::sp_core::sr25519::Pair;
 
-pub use pallet_election_provider_multi_phase::{Miner, MinerConfig};
-
+/// A signer type, parameterized for using with `sub-xt`.
 pub type Signer = subxt::PairSigner<subxt::DefaultConfig, subxt::sp_core::sr25519::Pair>;
 
-pub use sp_runtime::Perbill;
+/// The accuracy that we use for election computation.
+pub type Accuracy = sp_runtime::Perbill;
 
-pub type BoundedVec = frame_support::BoundedVec<AccountId, MaxVotesPerVoter>;
-
-frame_support::parameter_types! {
-	// TODO: this is part of the metadata check again if we can fetch this from subxt.
-	// TODO: check with Kian.
-	pub BlockWeights: frame_system::limits::BlockWeights = frame_system::limits::BlockWeights
-		::with_sensible_defaults(u64::MAX, Perbill::from_percent(75));
-	pub static MaxWeight: Weight = BlockWeights::get().max_block;
-}
-
-// TODO check with Kian.
-pub type MaxLength = ConstU32<4294967295>;
-// TODO check with Kian.
-pub type MaxVotesPerVoter = ConstU32<256>;
-
-pub use crate::error::Error;
