@@ -1,7 +1,7 @@
-use crate::{chain, prelude::*, Balancing, Solver, BalanceIterations};
+use crate::{chain, prelude::*, BalanceIterations, Balancing, Solver};
 use frame_election_provider_support::{PhragMMS, SequentialPhragmen};
 use pallet_election_provider_multi_phase::{SolutionOf, SolutionOrSnapshotSize};
-use sp_npos_elections::{ElectionScore};
+use sp_npos_elections::ElectionScore;
 
 macro_rules! mine_solution_for {
 	($runtime:tt) => {

@@ -22,8 +22,8 @@
 
 // re-exports.
 pub use crate::error::Error;
-pub use pallet_election_provider_multi_phase::{Miner, MinerConfig};
 pub use frame_election_provider_support::VoteWeight;
+pub use pallet_election_provider_multi_phase::{Miner, MinerConfig};
 
 /// The account id type.
 pub type AccountId = subxt::sp_core::crypto::AccountId32;
@@ -50,4 +50,3 @@ pub type Signer = subxt::PairSigner<subxt::DefaultConfig, subxt::sp_core::sr2551
 
 /// The accuracy that we use for election computation.
 pub type Accuracy = sp_runtime::Perbill;
-

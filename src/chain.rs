@@ -7,7 +7,11 @@
 // that.
 
 use crate::prelude::*;
-use frame_support::{traits::ConstU32, weights::{Weight, RuntimeDbWeight}, BoundedVec};
+use frame_support::{
+	traits::ConstU32,
+	weights::{RuntimeDbWeight, Weight},
+	BoundedVec,
+};
 
 pub mod westend {
 	use super::*;
@@ -53,7 +57,7 @@ pub mod westend {
 				.saturating_add((8_972_000 as Weight).saturating_mul(a as Weight))
 				// Standard Error: 42_000
 				.saturating_add((966_000 as Weight).saturating_mul(d as Weight))
-			.saturating_add(static_types::DbWeight::get().reads(4 as Weight))
+				.saturating_add(static_types::DbWeight::get().reads(4 as Weight))
 		}
 	}
 
@@ -139,7 +143,7 @@ pub mod polkadot {
 				.saturating_add((8_972_000 as Weight).saturating_mul(a as Weight))
 				// Standard Error: 42_000
 				.saturating_add((966_000 as Weight).saturating_mul(d as Weight))
-			.saturating_add(static_types::DbWeight::get().reads(4 as Weight))
+				.saturating_add(static_types::DbWeight::get().reads(4 as Weight))
 		}
 	}
 
@@ -225,7 +229,7 @@ pub mod kusama {
 				.saturating_add((8_972_000 as Weight).saturating_mul(a as Weight))
 				// Standard Error: 42_000
 				.saturating_add((966_000 as Weight).saturating_mul(d as Weight))
-			.saturating_add(static_types::DbWeight::get().reads(4 as Weight))
+				.saturating_add(static_types::DbWeight::get().reads(4 as Weight))
 		}
 	}
 

@@ -250,14 +250,13 @@ async fn main() -> Result<(), Error> {
 			let max_weight = api.constants().election_provider_multi_phase().signed_max_weight().unwrap();
 			// allow up to 75% of the block size to be used for signed submission, length-wise. This
 			// value can be adjusted a bit if needed.
-			let max_length = Perbill::from_rational(90_u32, 100) * api.constants().system().block_length().unwrap().max.normal;
+			let max_length =
+				Perbill::from_rational(90_u32, 100) * api.constants().system().block_length().unwrap().max.normal;
 			let db_weight = api.constants().system().db_weight().unwrap();
 			static_types::MaxWeight::set(max_weight);
 			static_types::MaxLength::set(max_length);
-			let system_db_weight = frame_support::weights::RuntimeDbWeight {
-				read: db_weight.read,
-				write: db_weight.write
-			};
+			let system_db_weight =
+				frame_support::weights::RuntimeDbWeight { read: db_weight.read, write: db_weight.write };
 			static_types::DbWeight::set(system_db_weight);
 		}
 
