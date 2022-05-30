@@ -3,7 +3,6 @@ use pallet_election_provider_multi_phase::RawSolution;
 use sp_runtime::Perbill;
 use std::sync::Arc;
 use subxt::{BasicError as SubxtError, TransactionStatus};
-use tokio::sync::Mutex;
 
 macro_rules! monitor_cmd_for {
 	($runtime:tt) => {
@@ -17,7 +16,6 @@ macro_rules! monitor_cmd_for {
 				}?;
 
 				let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
-				let round = Arc::new(Mutex::new(None));
 
 				loop {
 					let at = tokio::select! {
@@ -59,7 +57,6 @@ macro_rules! monitor_cmd_for {
 							api.clone(),
 							signer.clone(),
 							config.clone(),
-							round.clone(),
 					));
 				}
 
@@ -70,7 +67,6 @@ macro_rules! monitor_cmd_for {
 					api: $crate::chain::$runtime::RuntimeApi,
 					signer: Arc<Signer>,
 					config: MonitorConfig,
-					prev_round: Arc<Mutex<Option<u32>>>,
 				) {
 					let hash = at.hash();
 					log::trace!(target: LOG_TARGET, "new event at #{:?} ({:?})", at.number, hash);
@@ -96,17 +92,6 @@ macro_rules! monitor_cmd_for {
 							kill_main_task_if_critical_err(&tx, e.into());
 							return;
 						},
-					};
-
-					// When solution is attempted to be submitted lock the current round.
-					// To reject later blocks from proceeding because only one solution per
-					// round needs to be submitted.
-					let mut round_lock = prev_round.lock().await;
-
-					match *round_lock {
-						None => (),
-						Some(r) if round > r => (),
-						_ => return,
 					};
 
 
@@ -185,7 +170,7 @@ macro_rules! monitor_cmd_for {
 
 					log::trace!(target: LOG_TARGET, "Solution validity verification took: {} ms", now.elapsed().as_millis());
 
-					let result = loop {
+					loop {
 						let status = match status_sub.next_item().await {
 							Some(Ok(status)) => status,
 							Some(Err(err)) => {
@@ -196,11 +181,11 @@ macro_rules! monitor_cmd_for {
 									err
 								);
 								kill_main_task_if_critical_err(&tx, err.into());
-								break false;
+								break;
 							},
 							None => {
 								log::error!(target: LOG_TARGET, "watch submit extrinsic at {:?} closed", hash);
-								break false;
+								break;
 							},
 						};
 
@@ -218,28 +203,23 @@ macro_rules! monitor_cmd_for {
 									log::info!(target: LOG_TARGET, "included at {:?}", event);
 								} else {
 									log::warn!(target: LOG_TARGET, "no SolutionStored event emitted");
-									break false;
+									break
 								}
-								break true
+								break
 							},
 							TransactionStatus::Retracted(hash) => {
 								log::info!(target: LOG_TARGET, "Retracted at {:?}", hash);
 							},
 							TransactionStatus::Finalized(details) => {
 								log::info!(target: LOG_TARGET, "Finalized at {:?}", details.block_hash());
-								break true;
+								break;
 							}
 							_ => {
 								log::warn!(target: LOG_TARGET, "Stopping listen due to other status {:?}", status);
-								break false;
+								break;
 							},
 						}
-					};
-
-					if result {
-						*round_lock = Some(round);
 					}
-
 				}
 
 				/// Ensure that now is the signed phase.

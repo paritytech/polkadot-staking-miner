@@ -63,7 +63,8 @@ pub mod westend {
 
 	#[subxt::subxt(
 		runtime_metadata_path = "artifacts/westend.scale",
-		derive_for_all_types = "Clone, Debug, Eq, PartialEq"
+		derive_for_all_types = "Clone, Debug, Eq, PartialEq",
+		derive_for_type(type = "pallet_election_provider_multi_phase::RoundSnapshot", derive = "Default")
 	)]
 	pub mod runtime {
 		#[subxt(substitute_type = "westend_runtime::NposCompactSolution16")]
@@ -149,7 +150,8 @@ pub mod polkadot {
 
 	#[subxt::subxt(
 		runtime_metadata_path = "artifacts/polkadot.scale",
-		derive_for_all_types = "Clone, Debug, Eq, PartialEq"
+		derive_for_all_types = "Clone, Debug, Eq, PartialEq",
+		derive_for_type(type = "pallet_election_provider_multi_phase::RoundSnapshot", derive = "Default")
 	)]
 	pub mod runtime {
 		#[subxt(substitute_type = "polkadot_runtime::NposCompactSolution16")]
@@ -235,7 +237,8 @@ pub mod kusama {
 
 	#[subxt::subxt(
 		runtime_metadata_path = "artifacts/kusama.scale",
-		derive_for_all_types = "Clone, Debug, Eq, PartialEq"
+		derive_for_all_types = "Clone, Debug, Eq, PartialEq",
+		derive_for_type(type = "pallet_election_provider_multi_phase::RoundSnapshot", derive = "Default")
 	)]
 	pub mod runtime {
 		#[subxt(substitute_type = "kusama_runtime::NposCompactSolution24")]

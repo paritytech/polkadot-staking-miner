@@ -37,6 +37,8 @@ mod monitor;
 mod prelude;
 mod signer;
 
+use frame_election_provider_support::Weight;
+use frame_support::weights::RuntimeDbWeight;
 use jsonrpsee::ws_client::WsClientBuilder;
 pub(crate) use prelude::*;
 
@@ -225,7 +227,7 @@ struct Opt {
 	command: Command,
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Error> {
 	fmt().with_env_filter(EnvFilter::from_default_env()).init();
 
@@ -247,17 +249,29 @@ async fn main() -> Result<(), Error> {
 
 		{
 			// maximum weight of the signed submission is exposed from metadata and MUST be this.
-			let max_weight = api.constants().election_provider_multi_phase().signed_max_weight().unwrap();
+			let max_weight = api.constants().election_provider_multi_phase().signed_max_weight()?;
 			// allow up to 75% of the block size to be used for signed submission, length-wise. This
 			// value can be adjusted a bit if needed.
-			let max_length =
-				Perbill::from_rational(90_u32, 100) * api.constants().system().block_length().unwrap().max.normal;
-			let db_weight = api.constants().system().db_weight().unwrap();
-			static_types::MaxWeight::set(max_weight);
-			static_types::MaxLength::set(max_length);
+			let max_length = Perbill::from_rational(90_u32, 100) * api.constants().system().block_length()?.max.normal;
+			let db_weight = api.constants().system().db_weight()?;
+
 			let system_db_weight =
 				frame_support::weights::RuntimeDbWeight { read: db_weight.read, write: db_weight.write };
+
 			static_types::DbWeight::set(system_db_weight);
+			static_types::MaxWeight::set(max_weight);
+			static_types::MaxLength::set(max_length);
+			static_types::MaxVotesPerVoter::set(max_length);
+
+			log::info!(target: LOG_TARGET, "max_votes_per_voter: {:?}", static_types::MaxVotesPerVoter::get());
+			log::info!(target: LOG_TARGET, "db_weight: {:?}", static_types::DbWeight::get());
+			log::info!(target: LOG_TARGET, "max_weight: {:?}", static_types::MaxWeight::get());
+			log::info!(target: LOG_TARGET, "max_length: {:?}", static_types::MaxLength::get());
+
+			assert_ne!(static_types::DbWeight::get(), RuntimeDbWeight::default());
+			assert_ne!(static_types::MaxWeight::get(), Weight::default());
+			assert_ne!(static_types::MaxLength::get(), 0);
+			assert_ne!(static_types::MaxVotesPerVoter::get(), 0);
 		}
 
 		// Start a new tokio task to perform the runtime updates in the background.
