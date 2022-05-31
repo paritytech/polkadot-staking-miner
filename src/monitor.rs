@@ -68,9 +68,13 @@ macro_rules! monitor_cmd_for {
 					signer: Arc<Signer>,
 					config: MonitorConfig,
 				) {
+					use crate::helpers::*;
+
 					let hash = at.hash();
 					log::trace!(target: LOG_TARGET, "new event at #{:?} ({:?})", at.number, hash);
 
+					// TODO(niklasad1): hack to copy thread local storage from `parameter_types`.
+					[<tls_update_runtime_constants_$runtime>](&api);
 
 					if let Err(e) = ensure_signed_phase(&api, hash).await {
 						log::debug!(
@@ -303,8 +307,6 @@ monitor_cmd_for!(westend);
 
 fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>, err: Error) {
 	use jsonrpsee::{core::Error as RpcError, types::error::CallError};
-
-	log::trace!(target: LOG_TARGET, "closing task: {:?}", err);
 
 	match err {
 		Error::Subxt(SubxtError::Rpc(RpcError::Call(CallError::Custom(e)))) => {

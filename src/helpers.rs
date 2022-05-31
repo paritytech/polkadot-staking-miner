@@ -72,9 +72,56 @@ macro_rules! snapshot_for { ($runtime:tt) => {
 	}
 }}}
 
+/// Warning this variables are in thread local storage and may not be accessible when doing
+/// `tokio::spawn` or `thread::spawn`.
+macro_rules! tls_update_runtime_constants {
+	($runtime:tt) => {
+		paste::paste! {
+			pub(crate) fn [<tls_update_runtime_constants_$runtime>](api: &chain::$runtime::RuntimeApi) {
+					use chain::$runtime::static_types;
+					use sp_runtime::Perbill;
+					use frame_election_provider_support::Weight;
+					use frame_support::weights::RuntimeDbWeight;
+
+
+					const PROOF: &str = "Fetching EPM constants is infallible; qed";
+
+					// maximum weight of the signed submission is exposed from metadata and MUST be this.
+					let max_weight = api.constants().election_provider_multi_phase().signed_max_weight().expect(PROOF);
+					// allow up to 75% of the block size to be used for signed submission, length-wise. This
+					// value can be adjusted a bit if needed.
+					let max_length = Perbill::from_rational(90_u32, 100) * api.constants().system().block_length().expect(PROOF).max.normal;
+					let db_weight = api.constants().system().db_weight().expect(PROOF);
+
+					let system_db_weight =
+						frame_support::weights::RuntimeDbWeight { read: db_weight.read, write: db_weight.write };
+
+					static_types::DbWeight::set(system_db_weight);
+					static_types::MaxWeight::set(max_weight);
+					static_types::MaxLength::set(max_length);
+					static_types::MaxVotesPerVoter::set(max_length);
+
+					log::debug!(target: LOG_TARGET, "Constant `max_votes_per_voter`: {:?}", static_types::MaxVotesPerVoter::get());
+					log::debug!(target: LOG_TARGET, "Constant `db_weight`: {:?}", static_types::DbWeight::get());
+					log::debug!(target: LOG_TARGET, "Constant `max_weight`: {:?}", static_types::MaxWeight::get());
+					log::debug!(target: LOG_TARGET, "Constant `max_length`: {:?}", static_types::MaxLength::get());
+
+					assert_ne!(static_types::DbWeight::get(), RuntimeDbWeight::default());
+					assert_ne!(static_types::MaxWeight::get(), Weight::default());
+					assert_ne!(static_types::MaxLength::get(), 0);
+					assert_ne!(static_types::MaxVotesPerVoter::get(), 0);
+
+			}
+		}
+	};
+}
+
 mine_solution_for!(polkadot);
 mine_solution_for!(kusama);
 mine_solution_for!(westend);
 snapshot_for!(polkadot);
 snapshot_for!(kusama);
 snapshot_for!(westend);
+tls_update_runtime_constants!(polkadot);
+tls_update_runtime_constants!(kusama);
+tls_update_runtime_constants!(westend);

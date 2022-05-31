@@ -37,17 +37,15 @@ mod monitor;
 mod prelude;
 mod signer;
 
-use frame_election_provider_support::Weight;
-use frame_support::weights::RuntimeDbWeight;
 use jsonrpsee::ws_client::WsClientBuilder;
 pub(crate) use prelude::*;
 
 use clap::Parser;
 use sp_npos_elections::ExtendedBalance;
 use sp_runtime::Perbill;
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::EnvFilter;
 
-use std::{str::FromStr, sync::Arc};
+use std::{fmt, str::FromStr, sync::Arc};
 
 #[derive(Debug, Clone, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -77,26 +75,23 @@ enum Solver {
 macro_rules! any_runtime {
 	($chain:tt, $($code:tt)*) => {
 			match $chain {
-				"polkadot" => {
+				Chain::Polkadot => {
 					#[allow(unused)]
-					use {$crate::chain::polkadot::{RuntimeApi, static_types}, monitor::run_polkadot as monitor_cmd, dry_run::run_polkadot as dry_run_cmd, emergency_solution::run_polkadot as emergency_cmd};
+					use {$crate::chain::polkadot::{RuntimeApi, static_types}, monitor::run_polkadot as monitor_cmd, dry_run::run_polkadot as dry_run_cmd, emergency_solution::run_polkadot as emergency_cmd, helpers::tls_update_runtime_constants_polkadot as tls_update_runtime_constants};
 					$($code)*
 				},
-				"kusama" => {
+				Chain::Kusama => {
 					#[allow(unused)]
-					use {$crate::chain::kusama::{RuntimeApi, static_types}, monitor::run_kusama as monitor_cmd, dry_run::run_kusama as dry_run_cmd, emergency_solution::run_kusama as emergency_cmd};
+					use {$crate::chain::kusama::{RuntimeApi, static_types}, monitor::run_kusama as monitor_cmd, dry_run::run_kusama as dry_run_cmd, emergency_solution::run_kusama as emergency_cmd, helpers::tls_update_runtime_constants_kusama as tls_update_runtime_constants};
 					$($code)*
 				},
-				"westend" => {
+				Chain::Westend => {
 					#[allow(unused)]
-					use {$crate::chain::westend::{RuntimeApi, static_types}, monitor::run_westend as monitor_cmd, dry_run::run_westend as dry_run_cmd, emergency_solution::run_westend as emergency_cmd};
+					use {$crate::chain::westend::{RuntimeApi, static_types}, monitor::run_westend as monitor_cmd, dry_run::run_westend as dry_run_cmd, emergency_solution::run_westend as emergency_cmd, helpers::tls_update_runtime_constants_westend as tls_update_runtime_constants};
 					$($code)*
 				}
-				other => Err(Error::Other(format!(
-					"expected chain to be polkadot, kusama or westend; got: {}", other
-				))),
 			}
-	}
+		}
 }
 
 /// Submission strategy to use.
@@ -144,6 +139,47 @@ frame_support::parameter_types! {
 	/// config.
 	pub static BalanceIterations: usize = 10;
 	pub static Balancing: Option<(usize, ExtendedBalance)> = Some((BalanceIterations::get(), 0));
+}
+
+pub enum Chain {
+	Westend,
+	Kusama,
+	Polkadot,
+}
+
+impl fmt::Display for Chain {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		let chain = match self {
+			Self::Polkadot => "polkadot",
+			Self::Kusama => "kusama",
+			Self::Westend => "westend",
+		};
+		write!(f, "{}", chain)
+	}
+}
+
+impl std::str::FromStr for Chain {
+	type Err = Error;
+
+	fn from_str(s: &str) -> Result<Self, Error> {
+		match s {
+			"polkadot" => Ok(Self::Polkadot),
+			"kusama" => Ok(Self::Kusama),
+			"westend" => Ok(Self::Westend),
+			chain => Err(Error::Other(format!("expected chain to be polkadot, kusama or westend; got: {}", chain))),
+		}
+	}
+}
+
+impl TryFrom<subxt::rpc::RuntimeVersion> for Chain {
+	type Error = Error;
+
+	fn try_from(rv: subxt::rpc::RuntimeVersion) -> Result<Self, Error> {
+		let json = rv.other.get("specName").expect("RuntimeVersion must have specName; qed").clone();
+		let mut chain = serde_json::from_value::<String>(json).expect("specName must be String; qed");
+		chain.make_ascii_lowercase();
+		Chain::from_str(&chain)
+	}
 }
 
 #[derive(Debug, Clone, Parser)]
@@ -227,9 +263,9 @@ struct Opt {
 	command: Command,
 }
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn main() -> Result<(), Error> {
-	fmt().with_env_filter(EnvFilter::from_default_env()).init();
+	tracing_subscriber::fmt().with_env_filter(EnvFilter::from_default_env()).init();
 
 	let Opt { uri, seed_or_path, command } = Opt::parse();
 	log::debug!(target: LOG_TARGET, "attempting to connect to {:?}", uri);
@@ -239,40 +275,14 @@ async fn main() -> Result<(), Error> {
 	let client = subxt::ClientBuilder::new().set_client(rpc).build().await?;
 	let runtime_version = client.rpc().runtime_version(None).await?;
 	let signer = signer::signer_from_string(&seed_or_path)?;
-	let chain = into_chain_name(runtime_version);
-	let chain_str = chain.as_str();
+	let chain = Chain::try_from(runtime_version)?;
 
 	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
 
-	let outcome = any_runtime!(chain_str, {
+	let outcome = any_runtime!(chain, {
 		let api: RuntimeApi = client.to_runtime_api();
 
-		{
-			// maximum weight of the signed submission is exposed from metadata and MUST be this.
-			let max_weight = api.constants().election_provider_multi_phase().signed_max_weight()?;
-			// allow up to 75% of the block size to be used for signed submission, length-wise. This
-			// value can be adjusted a bit if needed.
-			let max_length = Perbill::from_rational(90_u32, 100) * api.constants().system().block_length()?.max.normal;
-			let db_weight = api.constants().system().db_weight()?;
-
-			let system_db_weight =
-				frame_support::weights::RuntimeDbWeight { read: db_weight.read, write: db_weight.write };
-
-			static_types::DbWeight::set(system_db_weight);
-			static_types::MaxWeight::set(max_weight);
-			static_types::MaxLength::set(max_length);
-			static_types::MaxVotesPerVoter::set(max_length);
-
-			log::info!(target: LOG_TARGET, "max_votes_per_voter: {:?}", static_types::MaxVotesPerVoter::get());
-			log::info!(target: LOG_TARGET, "db_weight: {:?}", static_types::DbWeight::get());
-			log::info!(target: LOG_TARGET, "max_weight: {:?}", static_types::MaxWeight::get());
-			log::info!(target: LOG_TARGET, "max_length: {:?}", static_types::MaxLength::get());
-
-			assert_ne!(static_types::DbWeight::get(), RuntimeDbWeight::default());
-			assert_ne!(static_types::MaxWeight::get(), Weight::default());
-			assert_ne!(static_types::MaxLength::get(), 0);
-			assert_ne!(static_types::MaxVotesPerVoter::get(), 0);
-		}
+		tls_update_runtime_constants(&api);
 
 		// Start a new tokio task to perform the runtime updates in the background.
 		let update_client = api.client.updates();
@@ -293,11 +303,6 @@ async fn main() -> Result<(), Error> {
 
 	log::info!(target: LOG_TARGET, "round of execution finished. outcome = {:?}", outcome);
 	outcome
-}
-
-fn into_chain_name(rv: subxt::rpc::RuntimeVersion) -> String {
-	let json = rv.other.get("specName").expect("RuntimeVersion must have specName; qed").clone();
-	serde_json::from_value::<String>(json).expect("specName must be String; qed").to_lowercase()
 }
 
 #[cfg(test)]
