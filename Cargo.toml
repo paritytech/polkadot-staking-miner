@@ -34,4 +34,4 @@ sp-runtime = { git = "https://github.com/paritytech/substrate", branch = "master
 assert_cmd = "2.0.2"
 
 [features]
-integration-tests = []
+slow-tests = []
