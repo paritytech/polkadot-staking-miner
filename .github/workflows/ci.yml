@@ -24,7 +24,7 @@ jobs:
         uses: actions-rs/toolchain@v1.0.7
         with:
           profile: minimal
-          toolchain: stable
+          toolchain: nightly
           override: true
           components: clippy, rustfmt
 
@@ -93,31 +93,11 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v3
 
-      - name: Install Rust stable toolchain
-        uses: actions-rs/toolchain@v1.0.7
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-
-      - name: Install cargo-nextest
-        uses: baptiste0928/cargo-install@v1
-        with:
-          crate: cargo-nextest
-          version: 0.9
-
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v1.4.0
-
-      - name: Cargo nextest
-        run: cargo nextest run --workspace
-
-  tests_macos:
-    name: Run tests macos
-    runs-on: macos-latest
-    steps:
-      - name: Checkout sources
+      - name: Checkout polkadot source
         uses: actions/checkout@v3
+          with:
+            name: paritytech/polkadot
+            ref: refs/heads/master
 
       - name: Install Rust stable toolchain
         uses: actions-rs/toolchain@v1.0.7
@@ -135,31 +115,8 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v1.4.0
 
-      - name: Cargo nextest
-        run: cargo nextest run --workspace
-
-  tests_windows:
-    name: Run tests Windows
-    runs-on: windows-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v3
-
-      - name: Install Rust stable toolchain
-        uses: actions-rs/toolchain@v1.0.7
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-
-      - name: Install cargo-nextest
-        uses: baptiste0928/cargo-install@v1
-        with:
-          crate: cargo-nextest
-          version: 0.9
-
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v1.4.0
+      - name: Show Working directory
+        run: ls
 
       - name: Cargo nextest
         run: cargo nextest run --workspace

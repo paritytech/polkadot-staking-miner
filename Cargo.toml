@@ -32,3 +32,6 @@ sp-runtime = { git = "https://github.com/paritytech/substrate", branch = "master
 
 [dev-dependencies]
 assert_cmd = "2.0.2"
+
+[features]
+integration-tests = []
