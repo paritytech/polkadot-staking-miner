@@ -45,10 +45,10 @@ macro_rules! dry_run_cmd_for {
 			);
 
 			let uxt = api.tx().election_provider_multi_phase().submit(raw_solution)?;
-			let sxt = uxt.create_signed(&signer, chain::$runtime::ExtrinsicParams::default()).await?;
+			let xt = uxt.create_signed(&signer, chain::$runtime::ExtrinsicParams::default()).await?;
 
 
-			let encoded_xt = Bytes(sxt.encode());
+			let encoded_xt = Bytes(xt.encode());
 
 			let bytes: Bytes = api
 				.client
@@ -61,9 +61,12 @@ macro_rules! dry_run_cmd_for {
 
 			log::info!(target: LOG_TARGET, "dry-run outcome is {:?}", outcome);
 
-			Ok(())
+			match outcome {
+				Ok(Ok(())) => Ok(()),
+				Ok(Err(e)) => Err(Error::Other(format!("{:?}", e))),
+				Err(e) => Err(Error::Other(format!("{:?}", e))),
+			}
 		}
-
 	}
 	};
 }

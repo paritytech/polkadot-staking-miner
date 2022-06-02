@@ -128,7 +128,7 @@ impl FromStr for SubmissionStrategy {
 			let percent: u32 = percent.parse().map_err(|e| format!("{:?}", e))?;
 			Self::ClaimBetterThan(Perbill::from_percent(percent))
 		} else {
-			return Err(s.into());
+			return Err(s.into())
 		};
 		Ok(res)
 	}
@@ -166,7 +166,10 @@ impl std::str::FromStr for Chain {
 			"polkadot" => Ok(Self::Polkadot),
 			"kusama" => Ok(Self::Kusama),
 			"westend" => Ok(Self::Westend),
-			chain => Err(Error::Other(format!("expected chain to be polkadot, kusama or westend; got: {}", chain))),
+			chain => Err(Error::Other(format!(
+				"expected chain to be polkadot, kusama or westend; got: {}",
+				chain
+			))),
 		}
 	}
 }
@@ -175,8 +178,13 @@ impl TryFrom<subxt::rpc::RuntimeVersion> for Chain {
 	type Error = Error;
 
 	fn try_from(rv: subxt::rpc::RuntimeVersion) -> Result<Self, Error> {
-		let json = rv.other.get("specName").expect("RuntimeVersion must have specName; qed").clone();
-		let mut chain = serde_json::from_value::<String>(json).expect("specName must be String; qed");
+		let json = rv
+			.other
+			.get("specName")
+			.expect("RuntimeVersion must have specName; qed")
+			.clone();
+		let mut chain =
+			serde_json::from_value::<String>(json).expect("specName must be String; qed");
 		chain.make_ascii_lowercase();
 		Chain::from_str(&chain)
 	}
