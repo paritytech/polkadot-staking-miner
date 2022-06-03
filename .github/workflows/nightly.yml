@@ -2,8 +2,8 @@ name: Daily compatibility check against latest polkadot
 
 on:
   schedule:
-    # Run at 8am every day
-    - cron: "0 8 * * *"
+    # Run at 12am ETC every day
+    - cron: "0 12 * * *"
 
 jobs:
   tests_ubuntu:
@@ -36,11 +36,6 @@ jobs:
           toolchain: nightly
           target: wasm32-unknown-unknown
 
-      - name: Install cargo-nextest
-        uses: baptiste0928/cargo-install@v1
-        with:
-          crate: cargo-nextest
-          version: 0.9
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v1.4.0
