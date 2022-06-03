@@ -198,13 +198,13 @@ macro_rules! monitor_cmd_for {
 								| TransactionStatus::Broadcast(_)
 								| TransactionStatus::Future => (),
 							TransactionStatus::InBlock(details) => {
-								log::info!(target: LOG_TARGET, "included at {:?}", details.block_hash());
+
 								let events = details.fetch_events().await.expect("events should exist");
 
 								let solution_stored = events.find_first::<$crate::chain::$runtime::epm::events::SolutionStored>();
 
-								if let Ok(Some(event)) = solution_stored {
-									log::info!(target: LOG_TARGET, "included at {:?}", event);
+								if let Ok(Some(_)) = solution_stored {
+									log::info!(target: LOG_TARGET, "Included at {:?}", details.block_hash());
 								} else {
 									log::warn!(target: LOG_TARGET, "no SolutionStored event emitted");
 									break

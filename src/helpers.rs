@@ -61,9 +61,9 @@ macro_rules! snapshot_for { ($runtime:tt) => {
 		let voters: Vec<_> = voters
 			.into_iter()
 			.map(|(a, b, mut c)| {
-				let mut bounded_vec = BoundedVec::default();
+				let mut bounded_vec: BoundedVec<AccountId, static_types::MaxVotesPerVoter> = BoundedVec::default();
 				// If this fails just crash the task.
-				bounded_vec.try_append(&mut c.0).unwrap_or_else(|_| panic!("BoundedVec capacity: {} failed; `MinerConfig::MinerMaxLength` is different from the chain data; this is a bug please file an issue", static_types::MaxVotesPerVoter::get()));
+				bounded_vec.try_append(&mut c.0).unwrap_or_else(|_| panic!("BoundedVec capacity: {} failed; `MinerConfig::MaxVotesPerVoter` is different from the chain data; this is a bug please file an issue", static_types::MaxVotesPerVoter::get()));
 				(a, b, bounded_vec)
 			})
 			.collect();
