@@ -2,8 +2,7 @@ name: Daily compatibility check against latest polkadot
 
 on:
   schedule:
-    # Run at 12am ETC every day
-    - cron: "0 12 * * *"
+    - cron: "0 21 * * *"
 
 jobs:
   tests_ubuntu:
@@ -12,8 +11,6 @@ jobs:
     steps:
       - name: Checkout staking-miner sources
         uses: actions/checkout@v3
-        with:
-          path: staking-miner
 
       - name: Checkout polkadot source
         uses: actions/checkout@v3
@@ -47,16 +44,17 @@ jobs:
         run: |
           cd polkadot
           export SKIP_WASM_BUILD=1
-          cargo build --features fast-runtime
+          cargo build --release --features fast-runtime
           mkdir -p ~/.local/bin
-          mv ./target/debug/polkadot ~/.local/bin
-          cd --
+          mv ./target/release/polkadot ~/.local/bin
+          cd -
+          rm -rf polkadot
 
-      - name: Cargo nextest
+      - name: Cargo test
         run: |
-          cd staking-miner
           cargo test --workspace --all-features
-      
+          cargo clean
+
       # If the previous step fails, create a new Github issue
       # to notify us about it.
       - if: ${{ failure() }}
