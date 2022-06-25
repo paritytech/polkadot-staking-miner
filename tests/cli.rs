@@ -26,6 +26,7 @@ mod slow_tests {
 	use tracing_subscriber::EnvFilter;
 
 	#[test]
+	#[ignore]
 	fn polkadot_dry_run() {
 		let _ = tracing_subscriber::fmt()
 			.with_env_filter(EnvFilter::from_default_env())
@@ -34,11 +35,13 @@ mod slow_tests {
 	}
 
 	#[test]
+	#[ignore]
 	fn kusama_dry_run() {
 		test_dry_run("kusama-dev");
 	}
 
 	#[test]
+	#[ignore]
 	fn westend_dry_run() {
 		test_dry_run("westend-dev");
 	}

@@ -84,7 +84,7 @@ macro_rules! tls_update_runtime_constants {
 					use frame_support::weights::RuntimeDbWeight;
 
 
-					const PROOF: &str = "Fetching EPM constants is infallible; qed";
+					const PROOF: &str = "Metadata is outdated; open an issue in staking-miner";
 
 					// maximum weight of the signed submission is exposed from metadata and MUST be this.
 					let max_weight = api.constants().election_provider_multi_phase().signed_max_weight().expect(PROOF);
