@@ -3,6 +3,7 @@ use pallet_election_provider_multi_phase::RawSolution;
 use sp_runtime::Perbill;
 use std::sync::Arc;
 use subxt::{BasicError as SubxtError, TransactionStatus};
+use tokio::sync::Mutex;
 
 macro_rules! monitor_cmd_for {
 	($runtime:tt) => {
@@ -49,6 +50,8 @@ macro_rules! monitor_cmd_for {
 						}
 					};
 
+					let submit_lock = Arc::new(Mutex::new(()));
+
 					// Spawn task and non-recoverable errors are sent back to the main task
 					// such as if the connection has been closed.
 					tokio::spawn(mine_and_submit_solution(
@@ -57,6 +60,7 @@ macro_rules! monitor_cmd_for {
 							api.clone(),
 							signer.clone(),
 							config.clone(),
+							submit_lock.clone(),
 					));
 				}
 
@@ -67,6 +71,7 @@ macro_rules! monitor_cmd_for {
 					api: $crate::chain::$runtime::RuntimeApi,
 					signer: Arc<Signer>,
 					config: MonitorConfig,
+					submit_lock: Arc<Mutex<()>>,
 				) {
 					use crate::helpers::*;
 
@@ -98,6 +103,19 @@ macro_rules! monitor_cmd_for {
 						},
 					};
 
+					let _lock = submit_lock.lock().await;
+
+					if let Err(e) = ensure_no_previous_solution(&api, hash, signer.account_id()).await {
+						log::debug!(
+							target: LOG_TARGET,
+							"ensure_no_previous_solution failed: {:?}; skipping block: {}",
+							e,
+							at.number
+						);
+
+						kill_main_task_if_critical_err(&tx, e);
+						return;
+					}
 
 					let now = std::time::Instant::now();
 					let (solution, score, size) =

@@ -74,16 +74,16 @@ pub mod westend {
 		use crate::chain::westend::NposSolution16;
 
 		#[subxt(substitute_type = "sp_arithmetic::per_things::PerU16")]
-		use sp_runtime::PerU16;
+		use ::sp_runtime::PerU16;
 
 		#[subxt(substitute_type = "pallet_election_provider_multi_phase::RawSolution")]
-		use pallet_election_provider_multi_phase::RawSolution;
+		use ::pallet_election_provider_multi_phase::RawSolution;
 
 		#[subxt(substitute_type = "sp_npos_elections::ElectionScore")]
-		use sp_npos_elections::ElectionScore;
+		use ::sp_npos_elections::ElectionScore;
 
 		#[subxt(substitute_type = "pallet_election_provider_multi_phase::Phase")]
-		use pallet_election_provider_multi_phase::Phase;
+		use ::pallet_election_provider_multi_phase::Phase;
 	}
 
 	pub use runtime::runtime_types;
@@ -168,16 +168,16 @@ pub mod polkadot {
 		use crate::chain::polkadot::NposSolution16;
 
 		#[subxt(substitute_type = "sp_arithmetic::per_things::PerU16")]
-		use sp_runtime::PerU16;
+		use ::sp_runtime::PerU16;
 
 		#[subxt(substitute_type = "pallet_election_provider_multi_phase::RawSolution")]
-		use pallet_election_provider_multi_phase::RawSolution;
+		use ::pallet_election_provider_multi_phase::RawSolution;
 
 		#[subxt(substitute_type = "sp_npos_elections::ElectionScore")]
-		use sp_npos_elections::ElectionScore;
+		use ::sp_npos_elections::ElectionScore;
 
 		#[subxt(substitute_type = "pallet_election_provider_multi_phase::Phase")]
-		use pallet_election_provider_multi_phase::Phase;
+		use ::pallet_election_provider_multi_phase::Phase;
 	}
 
 	pub use runtime::runtime_types;
@@ -262,16 +262,16 @@ pub mod kusama {
 		use crate::chain::kusama::NposSolution24;
 
 		#[subxt(substitute_type = "pallet_election_provider_multi_phase::RawSolution")]
-		use pallet_election_provider_multi_phase::RawSolution;
+		use ::pallet_election_provider_multi_phase::RawSolution;
 
 		#[subxt(substitute_type = "sp_arithmetic::per_things::PerU16")]
-		use sp_runtime::PerU16;
+		use ::sp_runtime::PerU16;
 
 		#[subxt(substitute_type = "sp_npos_elections::ElectionScore")]
-		use sp_npos_elections::ElectionScore;
+		use ::sp_npos_elections::ElectionScore;
 
 		#[subxt(substitute_type = "pallet_election_provider_multi_phase::Phase")]
-		use pallet_election_provider_multi_phase::Phase;
+		use ::pallet_election_provider_multi_phase::Phase;
 	}
 
 	pub use runtime::runtime_types;
