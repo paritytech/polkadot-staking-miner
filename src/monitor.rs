@@ -17,6 +17,7 @@ macro_rules! monitor_cmd_for {
 				}?;
 
 				let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
+				let submit_lock = Arc::new(Mutex::new(()));
 
 				loop {
 					let at = tokio::select! {
@@ -50,7 +51,6 @@ macro_rules! monitor_cmd_for {
 						}
 					};
 
-					let submit_lock = Arc::new(Mutex::new(()));
 
 					// Spawn task and non-recoverable errors are sent back to the main task
 					// such as if the connection has been closed.
