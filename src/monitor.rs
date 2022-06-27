@@ -9,7 +9,7 @@ macro_rules! monitor_cmd_for {
 	($runtime:tt) => {
 		paste::paste! {
 			/// The monitor command.
-			pub(crate) async fn [<run_$runtime>] (api: $crate::chain::$runtime::RuntimeApi, config: MonitorConfig, signer: Arc<Signer>) -> Result<(), Error> {
+			pub(crate) async fn [<run_$runtime>] (api: $crate::chain::$runtime::RuntimeApi, config: MonitorConfig, signer_pair: Pair) -> Result<(), Error> {
 				let mut subscription = if config.listen == "head" {
 					api.client.rpc().subscribe_blocks().await
 				} else {
@@ -58,7 +58,7 @@ macro_rules! monitor_cmd_for {
 							tx.clone(),
 							at,
 							api.clone(),
-							signer.clone(),
+							Signer::new(signer_pair.clone()),
 							config.clone(),
 							submit_lock.clone(),
 					));
@@ -69,17 +69,29 @@ macro_rules! monitor_cmd_for {
 					tx: tokio::sync::mpsc::UnboundedSender<Error>,
 					at: Header,
 					api: $crate::chain::$runtime::RuntimeApi,
-					signer: Arc<Signer>,
+					mut signer: Signer,
 					config: MonitorConfig,
 					submit_lock: Arc<Mutex<()>>,
 				) {
 					use crate::helpers::*;
 
+					// TODO(niklasad1): hack to copy thread local storage from `parameter_types`.
+					[<tls_update_runtime_constants_$runtime>](&api);
+
 					let hash = at.hash();
 					log::trace!(target: LOG_TARGET, "new event at #{:?} ({:?})", at.number, hash);
 
-					// TODO(niklasad1): hack to copy thread local storage from `parameter_types`.
-					[<tls_update_runtime_constants_$runtime>](&api);
+					// NOTE: as we try to send at each block then the nonce is used guard against
+					// submitting twice. Because once a solution has been accepted on chain
+					// the "next transaction" at a later block but with the same nonce will be rejected
+					let nonce = match api.client.rpc().system_account_next_index(signer.account_id()).await {
+						Ok(none) => none,
+						Err(e) => {
+							kill_main_task_if_critical_err(&tx, e.into());
+							return;
+						}
+ 					};
+					signer.set_nonce(nonce);
 
 					if let Err(e) = ensure_signed_phase(&api, hash).await {
 						log::debug!(
@@ -117,6 +129,7 @@ macro_rules! monitor_cmd_for {
 						return;
 					}
 
+					// This takes a long time to complete...
 					let now = std::time::Instant::now();
 					let (solution, score, size) =
 					match crate::helpers::[<mine_solution_$runtime>](&api, Some(hash), config.solver)
@@ -127,7 +140,6 @@ macro_rules! monitor_cmd_for {
 							return;
 						}
 					};
-
 
 					log::trace!(target: LOG_TARGET, "Mined solution with {:?} size: {:?} round: {:?}, took: {} ms", score, size, round, now.elapsed().as_millis());
 
@@ -180,7 +192,8 @@ macro_rules! monitor_cmd_for {
 						return;
 					}
 
-					let mut status_sub = match xt.sign_and_submit_then_watch_default(&*signer).await {
+
+					let mut status_sub = match xt.sign_and_submit_then_watch_default(&signer).await {
 						Ok(sub) => sub,
 						Err(e) => {
 							log::warn!(target: LOG_TARGET, "submit solution failed: {:?}", e);

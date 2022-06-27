@@ -17,10 +17,10 @@
 //! Wrappers around creating a signer account.
 
 use crate::prelude::*;
-use subxt::{sp_core::Pair as _, PairSigner};
+use subxt::sp_core::Pair as _;
 
 /// Read the signer account's URI
-pub(crate) fn signer_from_string(mut seed_or_path: &str) -> Result<Signer, Error> {
+pub(crate) fn signer_pair_from_string(mut seed_or_path: &str) -> Result<Pair, Error> {
 	seed_or_path = seed_or_path.trim();
 
 	let seed = match std::fs::read(seed_or_path) {
@@ -29,7 +29,5 @@ pub(crate) fn signer_from_string(mut seed_or_path: &str) -> Result<Signer, Error
 	};
 
 	let seed = seed.trim();
-	let pair = Pair::from_string(seed, None).map_err(Error::Crypto)?;
-
-	Ok(PairSigner::new(pair))
+	Pair::from_string(seed, None).map_err(Error::Crypto)
 }

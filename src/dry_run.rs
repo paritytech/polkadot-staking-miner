@@ -27,7 +27,7 @@ macro_rules! dry_run_cmd_for {
 	($runtime:tt) => {
 		paste::paste! {
 
-			pub(crate) async fn [<run_$runtime>](api: chain::$runtime::RuntimeApi, config: DryRunConfig, signer: Signer) -> Result<(), Error>
+			pub(crate) async fn [<run_$runtime>](api: chain::$runtime::RuntimeApi, config: DryRunConfig, pair_signer: Pair) -> Result<(), Error>
 
 		{
 			let (solution, score, _size) =
@@ -36,6 +36,9 @@ macro_rules! dry_run_cmd_for {
 			let round = api.storage().election_provider_multi_phase().round(config.at).await?;
 			let raw_solution = RawSolution { solution, score, round };
 
+			let mut signer = Signer::new(pair_signer);
+			let nonce = api.client.rpc().system_account_next_index(signer.account_id()).await?;
+			signer.set_nonce(nonce);
 
 			log::info!(
 				target: LOG_TARGET,
