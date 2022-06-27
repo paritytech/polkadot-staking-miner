@@ -80,9 +80,6 @@ macro_rules! tls_update_runtime_constants {
 			pub(crate) fn [<tls_update_runtime_constants_$runtime>](api: &chain::$runtime::RuntimeApi) {
 					use chain::$runtime::static_types;
 					use sp_runtime::Perbill;
-					use frame_election_provider_support::Weight;
-					use frame_support::weights::RuntimeDbWeight;
-
 
 					const PROOF: &str = "Metadata is outdated; open an issue in staking-miner";
 
@@ -101,16 +98,10 @@ macro_rules! tls_update_runtime_constants {
 					static_types::MaxLength::set(max_length);
 					static_types::MaxVotesPerVoter::set(max_length);
 
-					log::debug!(target: LOG_TARGET, "Constant `max_votes_per_voter`: {:?}", static_types::MaxVotesPerVoter::get());
-					log::debug!(target: LOG_TARGET, "Constant `db_weight`: {:?}", static_types::DbWeight::get());
-					log::debug!(target: LOG_TARGET, "Constant `max_weight`: {:?}", static_types::MaxWeight::get());
-					log::debug!(target: LOG_TARGET, "Constant `max_length`: {:?}", static_types::MaxLength::get());
-
-					assert_ne!(static_types::DbWeight::get(), RuntimeDbWeight::default());
-					assert_ne!(static_types::MaxWeight::get(), Weight::default());
-					assert_ne!(static_types::MaxLength::get(), 0);
-					assert_ne!(static_types::MaxVotesPerVoter::get(), 0);
-
+					log::trace!(target: LOG_TARGET, "Constant `max_votes_per_voter`: {:?}", static_types::MaxVotesPerVoter::get());
+					log::trace!(target: LOG_TARGET, "Constant `db_weight`: {:?}", static_types::DbWeight::get());
+					log::trace!(target: LOG_TARGET, "Constant `max_weight`: {:?}", static_types::MaxWeight::get());
+					log::trace!(target: LOG_TARGET, "Constant `max_length`: {:?}", static_types::MaxLength::get());
 			}
 		}
 	};
