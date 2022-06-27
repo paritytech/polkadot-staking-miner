@@ -16,30 +16,23 @@ macro_rules! mine_solution_for {
 
 						let (voters, targets, desired_targets) = [<snapshot_$runtime>](&api, hash).await?;
 
-						let mine_solution_fut = tokio::task::spawn_blocking(move || {
-							match solver {
-								Solver::SeqPhragmen { iterations } => {
-									BalanceIterations::set(iterations);
-									Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<
-										SequentialPhragmen<AccountId, Accuracy, Balancing>,
-									>(voters, targets, desired_targets)
-								},
-								Solver::PhragMMS { iterations } => {
-									BalanceIterations::set(iterations);
-									Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<PhragMMS<AccountId, Accuracy, Balancing>>(
-										voters,
-										targets,
-										desired_targets,
-									)
-								},
-							}
-						});
-
-						match mine_solution_fut.await {
-							Ok(Ok(res)) => Ok(res),
-							Ok(Err(e)) => Err(Error::Other(format!("Miner error: {:?}", e))),
-							Err(e) => Err(Error::Other(e.to_string())),
+						match solver {
+							Solver::SeqPhragmen { iterations } => {
+								BalanceIterations::set(iterations);
+								Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<
+									SequentialPhragmen<AccountId, Accuracy, Balancing>,
+								>(voters, targets, desired_targets)
+							},
+							Solver::PhragMMS { iterations } => {
+								BalanceIterations::set(iterations);
+								Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<PhragMMS<AccountId, Accuracy, Balancing>>(
+									voters,
+									targets,
+									desired_targets,
+								)
+							},
 						}
+						.map_err(|e| Error::Other(format!("{:?}", e)))
 				}
 		}
 	};
@@ -108,10 +101,10 @@ macro_rules! tls_update_runtime_constants {
 					static_types::MaxLength::set(max_length);
 					static_types::MaxVotesPerVoter::set(max_length);
 
-					log::trace!(target: LOG_TARGET, "Constant `max_votes_per_voter`: {:?}", static_types::MaxVotesPerVoter::get());
-					log::trace!(target: LOG_TARGET, "Constant `db_weight`: {:?}", static_types::DbWeight::get());
-					log::trace!(target: LOG_TARGET, "Constant `max_weight`: {:?}", static_types::MaxWeight::get());
-					log::trace!(target: LOG_TARGET, "Constant `max_length`: {:?}", static_types::MaxLength::get());
+					log::debug!(target: LOG_TARGET, "Constant `max_votes_per_voter`: {:?}", static_types::MaxVotesPerVoter::get());
+					log::debug!(target: LOG_TARGET, "Constant `db_weight`: {:?}", static_types::DbWeight::get());
+					log::debug!(target: LOG_TARGET, "Constant `max_weight`: {:?}", static_types::MaxWeight::get());
+					log::debug!(target: LOG_TARGET, "Constant `max_length`: {:?}", static_types::MaxLength::get());
 
 					assert_ne!(static_types::DbWeight::get(), RuntimeDbWeight::default());
 					assert_ne!(static_types::MaxWeight::get(), Weight::default());
