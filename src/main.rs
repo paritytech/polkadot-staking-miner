@@ -45,7 +45,7 @@ use sp_npos_elections::BalancingConfig;
 use sp_runtime::Perbill;
 use tracing_subscriber::EnvFilter;
 
-use std::{fmt, str::FromStr, sync::Arc};
+use std::{fmt, str::FromStr};
 
 #[derive(Debug, Clone, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -282,7 +282,7 @@ async fn main() -> Result<(), Error> {
 
 	let client = subxt::ClientBuilder::new().set_client(rpc).build().await?;
 	let runtime_version = client.rpc().runtime_version(None).await?;
-	let signer = signer::signer_from_string(&seed_or_path)?;
+	let pair_signer = signer::signer_pair_from_string(&seed_or_path)?;
 	let chain = Chain::try_from(runtime_version)?;
 
 	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
@@ -299,13 +299,10 @@ async fn main() -> Result<(), Error> {
 			log::error!(target: LOG_TARGET, "Runtime update failed with result: {:?}", result);
 		});
 
-		let account_info = api.storage().system().account(signer.account_id(), None).await?;
-		log::info!(target: LOG_TARGET, "Loaded account: {:?}", account_info);
-
 		match command {
-			Command::Monitor(cfg) => monitor_cmd(api, cfg, Arc::new(signer)).await,
-			Command::DryRun(cfg) => dry_run_cmd(api, cfg, signer).await,
-			Command::EmergencySolution(cfg) => emergency_cmd(api, cfg, signer).await,
+			Command::Monitor(cfg) => monitor_cmd(api, cfg, pair_signer).await,
+			Command::DryRun(cfg) => dry_run_cmd(api, cfg, pair_signer).await,
+			Command::EmergencySolution(cfg) => emergency_cmd(api, cfg, pair_signer).await,
 		}
 	});
 

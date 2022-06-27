@@ -25,7 +25,7 @@ macro_rules! emergency_cmd_for {
 					pub(crate) async fn [<run_$runtime>](
 						api: chain::$runtime::RuntimeApi,
 						config: EmergencySolutionConfig,
-						_signer: Signer,
+						_pair_signer: Pair,
 					) -> Result<(), Error> {
 
 					use pallet_election_provider_multi_phase::Phase;
