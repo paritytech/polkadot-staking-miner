@@ -335,9 +335,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "3.2.6"
+version = "3.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f1fe12880bae935d142c8702d500c63a4e8634b6c3c57ad72bf978fc7b6249a"
+checksum = "5b7b16274bb247b45177db843202209b12191b631a14a9d06e41b3777d6ecf14"
 dependencies = [
  "atty",
  "bitflags",
@@ -352,9 +352,9 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "3.2.6"
+version = "3.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed6db9e867166a43a53f7199b5e4d1f522a1e5bd626654be263c999ce59df39a"
+checksum = "759bf187376e1afa7b85b959e6a664a3e7a95203415dba952ad19139e798f902"
 dependencies = [
  "heck 0.4.0",
  "proc-macro-error",
@@ -3299,7 +3299,7 @@ checksum = "6bdef32e8150c2a081110b42772ffe7d7c9032b606bc226c8260fd97e0976601"
 [[package]]
 name = "subxt"
 version = "0.22.0"
-source = "git+https://github.com/paritytech/subxt#a90697ca2926dd698f5f26f62837b9d966be2ad8"
+source = "git+https://github.com/paritytech/subxt#c55b7ba3e34118f61dc51499a0b38262c513aec4"
 dependencies = [
  "bitvec",
  "derivative",
@@ -3324,7 +3324,7 @@ dependencies = [
 [[package]]
 name = "subxt-codegen"
 version = "0.22.0"
-source = "git+https://github.com/paritytech/subxt#a90697ca2926dd698f5f26f62837b9d966be2ad8"
+source = "git+https://github.com/paritytech/subxt#c55b7ba3e34118f61dc51499a0b38262c513aec4"
 dependencies = [
  "darling",
  "frame-metadata",
@@ -3341,7 +3341,7 @@ dependencies = [
 [[package]]
 name = "subxt-macro"
 version = "0.22.0"
-source = "git+https://github.com/paritytech/subxt#a90697ca2926dd698f5f26f62837b9d966be2ad8"
+source = "git+https://github.com/paritytech/subxt#c55b7ba3e34118f61dc51499a0b38262c513aec4"
 dependencies = [
  "darling",
  "proc-macro-error",
@@ -3352,7 +3352,7 @@ dependencies = [
 [[package]]
 name = "subxt-metadata"
 version = "0.22.0"
-source = "git+https://github.com/paritytech/subxt#a90697ca2926dd698f5f26f62837b9d966be2ad8"
+source = "git+https://github.com/paritytech/subxt#c55b7ba3e34118f61dc51499a0b38262c513aec4"
 dependencies = [
  "frame-metadata",
  "parity-scale-codec",
