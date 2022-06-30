@@ -72,7 +72,7 @@ macro_rules! snapshot_for { ($runtime:tt) => {
 	}
 }}}
 
-/// Warning thess variables are in thread local storage and may not be accessible when doing
+/// Warning these variables are in thread local storage and may not be accessible when doing
 /// `tokio::spawn` or `thread::spawn`.
 macro_rules! tls_update_runtime_constants {
 	($runtime:tt) => {
