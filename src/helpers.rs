@@ -1,4 +1,4 @@
-use crate::{chain, prelude::*, BalanceIterations, Balancing, Solver};
+use crate::{chain, opt::Solver, prelude::*};
 use frame_election_provider_support::{PhragMMS, SequentialPhragmen};
 use frame_support::BoundedVec;
 use pallet_election_provider_multi_phase::{SolutionOf, SolutionOrSnapshotSize};
@@ -40,7 +40,7 @@ macro_rules! mine_solution_for {
 
 macro_rules! snapshot_for { ($runtime:tt) => {
 	paste::paste! {
-	pub(crate) async fn [<snapshot_$runtime>](api: &chain::$runtime::RuntimeApi, hash: Option<Hash>) -> Result<crate::chain::$runtime::epm::Snapshot, Error> {
+	pub async fn [<snapshot_$runtime>](api: &chain::$runtime::RuntimeApi, hash: Option<Hash>) -> Result<crate::chain::$runtime::epm::Snapshot, Error> {
 		use crate::chain::$runtime::{static_types, epm::RoundSnapshot};
 
 		let RoundSnapshot { voters, targets } = api
@@ -72,12 +72,12 @@ macro_rules! snapshot_for { ($runtime:tt) => {
 	}
 }}}
 
-/// Warning this variables are in thread local storage and may not be accessible when doing
+/// Warning thess variables are in thread local storage and may not be accessible when doing
 /// `tokio::spawn` or `thread::spawn`.
 macro_rules! tls_update_runtime_constants {
 	($runtime:tt) => {
 		paste::paste! {
-			pub(crate) fn [<tls_update_runtime_constants_$runtime>](api: &chain::$runtime::RuntimeApi) {
+			pub fn [<tls_update_runtime_constants_$runtime>](api: &chain::$runtime::RuntimeApi) {
 					use chain::$runtime::static_types;
 					use sp_runtime::Perbill;
 

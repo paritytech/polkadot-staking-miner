@@ -16,13 +16,13 @@
 
 //! The emergency-solution command.
 
-use crate::{chain, prelude::*, EmergencySolutionConfig};
+use crate::{chain, opt::EmergencySolutionConfig, prelude::*};
 
 macro_rules! emergency_cmd_for {
 	($runtime:tt) => {
 		paste::paste! {
 
-					pub(crate) async fn [<run_$runtime>](
+					pub async fn [<run_$runtime>](
 						api: chain::$runtime::RuntimeApi,
 						config: EmergencySolutionConfig,
 						_pair_signer: Pair,

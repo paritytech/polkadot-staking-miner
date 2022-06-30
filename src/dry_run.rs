@@ -18,7 +18,7 @@
 
 use pallet_election_provider_multi_phase::RawSolution;
 
-use crate::{chain, error::Error, prelude::*, DryRunConfig};
+use crate::{chain, error::Error, opt::DryRunConfig, prelude::*};
 use codec::{Decode, Encode};
 use jsonrpsee::rpc_params;
 use subxt::{rpc::ClientT, sp_core::Bytes};
@@ -27,7 +27,7 @@ macro_rules! dry_run_cmd_for {
 	($runtime:tt) => {
 		paste::paste! {
 
-			pub(crate) async fn [<run_$runtime>](api: chain::$runtime::RuntimeApi, config: DryRunConfig, pair_signer: Pair) -> Result<(), Error>
+			pub async fn [<run_$runtime>](api: chain::$runtime::RuntimeApi, config: DryRunConfig, pair_signer: Pair) -> Result<(), Error>
 
 		{
 			let (solution, score, _size) =
