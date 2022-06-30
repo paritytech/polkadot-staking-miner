@@ -1,4 +1,8 @@
-use crate::{prelude::*, Error, MonitorConfig, SubmissionStrategy};
+use crate::{
+	error::Error,
+	opt::{MonitorConfig, SubmissionStrategy},
+	prelude::*,
+};
 use pallet_election_provider_multi_phase::RawSolution;
 use sp_runtime::Perbill;
 use std::sync::Arc;
@@ -9,7 +13,7 @@ macro_rules! monitor_cmd_for {
 	($runtime:tt) => {
 		paste::paste! {
 			/// The monitor command.
-			pub(crate) async fn [<run_$runtime>] (api: $crate::chain::$runtime::RuntimeApi, config: MonitorConfig, signer_pair: Pair) -> Result<(), Error> {
+			pub async fn [<run_$runtime>] (api: $crate::chain::$runtime::RuntimeApi, config: MonitorConfig, signer_pair: Pair) -> Result<(), Error> {
 				let mut subscription = if config.listen == "head" {
 					api.client.rpc().subscribe_blocks().await
 				} else {

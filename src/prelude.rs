@@ -21,7 +21,7 @@
 //! needing to sprinkle `any_runtime` in a few extra places.
 
 // re-exports.
-pub use crate::error::Error;
+pub use crate::{error::Error, opt::*};
 pub use frame_election_provider_support::VoteWeight;
 pub use pallet_election_provider_multi_phase::{Miner, MinerConfig};
 
