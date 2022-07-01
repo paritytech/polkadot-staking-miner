@@ -105,6 +105,21 @@ pub enum Chain {
 	Polkadot,
 }
 
+/// The type of event to listen to.
+///
+///
+/// Typically, finalized is safer and there is no chance of anything going wrong, but it can be
+/// slower. It is recommended to use finalized, if the duration of the signed phase is longer
+/// than the the finality delay.
+#[cfg_attr(test, derive(PartialEq))]
+#[derive(clap::ValueEnum, Debug, Copy, Clone)]
+pub enum Listen {
+	/// Latest finalized head of the canonical chain.
+	Finalized,
+	/// Latest head of the canonical chain.
+	Head,
+}
+
 impl fmt::Display for Chain {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		let chain = match self {
@@ -156,8 +171,8 @@ pub struct MonitorConfig {
 	/// Typically, finalized is safer and there is no chance of anything going wrong, but it can be
 	/// slower. It is recommended to use finalized, if the duration of the signed phase is longer
 	/// than the the finality delay.
-	#[clap(long, default_value = "head", possible_values = &["head", "finalized"])]
-	pub listen: String,
+	#[clap(long, value_enum, default_value_t = Listen::Head)]
+	pub listen: Listen,
 
 	/// The solver algorithm to use.
 	#[clap(subcommand)]
@@ -174,6 +189,16 @@ pub struct MonitorConfig {
 	/// `--submission-strategy "percent-better <percent>"`: submit if the submission is `n` percent better.
 	#[clap(long, parse(try_from_str), default_value = "if-leading")]
 	pub submission_strategy: SubmissionStrategy,
+
+	/// The path to a file containing the seed of the account. If the file is not found, the seed is
+	/// used as-is.
+	///
+	/// Can also be provided via the `SEED` environment variable.
+	///
+	/// WARNING: Don't use an account with a large stash for this. Based on how the bot is
+	/// configured, it might re-try and lose funds through transaction fees/deposits.
+	#[clap(long, short, env = "SEED")]
+	pub seed_or_path: String,
 }
 
 #[derive(Debug, Clone, Parser)]
@@ -205,15 +230,6 @@ pub struct DryRunConfig {
 	/// Force create a new snapshot, else expect one to exist onchain.
 	#[clap(long)]
 	pub force_snapshot: bool,
-}
-
-#[derive(Debug, Clone, Parser)]
-#[cfg_attr(test, derive(PartialEq))]
-#[clap(author, version, about)]
-pub struct Opt {
-	/// The `ws` node to connect to.
-	#[clap(long, short, default_value = DEFAULT_URI, env = "URI")]
-	pub uri: String,
 
 	/// The path to a file containing the seed of the account. If the file is not found, the seed is
 	/// used as-is.
@@ -224,6 +240,15 @@ pub struct Opt {
 	/// configured, it might re-try and lose funds through transaction fees/deposits.
 	#[clap(long, short, env = "SEED")]
 	pub seed_or_path: String,
+}
+
+#[derive(Debug, Clone, Parser)]
+#[cfg_attr(test, derive(PartialEq))]
+#[clap(author, version, about)]
+pub struct Opt {
+	/// The `ws` node to connect to.
+	#[clap(long, short, default_value = DEFAULT_URI, env = "URI")]
+	pub uri: String,
 
 	#[clap(subcommand)]
 	pub command: Command,

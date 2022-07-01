@@ -48,14 +48,13 @@ use tracing_subscriber::EnvFilter;
 async fn main() -> Result<(), Error> {
 	tracing_subscriber::fmt().with_env_filter(EnvFilter::from_default_env()).init();
 
-	let Opt { uri, seed_or_path, command } = Opt::parse();
+	let Opt { uri, command } = Opt::parse();
 	log::debug!(target: LOG_TARGET, "attempting to connect to {:?}", uri);
 
 	let rpc = WsClientBuilder::default().max_request_body_size(u32::MAX).build(uri).await?;
 
 	let client = subxt::ClientBuilder::new().set_client(rpc).build().await?;
 	let runtime_version = client.rpc().runtime_version(None).await?;
-	let pair_signer = signer::signer_pair_from_string(&seed_or_path)?;
 	let chain = Chain::try_from(runtime_version)?;
 
 	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
@@ -73,9 +72,9 @@ async fn main() -> Result<(), Error> {
 		});
 
 		match command {
-			Command::Monitor(cfg) => monitor_cmd(api, cfg, pair_signer).await,
-			Command::DryRun(cfg) => dry_run_cmd(api, cfg, pair_signer).await,
-			Command::EmergencySolution(cfg) => emergency_cmd(api, cfg, pair_signer).await,
+			Command::Monitor(cfg) => monitor_cmd(api, cfg).await,
+			Command::DryRun(cfg) => dry_run_cmd(api, cfg).await,
+			Command::EmergencySolution(cfg) => emergency_cmd(api, cfg).await,
 		}
 	});
 
@@ -93,9 +92,9 @@ mod tests {
 			env!("CARGO_PKG_NAME"),
 			"--uri",
 			"hi",
+			"monitor",
 			"--seed-or-path",
 			"//Alice",
-			"monitor",
 			"--listen",
 			"head",
 			"seq-phragmen",
@@ -106,11 +105,11 @@ mod tests {
 			opt,
 			Opt {
 				uri: "hi".to_string(),
-				seed_or_path: "//Alice".to_string(),
 				command: Command::Monitor(MonitorConfig {
-					listen: "head".to_string(),
+					listen: Listen::Head,
 					solver: Solver::SeqPhragmen { iterations: 10 },
 					submission_strategy: SubmissionStrategy::IfLeading,
+					seed_or_path: "//Alice".to_string(),
 				}),
 			}
 		);
@@ -122,9 +121,9 @@ mod tests {
 			env!("CARGO_PKG_NAME"),
 			"--uri",
 			"hi",
+			"dry-run",
 			"--seed-or-path",
 			"//Alice",
-			"dry-run",
 			"phrag-mms",
 		])
 		.unwrap();
@@ -133,11 +132,11 @@ mod tests {
 			opt,
 			Opt {
 				uri: "hi".to_string(),
-				seed_or_path: "//Alice".to_string(),
 				command: Command::DryRun(DryRunConfig {
 					at: None,
 					solver: Solver::PhragMMS { iterations: 10 },
 					force_snapshot: false,
+					seed_or_path: "//Alice".to_string(),
 				}),
 			}
 		);
@@ -149,8 +148,6 @@ mod tests {
 			env!("CARGO_PKG_NAME"),
 			"--uri",
 			"hi",
-			"--seed-or-path",
-			"//Alice",
 			"emergency-solution",
 			"99",
 			"phrag-mms",
@@ -163,7 +160,6 @@ mod tests {
 			opt,
 			Opt {
 				uri: "hi".to_string(),
-				seed_or_path: "//Alice".to_string(),
 				command: Command::EmergencySolution(EmergencySolutionConfig {
 					take: Some(99),
 					at: None,

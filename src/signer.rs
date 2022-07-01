@@ -20,7 +20,7 @@ use crate::prelude::*;
 use subxt::sp_core::Pair as _;
 
 /// Read the signer account's URI
-pub(crate) fn signer_pair_from_string(mut seed_or_path: &str) -> Result<Pair, Error> {
+pub fn signer_pair_from_string(mut seed_or_path: &str) -> Result<Pair, Error> {
 	seed_or_path = seed_or_path.trim();
 
 	let seed = match std::fs::read(seed_or_path) {

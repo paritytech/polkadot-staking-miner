@@ -18,7 +18,7 @@
 
 use pallet_election_provider_multi_phase::RawSolution;
 
-use crate::{chain, error::Error, opt::DryRunConfig, prelude::*};
+use crate::{chain, error::Error, opt::DryRunConfig, prelude::*, signer::signer_pair_from_string};
 use codec::{Decode, Encode};
 use jsonrpsee::rpc_params;
 use subxt::{rpc::ClientT, sp_core::Bytes};
@@ -27,16 +27,15 @@ macro_rules! dry_run_cmd_for {
 	($runtime:tt) => {
 		paste::paste! {
 
-			pub async fn [<run_$runtime>](api: chain::$runtime::RuntimeApi, config: DryRunConfig, pair_signer: Pair) -> Result<(), Error>
+			pub async fn [<run_$runtime>](api: chain::$runtime::RuntimeApi, config: DryRunConfig) -> Result<(), Error>
 
 		{
+			let mut signer = Signer::new(signer_pair_from_string(&config.seed_or_path)?);
 			let (solution, score, _size) =
 				crate::helpers::[<mine_solution_$runtime>](&api, config.at, config.solver).await?;
 
 			let round = api.storage().election_provider_multi_phase().round(config.at).await?;
 			let raw_solution = RawSolution { solution, score, round };
-
-			let mut signer = Signer::new(pair_signer);
 			let nonce = api.client.rpc().system_account_next_index(signer.account_id()).await?;
 			signer.set_nonce(nonce);
 

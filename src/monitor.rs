@@ -1,25 +1,30 @@
 use crate::{
 	error::Error,
-	opt::{MonitorConfig, SubmissionStrategy},
+	opt::{Listen, MonitorConfig, SubmissionStrategy},
 	prelude::*,
+	signer::signer_pair_from_string,
 };
 use pallet_election_provider_multi_phase::RawSolution;
 use sp_runtime::Perbill;
 use std::sync::Arc;
-use subxt::{BasicError as SubxtError, TransactionStatus};
+use subxt::{rpc::Subscription, BasicError as SubxtError, TransactionStatus};
 use tokio::sync::Mutex;
 
 macro_rules! monitor_cmd_for {
 	($runtime:tt) => {
 		paste::paste! {
 			/// The monitor command.
-			pub async fn [<run_$runtime>] (api: $crate::chain::$runtime::RuntimeApi, config: MonitorConfig, signer_pair: Pair) -> Result<(), Error> {
-				let mut subscription = if config.listen == "head" {
-					api.client.rpc().subscribe_blocks().await
-				} else {
-					api.client.rpc().subscribe_finalized_blocks().await
-				}?;
+			pub async fn [<run_$runtime>] (api: $crate::chain::$runtime::RuntimeApi, config: MonitorConfig) -> Result<(), Error> {
 
+				async fn heads_subscription(api: &$crate::chain::$runtime::RuntimeApi, listen: Listen) -> Result<Subscription<Header>, Error> {
+					match listen {
+						Listen::Head => api.client.rpc().subscribe_blocks().await,
+						Listen::Finalized => api.client.rpc().subscribe_finalized_blocks().await,
+					}.map_err(Into::into)
+				}
+
+				let signer_pair = signer_pair_from_string(&config.seed_or_path)?;
+				let mut subscription = heads_subscription(&api, config.listen).await?;
 				let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
 				let submit_lock = Arc::new(Mutex::new(()));
 
@@ -36,13 +41,8 @@ macro_rules! monitor_cmd_for {
 								//	- the connection was closed.
 								//	- the subscription could not keep up with the server.
 								None => {
-									log::warn!(target: LOG_TARGET, "subscription to `subscribeNewHeads/subscribeFinalizedHeads` terminated. Retrying..");
-									subscription = if config.listen == "head" {
-										api.client.rpc().subscribe_blocks().await
-									} else {
-										api.client.rpc().subscribe_finalized_blocks().await
-									}?;
-
+									log::warn!(target: LOG_TARGET, "subscription to `{:?}` terminated. Retrying..", config.listen);
+									subscription = heads_subscription(&api, config.listen).await?;
 									continue
 								}
 							}
@@ -145,7 +145,7 @@ macro_rules! monitor_cmd_for {
 						}
 					};
 
-					log::trace!(target: LOG_TARGET, "Mined solution with {:?} size: {:?} round: {:?}, took: {} ms", score, size, round, now.elapsed().as_millis());
+					log::trace!(target: LOG_TARGET, "Mined solution with {:?} size: {:?} round: {:?} at: {}, took: {} ms", score, size, round, at.number(), now.elapsed().as_millis());
 
 					let xt = match api
 						.tx()
@@ -158,9 +158,16 @@ macro_rules! monitor_cmd_for {
 							}
 						};
 
+					let best_head = match get_latest_head(&api, config.listen).await {
+						Ok(head) => head,
+						Err(e) => {
+							kill_main_task_if_critical_err(&tx, e);
+							return;
+						}
+					};
 
 					let now = std::time::Instant::now();
-					if let Err(e) = ensure_signed_phase(&api, hash).await {
+					if let Err(e) = ensure_signed_phase(&api, best_head).await {
 						log::debug!(
 							target: LOG_TARGET,
 							"ensure_signed_phase failed: {:?}; skipping block: {}",
@@ -172,20 +179,7 @@ macro_rules! monitor_cmd_for {
 					}
 
 
-					if let Err(e) = ensure_no_previous_solution(&api, hash, signer.account_id()).await {
-						log::debug!(
-							target: LOG_TARGET,
-							"ensure_no_previous_solution failed: {:?}; skipping block: {}",
-							e,
-							at.number
-						);
-
-						kill_main_task_if_critical_err(&tx, e);
-						return;
-					}
-
-
-					if let Err(e) = ensure_no_better_solution(&api, hash, score, config.submission_strategy).await {
+					if let Err(e) = ensure_no_better_solution(&api, best_head, score, config.submission_strategy).await {
 						log::debug!(
 							target: LOG_TARGET,
 							"ensure_no_better_solution failed: {:?}; skipping block: {}",
@@ -330,6 +324,19 @@ macro_rules! monitor_cmd_for {
 
 					Ok(())
 
+				}
+
+				async fn get_latest_head(api: &$crate::chain::$runtime::RuntimeApi, listen: Listen) -> Result<Hash, Error> {
+					match listen {
+						Listen::Head => {
+							match api.client.rpc().block_hash(None).await {
+								Ok(Some(hash)) => Ok(hash),
+								Ok(None) => Err(Error::Other("Latest block not found".into())),
+								Err(e) => Err(e.into()),
+							}
+						}
+						Listen::Finalized => api.client.rpc().finalized_head().await.map_err(Into::into),
+					}
 				}
 			}
 		}
