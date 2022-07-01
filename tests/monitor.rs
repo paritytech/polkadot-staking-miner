@@ -52,7 +52,7 @@ async fn test_submit_solution(chain: Chain) {
 	let (ws_url, _) = find_ws_url_from_output(stderr);
 
 	let crate_name = env!("CARGO_PKG_NAME");
-	let miner_cmd = KillChildOnDrop(
+	let _miner = KillChildOnDrop(
 		process::Command::new(crate_name)
 			.stdout(process::Stdio::piped())
 			.stderr(process::Stdio::piped())

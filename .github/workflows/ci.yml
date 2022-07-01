@@ -107,4 +107,4 @@ jobs:
         run: ls
 
       - name: Cargo test
-        run: cargo test --workspace
+        run: RUST_LOG=info cargo test --workspace -- --nocapture
