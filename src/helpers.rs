@@ -16,23 +16,30 @@ macro_rules! mine_solution_for {
 
 						let (voters, targets, desired_targets) = [<snapshot_$runtime>](&api, hash).await?;
 
-						match solver {
-							Solver::SeqPhragmen { iterations } => {
-								BalanceIterations::set(iterations);
-								Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<
-									SequentialPhragmen<AccountId, Accuracy, Balancing>,
-								>(voters, targets, desired_targets)
-							},
-							Solver::PhragMMS { iterations } => {
-								BalanceIterations::set(iterations);
-								Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<PhragMMS<AccountId, Accuracy, Balancing>>(
-									voters,
-									targets,
-									desired_targets,
-								)
-							},
+						let blocking_task = tokio::task::spawn_blocking(move || {
+							match solver {
+								Solver::SeqPhragmen { iterations } => {
+									BalanceIterations::set(iterations);
+									Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<
+										SequentialPhragmen<AccountId, Accuracy, Balancing>,
+									>(voters, targets, desired_targets)
+								},
+								Solver::PhragMMS { iterations } => {
+									BalanceIterations::set(iterations);
+									Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<PhragMMS<AccountId, Accuracy, Balancing>>(
+										voters,
+										targets,
+										desired_targets,
+									)
+								},
+							}
+						}).await;
+
+						match blocking_task {
+							Ok(Ok(res)) => Ok(res),
+							Ok(Err(err)) => Err(Error::Other(format!("{:?}", err))),
+							Err(err) => Err(Error::Other(format!("{:?}", err))),
 						}
-						.map_err(|e| Error::Other(format!("{:?}", e)))
 				}
 		}
 	};
@@ -41,7 +48,8 @@ macro_rules! mine_solution_for {
 macro_rules! snapshot_for { ($runtime:tt) => {
 	paste::paste! {
 	pub async fn [<snapshot_$runtime>](api: &chain::$runtime::RuntimeApi, hash: Option<Hash>) -> Result<crate::chain::$runtime::epm::Snapshot, Error> {
-		use crate::chain::$runtime::{static_types, epm::RoundSnapshot};
+		use crate::chain::static_types;
+		use crate::chain::$runtime::epm::RoundSnapshot;
 
 		let RoundSnapshot { voters, targets } = api
 			.storage()
@@ -78,7 +86,7 @@ macro_rules! tls_update_runtime_constants {
 	($runtime:tt) => {
 		paste::paste! {
 			pub fn [<tls_update_runtime_constants_$runtime>](api: &chain::$runtime::RuntimeApi) {
-					use chain::$runtime::static_types;
+					use chain::static_types;
 					use sp_runtime::Perbill;
 
 					const PROOF: &str = "Metadata is outdated; open an issue in staking-miner";

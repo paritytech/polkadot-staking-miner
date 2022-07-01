@@ -77,10 +77,6 @@ macro_rules! monitor_cmd_for {
 					config: MonitorConfig,
 					submit_lock: Arc<Mutex<()>>,
 				) {
-					use crate::helpers::*;
-
-					// TODO(niklasad1): hack to copy thread local storage from `parameter_types`.
-					[<tls_update_runtime_constants_$runtime>](&api);
 
 					let hash = at.hash();
 					log::trace!(target: LOG_TARGET, "new event at #{:?} ({:?})", at.number, hash);
@@ -135,6 +131,7 @@ macro_rules! monitor_cmd_for {
 
 					// This takes a long time to complete...
 					let now = std::time::Instant::now();
+
 					let (solution, score, size) =
 					match crate::helpers::[<mine_solution_$runtime>](&api, Some(hash), config.solver)
 					.await {

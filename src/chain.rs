@@ -1,17 +1,110 @@
 //! Chain specific types for polkadot, kusama and westend.
 
-// A big chunk of this file, annotated with `SYNC` should be in sync wth the values that are used in
+// A big chunk of this file, annotated with `SYNC` should be in sync with the values that are used in
 // the real runtimes. Unfortunately, no way to get around them now.
 // TODO: There might be a way to create a new crate called `polkadot-runtime-configs` in
 // polkadot, that only has `const` and `type`s that are used in the runtime, and we can import
 // that.
 
+macro_rules! impl_atomic_u32_parameter_types {
+	($mod:ident, $name:ident) => {
+		mod $mod {
+			use std::sync::atomic::{AtomicU32, Ordering};
+
+			static VAL: AtomicU32 = AtomicU32::new(0);
+
+			pub struct $name;
+
+			impl $name {
+				pub fn get() -> u32 {
+					VAL.load(Ordering::SeqCst)
+				}
+			}
+
+			impl<I: From<u32>> frame_support::traits::Get<I> for $name {
+				fn get() -> I {
+					I::from(Self::get())
+				}
+			}
+
+			impl $name {
+				pub fn set(val: u32) {
+					VAL.store(val, std::sync::atomic::Ordering::SeqCst);
+				}
+			}
+		}
+
+		pub use $mod::$name;
+	};
+}
+
+mod max_weight {
+	use std::sync::atomic::{AtomicU64, Ordering};
+
+	static VAL: AtomicU64 = AtomicU64::new(0);
+
+	pub struct MaxWeight;
+
+	impl MaxWeight {
+		pub fn get() -> u64 {
+			VAL.load(Ordering::SeqCst)
+		}
+	}
+
+	impl<I: From<u64>> frame_support::traits::Get<I> for MaxWeight {
+		fn get() -> I {
+			I::from(Self::get())
+		}
+	}
+
+	impl MaxWeight {
+		pub fn set(val: u64) {
+			VAL.store(val, std::sync::atomic::Ordering::SeqCst);
+		}
+	}
+}
+
+mod db_weight {
+	use frame_support::weights::RuntimeDbWeight;
+	use std::sync::atomic::{AtomicU64, Ordering};
+
+	static READ: AtomicU64 = AtomicU64::new(0);
+	static WRITE: AtomicU64 = AtomicU64::new(0);
+
+	pub struct DbWeight;
+
+	impl DbWeight {
+		pub fn get() -> RuntimeDbWeight {
+			RuntimeDbWeight {
+				read: READ.load(Ordering::SeqCst),
+				write: WRITE.load(Ordering::SeqCst),
+			}
+		}
+
+		pub fn set(weight: RuntimeDbWeight) {
+			READ.store(weight.read, Ordering::SeqCst);
+			WRITE.store(weight.write, Ordering::SeqCst)
+		}
+	}
+
+	impl<I: From<RuntimeDbWeight>> frame_support::traits::Get<I> for DbWeight {
+		fn get() -> I {
+			I::from(Self::get())
+		}
+	}
+}
+
 use crate::prelude::*;
-use frame_support::{
-	traits::ConstU32,
-	weights::{RuntimeDbWeight, Weight},
-	BoundedVec,
-};
+use frame_support::{traits::ConstU32, weights::Weight, BoundedVec};
+
+pub mod static_types {
+	use super::*;
+
+	impl_atomic_u32_parameter_types!(max_length, MaxLength);
+	impl_atomic_u32_parameter_types!(max_votes_per_voter, MaxVotesPerVoter);
+	pub use db_weight::DbWeight;
+	pub use max_weight::MaxWeight;
+}
 
 pub mod westend {
 	use super::*;
@@ -26,17 +119,6 @@ pub mod westend {
 			MaxVoters = ConstU32::<22500>
 		>(16)
 	);
-
-	pub mod static_types {
-		use super::*;
-		// these will be set later.
-		frame_support::parameter_types! {
-			pub static MaxWeight: Weight = Default::default();
-			pub static MaxLength: u32 = Default::default();
-			pub static MaxVotesPerVoter: u32 = Default::default();
-			pub static DbWeight: RuntimeDbWeight = Default::default();
-		}
-	}
 
 	#[derive(Debug)]
 	pub struct Config;
@@ -121,17 +203,6 @@ pub mod polkadot {
 		>(16)
 	);
 
-	pub mod static_types {
-		use super::*;
-		// these will be set later.
-		frame_support::parameter_types! {
-			pub static MaxWeight: Weight = Default::default();
-			pub static MaxLength: u32 = Default::default();
-			pub static MaxVotesPerVoter: u32 = Default::default();
-			pub static DbWeight: RuntimeDbWeight = Default::default();
-		}
-	}
-
 	#[derive(Debug)]
 	pub struct Config;
 	impl pallet_election_provider_multi_phase::unsigned::MinerConfig for Config {
@@ -214,17 +285,6 @@ pub mod kusama {
 			MaxVoters = ConstU32::<12500>
 		>(24)
 	);
-
-	pub mod static_types {
-		use super::*;
-		// these will be set later.
-		frame_support::parameter_types! {
-			pub static MaxWeight: Weight = Default::default();
-			pub static MaxLength: u32 = Default::default();
-			pub static MaxVotesPerVoter: u32 = Default::default();
-			pub static DbWeight: RuntimeDbWeight = Default::default();
-		}
-	}
 
 	#[derive(Debug)]
 	pub struct Config;

@@ -32,24 +32,24 @@ pub enum Solver {
 #[macro_export]
 macro_rules! any_runtime {
 	($chain:tt, $($code:tt)*) => {
-			match $chain {
-				Chain::Polkadot => {
-					#[allow(unused)]
-					use {$crate::chain::polkadot::{RuntimeApi, static_types}, $crate::monitor::run_polkadot as monitor_cmd, $crate::dry_run::run_polkadot as dry_run_cmd, $crate::emergency_solution::run_polkadot as emergency_cmd, $crate::helpers::tls_update_runtime_constants_polkadot as tls_update_runtime_constants};
-					$($code)*
-				},
-				Chain::Kusama => {
-					#[allow(unused)]
-					use {$crate::chain::kusama::{RuntimeApi, static_types}, $crate::monitor::run_kusama as monitor_cmd, $crate::dry_run::run_kusama as dry_run_cmd, $crate::emergency_solution::run_kusama as emergency_cmd, $crate::helpers::tls_update_runtime_constants_kusama as tls_update_runtime_constants};
-					$($code)*
-				},
-				Chain::Westend => {
-					#[allow(unused)]
-					use {$crate::chain::westend::{RuntimeApi, static_types}, $crate::monitor::run_westend as monitor_cmd, $crate::dry_run::run_westend as dry_run_cmd, $crate::emergency_solution::run_westend as emergency_cmd, $crate::helpers::tls_update_runtime_constants_westend as tls_update_runtime_constants};
-					$($code)*
-				}
+		match $chain {
+			Chain::Polkadot => {
+				#[allow(unused)]
+				use {$crate::chain::polkadot::RuntimeApi, $crate::monitor::run_polkadot as monitor_cmd, $crate::dry_run::run_polkadot as dry_run_cmd, $crate::emergency_solution::run_polkadot as emergency_cmd, $crate::helpers::tls_update_runtime_constants_polkadot as tls_update_runtime_constants};
+				$($code)*
+			},
+			Chain::Kusama => {
+				#[allow(unused)]
+				use {$crate::chain::kusama::RuntimeApi, $crate::monitor::run_kusama as monitor_cmd, $crate::dry_run::run_kusama as dry_run_cmd, $crate::emergency_solution::run_kusama as emergency_cmd, $crate::helpers::tls_update_runtime_constants_kusama as tls_update_runtime_constants};
+				$($code)*
+			},
+			Chain::Westend => {
+				#[allow(unused)]
+				use {$crate::chain::westend::RuntimeApi, $crate::monitor::run_westend as monitor_cmd, $crate::dry_run::run_westend as dry_run_cmd, $crate::emergency_solution::run_westend as emergency_cmd, $crate::helpers::tls_update_runtime_constants_westend as tls_update_runtime_constants};
+				$($code)*
 			}
 		}
+	}
 }
 
 /// Submission strategy to use.
