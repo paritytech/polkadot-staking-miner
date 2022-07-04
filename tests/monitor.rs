@@ -1,6 +1,7 @@
 //! Requires a `polkadot binary ` built with `--features fast-runtime` in the path to run integration tests against.
 #![cfg(feature = "slow-tests")]
 
+use assert_cmd::cargo::cargo_bin;
 use staking_miner::{any_runtime, opt::Chain};
 use std::{
 	io::{BufRead, BufReader, Read},
@@ -53,7 +54,7 @@ async fn test_submit_solution(chain: Chain) {
 
 	let crate_name = env!("CARGO_PKG_NAME");
 	let _miner = KillChildOnDrop(
-		process::Command::new(crate_name)
+		process::Command::new(cargo_bin(crate_name))
 			.stdout(process::Stdio::piped())
 			.stderr(process::Stdio::piped())
 			.args(&["--uri", &ws_url, "--seed-or-path", "//Alice", "monitor", "seq-phragmen"])
