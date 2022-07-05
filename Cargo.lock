@@ -3223,6 +3223,7 @@ dependencies = [
  "sp-io 6.0.0 (git+https://github.com/paritytech/substrate?branch=master)",
  "sp-npos-elections",
  "sp-runtime 6.0.0 (git+https://github.com/paritytech/substrate?branch=master)",
+ "sp-storage 6.0.0 (git+https://github.com/paritytech/substrate?branch=master)",
  "sp-version",
  "subxt",
  "thiserror",

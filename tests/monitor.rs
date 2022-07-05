@@ -2,12 +2,23 @@
 #![cfg(feature = "slow-tests")]
 
 use assert_cmd::cargo::cargo_bin;
-use staking_miner::{any_runtime, opt::Chain};
+use codec::Decode;
+use pallet_election_provider_multi_phase::ReadySolution;
+use sp_storage::StorageChangeSet;
+use staking_miner::{
+	any_runtime,
+	opt::Chain,
+	prelude::{AccountId, Hash},
+};
 use std::{
 	io::{BufRead, BufReader, Read},
 	ops::{Deref, DerefMut},
 	process::{self, Child},
 	time::Duration,
+};
+use subxt::{
+	rpc::{rpc_params, SubscriptionClientT},
+	storage::StorageKeyPrefix,
 };
 
 const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(60 * 15);
@@ -70,21 +81,29 @@ async fn test_submit_solution(chain: Chain) {
 			.unwrap()
 			.to_runtime_api();
 
-		println!("started client");
 		let now = std::time::Instant::now();
 
 		let mut success = false;
 
-		while now.elapsed() < MAX_DURATION_FOR_SUBMIT_SOLUTION {
-			let indices = api
-				.storage()
-				.election_provider_multi_phase()
-				.signed_submission_indices(None)
-				.await
-				.unwrap();
+		let key = StorageKeyPrefix::new::<epm::storage::QueuedSolution>().to_storage_key();
 
-			if !indices.0.is_empty() {
-				println!("submissions {:?}", indices.0);
+		let mut sub = api
+			.client
+			.rpc()
+			.client
+			.subscribe("state_subscribeStorage", rpc_params![vec![key]], "state_unsubscribeStorage")
+			.await
+			.unwrap();
+
+		let mut success = false;
+
+		while now.elapsed() < MAX_DURATION_FOR_SUBMIT_SOLUTION {
+			let x: StorageChangeSet<Hash> = sub.next().await.unwrap().unwrap();
+
+			if let Some(data) = x.changes[0].clone().1 {
+				let solution: ReadySolution<AccountId> =
+					Decode::decode(&mut data.0.as_slice()).unwrap();
+				println!("solution: {:?}", solution);
 				success = true;
 				break
 			}
