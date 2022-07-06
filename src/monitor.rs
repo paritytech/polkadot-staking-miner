@@ -2,7 +2,7 @@ use crate::{
 	error::Error,
 	opt::{Listen, MonitorConfig, SubmissionStrategy},
 	prelude::*,
-	signer::signer_pair_from_string,
+	signer::Signer,
 };
 use pallet_election_provider_multi_phase::RawSolution;
 use sp_runtime::Perbill;
@@ -23,7 +23,11 @@ macro_rules! monitor_cmd_for {
 					}.map_err(Into::into)
 				}
 
-				let signer_pair = signer_pair_from_string(&config.seed_or_path)?;
+				let signer = Signer::new(&config.seed_or_path)?;
+
+				let account_info = api.storage().system().account(signer.account_id(), None).await?;
+				log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer, account_info);
+
 				let mut subscription = heads_subscription(&api, config.listen).await?;
 				let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
 				let submit_lock = Arc::new(Mutex::new(()));
@@ -62,7 +66,7 @@ macro_rules! monitor_cmd_for {
 							tx.clone(),
 							at,
 							api.clone(),
-							Signer::new(signer_pair.clone()),
+							signer.clone(),
 							config.clone(),
 							submit_lock.clone(),
 					));
@@ -188,7 +192,7 @@ macro_rules! monitor_cmd_for {
 					}
 
 
-					let mut status_sub = match xt.sign_and_submit_then_watch_default(&signer).await {
+					let mut status_sub = match xt.sign_and_submit_then_watch_default(&*signer).await {
 						Ok(sub) => sub,
 						Err(e) => {
 							log::warn!(target: LOG_TARGET, "submit solution failed: {:?}", e);

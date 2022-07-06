@@ -99,6 +99,7 @@ frame_support::parameter_types! {
 	pub static Balancing: Option<BalancingConfig> = Some( BalancingConfig { iterations: BalanceIterations::get(), tolerance: 0 } );
 }
 
+#[derive(Debug, Copy, Clone)]
 pub enum Chain {
 	Westend,
 	Kusama,
