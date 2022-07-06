@@ -1,5 +1,7 @@
 # Staking Miner v2
 
+[![Daily compatibility check against latest polkadot](https://github.com/paritytech/staking-miner-v2/actions/workflows/nightly.yml/badge.svg)](https://github.com/paritytech/staking-miner-v2/actions/workflows/nightly.yml)
+
 WARNING this library is under active development DO NOT USE IN PRODUCTION.
 
 The library is a re-write of [polkadot staking miner](https://github.com/paritytech/polkadot/tree/master/utils/staking-miner) using [subxt](https://github.com/paritytech/subxt)
