@@ -25,25 +25,15 @@ use subxt::{
 const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(60 * 15);
 
 #[tokio::test]
-async fn submit_monitor_polkadot_works() {
+async fn submit_monitor_works() {
 	init_logger();
 	test_submit_solution(Chain::Polkadot).await;
-}
-
-#[tokio::test]
-async fn submit_monitor_kusama_works() {
-	init_logger();
 	test_submit_solution(Chain::Kusama).await;
-}
-
-#[tokio::test]
-async fn submit_monitor_westend_works() {
-	init_logger();
 	test_submit_solution(Chain::Westend).await;
 }
 
 async fn test_submit_solution(chain: Chain) {
-	let ws_url = run_polkadot_node(chain);
+	let (_drop, ws_url) = run_polkadot_node(chain);
 
 	let crate_name = env!("CARGO_PKG_NAME");
 	let _miner = KillChildOnDrop(

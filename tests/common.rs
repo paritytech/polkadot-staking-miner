@@ -42,7 +42,7 @@ pub fn find_ws_url_from_output(read: impl Read + Send) -> (String, String) {
 }
 
 /// Start a polkadot node on chain polkadot-dev, kusama-dev or westend-dev.
-pub fn run_polkadot_node(chain: Chain) -> String {
+pub fn run_polkadot_node(chain: Chain) -> (KillChildOnDrop, String) {
 	let chain_str = format!("{}-dev", chain.to_string());
 
 	let mut node_cmd = KillChildOnDrop(
@@ -66,7 +66,7 @@ pub fn run_polkadot_node(chain: Chain) -> String {
 
 	let (ws_url, _) = find_ws_url_from_output(stderr);
 
-	ws_url
+	(node_cmd, ws_url)
 }
 
 pub struct KillChildOnDrop(pub Child);
