@@ -39,11 +39,11 @@ mod prelude;
 mod signer;
 
 use clap::Parser;
+use futures::future::{BoxFuture, FutureExt};
 use jsonrpsee::ws_client::WsClientBuilder;
 use opt::Command;
 use prelude::*;
 use tracing_subscriber::EnvFilter;
-use futures::future::{BoxFuture, FutureExt};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -86,8 +86,7 @@ async fn main() -> Result<(), Error> {
 }
 
 #[cfg(target_family = "unix")]
-async fn run_command(fut: BoxFuture<'_, Result<(), Error>>) -> Result<(), Error>
-{
+async fn run_command(fut: BoxFuture<'_, Result<(), Error>>) -> Result<(), Error> {
 	use tokio::signal::unix::{signal, SignalKind};
 
 	let mut stream_int = signal(SignalKind::interrupt()).map_err(Error::Io)?;
@@ -105,8 +104,7 @@ async fn run_command(fut: BoxFuture<'_, Result<(), Error>>) -> Result<(), Error>
 }
 
 #[cfg(not(unix))]
-async fn run_command(fut: BoxFuture<'_, Result<(), Error>>) -> Result<(), E>
-{
+async fn run_command(fut: BoxFuture<'_, Result<(), Error>>) -> Result<(), E> {
 	use tokio::signal::ctrl_c;
 
 	select! {
