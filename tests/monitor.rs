@@ -1,23 +1,28 @@
 //! Requires a `polkadot binary ` built with `--features fast-runtime` in the path to run integration tests against.
 #![cfg(feature = "slow-tests")]
 
-use staking_miner::{any_runtime, opt::Chain};
+pub mod common;
+
+use assert_cmd::cargo::cargo_bin;
+use codec::Decode;
+use common::{init_logger, run_polkadot_node, KillChildOnDrop};
+use pallet_election_provider_multi_phase::ReadySolution;
+use sp_storage::StorageChangeSet;
+use staking_miner::{
+	any_runtime,
+	opt::Chain,
+	prelude::{AccountId, Hash},
+};
 use std::{
-	io::{BufRead, BufReader, Read},
-	ops::{Deref, DerefMut},
-	process::{self, Child},
-	time::Duration,
+	process,
+	time::{Duration, Instant},
+};
+use subxt::{
+	rpc::{rpc_params, SubscriptionClientT},
+	storage::StorageKeyPrefix,
 };
 
 const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(60 * 15);
-
-use tracing_subscriber::EnvFilter;
-
-pub fn init_logger() {
-	let _ = tracing_subscriber::fmt()
-		.with_env_filter(EnvFilter::from_default_env())
-		.try_init();
-}
 
 #[tokio::test]
 async fn submit_monitor_works() {
@@ -28,32 +33,11 @@ async fn submit_monitor_works() {
 }
 
 async fn test_submit_solution(chain: Chain) {
-	let chain_str = format!("{}-dev", chain.to_string());
-
-	let mut node_cmd = KillChildOnDrop(
-		process::Command::new("polkadot")
-			.stdout(process::Stdio::piped())
-			.stderr(process::Stdio::piped())
-			.args(&[
-				"--chain",
-				&chain_str,
-				"--tmp",
-				"--alice",
-				"--execution",
-				"Native",
-				"--offchain-worker=Always",
-			])
-			.spawn()
-			.unwrap(),
-	);
-
-	let stderr = node_cmd.stderr.take().unwrap();
-
-	let (ws_url, _) = find_ws_url_from_output(stderr);
+	let (_drop, ws_url) = run_polkadot_node(chain);
 
 	let crate_name = env!("CARGO_PKG_NAME");
 	let _miner = KillChildOnDrop(
-		process::Command::new(crate_name)
+		process::Command::new(cargo_bin(crate_name))
 			.stdout(process::Stdio::piped())
 			.stderr(process::Stdio::piped())
 			.args(&["--uri", &ws_url, "--seed-or-path", "//Alice", "monitor", "seq-phragmen"])
@@ -69,21 +53,29 @@ async fn test_submit_solution(chain: Chain) {
 			.unwrap()
 			.to_runtime_api();
 
-		println!("started client");
-		let now = std::time::Instant::now();
+		let now = Instant::now();
+
+		let mut success = false;
+
+		let key = StorageKeyPrefix::new::<epm::storage::QueuedSolution>().to_storage_key();
+
+		let mut sub = api
+			.client
+			.rpc()
+			.client
+			.subscribe("state_subscribeStorage", rpc_params![vec![key]], "state_unsubscribeStorage")
+			.await
+			.unwrap();
 
 		let mut success = false;
 
 		while now.elapsed() < MAX_DURATION_FOR_SUBMIT_SOLUTION {
-			let indices = api
-				.storage()
-				.election_provider_multi_phase()
-				.signed_submission_indices(None)
-				.await
-				.unwrap();
+			let x: StorageChangeSet<Hash> = sub.next().await.unwrap().unwrap();
 
-			if !indices.0.is_empty() {
-				println!("submissions {:?}", indices.0);
+			if let Some(data) = x.changes[0].clone().1 {
+				let solution: ReadySolution<AccountId> = Decode::decode(&mut data.0.as_slice())
+					.expect("Failed to decode storage as QueuedSolution");
+				println!("solution: {:?}", solution);
 				success = true;
 				break
 			}
@@ -91,55 +83,4 @@ async fn test_submit_solution(chain: Chain) {
 
 		assert!(success);
 	});
-}
-
-/// Read the WS address from the output.
-///
-/// This is hack to get the actual binded sockaddr because
-/// substrate assigns a random port if the specified port was already binded.
-fn find_ws_url_from_output(read: impl Read + Send) -> (String, String) {
-	let mut data = String::new();
-
-	let ws_url = BufReader::new(read)
-		.lines()
-		.find_map(|line| {
-			let line =
-				line.expect("failed to obtain next line from stdout for WS address discovery");
-			log::info!("{}", line);
-
-			data.push_str(&line);
-
-			// does the line contain our port (we expect this specific output from substrate).
-			let sock_addr = match line.split_once("Running JSON-RPC WS server: addr=") {
-				None => return None,
-				Some((_, after)) => after.split_once(",").unwrap().0,
-			};
-
-			Some(format!("ws://{}", sock_addr))
-		})
-		.expect("We should get a WebSocket address");
-
-	(ws_url, data)
-}
-
-pub struct KillChildOnDrop(pub Child);
-
-impl Drop for KillChildOnDrop {
-	fn drop(&mut self) {
-		let _ = self.0.kill();
-	}
-}
-
-impl Deref for KillChildOnDrop {
-	type Target = Child;
-
-	fn deref(&self) -> &Self::Target {
-		&self.0
-	}
-}
-
-impl DerefMut for KillChildOnDrop {
-	fn deref_mut(&mut self) -> &mut Self::Target {
-		&mut self.0
-	}
 }

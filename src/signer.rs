@@ -17,17 +17,59 @@
 //! Wrappers around creating a signer account.
 
 use crate::prelude::*;
-use subxt::sp_core::Pair as _;
+use subxt::{extrinsic::Signer as _, sp_core::Pair as _};
 
-/// Read the signer account's URI
-pub fn signer_pair_from_string(mut seed_or_path: &str) -> Result<Pair, Error> {
-	seed_or_path = seed_or_path.trim();
+// A signer type, parameterized for using with `subxt`.
+type PairSigner = subxt::PairSigner<subxt::DefaultConfig, subxt::sp_core::sr25519::Pair>;
 
-	let seed = match std::fs::read(seed_or_path) {
-		Ok(s) => String::from_utf8(s).map_err(|e| Error::Other(e.to_string()))?,
-		Err(_) => seed_or_path.to_string(),
-	};
+// Signer wrapper.
+//
+// NOTE: both `Pair` and `PairSigner` are stored here so it can be cloned
+// which is hack around that PairSigner !Clone.
+pub struct Signer {
+	pair: Pair,
+	signer: PairSigner,
+}
 
-	let seed = seed.trim();
-	Pair::from_string(seed, None).map_err(Error::Crypto)
+impl std::fmt::Display for Signer {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}", self.signer.address())
+	}
+}
+
+impl Clone for Signer {
+	fn clone(&self) -> Self {
+		Self { pair: self.pair.clone(), signer: PairSigner::new(self.pair.clone()) }
+	}
+}
+
+impl Signer {
+	pub fn new(mut seed_or_path: &str) -> Result<Self, Error> {
+		seed_or_path = seed_or_path.trim();
+
+		let seed = match std::fs::read(seed_or_path) {
+			Ok(s) => String::from_utf8(s).map_err(|e| Error::Other(e.to_string()))?,
+			Err(_) => seed_or_path.to_string(),
+		};
+
+		let seed = seed.trim();
+		let pair = Pair::from_string(seed, None).map_err(Error::Crypto)?;
+		let signer = PairSigner::new(pair.clone());
+
+		Ok(Self { pair, signer })
+	}
+}
+
+impl std::ops::Deref for Signer {
+	type Target = PairSigner;
+
+	fn deref(&self) -> &Self::Target {
+		&self.signer
+	}
+}
+
+impl std::ops::DerefMut for Signer {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.signer
+	}
 }

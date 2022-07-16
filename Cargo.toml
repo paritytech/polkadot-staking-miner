@@ -7,16 +7,16 @@ edition = "2021"
 [dependencies]
 codec = { package = "parity-scale-codec", version = "3.0.0" }
 scale-info = { package = "scale-info", version = "2.1.1" }
-clap = { version = "3.1", features = ["derive", "env"] }
-tracing-subscriber = { version = "0.3.11", features = ["env-filter"]   }
+clap = { version = "3.2", features = ["derive", "env"] }
+tracing-subscriber = { version = "0.3.14", features = ["env-filter"]   }
 jsonrpsee = { version = "0.14.0", features = ["ws-client", "macros"] }
-log = "0.4.17"
-paste = "1.0.7"
-serde = "1.0.137"
+log = "0.4"
+paste = "1.0"
+serde = "1.0"
 serde_json = "1.0"
-thiserror = "1.0.31"
-tokio = { version = "1.18.2", features = ["macros", "rt-multi-thread", "sync", "signal"] }
 futures = "0.3"
+thiserror = "1.0"
+tokio = { version = "1.19", features = ["macros", "rt-multi-thread", "sync", "signal"] }
 
 # subxt
 subxt = { git = "https://github.com/paritytech/subxt" }
@@ -32,7 +32,8 @@ sp-version = { git = "https://github.com/paritytech/substrate", branch = "master
 sp-runtime = { git = "https://github.com/paritytech/substrate", branch = "master" }
 
 [dev-dependencies]
-assert_cmd = "2.0.2"
+assert_cmd = "2.0"
+sp-storage = { git = "https://github.com/paritytech/substrate", branch = "master" }
 
 [features]
 slow-tests = []

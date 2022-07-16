@@ -45,8 +45,5 @@ pub const LOG_TARGET: &str = "staking-miner";
 /// The key pair type being used. We "strongly" assume sr25519 for simplicity.
 pub type Pair = subxt::sp_core::sr25519::Pair;
 
-/// A signer type, parameterized for using with `sub-xt`.
-pub type Signer = subxt::PairSigner<subxt::DefaultConfig, subxt::sp_core::sr25519::Pair>;
-
 /// The accuracy that we use for election computation.
 pub type Accuracy = sp_runtime::Perbill;

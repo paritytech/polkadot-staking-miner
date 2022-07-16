@@ -18,7 +18,7 @@
 
 use pallet_election_provider_multi_phase::RawSolution;
 
-use crate::{chain, error::Error, opt::DryRunConfig, prelude::*, signer::signer_pair_from_string};
+use crate::{chain, error::Error, opt::DryRunConfig, prelude::*, signer::Signer};
 use codec::{Decode, Encode};
 use jsonrpsee::rpc_params;
 use subxt::{rpc::ClientT, sp_core::Bytes};
@@ -30,7 +30,10 @@ macro_rules! dry_run_cmd_for {
 			pub async fn [<run_$runtime>](api: chain::$runtime::RuntimeApi, config: DryRunConfig) -> Result<(), Error>
 
 		{
-			let mut signer = Signer::new(signer_pair_from_string(&config.seed_or_path)?);
+			let mut signer = Signer::new(&config.seed_or_path)?;
+			let account_info = api.storage().system().account(signer.account_id(), None).await?;
+			log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer, account_info);
+
 			let (solution, score, _size) =
 				crate::helpers::[<mine_solution_$runtime>](&api, config.at, config.solver).await?;
 
@@ -47,7 +50,7 @@ macro_rules! dry_run_cmd_for {
 			);
 
 			let uxt = api.tx().election_provider_multi_phase().submit(raw_solution)?;
-			let xt = uxt.create_signed(&signer, chain::$runtime::ExtrinsicParams::default()).await?;
+			let xt = uxt.create_signed(&*signer, chain::$runtime::ExtrinsicParams::default()).await?;
 
 			let encoded_xt = Bytes(xt.encoded().to_vec());
 

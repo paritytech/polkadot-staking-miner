@@ -43,7 +43,6 @@ jobs:
       - name: Build polkadot with fast runtime
         run: |
           cd polkadot
-          export SKIP_WASM_BUILD=1
           cargo build --release --features fast-runtime
           mkdir -p ~/.local/bin
           mv ./target/release/polkadot ~/.local/bin
