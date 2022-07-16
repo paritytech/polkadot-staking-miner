@@ -39,6 +39,7 @@ mod prelude;
 mod signer;
 
 use clap::Parser;
+use futures::future::{BoxFuture, FutureExt};
 use jsonrpsee::ws_client::WsClientBuilder;
 use opt::Command;
 use prelude::*;
@@ -71,15 +72,45 @@ async fn main() -> Result<(), Error> {
 			log::error!(target: LOG_TARGET, "Runtime update failed with result: {:?}", result);
 		});
 
-		match command {
-			Command::Monitor(cfg) => monitor_cmd(api, cfg).await,
-			Command::DryRun(cfg) => dry_run_cmd(api, cfg).await,
-			Command::EmergencySolution(cfg) => emergency_cmd(api, cfg).await,
-		}
+		let fut = match command {
+			Command::Monitor(cfg) => monitor_cmd(api, cfg).boxed(),
+			Command::DryRun(cfg) => dry_run_cmd(api, cfg).boxed(),
+			Command::EmergencySolution(cfg) => emergency_cmd(api, cfg).boxed(),
+		};
+
+		run_command(fut).await
 	});
 
 	log::info!(target: LOG_TARGET, "round of execution finished. outcome = {:?}", outcome);
 	outcome
+}
+
+#[cfg(target_family = "unix")]
+async fn run_command(fut: BoxFuture<'_, Result<(), Error>>) -> Result<(), Error> {
+	use tokio::signal::unix::{signal, SignalKind};
+
+	let mut stream_int = signal(SignalKind::interrupt()).map_err(Error::Io)?;
+	let mut stream_term = signal(SignalKind::terminate()).map_err(Error::Io)?;
+
+	tokio::select! {
+		_ = stream_int.recv() => {
+			Ok(())
+		}
+		_ = stream_term.recv() => {
+			Ok(())
+		}
+		res = fut => res,
+	}
+}
+
+#[cfg(not(unix))]
+async fn run_command(fut: BoxFuture<'_, Result<(), Error>>) -> Result<(), E> {
+	use tokio::signal::ctrl_c;
+
+	select! {
+		_ = ctrl_c() => {},
+		res = fut => res,
+	}
 }
 
 #[cfg(test)]
