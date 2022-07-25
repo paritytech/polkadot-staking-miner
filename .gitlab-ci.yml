@@ -63,6 +63,7 @@ build:
 ### stage:                         publish
 
 build-push-image:
+  stage:                           publish
   <<:                              *kubernetes-env
   <<:                              *publish-refs
   image:                           quay.io/buildah/stable
