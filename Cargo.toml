@@ -16,7 +16,7 @@ serde = "1.0"
 serde_json = "1.0"
 futures = "0.3"
 thiserror = "1.0"
-tokio = { version = "1.19", features = ["macros", "rt-multi-thread", "sync", "signal"] }
+tokio = { version = "1.20", features = ["macros", "rt-multi-thread", "sync", "signal"] }
 
 # subxt
 subxt = { git = "https://github.com/paritytech/subxt" }
