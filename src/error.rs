@@ -16,8 +16,6 @@ pub enum Error {
 	IncorrectPhase,
 	#[error("Submission is already submitted")]
 	AlreadySubmitted,
-	#[error("Submission strategy not satisfied")]
-	StrategyNotSatisfied,
 	#[error("Submission with better score already exist")]
 	BetterScoreExist,
 	#[error("Other error: `{0}`")]
