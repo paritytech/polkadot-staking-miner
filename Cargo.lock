@@ -1215,12 +1215,21 @@ version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11e017217fcd18da0a25296d3693153dd19c8a6aadab330b3595285d075385d1"
 dependencies = [
- "jsonrpsee-client-transport",
- "jsonrpsee-core",
+ "jsonrpsee-core 0.14.0",
  "jsonrpsee-proc-macros",
- "jsonrpsee-types",
+ "jsonrpsee-types 0.14.0",
  "jsonrpsee-ws-client",
  "tracing",
+]
+
+[[package]]
+name = "jsonrpsee"
+version = "0.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bd0d559d5e679b1ab2f869b486a11182923863b1b3ee8b421763cdd707b783a"
+dependencies = [
+ "jsonrpsee-client-transport 0.15.1",
+ "jsonrpsee-core 0.15.1",
 ]
 
 [[package]]
@@ -1231,8 +1240,29 @@ checksum = "ce395539a14d3ad4ec1256fde105abd36a2da25d578a291cabe98f45adfdb111"
 dependencies = [
  "futures-util",
  "http",
- "jsonrpsee-core",
- "jsonrpsee-types",
+ "jsonrpsee-core 0.14.0",
+ "jsonrpsee-types 0.14.0",
+ "pin-project",
+ "rustls-native-certs",
+ "soketto",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "tracing",
+ "webpki-roots",
+]
+
+[[package]]
+name = "jsonrpsee-client-transport"
+version = "0.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8752740ecd374bcbf8b69f3e80b0327942df76f793f8d4e60d3355650c31fb74"
+dependencies = [
+ "futures-util",
+ "http",
+ "jsonrpsee-core 0.15.1",
+ "jsonrpsee-types 0.15.1",
  "pin-project",
  "rustls-native-certs",
  "soketto",
@@ -1257,13 +1287,36 @@ dependencies = [
  "futures-channel",
  "futures-timer",
  "futures-util",
- "jsonrpsee-types",
+ "jsonrpsee-types 0.14.0",
  "rustc-hash",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "jsonrpsee-core"
+version = "0.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3dc3e9cf2ba50b7b1d7d76a667619f82846caa39e8e8daa8a4962d74acaddca"
+dependencies = [
+ "anyhow",
+ "async-lock",
+ "async-trait",
+ "beef",
+ "futures-channel",
+ "futures-timer",
+ "futures-util",
+ "jsonrpsee-types 0.15.1",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-futures",
 ]
 
 [[package]]
@@ -1293,14 +1346,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "jsonrpsee-types"
+version = "0.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e290bba767401b646812f608c099b922d8142603c9e73a50fb192d3ac86f4a0d"
+dependencies = [
+ "anyhow",
+ "beef",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
 name = "jsonrpsee-ws-client"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee043cb5dd0d51d3eb93432e998d5bae797691a7b10ec4a325e036bcdb48c48a"
 dependencies = [
- "jsonrpsee-client-transport",
- "jsonrpsee-core",
- "jsonrpsee-types",
+ "jsonrpsee-client-transport 0.14.0",
+ "jsonrpsee-core 0.14.0",
+ "jsonrpsee-types 0.14.0",
 ]
 
 [[package]]
@@ -3234,7 +3301,7 @@ dependencies = [
  "frame-support",
  "frame-system",
  "futures",
- "jsonrpsee",
+ "jsonrpsee 0.14.0",
  "log",
  "pallet-election-provider-multi-phase",
  "parity-scale-codec",
@@ -3322,14 +3389,14 @@ checksum = "6bdef32e8150c2a081110b42772ffe7d7c9032b606bc226c8260fd97e0976601"
 [[package]]
 name = "subxt"
 version = "0.22.0"
-source = "git+https://github.com/paritytech/subxt#b3f6ff1cf873dba67d9f84167bb735a081c9233d"
+source = "git+https://github.com/paritytech/subxt#6a2aabc2a698426711dc8566e0d20f507c43f1f7"
 dependencies = [
  "bitvec",
  "derivative",
  "frame-metadata",
  "futures",
  "hex",
- "jsonrpsee",
+ "jsonrpsee 0.15.1",
  "parity-scale-codec",
  "parking_lot",
  "scale-info",
@@ -3347,7 +3414,7 @@ dependencies = [
 [[package]]
 name = "subxt-codegen"
 version = "0.22.0"
-source = "git+https://github.com/paritytech/subxt#b3f6ff1cf873dba67d9f84167bb735a081c9233d"
+source = "git+https://github.com/paritytech/subxt#6a2aabc2a698426711dc8566e0d20f507c43f1f7"
 dependencies = [
  "darling",
  "frame-metadata",
@@ -3364,7 +3431,7 @@ dependencies = [
 [[package]]
 name = "subxt-macro"
 version = "0.22.0"
-source = "git+https://github.com/paritytech/subxt#b3f6ff1cf873dba67d9f84167bb735a081c9233d"
+source = "git+https://github.com/paritytech/subxt#6a2aabc2a698426711dc8566e0d20f507c43f1f7"
 dependencies = [
  "darling",
  "proc-macro-error",
@@ -3375,7 +3442,7 @@ dependencies = [
 [[package]]
 name = "subxt-metadata"
 version = "0.22.0"
-source = "git+https://github.com/paritytech/subxt#b3f6ff1cf873dba67d9f84167bb735a081c9233d"
+source = "git+https://github.com/paritytech/subxt#6a2aabc2a698426711dc8566e0d20f507c43f1f7"
 dependencies = [
  "frame-metadata",
  "parity-scale-codec",
@@ -3599,6 +3666,16 @@ checksum = "7b7358be39f2f274f322d2aaed611acc57f382e8eb1e5b48cb9ae30933495ce7"
 dependencies = [
  "once_cell",
  "valuable",
+]
+
+[[package]]
+name = "tracing-futures"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97d095ae15e245a057c8e8451bab9b3ee1e1f68e9ba2b4fbc18d0ac5237835f2"
+dependencies = [
+ "pin-project",
+ "tracing",
 ]
 
 [[package]]
