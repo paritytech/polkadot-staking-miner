@@ -31,6 +31,13 @@ frame-support = { git = "https://github.com/paritytech/substrate", branch = "mas
 sp-version = { git = "https://github.com/paritytech/substrate", branch = "master" }
 sp-runtime = { git = "https://github.com/paritytech/substrate", branch = "master" }
 
+# prometheus
+opentelemetry = { version = "0.17",  features = ["rt-tokio", "metrics"] }
+opentelemetry-prometheus = "0.10"
+prometheus = "0.13"
+hyper = { version = "0.14.20", features = ["server", "http1", "http2", "tcp"] }
+lazy_static = "1"
+
 [dev-dependencies]
 assert_cmd = "2.0"
 sp-storage = { git = "https://github.com/paritytech/substrate", branch = "master" }

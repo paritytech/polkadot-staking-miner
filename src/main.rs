@@ -36,6 +36,7 @@ mod helpers;
 mod monitor;
 mod opt;
 mod prelude;
+mod prometheus;
 mod signer;
 
 use clap::Parser;
@@ -48,6 +49,8 @@ use tracing_subscriber::EnvFilter;
 #[tokio::main]
 async fn main() -> Result<(), Error> {
 	tracing_subscriber::fmt().with_env_filter(EnvFilter::from_default_env()).init();
+
+	let (metric_state, prometheus_handle) = prometheus::run();
 
 	let Opt { uri, command } = Opt::parse();
 	log::debug!(target: LOG_TARGET, "attempting to connect to {:?}", uri);
@@ -73,7 +76,7 @@ async fn main() -> Result<(), Error> {
 		});
 
 		let fut = match command {
-			Command::Monitor(cfg) => monitor_cmd(api, cfg).boxed(),
+			Command::Monitor(cfg) => monitor_cmd(api, cfg, metric_state).boxed(),
 			Command::DryRun(cfg) => dry_run_cmd(api, cfg).boxed(),
 			Command::EmergencySolution(cfg) => emergency_cmd(api, cfg).boxed(),
 		};

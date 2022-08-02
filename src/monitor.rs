@@ -2,6 +2,7 @@ use crate::{
 	error::Error,
 	opt::{Listen, MonitorConfig, SubmissionStrategy},
 	prelude::*,
+	prometheus::MetricsState,
 	signer::Signer,
 };
 use pallet_election_provider_multi_phase::RawSolution;
@@ -14,7 +15,7 @@ macro_rules! monitor_cmd_for {
 	($runtime:tt) => {
 		paste::paste! {
 			/// The monitor command.
-			pub async fn [<run_$runtime>] (api: $crate::chain::$runtime::RuntimeApi, config: MonitorConfig) -> Result<(), Error> {
+			pub async fn [<run_$runtime>] (api: $crate::chain::$runtime::RuntimeApi, config: MonitorConfig, metrics: MetricsState) -> Result<(), Error> {
 
 				async fn heads_subscription(api: &$crate::chain::$runtime::RuntimeApi, listen: Listen) -> Result<Subscription<Header>, Error> {
 					match listen {
@@ -69,6 +70,7 @@ macro_rules! monitor_cmd_for {
 							signer.clone(),
 							config.clone(),
 							submit_lock.clone(),
+							metrics.clone(),
 					));
 				}
 
@@ -80,6 +82,7 @@ macro_rules! monitor_cmd_for {
 					mut signer: Signer,
 					config: MonitorConfig,
 					submit_lock: Arc<Mutex<()>>,
+					metrics: MetricsState,
 				) {
 
 					let hash = at.hash();
@@ -146,7 +149,10 @@ macro_rules! monitor_cmd_for {
 						}
 					};
 
-					log::trace!(target: LOG_TARGET, "Mined solution with {:?} size: {:?} round: {:?} at: {}, took: {} ms", score, size, round, at.number(), now.elapsed().as_millis());
+					let mining_duration = now.elapsed().as_millis();
+
+					metrics.mined_solutions.record(mining_duration as u64);
+					log::trace!(target: LOG_TARGET, "Mined solution with {:?} size: {:?} round: {:?} at: {}, took: {} ms", score, size, round, at.number(), mining_duration);
 
 					let xt = match api
 						.tx()

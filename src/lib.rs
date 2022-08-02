@@ -8,4 +8,5 @@ pub mod helpers;
 pub mod monitor;
 pub mod opt;
 pub mod prelude;
+pub mod prometheus;
 pub mod signer;
