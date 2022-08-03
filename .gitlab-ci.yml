@@ -62,7 +62,9 @@ nightly-test:
     - cargo build --release --features fast-runtime
     - mkdir -p ~/.local/bin
     - mv ./target/release/polkadot ~/.local/bin
-    - polkadot --version
+    - ls ~/.local/bin
+    - pwd
+    - ~/.local/bin/polkadot --version
     - cd -
     - RUST_LOG=info cargo test --workspace --all-features -- --nocapture
     - cargo clean
