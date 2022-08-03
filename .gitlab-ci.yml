@@ -54,7 +54,7 @@ nightly-test:
   stage:                          nightly-test
   <<:                             *docker-env
   rules:
-    - if: $CI_COMMIT_REF_NAME == "sk-move-nightly-to-gitlab"
+    - if: $CI_COMMIT_REF_NAME == "145" # for test purpose, replace with schedule
   script:
     - git clone --depth 1 git@github.com:paritytech/polkadot.git polkadot
     - ls
