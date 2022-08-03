@@ -53,7 +53,6 @@ variables:
 nightly-test:
   stage:                          nightly-test
   <<:                             *docker-env
-  <<:                             *rust-info-script
   rules:
     - if: $CI_COMMIT_REF_NAME == "sk-move-nightly-to-gitlab"
   script:
