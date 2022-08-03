@@ -64,8 +64,10 @@ nightly-test:
     - mv ./target/release/polkadot ~/.local/bin
     - ls ~/.local/bin
     - pwd
-    - ~/.local/bin/polkadot --version
+    - export PATH="$HOME/.local/bin:$PATH"
+    - polkadot --version
     - cd -
+    - rm -rf polkadot
     - RUST_LOG=info cargo test --workspace --all-features -- --nocapture
     - cargo clean
 
