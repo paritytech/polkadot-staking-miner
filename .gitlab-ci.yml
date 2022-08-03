@@ -1,4 +1,5 @@
 stages:
+  - nightly-test
   - build
   - publish
 
@@ -46,6 +47,26 @@ variables:
     expire_in:                     1 days
     paths:
       - ./artifacts/
+
+### stage:                        nightly-test
+
+nightly-test:
+  stage:                          nightly-test
+  <<:                             *docker-env
+  <<:                             *rust-info-script
+  rules:
+    - if: $CI_COMMIT_REF_NAME == "sk-move-nightly-to-gitlab"
+  script:
+    - git clone --depth 1 git@github.com:paritytech/polkadot.git polkadot
+    - ls
+    - cd polkadot
+    - cargo build --release --features fast-runtime
+    - mkdir -p ~/.local/bin
+    - mv ./target/release/polkadot ~/.local/bin
+    - polkadot --version
+    - cd -
+    - RUST_LOG=info cargo test --workspace --all-features -- --nocapture
+    - cargo clean
 
 ### stage:                        build
 
