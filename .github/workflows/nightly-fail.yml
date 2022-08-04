@@ -11,6 +11,9 @@ jobs:
   create-an-issue:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout staking-miner sources
+        uses: actions/checkout@v3
+
       - name: Create an issue
         uses: JasonEtco/create-an-issue@v2
         env:
