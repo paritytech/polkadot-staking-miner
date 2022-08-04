@@ -72,6 +72,8 @@ nightly-test:
 nightly-test-failure:
   stage:                           nightly-test
   image:                           "${CI_IMAGE}"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
   needs:                           ["nightly-test"]
   when:                            on_failure
   script:
