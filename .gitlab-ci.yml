@@ -72,9 +72,10 @@ nightly-test:
     - cargo clean
 
 nightly-test-failure:
-  stage: nightly-test
-  needs: ["nightly-test"]
-  when: on_failure
+  stage:                           nightly-test
+  <<:                              *docker-env
+  needs:                           ["nightly-test"]
+  when:                            on_failure
   script:
     - |
       'curl -X POST -H "Accept: application/vnd.github+json"
