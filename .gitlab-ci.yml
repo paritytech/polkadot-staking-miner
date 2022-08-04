@@ -71,7 +71,7 @@ nightly-test:
 
 nightly-test-failure:
   stage:                           nightly-test
-  image:                           "${CI_IMAGE}"
+  image:                           paritytech/tools:latest
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
   needs:                           ["nightly-test"]
@@ -84,7 +84,7 @@ nightly-test-failure:
         "https://api.github.com/repos/paritytech/staking-miner-v2/actions/workflows/nightly-fail.yml/dispatches"
         -d $"{\"ref\":\"main\",\"inputs\":{\"gitlab_pipeline\":\"${CI_PIPELINE_URL}\"}}"'
   tags:
-    - linux-docker
+    - kubernetes-parity-build
 
 ### stage:                        build
 
