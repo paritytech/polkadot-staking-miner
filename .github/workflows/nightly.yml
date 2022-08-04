@@ -1,4 +1,4 @@
-name: Test trigger from GitLab
+name: Daily compatibility check against latest polkadot
 
 on:
   workflow_dispatch:
