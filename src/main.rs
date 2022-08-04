@@ -50,7 +50,7 @@ use tracing_subscriber::EnvFilter;
 async fn main() -> Result<(), Error> {
 	tracing_subscriber::fmt().with_env_filter(EnvFilter::from_default_env()).init();
 
-	let (metric_state, prometheus_handle) = prometheus::run();
+	let _prometheus_handle = prometheus::run();
 
 	let Opt { uri, command } = Opt::parse();
 	log::debug!(target: LOG_TARGET, "attempting to connect to {:?}", uri);
@@ -71,12 +71,18 @@ async fn main() -> Result<(), Error> {
 		// Start a new tokio task to perform the runtime updates in the background.
 		let update_client = api.client.updates();
 		tokio::spawn(async move {
-			let result = update_client.perform_runtime_updates().await;
-			log::error!(target: LOG_TARGET, "Runtime update failed with result: {:?}", result);
+			match update_client.perform_runtime_updates().await {
+				Ok(()) => {
+					crate::prometheus::RUNTIME_UPGRADES.inc();
+				},
+				Err(e) => {
+					log::error!(target: LOG_TARGET, "Runtime update failed with result: {:?}", e);
+				},
+			}
 		});
 
 		let fut = match command {
-			Command::Monitor(cfg) => monitor_cmd(api, cfg, metric_state).boxed(),
+			Command::Monitor(cfg) => monitor_cmd(api, cfg).boxed(),
 			Command::DryRun(cfg) => dry_run_cmd(api, cfg).boxed(),
 			Command::EmergencySolution(cfg) => emergency_cmd(api, cfg).boxed(),
 		};

@@ -2,12 +2,15 @@ use crate::{
 	error::Error,
 	opt::{Listen, MonitorConfig, SubmissionStrategy},
 	prelude::*,
-	prometheus::MetricsState,
+	prometheus::{
+		BALANCE, MINED_SOLUTION_DURATION, SUBMISSIONS_STARTED, SUBMISSIONS_SUCCESS,
+		SUBMIT_SOLUTION_AND_WATCH_DURATION,
+	},
 	signer::Signer,
 };
-use pallet_election_provider_multi_phase::RawSolution;
+use pallet_election_provider_multi_phase::{RawSolution, SolutionOf};
 use sp_runtime::Perbill;
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 use subxt::{rpc::Subscription, BasicError as SubxtError, TransactionStatus};
 use tokio::sync::Mutex;
 
@@ -15,7 +18,7 @@ macro_rules! monitor_cmd_for {
 	($runtime:tt) => {
 		paste::paste! {
 			/// The monitor command.
-			pub async fn [<run_$runtime>] (api: $crate::chain::$runtime::RuntimeApi, config: MonitorConfig, metrics: MetricsState) -> Result<(), Error> {
+			pub async fn [<run_$runtime>] (api: $crate::chain::$runtime::RuntimeApi, config: MonitorConfig) -> Result<(), Error> {
 
 				async fn heads_subscription(api: &$crate::chain::$runtime::RuntimeApi, listen: Listen) -> Result<Subscription<Header>, Error> {
 					match listen {
@@ -70,8 +73,11 @@ macro_rules! monitor_cmd_for {
 							signer.clone(),
 							config.clone(),
 							submit_lock.clone(),
-							metrics.clone(),
 					));
+
+					// this is lossy but fine for now.
+					let free_balance = api.storage().system().account(signer.account_id(), None).await?.data.free as f64;
+					BALANCE.set(free_balance);
 				}
 
 				/// Construct extrinsic at given block and watch it.
@@ -82,7 +88,6 @@ macro_rules! monitor_cmd_for {
 					mut signer: Signer,
 					config: MonitorConfig,
 					submit_lock: Arc<Mutex<()>>,
-					metrics: MetricsState,
 				) {
 
 					let hash = at.hash();
@@ -137,7 +142,7 @@ macro_rules! monitor_cmd_for {
 					}
 
 					// This takes a long time to complete...
-					let now = std::time::Instant::now();
+					let now = Instant::now();
 
 					let (solution, score, size) =
 					match crate::helpers::[<mine_solution_$runtime>](&api, Some(hash), config.solver)
@@ -150,20 +155,9 @@ macro_rules! monitor_cmd_for {
 					};
 
 					let mining_duration = now.elapsed().as_millis();
+					MINED_SOLUTION_DURATION.with_label_values(&["all"]).observe(mining_duration as f64);
 
-					metrics.mined_solutions.record(mining_duration as u64);
 					log::trace!(target: LOG_TARGET, "Mined solution with {:?} size: {:?} round: {:?} at: {}, took: {} ms", score, size, round, at.number(), mining_duration);
-
-					let xt = match api
-						.tx()
-						.election_provider_multi_phase()
-						.submit(RawSolution { solution, score, round }) {
-							Ok(xt) => xt,
-							Err(e) => {
-								kill_main_task_if_critical_err(&tx, e.into());
-								return;
-							}
-						};
 
 					let best_head = match get_latest_head(&api, config.listen).await {
 						Ok(head) => head,
@@ -173,7 +167,7 @@ macro_rules! monitor_cmd_for {
 						}
 					};
 
-					let now = std::time::Instant::now();
+
 					if let Err(e) = ensure_signed_phase(&api, best_head).await {
 						log::debug!(
 							target: LOG_TARGET,
@@ -186,6 +180,7 @@ macro_rules! monitor_cmd_for {
 					}
 
 
+					let now = Instant::now();
 					if let Err(e) = ensure_no_better_solution(&api, best_head, score, config.submission_strategy).await {
 						log::debug!(
 							target: LOG_TARGET,
@@ -196,70 +191,25 @@ macro_rules! monitor_cmd_for {
 						kill_main_task_if_critical_err(&tx, e);
 						return;
 					}
-
-
-					let mut status_sub = match xt.sign_and_submit_then_watch_default(&*signer).await {
-						Ok(sub) => sub,
-						Err(e) => {
-							log::warn!(target: LOG_TARGET, "submit solution failed: {:?}", e);
-							kill_main_task_if_critical_err(&tx, e.into());
-							return;
-						}
-					};
-
-
 					log::trace!(target: LOG_TARGET, "Solution validity verification took: {} ms", now.elapsed().as_millis());
 
-					loop {
-						let status = match status_sub.next_item().await {
-							Some(Ok(status)) => status,
-							Some(Err(err)) => {
-								log::error!(
-									target: LOG_TARGET,
-									"watch submit extrinsic at {:?} failed: {:?}",
-									hash,
-									err
-								);
-								kill_main_task_if_critical_err(&tx, err.into());
-								break;
-							},
-							None => {
-								log::error!(target: LOG_TARGET, "watch submit extrinsic at {:?} closed", hash);
-								break;
-							},
-						};
-
-						match status {
-							TransactionStatus::Ready
-								| TransactionStatus::Broadcast(_)
-								| TransactionStatus::Future => (),
-							TransactionStatus::InBlock(details) => {
-
-								let events = details.fetch_events().await.expect("events should exist");
-
-								let solution_stored = events.find_first::<$crate::chain::$runtime::epm::events::SolutionStored>();
-
-								if let Ok(Some(_)) = solution_stored {
-									log::info!(target: LOG_TARGET, "Included at {:?}", details.block_hash());
-								} else {
-									log::warn!(target: LOG_TARGET, "no SolutionStored event emitted");
-									break
-								}
-								break
-							},
-							TransactionStatus::Retracted(hash) => {
-								log::info!(target: LOG_TARGET, "Retracted at {:?}", hash);
-							},
-							TransactionStatus::Finalized(details) => {
-								log::info!(target: LOG_TARGET, "Finalized at {:?}", details.block_hash());
-								break;
-							}
-							_ => {
-								log::warn!(target: LOG_TARGET, "Stopping listen due to other status {:?}", status);
-								break;
-							},
+					let now = Instant::now();
+					SUBMISSIONS_STARTED.inc();
+					match submit_and_watch_solution(&api, signer, (solution, score, round), hash).await {
+						Ok(()) => {
+							SUBMISSIONS_SUCCESS.inc();
+							SUBMIT_SOLUTION_AND_WATCH_DURATION.with_label_values(&["all"]).observe(now.elapsed().as_millis() as f64);
 						}
-					}
+						Err(e) => {
+							log::warn!(
+								target: LOG_TARGET,
+								"submit_and_watch_solution failed: {:?}; skipping block: {}",
+								e,
+								at.number
+							);
+							kill_main_task_if_critical_err(&tx, e);
+						}
+					};
 				}
 
 				/// Ensure that now is the signed phase.
@@ -330,7 +280,6 @@ macro_rules! monitor_cmd_for {
 					}
 
 					Ok(())
-
 				}
 
 				async fn get_latest_head(api: &$crate::chain::$runtime::RuntimeApi, listen: Listen) -> Result<Hash, Error> {
@@ -343,6 +292,68 @@ macro_rules! monitor_cmd_for {
 							}
 						}
 						Listen::Finalized => api.client.rpc().finalized_head().await.map_err(Into::into),
+					}
+				}
+
+				async fn submit_and_watch_solution(
+					api: &$crate::chain::$runtime::RuntimeApi,
+					signer: Signer,
+					(solution, score, round): (SolutionOf<$crate::chain::$runtime::Config>, sp_npos_elections::ElectionScore, u32),
+					hash: Hash
+				) -> Result<(), Error> {
+
+					let xt = api.tx().election_provider_multi_phase().submit(RawSolution { solution, score, round })?;
+
+					let mut status_sub = xt.sign_and_submit_then_watch_default(&*signer).await.map_err(|e| {
+						log::warn!(target: LOG_TARGET, "submit solution failed: {:?}", e);
+						e
+					})?;
+
+					loop {
+						let status = match status_sub.next_item().await {
+							Some(Ok(status)) => status,
+							Some(Err(err)) => {
+								log::error!(
+									target: LOG_TARGET,
+									"watch submit extrinsic at {:?} failed: {:?}",
+									hash,
+									err
+								);
+								return Err(err.into());
+							},
+							None => {
+								return Err(Error::Other(format!("Submit solution failed; watch_extrinsic at {:?} closed", hash)));
+							},
+						};
+
+						match status {
+							TransactionStatus::Ready
+								| TransactionStatus::Broadcast(_)
+								| TransactionStatus::Future => (),
+							TransactionStatus::InBlock(details) => {
+
+								let events = details.fetch_events().await.expect("events should exist");
+
+								let solution_stored = events.find_first::<$crate::chain::$runtime::epm::events::SolutionStored>();
+
+								return if let Ok(Some(_)) = solution_stored {
+									log::info!(target: LOG_TARGET, "Included at {:?}", details.block_hash());
+									Ok(())
+								} else {
+									Err(Error::Other(format!("No SolutionStored event found at {:?}", details.block_hash())))
+								};
+							},
+							TransactionStatus::Retracted(hash) => {
+								log::info!(target: LOG_TARGET, "Retracted at {:?}", hash);
+							},
+							TransactionStatus::Finalized(details) => {
+								log::info!(target: LOG_TARGET, "Finalized at {:?}", details.block_hash());
+								return Ok(());
+							}
+							_ => {
+								return Err(Error::Other(format!("Stopping listen due to other status {:?}", status)));
+							},
+						}
 					}
 				}
 			}
