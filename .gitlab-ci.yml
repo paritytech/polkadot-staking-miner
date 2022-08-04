@@ -73,6 +73,7 @@ nightly-test:
 
 nightly-test-failure:
   stage: nightly-test
+  needs: ["nightly-test"]
   when: on_failure
   script:
     - |
