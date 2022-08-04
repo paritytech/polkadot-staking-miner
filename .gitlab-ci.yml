@@ -68,6 +68,12 @@ nightly-test:
     - rm -rf polkadot
     - RUST_LOG=info cargo test --workspace --all-features -- --nocapture
     - cargo clean
+  after_script:
+    - echo $CI_JOB_STATUS > nightly_test_result
+  artifacts:
+    when: always
+    paths:
+      - nightly_test_result
 
 nightly-test-failure:
   stage:                           nightly-test
@@ -75,14 +81,19 @@ nightly-test-failure:
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
   needs:                           ["nightly-test"]
-  when:                            on_failure
+  when:                            always
   script:
+    - TEST_JOB_STATUS=$(<nightly_test_result)
     - 'curl
         -X POST
         -H "Accept: application/vnd.github+json"
         -H "Authorization: token ${GITHUB_TOKEN}"
         "https://api.github.com/repos/paritytech/staking-miner-v2/actions/workflows/nightly.yml/dispatches"
-        -d $"{\"ref\":\"main\",\"inputs\":{\"gitlab_pipeline\":\"${CI_PIPELINE_URL}\"}}"'
+        -d $"{\"ref\":\"main\",
+        \"inputs\":{
+          \"gitlab_pipeline\":\"${CI_PIPELINE_URL}\",
+          \"gitlab_test_job_status\":\"${TEST_JOB_STATUS}\"
+          }}"'
   tags:
     - kubernetes-parity-build
 
