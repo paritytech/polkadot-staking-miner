@@ -1,6 +1,7 @@
 name: Test trigger from GitLab
 
 on:
+  push:
   workflow_dispatch:
     inputs:
       gitlab_pipeline:
