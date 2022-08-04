@@ -57,9 +57,7 @@ nightly-test:
   <<:                             *docker-env
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
-    - if: $CI_COMMIT_REF_NAME == "145" # REMOVE AFTER DEBUG
   script:
-    - failure
     - git clone -b master --depth 1 https://github.com/paritytech/polkadot.git polkadot
     - cd polkadot
     - cargo build --release --features fast-runtime
@@ -82,7 +80,7 @@ nightly-test-failure:
         -H "Accept: application/vnd.github+json"
         -H "Authorization: token ${GITHUB_TOKEN}"
         "https://api.github.com/repos/paritytech/staking-miner-v2/actions/workflows/nightly-fail.yml/dispatches"
-        -d $"{\"ref\":\"sk-move-nightly-to-gitlab\",\"inputs\":{\"gitlab_pipeline\":\"${CI_PIPELINE_URL}\"}}"'
+        -d $"{\"ref\":\"main\",\"inputs\":{\"gitlab_pipeline\":\"${CI_PIPELINE_URL}\"}}"'
   tags:
     - linux-docker
 
