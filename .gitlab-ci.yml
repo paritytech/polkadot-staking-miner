@@ -81,7 +81,7 @@ nightly-test-failure:
         -X POST
         -H "Accept: application/vnd.github+json"
         -H "Authorization: token ${GITHUB_TOKEN}"
-        "https://api.github.com/repos/paritytech/staking-miner-v2/actions/workflows/nightly-fail.yml/dispatches"
+        "https://api.github.com/repos/paritytech/staking-miner-v2/actions/workflows/nightly.yml/dispatches"
         -d $"{\"ref\":\"main\",\"inputs\":{\"gitlab_pipeline\":\"${CI_PIPELINE_URL}\"}}"'
   tags:
     - kubernetes-parity-build
