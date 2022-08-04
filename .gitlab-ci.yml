@@ -82,9 +82,7 @@ nightly-test-failure:
         -H "Accept: application/vnd.github+json"
         -H "Authorization: token ${GITHUB_TOKEN}"
         "https://api.github.com/repos/paritytech/staking-miner-v2/actions/workflows/nightly-fail.yml/dispatches"
-        -d $"{
-           \"ref\": \"sk-move-nightly-to-gitlab\",
-           \"inputs\": {\"gitlab_pipeline\":\"${CI_PIPELINE_URL}\"}}"'
+        -d $"{\"ref\":\"sk-move-nightly-to-gitlab\",\"inputs\":{\"gitlab_pipeline\":\"${CI_PIPELINE_URL}\"}}"'
   tags:
     - linux-docker
 
