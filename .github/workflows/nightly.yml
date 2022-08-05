@@ -1,66 +1,34 @@
 name: Daily compatibility check against latest polkadot
 
 on:
-  schedule:
-    - cron: "0 21 * * *"
+  workflow_dispatch:
+    inputs:
+      gitlab_pipeline:
+        description: 'Link to failed pipeline'
+        required: true
+      gitlab_test_job_status:
+        description: 'GitLab test job status'
+        required: true
 
 jobs:
-  tests_ubuntu:
-    name: Run daily tests.
+  announce-status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Announce a status
+        run: echo  ${{ inputs.gitlab_test_job_status }}
+
+  create-an-issue:
+    if: ${{ inputs.gitlab_test_job_status == 'failed' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout staking-miner sources
         uses: actions/checkout@v3
 
-      - name: Checkout polkadot source
-        uses: actions/checkout@v3
-        with:
-          repository: paritytech/polkadot
-          ref: refs/heads/master
-          path: polkadot
-
-      - name: Install Rust stable toolchain
-        uses: actions-rs/toolchain@v1.0.7
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-
-      - name: Install Rust stable toolchain
-        uses: actions-rs/toolchain@v1.0.7
-        with:
-          profile: minimal
-          toolchain: nightly
-          target: wasm32-unknown-unknown
-
-
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2.0.0
-
-      - name: Show working directory
-        run: ls
-
-      - name: Build polkadot with fast runtime
-        run: |
-          cd polkadot
-          cargo build --release --features fast-runtime
-          mkdir -p ~/.local/bin
-          mv ./target/release/polkadot ~/.local/bin
-          polkadot --version
-          cd -
-          rm -rf polkadot
-
-      - name: Cargo test
-        run: |
-          RUST_LOG=info cargo test --workspace --all-features -- --nocapture
-          cargo clean
-
-      # If the previous step fails, create a new Github issue
-      # to notify us about it.
-      - if: ${{ failure() }}
+      - name: Create an issue
         uses: JasonEtco/create-an-issue@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLAB_PIPELINE_URL: ${{ inputs.gitlab_pipeline }}
         with:
           # Use this issue template:
           filename: .github/issue_templates/nightly_run_failed.md
@@ -70,3 +38,6 @@ jobs:
           # Look for new *open* issues in this search (we want to
           # create a new one if we only find closed versions):
           search_existing: open
+
+      - name: Fail workflow if tests failed
+        run: exit 1

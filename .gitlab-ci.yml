@@ -1,4 +1,5 @@
 stages:
+  - nightly-test
   - build
   - publish
 
@@ -17,6 +18,8 @@ variables:
 
 .publish-refs:                     &publish-refs
   rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
     - if: $CI_COMMIT_REF_NAME == "main"
     - if: $CI_COMMIT_REF_NAME =~ /^v[0-9]+\.[0-9]+.*$/              # i.e. v1.0, v2.1rc1
 
@@ -46,6 +49,52 @@ variables:
     expire_in:                     1 days
     paths:
       - ./artifacts/
+
+### stage:                        nightly-test
+
+nightly-test:
+  stage:                          nightly-test
+  <<:                             *docker-env
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  script:
+    - git clone -b master --depth 1 https://github.com/paritytech/polkadot.git polkadot
+    - cd polkadot
+    - cargo build --release --features fast-runtime
+    - mkdir -p ~/.local/bin
+    - mv ./target/release/polkadot /usr/bin
+    - polkadot --version
+    - cd -
+    - rm -rf polkadot
+    - RUST_LOG=info cargo test --workspace --all-features -- --nocapture
+    - cargo clean
+  after_script:
+    - echo $CI_JOB_STATUS > nightly_test_result
+  artifacts:
+    when: always
+    paths:
+      - nightly_test_result
+
+nightly-test-notification:
+  stage:                           nightly-test
+  image:                           paritytech/tools:latest
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  needs:                           ["nightly-test"]
+  when:                            always
+  script:
+    - 'curl
+        -X POST
+        -H "Accept: application/vnd.github+json"
+        -H "Authorization: token ${GITHUB_TOKEN}"
+        "https://api.github.com/repos/paritytech/staking-miner-v2/actions/workflows/nightly.yml/dispatches"
+        -d $"{\"ref\":\"main\",
+              \"inputs\":{
+                \"gitlab_pipeline\":\"${CI_PIPELINE_URL}\",
+                \"gitlab_test_job_status\":\"${TEST_JOB_STATUS}\"
+              }}"'
+  tags:
+    - kubernetes-parity-build
 
 ### stage:                        build
 
