@@ -18,7 +18,7 @@ variables:
   # change to production after https://github.com/paritytech/ci_cd/issues/535 is closed
   CI_IMAGE:                        "paritytech/ci-linux:staging"
 
-.test-refs:                        &test-refs
+.common-refs:                      &common-refs
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
       when: never
@@ -61,53 +61,53 @@ variables:
     paths:
       - ./artifacts/
 
-#### stage:                       check
+#### stage:                        check
 
 fmt:
   stage:                           check
   <<:                              *docker-env
-  <<:                              *test-refs
+  <<:                              *common-refs
   script:
     - cargo +nightly fmt --all -- --check
 
 clippy:
   stage:                           check
   <<:                              *docker-env
-  <<:                              *test-refs
+  <<:                              *common-refs
   script:
     - cargo +nightly clippy --all-targets
 
 check-docs:
   stage:                           check
   <<:                              *docker-env
-  <<:                              *test-refs
+  <<:                              *common-refs
   script:
     - RUSTDOCFLAGS="--cfg docsrs --deny rustdoc::broken_intra_doc_links"
         cargo +nightly doc --verbose --workspace --no-deps --document-private-items --all-features
 
 check-code:
-  stage:                            check
+  stage:                           check
   <<:                              *docker-env
-  <<:                              *test-refs
+  <<:                              *common-refs
   script:
     - cargo install cargo-hack
     - cargo hack check --workspace --each-feature --all-targets
 
-### stage:                        test
+### stage:                         test
 
 test-ubuntu:
-  stage:                          test
-  needs:                          []
-  <<:                             *docker-env
-  <<:                             *test-refs
+  stage:                           test
+  needs:                           []
+  <<:                              *docker-env
+  <<:                              *common-refs
   script:
     - RUST_LOG=info cargo test --workspace -- --nocapture
 
-### stage:                        nightly-test
+### stage:                         nightly-test
 
 nightly-test:
-  stage:                          nightly-test
-  <<:                             *docker-env
+  stage:                           nightly-test
+  <<:                              *docker-env
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
   script:
@@ -136,6 +136,7 @@ nightly-test-notification:
   needs:                           ["nightly-test"]
   when:                            always
   script:
+    - TEST_JOB_STATUS=$(<nightly_test_result)
     - 'curl
         -X POST
         -H "Accept: application/vnd.github+json"
@@ -149,7 +150,7 @@ nightly-test-notification:
   tags:
     - kubernetes-parity-build
 
-### stage:                        build
+### stage:                         build
 
 build:
   stage:                           build
