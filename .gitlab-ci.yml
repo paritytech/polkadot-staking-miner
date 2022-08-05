@@ -69,7 +69,6 @@ fmt:
   <<:                              *test-refs
   script:
     - cargo +nightly fmt --all -- --check
-  allow_failure:                   true
 
 clippy:
   stage:                           check
@@ -77,7 +76,6 @@ clippy:
   <<:                              *test-refs
   script:
     - cargo +nightly clippy --all-targets
-  allow_failure:                   true
 
 check-docs:
   stage:                           check
