@@ -45,12 +45,13 @@ async fn serve_req(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
 	Ok(response)
 }
 
-pub struct GracefulShutdown(oneshot::Sender<()>);
+pub struct GracefulShutdown(Option<oneshot::Sender<()>>);
 
-impl GracefulShutdown {
-	/// Send shutdown signal.
-	pub fn shutdown(self) {
-		let _ = self.0.send(());
+impl Drop for GracefulShutdown {
+	fn drop(&mut self) {
+		if let Some(handle) = self.0.take() {
+			let _ = handle.send(());
+		}
 	}
 }
 
@@ -80,7 +81,7 @@ pub fn run() -> Result<GracefulShutdown, String> {
 		}
 	});
 
-	Ok(GracefulShutdown(tx))
+	Ok(GracefulShutdown(Some(tx)))
 }
 
 mod hidden {
@@ -159,6 +160,30 @@ mod hidden {
 		))
 		.unwrap()
 	});
+	static SCORE_MINIMAL_STAKE: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(opts!(
+			"staking_miner_score_minimal_stake",
+			"The minimal winner, in terms of total backing stake",
+			labels! {"handler" => "all",}
+		))
+		.unwrap()
+	});
+	static SCORE_SUM_STAKE: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(opts!(
+			"staking_miner_score_sum_stake",
+			"The sum of the total backing of all winners",
+			labels! {"handler" => "all",}
+		))
+		.unwrap()
+	});
+	static SCORE_SUM_STAKE_SQUARED: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(opts!(
+			"staking_miner_score_sum_stake_squared",
+			"The sum squared of the total backing of all winners, aka. the variance.",
+			labels! {"handler" => "all",}
+		))
+		.unwrap()
+	});
 	static RUNTIME_UPGRADES: Lazy<Counter> = Lazy::new(|| {
 		register_counter!(opts!(
 			"staking_miner_runtime_upgrades",
@@ -184,6 +209,12 @@ mod hidden {
 
 	pub fn set_balance(balance: f64) {
 		BALANCE.set(balance);
+	}
+
+	pub fn set_score(score: sp_npos_elections::ElectionScore) {
+		SCORE_MINIMAL_STAKE.set(score.minimal_stake as f64);
+		SCORE_SUM_STAKE.set(score.sum_stake as f64);
+		SCORE_SUM_STAKE_SQUARED.set(score.sum_stake_squared as f64);
 	}
 
 	pub fn observe_submit_and_watch_duration(time: f64) {

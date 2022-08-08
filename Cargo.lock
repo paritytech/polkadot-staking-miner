@@ -3324,6 +3324,7 @@ dependencies = [
  "pallet-election-provider-multi-phase",
  "parity-scale-codec",
  "paste",
+ "pin-project-lite",
  "prometheus",
  "scale-info",
  "serde",

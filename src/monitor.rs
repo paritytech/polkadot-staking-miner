@@ -1,12 +1,13 @@
 use crate::{
 	error::Error,
+	helpers::TimedFuture,
 	opt::{Listen, MonitorConfig, SubmissionStrategy},
 	prelude::*,
 	signer::Signer,
 };
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOf};
 use sp_runtime::Perbill;
-use std::{sync::Arc, time::Instant};
+use std::sync::Arc;
 use subxt::{rpc::Subscription, BasicError as SubxtError, TransactionStatus};
 use tokio::sync::Mutex;
 
@@ -137,23 +138,20 @@ macro_rules! monitor_cmd_for {
 						return;
 					}
 
-					// This takes a long time to complete...
-					let now = Instant::now();
-
-					let (solution, score, size) =
-					match crate::helpers::[<mine_solution_$runtime>](&api, Some(hash), config.solver)
-					.await {
-						Ok(s) => s,
-						Err(e) => {
+					let (solution, score) =
+					match crate::helpers::[<mine_solution_$runtime>](&api, Some(hash), config.solver).timed().await {
+						(Ok((solution, score, size)), elapsed) => {
+							let elapsed_ms = elapsed.as_millis();
+							crate::prometheus::observe_mined_solution_duration(elapsed_ms as f64);
+							crate::prometheus::set_score(score);
+							log::trace!(target: LOG_TARGET, "Mined solution with {:?} size: {:?} round: {:?} at: {}, took: {} ms", score, size, round, at.number(), elapsed_ms);
+							(solution, score)
+						}
+						(Err(e), _) => {
 							kill_main_task_if_critical_err(&tx, e);
 							return;
 						}
 					};
-
-					let mining_duration = now.elapsed().as_millis();
-					crate::prometheus::observe_mined_solution_duration(mining_duration as f64);
-
-					log::trace!(target: LOG_TARGET, "Mined solution with {:?} size: {:?} round: {:?} at: {}, took: {} ms", score, size, round, at.number(), mining_duration);
 
 					let best_head = match get_latest_head(&api, config.listen).await {
 						Ok(head) => head,
@@ -162,7 +160,6 @@ macro_rules! monitor_cmd_for {
 							return;
 						}
 					};
-
 
 					if let Err(e) = ensure_signed_phase(&api, best_head).await {
 						log::debug!(
@@ -175,28 +172,29 @@ macro_rules! monitor_cmd_for {
 						return;
 					}
 
-
-					let now = Instant::now();
-					if let Err(e) = ensure_no_better_solution(&api, best_head, score, config.submission_strategy).await {
-						log::debug!(
-							target: LOG_TARGET,
-							"ensure_no_better_solution failed: {:?}; skipping block: {}",
-							e,
-							at.number
-						);
-						kill_main_task_if_critical_err(&tx, e);
-						return;
-					}
-					log::trace!(target: LOG_TARGET, "Solution validity verification took: {} ms", now.elapsed().as_millis());
-
-					let now = Instant::now();
-					crate::prometheus::on_submission_attempt();
-					match submit_and_watch_solution(&api, signer, (solution, score, round), hash).await {
-						Ok(()) => {
-							crate::prometheus::on_submission_success();
-							crate::prometheus::observe_submit_and_watch_duration(now.elapsed().as_millis() as f64);
+					match ensure_no_better_solution(&api, best_head, score, config.submission_strategy).timed().await {
+						(Ok(_), now) => {
+							log::trace!(target: LOG_TARGET, "Solution validity verification took: {} ms", now.as_millis());
 						}
-						Err(e) => {
+						(Err(e), _) => {
+							log::debug!(
+								target: LOG_TARGET,
+								"ensure_no_better_solution failed: {:?}; skipping block: {}",
+								e,
+								at.number
+							);
+							kill_main_task_if_critical_err(&tx, e);
+							return;
+						}
+					};
+
+					crate::prometheus::on_submission_attempt();
+					match submit_and_watch_solution(&api, signer, (solution, score, round), hash).timed().await {
+						(Ok(_), now) => {
+							crate::prometheus::on_submission_success();
+							crate::prometheus::observe_submit_and_watch_duration(now.as_millis() as f64);
+						}
+						(Err(e), _) => {
 							log::warn!(
 								target: LOG_TARGET,
 								"submit_and_watch_solution failed: {:?}; skipping block: {}",
