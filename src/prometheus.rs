@@ -55,7 +55,7 @@ impl Drop for GracefulShutdown {
 	}
 }
 
-pub fn run() -> Result<GracefulShutdown, String> {
+pub fn run(port: u16) -> Result<GracefulShutdown, String> {
 	let (tx, rx) = oneshot::channel();
 
 	// For every connection, we must make a `Service` to handle all
@@ -64,9 +64,9 @@ pub fn run() -> Result<GracefulShutdown, String> {
 		Ok::<_, std::convert::Infallible>(service_fn(move |req| serve_req(req)))
 	});
 
-	let addr = ([127, 0, 0, 1], 9999).into();
+	let addr = ([127, 0, 0, 1], port).into();
 	let server = hyper::Server::try_bind(&addr)
-		.map_err(|e| format!("Failed bind socket on port 9999: {:?}", e))?
+		.map_err(|e| format!("Failed bind socket on port {} {:?}", port, e))?
 		.serve(make_svc);
 
 	log::info!("Started prometheus endpoint on http://{}", addr);
