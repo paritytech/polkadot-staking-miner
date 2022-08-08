@@ -36,6 +36,7 @@ mod helpers;
 mod monitor;
 mod opt;
 mod prelude;
+mod prometheus;
 mod signer;
 
 use clap::Parser;
@@ -49,7 +50,7 @@ use tracing_subscriber::EnvFilter;
 async fn main() -> Result<(), Error> {
 	tracing_subscriber::fmt().with_env_filter(EnvFilter::from_default_env()).init();
 
-	let Opt { uri, command } = Opt::parse();
+	let Opt { uri, command, prometheus_port } = Opt::parse();
 	log::debug!(target: LOG_TARGET, "attempting to connect to {:?}", uri);
 
 	let rpc = WsClientBuilder::default().max_request_body_size(u32::MAX).build(uri).await?;
@@ -57,7 +58,8 @@ async fn main() -> Result<(), Error> {
 	let client = subxt::ClientBuilder::new().set_client(rpc).build().await?;
 	let runtime_version = client.rpc().runtime_version(None).await?;
 	let chain = Chain::try_from(runtime_version)?;
-
+	let _prometheus_handle = prometheus::run(prometheus_port.unwrap_or(DEFAULT_PROMETHEUS_PORT))
+		.map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
 	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
 
 	let outcome = any_runtime!(chain, {
@@ -68,8 +70,14 @@ async fn main() -> Result<(), Error> {
 		// Start a new tokio task to perform the runtime updates in the background.
 		let update_client = api.client.updates();
 		tokio::spawn(async move {
-			let result = update_client.perform_runtime_updates().await;
-			log::error!(target: LOG_TARGET, "Runtime update failed with result: {:?}", result);
+			match update_client.perform_runtime_updates().await {
+				Ok(()) => {
+					crate::prometheus::on_runtime_upgrade();
+				},
+				Err(e) => {
+					log::error!(target: LOG_TARGET, "Runtime update failed with result: {:?}", e);
+				},
+			}
 		});
 
 		let fut = match command {
@@ -123,6 +131,8 @@ mod tests {
 			env!("CARGO_PKG_NAME"),
 			"--uri",
 			"hi",
+			"--prometheus-port",
+			"9999",
 			"monitor",
 			"--seed-or-path",
 			"//Alice",
@@ -136,6 +146,7 @@ mod tests {
 			opt,
 			Opt {
 				uri: "hi".to_string(),
+				prometheus_port: Some(9999),
 				command: Command::Monitor(MonitorConfig {
 					listen: Listen::Head,
 					solver: Solver::SeqPhragmen { iterations: 10 },
@@ -163,6 +174,7 @@ mod tests {
 			opt,
 			Opt {
 				uri: "hi".to_string(),
+				prometheus_port: None,
 				command: Command::DryRun(DryRunConfig {
 					at: None,
 					solver: Solver::PhragMMS { iterations: 10 },
@@ -191,6 +203,7 @@ mod tests {
 			opt,
 			Opt {
 				uri: "hi".to_string(),
+				prometheus_port: None,
 				command: Command::EmergencySolution(EmergencySolutionConfig {
 					take: Some(99),
 					at: None,

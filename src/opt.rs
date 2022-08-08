@@ -253,4 +253,8 @@ pub struct Opt {
 
 	#[clap(subcommand)]
 	pub command: Command,
+
+	/// The prometheus endpoint TCP port.
+	#[clap(long, short, env = "PROMETHEUS_PORT")]
+	pub prometheus_port: Option<u16>,
 }

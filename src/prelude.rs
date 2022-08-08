@@ -39,6 +39,8 @@ pub use subxt::{
 
 /// Default URI to connect to.
 pub const DEFAULT_URI: &str = "wss://rpc.polkadot.io:443";
+/// Default port to start the prometheus server on.
+pub const DEFAULT_PROMETHEUS_PORT: u16 = 9999;
 /// The logging target.
 pub const LOG_TARGET: &str = "staking-miner";
 
