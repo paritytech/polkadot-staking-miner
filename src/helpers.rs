@@ -33,10 +33,7 @@ where
 		let start = this.start.get_or_insert_with(Instant::now);
 
 		match this.inner.poll(cx) {
-			// If the inner future is still pending, this wrapper is still pending.
 			Poll::Pending => Poll::Pending,
-
-			// If the inner future is done, measure the elapsed time and finish this wrapper future.
 			Poll::Ready(v) => {
 				let elapsed = start.elapsed();
 				Poll::Ready((v, elapsed))
@@ -129,8 +126,6 @@ macro_rules! snapshot_for { ($runtime:tt) => {
 	}
 }}}
 
-/// Warning these variables are in thread local storage and may not be accessible when doing
-/// `tokio::spawn` or `thread::spawn`.
 macro_rules! tls_update_runtime_constants {
 	($runtime:tt) => {
 		paste::paste! {
