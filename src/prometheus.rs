@@ -20,78 +20,9 @@ use hyper::{
 	service::{make_service_fn, service_fn},
 	Body, Method, Request, Response,
 };
-use lazy_static::lazy_static;
-use prometheus::{
-	labels, opts, register_counter, register_gauge, register_histogram_vec, Counter, Encoder,
-	Gauge, HistogramVec, TextEncoder,
-};
+use prometheus::{Encoder, TextEncoder};
 
-lazy_static! {
-	pub static ref SUBMISSIONS_STARTED: Counter = register_counter!(opts!(
-		"staking_miner_submissions_started",
-		"Number of submissions started",
-		labels! {"handler" => "all",}
-	))
-	.unwrap();
-	pub static ref SUBMISSIONS_SUCCESS: Counter = register_counter!(opts!(
-		"staking_miner_submissions_success",
-		"Number of submissions finished successfully",
-		labels! {"handler" => "all",}
-	))
-	.unwrap();
-	pub static ref MINED_SOLUTION_DURATION: HistogramVec = register_histogram_vec!(
-		"staking_miner_mining_duration_ms",
-		"The mined solution time in milliseconds.",
-		&["all"],
-		vec![
-			1.0,
-			5.0,
-			25.0,
-			100.0,
-			500.0,
-			1_000.0,
-			2_500.0,
-			10_000.0,
-			25_000.0,
-			100_000.0,
-			1_000_000.0,
-			10_000_000.0,
-		]
-	)
-	.unwrap();
-	pub static ref SUBMIT_SOLUTION_AND_WATCH_DURATION: HistogramVec = register_histogram_vec!(
-		"staking_miner_submit_and_watch_duration_ms",
-		"The time in milliseconds it took to submit the solution to chain and to be included in block",
-		&["all"],
-		vec![
-			1.0,
-			5.0,
-			25.0,
-			100.0,
-			500.0,
-			1_000.0,
-			2_500.0,
-			10_000.0,
-			25_000.0,
-			100_000.0,
-			1_000_000.0,
-			10_000_000.0,
-		]
-	)
-	.unwrap();
-	pub static ref BALANCE: Gauge = register_gauge!(opts!(
-		"staking_miner_balance",
-		"The balance of the staking miner account",
-		labels! {"handler" => "all",}
-	))
-	.unwrap();
-	pub static ref RUNTIME_UPGRADES: Counter = register_counter!(opts!(
-		"staking_miner_runtime_upgrades",
-		"Number of runtime upgrades performed",
-		labels! {"handler" => "all",}
-	))
-	.unwrap();
-}
+pub use hidden::*;
 
 async fn serve_req(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
 	let response = match (req.method(), req.uri().path()) {
@@ -114,20 +45,28 @@ async fn serve_req(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
 	Ok(response)
 }
 
-pub fn run() -> oneshot::Sender<()> {
+pub struct GracefulShutdown(oneshot::Sender<()>);
+
+impl GracefulShutdown {
+	/// Send shutdown signal.
+	pub fn shutdown(self) {
+		let _ = self.0.send(());
+	}
+}
+
+pub fn run() -> Result<GracefulShutdown, String> {
 	let (tx, rx) = oneshot::channel();
 
 	// For every connection, we must make a `Service` to handle all
 	// incoming HTTP requests on said connection.
-	let make_svc = make_service_fn(move |_conn| {
-		// This is the `Service` that will handle the connection.
-		// `service_fn` is a helper to convert a function that
-		// returns a Response into a `Service`.
-		async move { Ok::<_, std::convert::Infallible>(service_fn(move |req| serve_req(req))) }
+	let make_svc = make_service_fn(move |_conn| async move {
+		Ok::<_, std::convert::Infallible>(service_fn(move |req| serve_req(req)))
 	});
 
-	let addr = ([127, 0, 0, 1], 3000).into();
-	let server = hyper::Server::bind(&addr).serve(make_svc);
+	let addr = ([127, 0, 0, 1], 9999).into();
+	let server = hyper::Server::try_bind(&addr)
+		.map_err(|e| format!("Failed bind socket on port 9999: {:?}", e))?
+		.serve(make_svc);
 
 	log::info!("Started prometheus endpoint on http://{}", addr);
 
@@ -137,9 +76,123 @@ pub fn run() -> oneshot::Sender<()> {
 
 	tokio::spawn(async move {
 		if let Err(e) = graceful.await {
-			log::warn!("server error: {}", e);
+			log::warn!("Server error: {}", e);
 		}
 	});
 
-	tx
+	Ok(GracefulShutdown(tx))
+}
+
+mod hidden {
+	use once_cell::sync::Lazy;
+	use prometheus::{
+		labels, opts, register_counter, register_gauge, register_histogram_vec, Counter, Gauge,
+		HistogramVec,
+	};
+
+	static SUBMISSIONS_STARTED: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_submissions_started",
+			"Number of submissions started",
+			labels! {"handler" => "all",}
+		))
+		.unwrap()
+	});
+
+	static SUBMISSIONS_SUCCESS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_submissions_success",
+			"Number of submissions finished successfully",
+			labels! {"handler" => "all",}
+		))
+		.unwrap()
+	});
+	static MINED_SOLUTION_DURATION: Lazy<HistogramVec> = Lazy::new(|| {
+		register_histogram_vec!(
+			"staking_miner_mining_duration_ms",
+			"The mined solution time in milliseconds.",
+			&["all"],
+			vec![
+				1.0,
+				5.0,
+				25.0,
+				100.0,
+				500.0,
+				1_000.0,
+				2_500.0,
+				10_000.0,
+				25_000.0,
+				100_000.0,
+				1_000_000.0,
+				10_000_000.0,
+			]
+		)
+		.unwrap()
+	});
+	static SUBMIT_SOLUTION_AND_WATCH_DURATION: Lazy<HistogramVec> = Lazy::new(|| {
+		register_histogram_vec!(
+			"staking_miner_submit_and_watch_duration_ms",
+			"The time in milliseconds it took to submit the solution to chain and to be included in block",
+			&["all"],
+			vec![
+				1.0,
+				5.0,
+				25.0,
+				100.0,
+				500.0,
+				1_000.0,
+				2_500.0,
+				10_000.0,
+				25_000.0,
+				100_000.0,
+				1_000_000.0,
+				10_000_000.0,
+			]
+		)
+		.unwrap()
+	});
+	static BALANCE: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(opts!(
+			"staking_miner_balance",
+			"The balance of the staking miner account",
+			labels! {"handler" => "all",}
+		))
+		.unwrap()
+	});
+	static RUNTIME_UPGRADES: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_runtime_upgrades",
+			"Number of runtime upgrades performed",
+			labels! {"handler" => "all",}
+		))
+		.unwrap()
+	});
+
+	// Exported wrappers.
+
+	pub fn on_runtime_upgrade() {
+		RUNTIME_UPGRADES.inc();
+	}
+
+	pub fn on_submission_attempt() {
+		SUBMISSIONS_STARTED.inc();
+	}
+
+	pub fn on_submission_success() {
+		SUBMISSIONS_SUCCESS.inc();
+	}
+
+	pub fn set_balance(balance: f64) {
+		BALANCE.set(balance);
+	}
+
+	pub fn observe_submit_and_watch_duration(time: f64) {
+		SUBMIT_SOLUTION_AND_WATCH_DURATION
+			.with_label_values(&["all"])
+			.observe(time as f64);
+	}
+
+	pub fn observe_mined_solution_duration(time: f64) {
+		MINED_SOLUTION_DURATION.with_label_values(&["all"]).observe(time);
+	}
 }

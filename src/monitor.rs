@@ -2,10 +2,6 @@ use crate::{
 	error::Error,
 	opt::{Listen, MonitorConfig, SubmissionStrategy},
 	prelude::*,
-	prometheus::{
-		BALANCE, MINED_SOLUTION_DURATION, SUBMISSIONS_STARTED, SUBMISSIONS_SUCCESS,
-		SUBMIT_SOLUTION_AND_WATCH_DURATION,
-	},
 	signer::Signer,
 };
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOf};
@@ -77,7 +73,7 @@ macro_rules! monitor_cmd_for {
 
 					// this is lossy but fine for now.
 					let free_balance = api.storage().system().account(signer.account_id(), None).await?.data.free as f64;
-					BALANCE.set(free_balance);
+					crate::prometheus::set_balance(free_balance);
 				}
 
 				/// Construct extrinsic at given block and watch it.
@@ -155,7 +151,7 @@ macro_rules! monitor_cmd_for {
 					};
 
 					let mining_duration = now.elapsed().as_millis();
-					MINED_SOLUTION_DURATION.with_label_values(&["all"]).observe(mining_duration as f64);
+					crate::prometheus::observe_mined_solution_duration(mining_duration as f64);
 
 					log::trace!(target: LOG_TARGET, "Mined solution with {:?} size: {:?} round: {:?} at: {}, took: {} ms", score, size, round, at.number(), mining_duration);
 
@@ -194,11 +190,11 @@ macro_rules! monitor_cmd_for {
 					log::trace!(target: LOG_TARGET, "Solution validity verification took: {} ms", now.elapsed().as_millis());
 
 					let now = Instant::now();
-					SUBMISSIONS_STARTED.inc();
+					crate::prometheus::on_submission_attempt();
 					match submit_and_watch_solution(&api, signer, (solution, score, round), hash).await {
 						Ok(()) => {
-							SUBMISSIONS_SUCCESS.inc();
-							SUBMIT_SOLUTION_AND_WATCH_DURATION.with_label_values(&["all"]).observe(now.elapsed().as_millis() as f64);
+							crate::prometheus::on_submission_success();
+							crate::prometheus::observe_submit_and_watch_duration(now.elapsed().as_millis() as f64);
 						}
 						Err(e) => {
 							log::warn!(

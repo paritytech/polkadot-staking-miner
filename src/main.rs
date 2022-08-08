@@ -50,8 +50,6 @@ use tracing_subscriber::EnvFilter;
 async fn main() -> Result<(), Error> {
 	tracing_subscriber::fmt().with_env_filter(EnvFilter::from_default_env()).init();
 
-	let _prometheus_handle = prometheus::run();
-
 	let Opt { uri, command } = Opt::parse();
 	log::debug!(target: LOG_TARGET, "attempting to connect to {:?}", uri);
 
@@ -60,7 +58,8 @@ async fn main() -> Result<(), Error> {
 	let client = subxt::ClientBuilder::new().set_client(rpc).build().await?;
 	let runtime_version = client.rpc().runtime_version(None).await?;
 	let chain = Chain::try_from(runtime_version)?;
-
+	let _prometheus_handle =
+		prometheus::run().map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
 	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
 
 	let outcome = any_runtime!(chain, {
@@ -73,7 +72,7 @@ async fn main() -> Result<(), Error> {
 		tokio::spawn(async move {
 			match update_client.perform_runtime_updates().await {
 				Ok(()) => {
-					crate::prometheus::RUNTIME_UPGRADES.inc();
+					crate::prometheus::on_runtime_upgrade();
 				},
 				Err(e) => {
 					log::error!(target: LOG_TARGET, "Runtime update failed with result: {:?}", e);
