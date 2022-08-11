@@ -64,7 +64,7 @@ pub fn run(port: u16) -> Result<GracefulShutdown, String> {
 		Ok::<_, std::convert::Infallible>(service_fn(move |req| serve_req(req)))
 	});
 
-	let addr = ([127, 0, 0, 1], port).into();
+	let addr = ([0, 0, 0, 0], port).into();
 	let server = hyper::Server::try_bind(&addr)
 		.map_err(|e| format!("Failed bind socket on port {} {:?}", port, e))?
 		.serve(make_svc);
