@@ -61,7 +61,7 @@ pub fn run(port: u16) -> Result<GracefulShutdown, String> {
 	// For every connection, we must make a `Service` to handle all
 	// incoming HTTP requests on said connection.
 	let make_svc = make_service_fn(move |_conn| async move {
-		Ok::<_, std::convert::Infallible>(service_fn(move |req| serve_req(req)))
+		Ok::<_, std::convert::Infallible>(service_fn(serve_req))
 	});
 
 	let addr = ([0, 0, 0, 0], port).into();

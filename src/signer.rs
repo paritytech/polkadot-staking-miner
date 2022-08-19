@@ -17,10 +17,11 @@
 //! Wrappers around creating a signer account.
 
 use crate::prelude::*;
-use subxt::{extrinsic::Signer as _, sp_core::Pair as _};
+use sp_core::Pair as _;
+use subxt::tx::Signer as _;
 
 // A signer type, parameterized for using with `subxt`.
-type PairSigner = subxt::PairSigner<subxt::DefaultConfig, subxt::sp_core::sr25519::Pair>;
+type PairSigner = subxt::tx::PairSigner<subxt::PolkadotConfig, sp_core::sr25519::Pair>;
 
 // Signer wrapper.
 //

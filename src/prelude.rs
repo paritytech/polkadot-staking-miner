@@ -26,13 +26,14 @@ pub use frame_election_provider_support::VoteWeight;
 pub use pallet_election_provider_multi_phase::{Miner, MinerConfig};
 
 /// The account id type.
-pub type AccountId = subxt::sp_core::crypto::AccountId32;
+pub type AccountId = subxt::ext::sp_core::crypto::AccountId32;
 /// The header type. We re-export it here, but we can easily get it from block as well.
-pub type Header = subxt::sp_runtime::generic::Header<u32, subxt::sp_runtime::traits::BlakeTwo256>;
+pub type Header =
+	subxt::ext::sp_runtime::generic::Header<u32, subxt::ext::sp_runtime::traits::BlakeTwo256>;
 /// The header type. We re-export it here, but we can easily get it from block as well.
-pub type Hash = subxt::sp_core::H256;
+pub type Hash = sp_core::H256;
 
-pub use subxt::{
+pub use subxt::ext::{
 	sp_core,
 	sp_runtime::traits::{Block as BlockT, Header as HeaderT},
 };
@@ -45,7 +46,13 @@ pub const DEFAULT_PROMETHEUS_PORT: u16 = 9999;
 pub const LOG_TARGET: &str = "staking-miner";
 
 /// The key pair type being used. We "strongly" assume sr25519 for simplicity.
-pub type Pair = subxt::sp_core::sr25519::Pair;
+pub type Pair = sp_core::sr25519::Pair;
 
 /// The accuracy that we use for election computation.
 pub type Accuracy = sp_runtime::Perbill;
+
+/// Extrinsics params used on all chains.
+pub use subxt::tx::PolkadotExtrinsicParamsBuilder as ExtrinsicParams;
+
+/// Subxt client used by the staking miner on all chains.
+pub type SubxtClient = subxt::OnlineClient<subxt::PolkadotConfig>;

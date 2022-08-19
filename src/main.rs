@@ -54,21 +54,19 @@ async fn main() -> Result<(), Error> {
 	log::debug!(target: LOG_TARGET, "attempting to connect to {:?}", uri);
 
 	let rpc = WsClientBuilder::default().max_request_body_size(u32::MAX).build(uri).await?;
+	let api = SubxtClient::from_rpc_client(rpc).await?;
 
-	let client = subxt::ClientBuilder::new().set_client(rpc).build().await?;
-	let runtime_version = client.rpc().runtime_version(None).await?;
+	let runtime_version = api.rpc().runtime_version(None).await?;
 	let chain = Chain::try_from(runtime_version)?;
 	let _prometheus_handle = prometheus::run(prometheus_port.unwrap_or(DEFAULT_PROMETHEUS_PORT))
 		.map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
 	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
 
 	let outcome = any_runtime!(chain, {
-		let api: RuntimeApi = client.to_runtime_api();
-
 		tls_update_runtime_constants(&api);
 
 		// Start a new tokio task to perform the runtime updates in the background.
-		let update_client = api.client.updates();
+		let update_client = api.subscribe_to_updates();
 		tokio::spawn(async move {
 			match update_client.perform_runtime_updates().await {
 				Ok(()) => {
