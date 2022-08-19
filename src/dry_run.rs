@@ -18,60 +18,65 @@
 
 use pallet_election_provider_multi_phase::RawSolution;
 
-use crate::{chain, error::Error, opt::DryRunConfig, prelude::*, signer::Signer};
-use codec::{Decode, Encode};
-use jsonrpsee::rpc_params;
-use subxt::{rpc::ClientT, sp_core::Bytes};
+use crate::{error::Error, opt::DryRunConfig, prelude::*, signer::Signer};
+use codec::Encode;
 
 macro_rules! dry_run_cmd_for {
 	($runtime:tt) => {
 		paste::paste! {
 
-			pub async fn [<run_$runtime>](api: chain::$runtime::RuntimeApi, config: DryRunConfig) -> Result<(), Error>
+			pub async fn [<run_$runtime>](api: SubxtClient, config: DryRunConfig) -> Result<(), Error> {
+				use crate::chain::[<$runtime>]::runtime as runtime;
 
-		{
-			let mut signer = Signer::new(&config.seed_or_path)?;
-			let account_info = api.storage().system().account(signer.account_id(), None).await?;
-			log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer, account_info);
+				let mut signer = Signer::new(&config.seed_or_path)?;
 
-			let (solution, score, _size) =
-				crate::helpers::[<mine_solution_$runtime>](&api, config.at, config.solver).await?;
+				let account_info = api.storage().fetch(
+					&runtime::storage().system().account(signer.account_id()),
+					None
+				)
+				.await?
+				.ok_or(Error::AccountDoesNotExists)?;
 
-			let round = api.storage().election_provider_multi_phase().round(config.at).await?;
-			let raw_solution = RawSolution { solution, score, round };
-			let nonce = api.client.rpc().system_account_next_index(signer.account_id()).await?;
-			signer.set_nonce(nonce);
+				log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer, account_info);
 
-			log::info!(
-				target: LOG_TARGET,
-				"solution score {:?} / length {:?}",
-				score,
-				raw_solution.encode().len(),
-			);
+				let (solution, score, _size) =
+					crate::helpers::[<mine_solution_$runtime>](&api, config.at, config.solver).await?;
 
-			let uxt = api.tx().election_provider_multi_phase().submit(raw_solution)?;
-			let xt = uxt.create_signed(&*signer, chain::$runtime::ExtrinsicParams::default()).await?;
+				let round = api.storage().fetch(
+					&runtime::storage().election_provider_multi_phase().round(),
+					config.at
+				)
+				.await?
+				.expect("The round must exist");
 
-			let encoded_xt = Bytes(xt.encoded().to_vec());
+				let raw_solution = RawSolution { solution, score, round };
+				let nonce = api.rpc().system_account_next_index(signer.account_id()).await?;
+				signer.set_nonce(nonce);
 
-			let bytes: Bytes = api
-				.client
-				.rpc()
-				.client
-				.request("system_dryRun", rpc_params![encoded_xt])
-				.await?;
+				log::info!(
+					target: LOG_TARGET,
+					"solution score {:?} / length {:?}",
+					score,
+					raw_solution.encode().len(),
+				);
 
-			let outcome: sp_runtime::ApplyExtrinsicResult = Decode::decode(&mut &*bytes.0)?;
+				let tx = runtime::tx().election_provider_multi_phase().submit(raw_solution);
+				let xt = api.tx().create_signed(&tx, &*signer, ExtrinsicParams::default()).await?;
 
-			log::info!(target: LOG_TARGET, "dry-run outcome is {:?}", outcome);
+				let outcome = api
+					.rpc()
+					.dry_run(xt.encoded(), config.at)
+					.await?;
 
-			match outcome {
-				Ok(Ok(())) => Ok(()),
-				Ok(Err(e)) => Err(Error::Other(format!("{:?}", e))),
-				Err(e) => Err(Error::Other(format!("{:?}", e))),
+				log::info!(target: LOG_TARGET, "dry-run outcome is {:?}", outcome);
+
+				match outcome {
+					Ok(Ok(())) => Ok(()),
+					Ok(Err(e)) => Err(Error::Other(format!("{:?}", e))),
+					Err(e) => Err(Error::Other(format!("{:?}", e))),
+				}
 			}
 		}
-	}
 	};
 }
 

@@ -170,13 +170,6 @@ pub mod westend {
 
 	pub use runtime::runtime_types;
 
-	pub type ExtrinsicParams = subxt::PolkadotExtrinsicParamsBuilder<subxt::DefaultConfig>;
-
-	pub type RuntimeApi = runtime::RuntimeApi<
-		subxt::DefaultConfig,
-		subxt::PolkadotExtrinsicParams<subxt::DefaultConfig>,
-	>;
-
 	pub mod epm {
 		use super::*;
 		pub type BoundedVoters =
@@ -253,13 +246,6 @@ pub mod polkadot {
 
 	pub use runtime::runtime_types;
 
-	pub type ExtrinsicParams = subxt::PolkadotExtrinsicParamsBuilder<subxt::DefaultConfig>;
-
-	pub type RuntimeApi = runtime::RuntimeApi<
-		subxt::DefaultConfig,
-		subxt::PolkadotExtrinsicParams<subxt::DefaultConfig>,
-	>;
-
 	pub mod epm {
 		use super::*;
 		pub type BoundedVoters =
@@ -335,13 +321,6 @@ pub mod kusama {
 	}
 
 	pub use runtime::runtime_types;
-
-	pub type ExtrinsicParams = subxt::PolkadotExtrinsicParamsBuilder<subxt::DefaultConfig>;
-
-	pub type RuntimeApi = runtime::RuntimeApi<
-		subxt::DefaultConfig,
-		subxt::PolkadotExtrinsicParams<subxt::DefaultConfig>,
-	>;
 
 	pub mod epm {
 		use super::*;

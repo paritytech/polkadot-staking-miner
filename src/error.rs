@@ -7,7 +7,7 @@ pub enum Error {
 	#[error("RPC error: `{0}`")]
 	RpcError(#[from] jsonrpsee::core::Error),
 	#[error("subxt error: `{0}`")]
-	Subxt(#[from] subxt::BasicError),
+	Subxt(#[from] subxt::Error),
 	#[error("Codec error: `{0}`")]
 	Codec(#[from] codec::Error),
 	#[error("Crypto error: `{0:?}`")]
@@ -16,6 +16,8 @@ pub enum Error {
 	IncorrectPhase,
 	#[error("Submission is already submitted")]
 	AlreadySubmitted,
+	#[error("The account does not exist")]
+	AccountDoesNotExists,
 	#[error("Submission with better score already exist")]
 	BetterScoreExist,
 	#[error("Other error: `{0}`")]

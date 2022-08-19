@@ -8,25 +8,24 @@ use crate::{
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOf};
 use sp_runtime::Perbill;
 use std::sync::Arc;
-use subxt::{rpc::Subscription, BasicError as SubxtError, TransactionStatus};
+use subxt::{rpc::Subscription, tx::TxStatus, Error as SubxtError};
 use tokio::sync::Mutex;
 
 macro_rules! monitor_cmd_for {
 	($runtime:tt) => {
 		paste::paste! {
-			/// The monitor command.
-			pub async fn [<run_$runtime>] (api: $crate::chain::$runtime::RuntimeApi, config: MonitorConfig) -> Result<(), Error> {
 
-				async fn heads_subscription(api: &$crate::chain::$runtime::RuntimeApi, listen: Listen) -> Result<Subscription<Header>, Error> {
-					match listen {
-						Listen::Head => api.client.rpc().subscribe_blocks().await,
-						Listen::Finalized => api.client.rpc().subscribe_finalized_blocks().await,
-					}.map_err(Into::into)
-				}
+			/// The monitor command.
+			pub async fn [<run_$runtime>] (api: SubxtClient, config: MonitorConfig) -> Result<(), Error> {
+				use crate::chain::[<$runtime>]::{self as chain, runtime};
 
 				let signer = Signer::new(&config.seed_or_path)?;
 
-				let account_info = api.storage().system().account(signer.account_id(), None).await?;
+				let account_info = {
+					let addr = runtime::storage().system().account(signer.account_id());
+					api.storage().fetch(&addr, None).await?.ok_or(Error::AccountDoesNotExists)?
+				};
+
 				log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer, account_info);
 
 				let mut subscription = heads_subscription(&api, config.listen).await?;
@@ -60,7 +59,6 @@ macro_rules! monitor_cmd_for {
 						}
 					};
 
-
 					// Spawn task and non-recoverable errors are sent back to the main task
 					// such as if the connection has been closed.
 					tokio::spawn(mine_and_submit_solution(
@@ -72,16 +70,19 @@ macro_rules! monitor_cmd_for {
 							submit_lock.clone(),
 					));
 
+					let account_info = {
+						let addr = runtime::storage().system().account(signer.account_id());
+						api.storage().fetch(&addr, None).await?.ok_or(Error::AccountDoesNotExists)?
+					};
 					// this is lossy but fine for now.
-					let free_balance = api.storage().system().account(signer.account_id(), None).await?.data.free as f64;
-					crate::prometheus::set_balance(free_balance);
+					crate::prometheus::set_balance(account_info.data.free as f64);
 				}
 
 				/// Construct extrinsic at given block and watch it.
 				async fn mine_and_submit_solution(
 					tx: tokio::sync::mpsc::UnboundedSender<Error>,
 					at: Header,
-					api: $crate::chain::$runtime::RuntimeApi,
+					api: SubxtClient,
 					mut signer: Signer,
 					config: MonitorConfig,
 					submit_lock: Arc<Mutex<()>>,
@@ -93,7 +94,7 @@ macro_rules! monitor_cmd_for {
 					// NOTE: as we try to send at each block then the nonce is used guard against
 					// submitting twice. Because once a solution has been accepted on chain
 					// the "next transaction" at a later block but with the same nonce will be rejected
-					let nonce = match api.client.rpc().system_account_next_index(signer.account_id()).await {
+					let nonce = match api.rpc().system_account_next_index(signer.account_id()).await {
 						Ok(none) => none,
 						Err(e) => {
 							kill_main_task_if_critical_err(&tx, e.into());
@@ -114,8 +115,10 @@ macro_rules! monitor_cmd_for {
 						return;
 					}
 
-					let round = match api.storage().election_provider_multi_phase().round(Some(hash)).await {
-						Ok(round) => round,
+					let addr = runtime::storage().election_provider_multi_phase().round();
+					let round = match api.storage().fetch(&addr, Some(hash)).await {
+						Ok(Some(round)) => round,
+						Ok(None) => unreachable!("Round must always exist"),
 						Err(e) => {
 							log::error!(target: LOG_TARGET, "Mining solution failed: {:?}", e);
 
@@ -207,33 +210,39 @@ macro_rules! monitor_cmd_for {
 				}
 
 				/// Ensure that now is the signed phase.
-				async fn ensure_signed_phase(api: &$crate::chain::$runtime::RuntimeApi, hash: Hash) -> Result<(), Error> {
+				async fn ensure_signed_phase(api: &SubxtClient, hash: Hash) -> Result<(), Error> {
 					use pallet_election_provider_multi_phase::Phase;
 
-					match api.storage().election_provider_multi_phase().current_phase(Some(hash)).await {
-						Ok(Phase::Signed) => Ok(()),
-						Ok(_phase) => Err(Error::IncorrectPhase),
+					let addr = chain::runtime::storage().election_provider_multi_phase().current_phase();
+					let res = api.storage().fetch(&addr, Some(hash)).await;
+
+					match res {
+						Ok(Some(Phase::Signed)) => Ok(()),
+						Ok(Some(_)) => Err(Error::IncorrectPhase),
+						Ok(None) => unreachable!("Phase should always exist"),
 						Err(e) => Err(e.into()),
 					}
 				}
 
 				/// Ensure that our current `us` have not submitted anything previously.
 				async fn ensure_no_previous_solution(
-					api: &$crate::chain::$runtime::RuntimeApi,
+					api: &SubxtClient,
 					at: Hash,
 					us: &AccountId,
 				) -> Result<(), Error> {
+
+					let addr = chain::runtime::storage().election_provider_multi_phase().signed_submission_indices();
 					let indices = api
 						.storage()
-						.election_provider_multi_phase()
-						.signed_submission_indices(Some(at))
+						.fetch_or_default(&addr, Some(at))
 						.await?;
 
 					for (_score, idx) in indices.0 {
+						let addr = runtime::storage().election_provider_multi_phase().signed_submissions_map(&idx);
+
 						let submission = api
 							.storage()
-							.election_provider_multi_phase()
-							.signed_submissions_map(&idx, Some(at))
+							.fetch(&addr, Some(at))
 							.await?;
 
 						if let Some(submission) = submission {
@@ -247,7 +256,7 @@ macro_rules! monitor_cmd_for {
 				}
 
 				async fn ensure_no_better_solution(
-					api: &$crate::chain::$runtime::RuntimeApi,
+					api: &SubxtClient,
 					at: Hash,
 					score: sp_npos_elections::ElectionScore,
 					strategy: SubmissionStrategy,
@@ -259,10 +268,10 @@ macro_rules! monitor_cmd_for {
 						SubmissionStrategy::ClaimBetterThan(epsilon) => epsilon,
 					};
 
+					let addr = runtime::storage().election_provider_multi_phase().signed_submission_indices();
 					let indices = api
 						.storage()
-						.election_provider_multi_phase()
-						.signed_submission_indices(Some(at))
+						.fetch_or_default(&addr, Some(at))
 						.await?;
 
 					log::debug!(target: LOG_TARGET, "submitted solutions: {:?}", indices.0);
@@ -276,29 +285,16 @@ macro_rules! monitor_cmd_for {
 					Ok(())
 				}
 
-				async fn get_latest_head(api: &$crate::chain::$runtime::RuntimeApi, listen: Listen) -> Result<Hash, Error> {
-					match listen {
-						Listen::Head => {
-							match api.client.rpc().block_hash(None).await {
-								Ok(Some(hash)) => Ok(hash),
-								Ok(None) => Err(Error::Other("Latest block not found".into())),
-								Err(e) => Err(e.into()),
-							}
-						}
-						Listen::Finalized => api.client.rpc().finalized_head().await.map_err(Into::into),
-					}
-				}
-
 				async fn submit_and_watch_solution(
-					api: &$crate::chain::$runtime::RuntimeApi,
+					api: &SubxtClient,
 					signer: Signer,
-					(solution, score, round): (SolutionOf<$crate::chain::$runtime::Config>, sp_npos_elections::ElectionScore, u32),
+					(solution, score, round): (SolutionOf<chain::Config>, sp_npos_elections::ElectionScore, u32),
 					hash: Hash
 				) -> Result<(), Error> {
 
-					let xt = api.tx().election_provider_multi_phase().submit(RawSolution { solution, score, round })?;
+					let tx = runtime::tx().election_provider_multi_phase().submit(RawSolution { solution, score, round });
 
-					let mut status_sub = xt.sign_and_submit_then_watch_default(&*signer).await.map_err(|e| {
+					let mut status_sub = api.tx().sign_and_submit_then_watch_default(&tx, &*signer).await.map_err(|e| {
 						log::warn!(target: LOG_TARGET, "submit solution failed: {:?}", e);
 						e
 					})?;
@@ -321,14 +317,12 @@ macro_rules! monitor_cmd_for {
 						};
 
 						match status {
-							TransactionStatus::Ready
-								| TransactionStatus::Broadcast(_)
-								| TransactionStatus::Future => (),
-							TransactionStatus::InBlock(details) => {
+							TxStatus::Ready | TxStatus::Broadcast(_) | TxStatus::Future => (),
+							TxStatus::InBlock(details) => {
 
 								let events = details.fetch_events().await.expect("events should exist");
 
-								let solution_stored = events.find_first::<$crate::chain::$runtime::epm::events::SolutionStored>();
+								let solution_stored = events.find_first::<chain::epm::events::SolutionStored>();
 
 								return if let Ok(Some(_)) = solution_stored {
 									log::info!(target: LOG_TARGET, "Included at {:?}", details.block_hash());
@@ -337,10 +331,10 @@ macro_rules! monitor_cmd_for {
 									Err(Error::Other(format!("No SolutionStored event found at {:?}", details.block_hash())))
 								};
 							},
-							TransactionStatus::Retracted(hash) => {
+							TxStatus::Retracted(hash) => {
 								log::info!(target: LOG_TARGET, "Retracted at {:?}", hash);
 							},
-							TransactionStatus::Finalized(details) => {
+							TxStatus::Finalized(details) => {
 								log::info!(target: LOG_TARGET, "Finalized at {:?}", details.block_hash());
 								return Ok(());
 							}
@@ -382,5 +376,27 @@ fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>
 			let _ = tx.send(Error::Subxt(e));
 		},
 		_ => (),
+	}
+}
+
+async fn heads_subscription(
+	api: &SubxtClient,
+	listen: Listen,
+) -> Result<Subscription<Header>, Error> {
+	match listen {
+		Listen::Head => api.rpc().subscribe_blocks().await,
+		Listen::Finalized => api.rpc().subscribe_finalized_blocks().await,
+	}
+	.map_err(Into::into)
+}
+
+async fn get_latest_head(api: &SubxtClient, listen: Listen) -> Result<Hash, Error> {
+	match listen {
+		Listen::Head => match api.rpc().block_hash(None).await {
+			Ok(Some(hash)) => Ok(hash),
+			Ok(None) => Err(Error::Other("Latest block not found".into())),
+			Err(e) => Err(e.into()),
+		},
+		Listen::Finalized => api.rpc().finalized_head().await.map_err(Into::into),
 	}
 }
