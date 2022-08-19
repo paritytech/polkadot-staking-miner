@@ -19,10 +19,7 @@
 use pallet_election_provider_multi_phase::RawSolution;
 
 use crate::{error::Error, opt::DryRunConfig, prelude::*, signer::Signer};
-use codec::{Decode, Encode};
-use jsonrpsee::rpc_params;
-use sp_core::Bytes;
-use subxt::rpc::ClientT;
+use codec::Encode;
 
 macro_rules! dry_run_cmd_for {
 	($runtime:tt) => {
@@ -66,15 +63,10 @@ macro_rules! dry_run_cmd_for {
 				let tx = runtime::tx().election_provider_multi_phase().submit(raw_solution);
 				let xt = api.tx().create_signed(&tx, &*signer, ExtrinsicParams::default()).await?;
 
-				let encoded_xt = Bytes(xt.encoded().to_vec());
-
-				let bytes: Bytes = api
+				let outcome = api
 					.rpc()
-					.client
-					.request("system_dryRun", rpc_params![encoded_xt])
+					.dry_run(xt.encoded(), config.at)
 					.await?;
-
-				let outcome: sp_runtime::ApplyExtrinsicResult = Decode::decode(&mut &*bytes.0)?;
 
 				log::info!(target: LOG_TARGET, "dry-run outcome is {:?}", outcome);
 

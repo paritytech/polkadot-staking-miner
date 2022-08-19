@@ -11,15 +11,15 @@ use sp_storage::StorageChangeSet;
 use staking_miner::{
 	any_runtime,
 	opt::Chain,
-	prelude::{AccountId, Hash},
+	prelude::{AccountId, Hash, SubxtClient},
 };
 use std::{
 	process,
 	time::{Duration, Instant},
 };
 use subxt::{
+	ext::sp_core::Bytes,
 	rpc::{rpc_params, SubscriptionClientT},
-	storage::StorageKeyPrefix,
 };
 
 const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(60 * 15);
@@ -46,21 +46,20 @@ async fn test_submit_solution(chain: Chain) {
 	);
 
 	any_runtime!(chain, {
-		let api: RuntimeApi = subxt::ClientBuilder::new()
-			.set_url(&ws_url)
-			.build()
-			.await
-			.unwrap()
-			.to_runtime_api();
+		let api = SubxtClient::from_url(&ws_url).await.unwrap();
 
 		let now = Instant::now();
 
 		let mut success = false;
 
-		let key = StorageKeyPrefix::new::<epm::storage::QueuedSolution>().to_storage_key();
+		let key = Bytes(
+			runtime::storage()
+				.election_provider_multi_phase()
+				.queued_solution()
+				.to_root_bytes(),
+		);
 
 		let mut sub = api
-			.client
 			.rpc()
 			.client
 			.subscribe("state_subscribeStorage", rpc_params![vec![key]], "state_unsubscribeStorage")
