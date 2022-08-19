@@ -119,22 +119,16 @@ macro_rules! helpers_for_runtime {
 			pub fn [<update_runtime_constants_$runtime>](api: &SubxtClient) {
 				use chain::static_types;
 				use sp_runtime::Perbill;
-				use crate::chain::[<$runtime>]::{runtime, runtime_types::frame_support::weights::PerDispatchClass};
+				use crate::chain::[<$runtime>]::runtime;
 
 				// maximum weight of the signed submission is exposed from metadata and MUST be this.
-				let max_weight = api.constants().at(&runtime::constants().election_provider_multi_phase().signed_max_weight()).expect("max weight must exist");
+				let max_weight = api.constants().at(&runtime::constants().election_provider_multi_phase().signed_max_weight()).expect("constant `max weight` must exist");
 
 				// allow up to 75% of the block size to be used for signed submission, length-wise. This
 				// value can be adjusted a bit if needed.
-				let max_length = {
-					let PerDispatchClass { normal, operational, mandatory } = api.constants().at(&runtime::constants().system().block_length()).expect("block length must exist").max;
-					Perbill::from_rational(90_u32, 100) * (normal + operational + mandatory)
-				};
+				let max_length = Perbill::from_rational(90_u32, 100) * api.constants().at(&runtime::constants().system().block_length()).expect("constant `block length` must exist").max.normal;
 
-				let db_weight = {
-					let address = runtime::constants().system().db_weight();
-					api.constants().at(&address).unwrap()
-				};
+				let db_weight = api.constants().at(&runtime::constants().system().db_weight()).expect("constant `DbWeight` must exist");
 
 				let system_db_weight =
 					frame_support::weights::RuntimeDbWeight { read: db_weight.read, write: db_weight.write };
