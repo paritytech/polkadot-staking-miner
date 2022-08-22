@@ -1772,6 +1772,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-transaction-payment"
+version = "4.0.0-dev"
+source = "git+https://github.com/paritytech/substrate?branch=master#28f0cb18c96fb82f810f1d9be69fb609fbb7217e"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-core 6.0.0 (git+https://github.com/paritytech/substrate?branch=master)",
+ "sp-io 6.0.0 (git+https://github.com/paritytech/substrate?branch=master)",
+ "sp-runtime 6.0.0 (git+https://github.com/paritytech/substrate?branch=master)",
+ "sp-std 4.0.0 (git+https://github.com/paritytech/substrate?branch=master)",
+]
+
+[[package]]
 name = "parity-scale-codec"
 version = "3.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3373,6 +3389,7 @@ dependencies = [
  "log",
  "once_cell",
  "pallet-election-provider-multi-phase",
+ "pallet-transaction-payment",
  "parity-scale-codec",
  "paste",
  "pin-project-lite",

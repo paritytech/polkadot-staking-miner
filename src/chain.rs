@@ -6,6 +6,11 @@
 // polkadot, that only has `const` and `type`s that are used in the runtime, and we can import
 // that.
 
+use codec::{Decode, Encode};
+use jsonrpsee::{core::client::ClientT, rpc_params};
+use pallet_transaction_payment::RuntimeDispatchInfo;
+use sp_core::Bytes;
+
 macro_rules! impl_atomic_u32_parameter_types {
 	($mod:ident, $name:ident) => {
 		mod $mod {
@@ -130,16 +135,15 @@ pub mod westend {
 		type Solution = NposSolution16;
 
 		// SYNC
-		fn solution_weight(v: u32, _t: u32, a: u32, d: u32) -> Weight {
-			// feasibility weight.
-			(31_722_000 as Weight)
-				// Standard Error: 8_000
-				.saturating_add((1_255_000 as Weight).saturating_mul(v as Weight))
-				// Standard Error: 28_000
-				.saturating_add((8_972_000 as Weight).saturating_mul(a as Weight))
-				// Standard Error: 42_000
-				.saturating_add((966_000 as Weight).saturating_mul(d as Weight))
-				.saturating_add(static_types::DbWeight::get().reads(4 as Weight))
+		fn solution_weight(v: u32, t: u32, _a: u32, _d: u32) -> Weight {
+			use pallet_election_provider_multi_phase::SolutionOrSnapshotSize;
+
+			let tx = runtime::tx().election_provider_multi_phase().submit_unsigned(
+				Default::default(),
+				SolutionOrSnapshotSize { voters: v, targets: t },
+			);
+
+			get_weight(tx)
 		}
 	}
 
@@ -166,6 +170,11 @@ pub mod westend {
 
 		#[subxt(substitute_type = "pallet_election_provider_multi_phase::Phase")]
 		use ::pallet_election_provider_multi_phase::Phase;
+
+		#[subxt(
+			substitute_type = "pallet_election_provider_multi_phase::SolutionOrSnapshotSize"
+		)]
+		use ::pallet_election_provider_multi_phase::SolutionOrSnapshotSize;
 	}
 
 	pub use runtime::runtime_types;
@@ -206,16 +215,15 @@ pub mod polkadot {
 		type Solution = NposSolution16;
 
 		// SYNC
-		fn solution_weight(v: u32, _t: u32, a: u32, d: u32) -> Weight {
-			// feasibility weight.
-			(31_722_000 as Weight)
-				// Standard Error: 8_000
-				.saturating_add((1_255_000 as Weight).saturating_mul(v as Weight))
-				// Standard Error: 28_000
-				.saturating_add((8_972_000 as Weight).saturating_mul(a as Weight))
-				// Standard Error: 42_000
-				.saturating_add((966_000 as Weight).saturating_mul(d as Weight))
-				.saturating_add(static_types::DbWeight::get().reads(4 as Weight))
+		fn solution_weight(v: u32, t: u32, _: u32, _: u32) -> Weight {
+			use pallet_election_provider_multi_phase::SolutionOrSnapshotSize;
+
+			let tx = runtime::tx().election_provider_multi_phase().submit_unsigned(
+				Default::default(),
+				SolutionOrSnapshotSize { voters: v, targets: t },
+			);
+
+			get_weight(tx)
 		}
 	}
 
@@ -242,6 +250,11 @@ pub mod polkadot {
 
 		#[subxt(substitute_type = "pallet_election_provider_multi_phase::Phase")]
 		use ::pallet_election_provider_multi_phase::Phase;
+
+		#[subxt(
+			substitute_type = "pallet_election_provider_multi_phase::SolutionOrSnapshotSize"
+		)]
+		use ::pallet_election_provider_multi_phase::SolutionOrSnapshotSize;
 	}
 
 	pub use runtime::runtime_types;
@@ -282,16 +295,15 @@ pub mod kusama {
 		type Solution = NposSolution24;
 
 		// SYNC
-		fn solution_weight(v: u32, _t: u32, a: u32, d: u32) -> Weight {
-			// feasibility weight.
-			(31_722_000 as Weight)
-				// Standard Error: 8_000
-				.saturating_add((1_255_000 as Weight).saturating_mul(v as Weight))
-				// Standard Error: 28_000
-				.saturating_add((8_972_000 as Weight).saturating_mul(a as Weight))
-				// Standard Error: 42_000
-				.saturating_add((966_000 as Weight).saturating_mul(d as Weight))
-				.saturating_add(static_types::DbWeight::get().reads(4 as Weight))
+		fn solution_weight(v: u32, t: u32, _a: u32, _d: u32) -> Weight {
+			use pallet_election_provider_multi_phase::SolutionOrSnapshotSize;
+
+			let tx = runtime::tx().election_provider_multi_phase().submit_unsigned(
+				Default::default(),
+				SolutionOrSnapshotSize { voters: v, targets: t },
+			);
+
+			get_weight(tx)
 		}
 	}
 
@@ -318,6 +330,11 @@ pub mod kusama {
 
 		#[subxt(substitute_type = "pallet_election_provider_multi_phase::Phase")]
 		use ::pallet_election_provider_multi_phase::Phase;
+
+		#[subxt(
+			substitute_type = "pallet_election_provider_multi_phase::SolutionOrSnapshotSize"
+		)]
+		use ::pallet_election_provider_multi_phase::SolutionOrSnapshotSize;
 	}
 
 	pub use runtime::runtime_types;
@@ -332,4 +349,40 @@ pub mod kusama {
 			runtime_types::pallet_election_provider_multi_phase::*,
 		};
 	}
+}
+
+fn get_weight<T: Encode>(tx: subxt::tx::StaticTxPayload<T>) -> Weight {
+	futures::executor::block_on(async {
+		let client = SubxtClient::from_url("ws://127.0.0.1:9944").await.unwrap();
+
+		let call_data = {
+			let mut buffer = Vec::new();
+
+			let encoded_call = client.tx().call_data(&tx).unwrap();
+			let encoded_len = encoded_call.len() as u32;
+
+			buffer.extend(encoded_call);
+			encoded_len.encode_to(&mut buffer);
+
+			Bytes(buffer)
+		};
+
+		log::info!(target: LOG_TARGET, "call: {}", serde_json::to_string(&call_data).unwrap());
+
+		let bytes: Bytes = client
+			.rpc()
+			.client
+			.request(
+				"state_call",
+				rpc_params!["TransactionPaymentCallApi_query_call_info", call_data],
+			)
+			.await
+			.unwrap();
+
+		let info: RuntimeDispatchInfo<u128> = Decode::decode(&mut bytes.0.as_ref()).unwrap();
+
+		log::info!(target: LOG_TARGET, "{:?}", info);
+
+		info.weight
+	})
 }
