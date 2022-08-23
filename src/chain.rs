@@ -141,13 +141,19 @@ pub mod westend {
 		fn solution_weight(voters: u32, targets: u32, active_voters: u32, degree: u32) -> Weight {
 			use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
 
-			// TODO: Kian, do we need to mock the `Solution` type here I think we want to set
-			// `voter_count` and `unique targets` on the Solution or is that not needed?
+			let raw = {
+				let solution = NposSolution16 {
+					votes1: mock_votes(active_voters),
+					..Default::default()
+				};
+				let mut raw = RawSolution::default();
+				raw.solution = solution;
+				raw
+			};
 
-			let tx = runtime::tx().election_provider_multi_phase().submit_unsigned(
-				RawSolution::default(),
-				SolutionOrSnapshotSize { voters, targets },
-			);
+			let tx = runtime::tx()
+				.election_provider_multi_phase()
+				.submit_unsigned(raw, SolutionOrSnapshotSize { voters, targets });
 
 			get_weight(tx)
 		}
@@ -224,13 +230,19 @@ pub mod polkadot {
 		fn solution_weight(voters: u32, targets: u32, active_voters: u32, degree: u32) -> Weight {
 			use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
 
-			// TODO: Kian, do we need to mock the `Solution` type here I think we want to set
-			// `voter_count` and `unique targets` on the Solution or is that not needed?
+			let raw = {
+				let solution = NposSolution16 {
+					votes1: mock_votes(active_voters),
+					..Default::default()
+				};
+				let mut raw = RawSolution::default();
+				raw.solution = solution;
+				raw
+			};
 
-			let tx = runtime::tx().election_provider_multi_phase().submit_unsigned(
-				RawSolution::default(),
-				SolutionOrSnapshotSize { voters, targets },
-			);
+			let tx = runtime::tx()
+				.election_provider_multi_phase()
+				.submit_unsigned(raw, SolutionOrSnapshotSize { voters, targets });
 
 			get_weight(tx)
 		}
@@ -307,13 +319,19 @@ pub mod kusama {
 		fn solution_weight(voters: u32, targets: u32, active_voters: u32, degree: u32) -> Weight {
 			use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
 
-			// TODO: Kian, do we need to mock the `Solution` type here I think we want to set
-			// `voter_count` and `unique targets` on the Solution or is that not needed?
+			let raw = {
+				let solution = NposSolution24 {
+					votes1: mock_votes(active_voters),
+					..Default::default()
+				};
+				let mut raw = RawSolution::default();
+				raw.solution = solution;
+				raw
+			};
 
-			let tx = runtime::tx().election_provider_multi_phase().submit_unsigned(
-				RawSolution::default(),
-				SolutionOrSnapshotSize { voters, targets },
-			);
+			let tx = runtime::tx()
+				.election_provider_multi_phase()
+				.submit_unsigned(raw, SolutionOrSnapshotSize { voters, targets });
 
 			get_weight(tx)
 		}
@@ -396,4 +414,8 @@ fn get_weight<T: Encode>(tx: subxt::tx::StaticTxPayload<T>) -> Weight {
 
 		info.weight
 	})
+}
+
+fn mock_votes(voters: u32) -> Vec<(u32, u16)> {
+	(0..voters).map(|v| (v, 0)).collect()
 }
