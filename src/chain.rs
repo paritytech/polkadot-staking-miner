@@ -8,8 +8,11 @@
 
 use codec::{Decode, Encode};
 use jsonrpsee::{core::client::ClientT, rpc_params};
+use once_cell::sync::OnceCell;
 use pallet_transaction_payment::RuntimeDispatchInfo;
 use sp_core::Bytes;
+
+pub static SHARED_URI: OnceCell<String> = OnceCell::new();
 
 macro_rules! impl_atomic_u32_parameter_types {
 	($mod:ident, $name:ident) => {
@@ -135,12 +138,15 @@ pub mod westend {
 		type Solution = NposSolution16;
 
 		// SYNC
-		fn solution_weight(v: u32, t: u32, _a: u32, _d: u32) -> Weight {
-			use pallet_election_provider_multi_phase::SolutionOrSnapshotSize;
+		fn solution_weight(voters: u32, targets: u32, active_voters: u32, degree: u32) -> Weight {
+			use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
+
+			// TODO: Kian, do we need to mock the `Solution` type here I think we want to set
+			// `voter_count` and `unique targets` on the Solution or is that not needed?
 
 			let tx = runtime::tx().election_provider_multi_phase().submit_unsigned(
-				Default::default(),
-				SolutionOrSnapshotSize { voters: v, targets: t },
+				RawSolution::default(),
+				SolutionOrSnapshotSize { voters, targets },
 			);
 
 			get_weight(tx)
@@ -215,12 +221,15 @@ pub mod polkadot {
 		type Solution = NposSolution16;
 
 		// SYNC
-		fn solution_weight(v: u32, t: u32, _: u32, _: u32) -> Weight {
-			use pallet_election_provider_multi_phase::SolutionOrSnapshotSize;
+		fn solution_weight(voters: u32, targets: u32, active_voters: u32, degree: u32) -> Weight {
+			use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
+
+			// TODO: Kian, do we need to mock the `Solution` type here I think we want to set
+			// `voter_count` and `unique targets` on the Solution or is that not needed?
 
 			let tx = runtime::tx().election_provider_multi_phase().submit_unsigned(
-				Default::default(),
-				SolutionOrSnapshotSize { voters: v, targets: t },
+				RawSolution::default(),
+				SolutionOrSnapshotSize { voters, targets },
 			);
 
 			get_weight(tx)
@@ -295,12 +304,15 @@ pub mod kusama {
 		type Solution = NposSolution24;
 
 		// SYNC
-		fn solution_weight(v: u32, t: u32, _a: u32, _d: u32) -> Weight {
-			use pallet_election_provider_multi_phase::SolutionOrSnapshotSize;
+		fn solution_weight(voters: u32, targets: u32, active_voters: u32, degree: u32) -> Weight {
+			use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
+
+			// TODO: Kian, do we need to mock the `Solution` type here I think we want to set
+			// `voter_count` and `unique targets` on the Solution or is that not needed?
 
 			let tx = runtime::tx().election_provider_multi_phase().submit_unsigned(
-				Default::default(),
-				SolutionOrSnapshotSize { voters: v, targets: t },
+				RawSolution::default(),
+				SolutionOrSnapshotSize { voters, targets },
 			);
 
 			get_weight(tx)
@@ -353,7 +365,8 @@ pub mod kusama {
 
 fn get_weight<T: Encode>(tx: subxt::tx::StaticTxPayload<T>) -> Weight {
 	futures::executor::block_on(async {
-		let client = SubxtClient::from_url("ws://127.0.0.1:9944").await.unwrap();
+		let uri = SHARED_URI.get().expect("shared URI is set at startup; qed");
+		let client = SubxtClient::from_url(uri).await.unwrap();
 
 		let call_data = {
 			let mut buffer = Vec::new();
@@ -367,8 +380,6 @@ fn get_weight<T: Encode>(tx: subxt::tx::StaticTxPayload<T>) -> Weight {
 			Bytes(buffer)
 		};
 
-		log::info!(target: LOG_TARGET, "call: {}", serde_json::to_string(&call_data).unwrap());
-
 		let bytes: Bytes = client
 			.rpc()
 			.client
@@ -379,9 +390,9 @@ fn get_weight<T: Encode>(tx: subxt::tx::StaticTxPayload<T>) -> Weight {
 			.await
 			.unwrap();
 
-		let info: RuntimeDispatchInfo<u128> = Decode::decode(&mut bytes.0.as_ref()).unwrap();
+		let info: RuntimeDispatchInfo<Balance> = Decode::decode(&mut bytes.0.as_ref()).unwrap();
 
-		log::info!(target: LOG_TARGET, "{:?}", info);
+		log::debug!(target: LOG_TARGET, "Received weight for remote note: {:?}", info.weight);
 
 		info.weight
 	})

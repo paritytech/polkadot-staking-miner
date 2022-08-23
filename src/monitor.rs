@@ -115,10 +115,12 @@ macro_rules! monitor_cmd_for {
 						return;
 					}
 
-					let addr = runtime::storage().election_provider_multi_phase().round();
-					let round = match api.storage().fetch(&addr, Some(hash)).await {
+					let round = match api.storage().fetch(&runtime::storage().election_provider_multi_phase().round(), Some(hash)).await {
 						Ok(Some(round)) => round,
-						Ok(None) => unreachable!("Round must always exist"),
+						Ok(None) => {
+							log::warn!(target: LOG_TARGET, "EPM::Round was not found at: {:?}", at.hash());
+							return;
+						}
 						Err(e) => {
 							log::error!(target: LOG_TARGET, "Mining solution failed: {:?}", e);
 
@@ -219,7 +221,10 @@ macro_rules! monitor_cmd_for {
 					match res {
 						Ok(Some(Phase::Signed)) => Ok(()),
 						Ok(Some(_)) => Err(Error::IncorrectPhase),
-						Ok(None) => unreachable!("Phase should always exist"),
+						Ok(None) => {
+							log::warn!(target: LOG_TARGET, "EPM::Phase was not found at: {:?}", hash);
+							Err(Error::IncorrectPhase)
+						}
 						Err(e) => Err(e.into()),
 					}
 				}
