@@ -12,7 +12,7 @@ use once_cell::sync::OnceCell;
 use pallet_transaction_payment::RuntimeDispatchInfo;
 use sp_core::Bytes;
 
-pub static SHARED_URI: OnceCell<String> = OnceCell::new();
+pub static SHARED_CLIENT: OnceCell<SubxtClient> = OnceCell::new();
 
 macro_rules! impl_atomic_u32_parameter_types {
 	($mod:ident, $name:ident) => {
@@ -380,8 +380,7 @@ pub mod kusama {
 
 fn get_weight<T: Encode>(tx: subxt::tx::StaticTxPayload<T>) -> Weight {
 	futures::executor::block_on(async {
-		let uri = SHARED_URI.get().expect("shared URI is set at startup; qed");
-		let client = SubxtClient::from_url(uri).await.unwrap();
+		let client = SHARED_CLIENT.get().expect("shared client is configured as start; qed");
 
 		let call_data = {
 			let mut buffer = Vec::new();

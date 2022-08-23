@@ -62,7 +62,7 @@ async fn main() -> Result<(), Error> {
 		.map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
 	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
 
-	chain::SHARED_URI.set(uri.clone()).expect("shared URI only set once; qed");
+	chain::SHARED_CLIENT.set(api.clone()).expect("shared URI only set once; qed");
 
 	let outcome = any_runtime!(chain, {
 		tls_update_runtime_constants(&api);
