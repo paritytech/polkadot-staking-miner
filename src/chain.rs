@@ -138,17 +138,16 @@ pub mod westend {
 		type Solution = NposSolution16;
 
 		// SYNC
-		fn solution_weight(voters: u32, targets: u32, active_voters: u32, degree: u32) -> Weight {
+		fn solution_weight(voters: u32, targets: u32, active_voters: u32, _degree: u32) -> Weight {
 			use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
 
-			let raw = {
-				let solution = NposSolution16 {
+			// Mock a RawSolution to get the correct weight wihout having to do the heavy work.
+			let raw = RawSolution {
+				solution: NposSolution16 {
 					votes1: mock_votes(active_voters),
 					..Default::default()
-				};
-				let mut raw = RawSolution::default();
-				raw.solution = solution;
-				raw
+				},
+				..Default::default()
 			};
 
 			let tx = runtime::tx()
@@ -227,17 +226,16 @@ pub mod polkadot {
 		type Solution = NposSolution16;
 
 		// SYNC
-		fn solution_weight(voters: u32, targets: u32, active_voters: u32, degree: u32) -> Weight {
+		fn solution_weight(voters: u32, targets: u32, active_voters: u32, _degree: u32) -> Weight {
 			use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
 
-			let raw = {
-				let solution = NposSolution16 {
+			// Mock a RawSolution to get the correct weight wihout having to do the heavy work.
+			let raw = RawSolution {
+				solution: NposSolution16 {
 					votes1: mock_votes(active_voters),
 					..Default::default()
-				};
-				let mut raw = RawSolution::default();
-				raw.solution = solution;
-				raw
+				},
+				..Default::default()
 			};
 
 			let tx = runtime::tx()
@@ -316,17 +314,16 @@ pub mod kusama {
 		type Solution = NposSolution24;
 
 		// SYNC
-		fn solution_weight(voters: u32, targets: u32, active_voters: u32, degree: u32) -> Weight {
+		fn solution_weight(voters: u32, targets: u32, active_voters: u32, _degree: u32) -> Weight {
 			use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
 
-			let raw = {
-				let solution = NposSolution24 {
+			// Mock a RawSolution to get the correct weight wihout having to do the heavy work.
+			let raw = RawSolution {
+				solution: NposSolution24 {
 					votes1: mock_votes(active_voters),
 					..Default::default()
-				};
-				let mut raw = RawSolution::default();
-				raw.solution = solution;
-				raw
+				},
+				..Default::default()
 			};
 
 			let tx = runtime::tx()
