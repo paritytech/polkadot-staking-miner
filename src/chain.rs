@@ -378,6 +378,9 @@ pub mod kusama {
 	}
 }
 
+/// Helper to fetch the weight from a remote node
+///
+/// Panics: if the RPC call fails or if decoding the response as a `Weight` fails.
 fn get_weight<T: Encode>(tx: subxt::tx::StaticTxPayload<T>) -> Weight {
 	futures::executor::block_on(async {
 		let client = SHARED_CLIENT.get().expect("shared client is configured as start; qed");
