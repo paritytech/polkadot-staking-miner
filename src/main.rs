@@ -53,7 +53,6 @@ async fn main() -> Result<(), Error> {
 	let Opt { uri, command, prometheus_port } = Opt::parse();
 	log::debug!(target: LOG_TARGET, "attempting to connect to {:?}", uri);
 
-
 	let rpc = loop {
 		match WsClientBuilder::default().max_request_body_size(u32::MAX).build(&uri).await {
 			Ok(rpc) => break rpc,
@@ -63,7 +62,7 @@ async fn main() -> Result<(), Error> {
 					"failed to connect to client due to {:?}, retrying soon..",
 					e,
 				);
-			}
+			},
 		};
 		tokio::time::sleep(std::time::Duration::from_millis(2_500)).await;
 	};
