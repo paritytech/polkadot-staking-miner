@@ -138,17 +138,29 @@ pub mod westend {
 		type Solution = NposSolution16;
 
 		// SYNC
-		fn solution_weight(voters: u32, targets: u32, active_voters: u32, _degree: u32) -> Weight {
+		fn solution_weight(
+			voters: u32,
+			targets: u32,
+			active_voters: u32,
+			desired_targets: u32,
+		) -> Weight {
+			use _feps::NposSolution;
 			use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
 
-			// Mock a RawSolution to get the correct weight wihout having to do the heavy work.
+			// Mock a RawSolution to get the correct weight without having to do the heavy work.
 			let raw = RawSolution {
 				solution: NposSolution16 {
-					votes1: mock_votes(active_voters),
+					votes1: mock_votes(
+						active_voters,
+						desired_targets.try_into().expect("Desired targets < u16::MAX"),
+					),
 					..Default::default()
 				},
 				..Default::default()
 			};
+
+			assert_eq!(raw.solution.voter_count(), active_voters as usize);
+			assert_eq!(raw.solution.unique_targets().len(), desired_targets as usize);
 
 			let tx = runtime::tx()
 				.election_provider_multi_phase()
@@ -226,17 +238,29 @@ pub mod polkadot {
 		type Solution = NposSolution16;
 
 		// SYNC
-		fn solution_weight(voters: u32, targets: u32, active_voters: u32, _degree: u32) -> Weight {
+		fn solution_weight(
+			voters: u32,
+			targets: u32,
+			active_voters: u32,
+			desired_targets: u32,
+		) -> Weight {
+			use _feps::NposSolution;
 			use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
 
-			// Mock a RawSolution to get the correct weight wihout having to do the heavy work.
+			// Mock a RawSolution to get the correct weight without having to do the heavy work.
 			let raw = RawSolution {
 				solution: NposSolution16 {
-					votes1: mock_votes(active_voters),
+					votes1: mock_votes(
+						active_voters,
+						desired_targets.try_into().expect("Desired targets < u16::MAX"),
+					),
 					..Default::default()
 				},
 				..Default::default()
 			};
+
+			assert_eq!(raw.solution.voter_count(), active_voters as usize);
+			assert_eq!(raw.solution.unique_targets().len(), desired_targets as usize);
 
 			let tx = runtime::tx()
 				.election_provider_multi_phase()
@@ -314,17 +338,29 @@ pub mod kusama {
 		type Solution = NposSolution24;
 
 		// SYNC
-		fn solution_weight(voters: u32, targets: u32, active_voters: u32, _degree: u32) -> Weight {
+		fn solution_weight(
+			voters: u32,
+			targets: u32,
+			active_voters: u32,
+			desired_targets: u32,
+		) -> Weight {
+			use _feps::NposSolution;
 			use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
 
-			// Mock a RawSolution to get the correct weight wihout having to do the heavy work.
+			// Mock a RawSolution to get the correct weight without having to do the heavy work.
 			let raw = RawSolution {
 				solution: NposSolution24 {
-					votes1: mock_votes(active_voters),
+					votes1: mock_votes(
+						active_voters,
+						desired_targets.try_into().expect("Desired targets < u16::MAX"),
+					),
 					..Default::default()
 				},
 				..Default::default()
 			};
+
+			assert_eq!(raw.solution.voter_count(), active_voters as usize);
+			assert_eq!(raw.solution.unique_targets().len(), desired_targets as usize);
 
 			let tx = runtime::tx()
 				.election_provider_multi_phase()
@@ -409,12 +445,23 @@ fn get_weight<T: Encode>(tx: subxt::tx::StaticTxPayload<T>) -> Weight {
 
 		let info: RuntimeDispatchInfo<Balance> = Decode::decode(&mut bytes.0.as_ref()).unwrap();
 
-		log::debug!(target: LOG_TARGET, "Received weight for remote note: {:?}", info.weight);
+		log::debug!(
+			target: LOG_TARGET,
+			"Received weight of `Solution Extrinsic` from remote node: {:?}",
+			info.weight
+		);
 
 		info.weight
 	})
 }
 
-fn mock_votes(voters: u32) -> Vec<(u32, u16)> {
-	(0..voters).map(|v| (v, 0)).collect()
+fn mock_votes(voters: u32, desired_targets: u16) -> Vec<(u32, u16)> {
+	assert!(voters >= desired_targets as u32);
+	(0..voters).zip((0..desired_targets).cycle()).collect()
+}
+
+#[cfg(test)]
+fn mock_votes_works() {
+	assert_eq!(mock_votes(3, 2), vec![(0, 0), (1, 1), (2, 0)]);
+	assert_eq!(mock_votes(3, 3), vec![(0, 0), (1, 1), (2, 2)]);
 }

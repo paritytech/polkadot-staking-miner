@@ -117,13 +117,11 @@ macro_rules! monitor_cmd_for {
 
 					let round = match api.storage().fetch(&runtime::storage().election_provider_multi_phase().round(), Some(hash)).await {
 						Ok(Some(round)) => round,
-						Ok(None) => {
-							log::warn!(target: LOG_TARGET, "EPM::Round was not found at: {:?}", at.hash());
-							return;
-						}
+						// Default round is 1
+						// https://github.com/paritytech/substrate/blob/49b06901eb65f2c61ff0934d66987fd955d5b8f5/frame/election-provider-multi-phase/src/lib.rs#L1188
+						Ok(None) => 1,
 						Err(e) => {
 							log::error!(target: LOG_TARGET, "Mining solution failed: {:?}", e);
-
 							kill_main_task_if_critical_err(&tx, e.into());
 							return;
 						},
@@ -221,10 +219,9 @@ macro_rules! monitor_cmd_for {
 					match res {
 						Ok(Some(Phase::Signed)) => Ok(()),
 						Ok(Some(_)) => Err(Error::IncorrectPhase),
-						Ok(None) => {
-							log::warn!(target: LOG_TARGET, "EPM::Phase was not found at: {:?}", hash);
-							Err(Error::IncorrectPhase)
-						}
+						// Default phase is None
+						// https://github.com/paritytech/substrate/blob/49b06901eb65f2c61ff0934d66987fd955d5b8f5/frame/election-provider-multi-phase/src/lib.rs#L1193
+						Ok(None) => Err(Error::IncorrectPhase),
 						Err(e) => Err(e.into()),
 					}
 				}
