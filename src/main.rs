@@ -53,14 +53,28 @@ async fn main() -> Result<(), Error> {
 	let Opt { uri, command, prometheus_port } = Opt::parse();
 	log::debug!(target: LOG_TARGET, "attempting to connect to {:?}", uri);
 
-	let rpc = WsClientBuilder::default().max_request_body_size(u32::MAX).build(uri).await?;
-	let api = SubxtClient::from_rpc_client(rpc).await?;
+	let rpc = loop {
+		match WsClientBuilder::default().max_request_body_size(u32::MAX).build(&uri).await {
+			Ok(rpc) => break rpc,
+			Err(e) => {
+				log::warn!(
+					target: LOG_TARGET,
+					"failed to connect to client due to {:?}, retrying soon..",
+					e,
+				);
+			},
+		};
+		tokio::time::sleep(std::time::Duration::from_millis(2_500)).await;
+	};
 
+	let api = SubxtClient::from_rpc_client(rpc).await?;
 	let runtime_version = api.rpc().runtime_version(None).await?;
 	let chain = Chain::try_from(runtime_version)?;
 	let _prometheus_handle = prometheus::run(prometheus_port.unwrap_or(DEFAULT_PROMETHEUS_PORT))
 		.map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
 	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
+
+	chain::SHARED_CLIENT.set(api.clone()).expect("shared client only set once; qed");
 
 	let outcome = any_runtime!(chain, {
 		tls_update_runtime_constants(&api);

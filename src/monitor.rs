@@ -115,13 +115,13 @@ macro_rules! monitor_cmd_for {
 						return;
 					}
 
-					let addr = runtime::storage().election_provider_multi_phase().round();
-					let round = match api.storage().fetch(&addr, Some(hash)).await {
+					let round = match api.storage().fetch(&runtime::storage().election_provider_multi_phase().round(), Some(hash)).await {
 						Ok(Some(round)) => round,
-						Ok(None) => unreachable!("Round must always exist"),
+						// Default round is 1
+						// https://github.com/paritytech/substrate/blob/49b06901eb65f2c61ff0934d66987fd955d5b8f5/frame/election-provider-multi-phase/src/lib.rs#L1188
+						Ok(None) => 1,
 						Err(e) => {
 							log::error!(target: LOG_TARGET, "Mining solution failed: {:?}", e);
-
 							kill_main_task_if_critical_err(&tx, e.into());
 							return;
 						},
@@ -219,7 +219,9 @@ macro_rules! monitor_cmd_for {
 					match res {
 						Ok(Some(Phase::Signed)) => Ok(()),
 						Ok(Some(_)) => Err(Error::IncorrectPhase),
-						Ok(None) => unreachable!("Phase should always exist"),
+						// Default phase is None
+						// https://github.com/paritytech/substrate/blob/49b06901eb65f2c61ff0934d66987fd955d5b8f5/frame/election-provider-multi-phase/src/lib.rs#L1193
+						Ok(None) => Err(Error::IncorrectPhase),
 						Err(e) => Err(e.into()),
 					}
 				}

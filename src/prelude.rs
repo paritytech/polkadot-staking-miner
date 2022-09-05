@@ -32,6 +32,8 @@ pub type Header =
 	subxt::ext::sp_runtime::generic::Header<u32, subxt::ext::sp_runtime::traits::BlakeTwo256>;
 /// The header type. We re-export it here, but we can easily get it from block as well.
 pub type Hash = sp_core::H256;
+/// Balance type
+pub type Balance = u128;
 
 pub use subxt::ext::{
 	sp_core,
