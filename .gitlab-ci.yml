@@ -192,7 +192,7 @@ build-push-image:
         --build-arg IMAGE_NAME="${IMAGE_NAME}"
         --tag "$IMAGE_NAME:latest"
         --tag "$IMAGE_NAME:$VERSION"
-        --file ${DOCKERFILE} .
+        --file Dockerfile .
     # The job will success only on the protected branch
     - echo "$DOCKER_PASS" |
         buildah login --username "$DOCKER_USER" --password-stdin docker.io
