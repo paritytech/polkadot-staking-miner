@@ -24,7 +24,6 @@ use codec::Encode;
 macro_rules! dry_run_cmd_for {
 	($runtime:tt) => {
 		paste::paste! {
-
 			pub async fn [<run_$runtime>](api: SubxtClient, config: DryRunConfig) -> Result<(), Error> {
 				use crate::chain::[<$runtime>]::runtime as runtime;
 
@@ -80,6 +79,9 @@ macro_rules! dry_run_cmd_for {
 	};
 }
 
+#[cfg(feature = "polkadot")]
 dry_run_cmd_for!(polkadot);
+#[cfg(feature = "kusama")]
 dry_run_cmd_for!(kusama);
+#[cfg(feature = "westend")]
 dry_run_cmd_for!(westend);

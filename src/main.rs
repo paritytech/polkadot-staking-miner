@@ -126,7 +126,6 @@ async fn run_command(fut: BoxFuture<'_, Result<(), Error>>) -> Result<(), Error>
 #[cfg(not(unix))]
 async fn run_command(fut: BoxFuture<'_, Result<(), Error>>) -> Result<(), E> {
 	use tokio::signal::ctrl_c;
-
 	select! {
 		_ = ctrl_c() => {},
 		res = fut => res,
