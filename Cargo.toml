@@ -43,4 +43,8 @@ assert_cmd = "2.0"
 sp-storage = { git = "https://github.com/paritytech/substrate", branch = "master" }
 
 [features]
+default = ["polkadot", "kusama", "westend"]
 slow-tests = []
+westend = []
+polkadot = []
+kusama = []

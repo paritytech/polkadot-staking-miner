@@ -31,6 +31,9 @@ macro_rules! emergency_cmd_for {
 	};
 }
 
+#[cfg(feature = "polkadot")]
 emergency_cmd_for!(polkadot);
+#[cfg(feature = "kusama")]
 emergency_cmd_for!(kusama);
+#[cfg(feature = "westend")]
 emergency_cmd_for!(westend);

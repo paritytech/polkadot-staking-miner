@@ -14,7 +14,6 @@ use tokio::sync::Mutex;
 macro_rules! monitor_cmd_for {
 	($runtime:tt) => {
 		paste::paste! {
-
 			/// The monitor command.
 			pub async fn [<run_$runtime>] (api: SubxtClient, config: MonitorConfig) -> Result<(), Error> {
 				use crate::chain::[<$runtime>]::{self as chain, runtime};
@@ -351,8 +350,11 @@ macro_rules! monitor_cmd_for {
 	}
 }
 
+#[cfg(feature = "polkadot")]
 monitor_cmd_for!(polkadot);
+#[cfg(feature = "kusama")]
 monitor_cmd_for!(kusama);
+#[cfg(feature = "westend")]
 monitor_cmd_for!(westend);
 
 fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>, err: Error) {

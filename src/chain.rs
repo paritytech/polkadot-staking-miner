@@ -114,6 +114,7 @@ pub mod static_types {
 	pub use max_weight::MaxWeight;
 }
 
+#[cfg(feature = "westend")]
 pub mod westend {
 	use super::*;
 
@@ -214,6 +215,7 @@ pub mod westend {
 	}
 }
 
+#[cfg(feature = "polkadot")]
 pub mod polkadot {
 	use super::*;
 
@@ -314,6 +316,7 @@ pub mod polkadot {
 	}
 }
 
+#[cfg(feature = "kusama")]
 pub mod kusama {
 	use super::*;
 

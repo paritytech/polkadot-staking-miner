@@ -147,6 +147,9 @@ macro_rules! helpers_for_runtime {
 	};
 }
 
+#[cfg(feature = "polkadot")]
 helpers_for_runtime!(polkadot);
+#[cfg(feature = "kusama")]
 helpers_for_runtime!(kusama);
+#[cfg(feature = "westend")]
 helpers_for_runtime!(westend);

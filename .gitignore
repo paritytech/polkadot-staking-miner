@@ -12,3 +12,6 @@
 .cargo
 .env
 Cargo.lock
+
+# all the key files
+*.key
