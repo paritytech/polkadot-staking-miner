@@ -75,7 +75,7 @@ async fn main() -> Result<(), Error> {
 		.map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
 	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
 
-	let (tx_runtime, rx_runtime) = oneshot::channel();
+	let (tx_runtime, rx_runtime) = oneshot::channel::<Error>();
 
 	chain::SHARED_CLIENT.set(api.clone()).expect("shared client only set once; qed");
 
@@ -88,20 +88,15 @@ async fn main() -> Result<(), Error> {
 		tokio::spawn(async move {
 			let update_client = api2.subscribe_to_updates();
 
-			match update_client
+			// This will run runtime updates in a loop which only returns if the RPC subscription is terminated.
+			if let Err(e) = update_client
 				.perform_runtime_updates()
 				.await
 				.map_err(Into::into)
 				.and_then(|_| update_runtime_constants(&api2))
 			{
-				Ok(()) => {
-					crate::prometheus::on_runtime_upgrade();
-				},
-				Err(e) => {
-					log::error!(target: LOG_TARGET, "Runtime update failed with result: {:?}", e);
-					let _ = tx_runtime.send(e);
-					return
-				},
+				log::error!(target: LOG_TARGET, "Runtime update failed: {:?}", e);
+				let _ = tx_runtime.send(e);
 			}
 		});
 

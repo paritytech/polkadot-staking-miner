@@ -184,6 +184,10 @@ mod hidden {
 		))
 		.unwrap()
 	});
+
+	// TODO: https://github.com/paritytech/subxt/issues/652 not possible to know when a runtime upgrade
+	// is performed.
+	#[allow(unused)]
 	static RUNTIME_UPGRADES: Lazy<Counter> = Lazy::new(|| {
 		register_counter!(opts!(
 			"staking_miner_runtime_upgrades",
@@ -195,6 +199,9 @@ mod hidden {
 
 	// Exported wrappers.
 
+	// TODO: https://github.com/paritytech/subxt/issues/652 not possible to know when a runtime upgrade
+	// is performed.
+	#[allow(unused)]
 	pub fn on_runtime_upgrade() {
 		RUNTIME_UPGRADES.inc();
 	}
