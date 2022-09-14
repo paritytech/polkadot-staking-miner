@@ -58,7 +58,7 @@ macro_rules! helpers_for_runtime {
 				api: &SubxtClient,
 				hash: Option<Hash>,
 				solver: Solver
-			) -> Result<(SolutionOf<chain::$runtime::Config>, ElectionScore, SolutionOrSnapshotSize), Error> {
+			) -> Result<(SolutionOf<chain::$runtime::MinerConfig>, ElectionScore, SolutionOrSnapshotSize), Error> {
 
 				let (voters, targets, desired_targets) = [<snapshot_$runtime>](&api, hash).await?;
 
@@ -66,13 +66,13 @@ macro_rules! helpers_for_runtime {
 					match solver {
 						Solver::SeqPhragmen { iterations } => {
 							BalanceIterations::set(iterations);
-							Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<
+							Miner::<chain::$runtime::MinerConfig>::mine_solution_with_snapshot::<
 								SequentialPhragmen<AccountId, Accuracy, Balancing>,
 							>(voters, targets, desired_targets)
 						},
 						Solver::PhragMMS { iterations } => {
 							BalanceIterations::set(iterations);
-							Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<PhragMMS<AccountId, Accuracy, Balancing>>(
+							Miner::<chain::$runtime::MinerConfig>::mine_solution_with_snapshot::<PhragMMS<AccountId, Accuracy, Balancing>>(
 								voters,
 								targets,
 								desired_targets,

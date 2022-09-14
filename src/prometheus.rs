@@ -85,6 +85,7 @@ pub fn run(port: u16) -> Result<GracefulShutdown, String> {
 }
 
 mod hidden {
+	use frame_election_provider_support::Weight;
 	use once_cell::sync::Lazy;
 	use prometheus::{
 		labels, opts, register_counter, register_gauge, register_histogram_vec, Counter, Gauge,
@@ -192,6 +193,22 @@ mod hidden {
 		))
 		.unwrap()
 	});
+	static SUBMISSION_LENGTH: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(opts!(
+			"staking_miner_solution_length_byes",
+			"Number of bytes in the solution submitted",
+			labels! {"handler" => "all",}
+		))
+		.unwrap()
+	});
+	static SUBMISSION_WEIGHT: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(opts!(
+			"staking_miner_solution_weight",
+			"Weight of the solution submitted",
+			labels! {"handler" => "all",}
+		))
+		.unwrap()
+	});
 
 	// Exported wrappers.
 
@@ -209,6 +226,14 @@ mod hidden {
 
 	pub fn set_balance(balance: f64) {
 		BALANCE.set(balance);
+	}
+
+	pub fn set_length(len: usize) {
+		SUBMISSION_LENGTH.set(len as f64);
+	}
+
+	pub fn set_weight(weight: Weight) {
+		SUBMISSION_WEIGHT.set(weight as f64)
 	}
 
 	pub fn set_score(score: sp_npos_elections::ElectionScore) {

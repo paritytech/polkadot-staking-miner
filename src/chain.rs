@@ -130,8 +130,8 @@ pub mod westend {
 	);
 
 	#[derive(Debug)]
-	pub struct Config;
-	impl pallet_election_provider_multi_phase::unsigned::MinerConfig for Config {
+	pub struct MinerConfig;
+	impl pallet_election_provider_multi_phase::unsigned::MinerConfig for MinerConfig {
 		type AccountId = AccountId;
 		type MaxLength = static_types::MaxLength;
 		type MaxWeight = static_types::MaxWeight;
@@ -231,8 +231,8 @@ pub mod polkadot {
 	);
 
 	#[derive(Debug)]
-	pub struct Config;
-	impl pallet_election_provider_multi_phase::unsigned::MinerConfig for Config {
+	pub struct MinerConfig;
+	impl pallet_election_provider_multi_phase::unsigned::MinerConfig for MinerConfig {
 		type AccountId = AccountId;
 		type MaxLength = static_types::MaxLength;
 		type MaxWeight = static_types::MaxWeight;
@@ -260,6 +260,8 @@ pub mod polkadot {
 				},
 				..Default::default()
 			};
+
+			log::debug!(target: LOG_TARGET, "getting weight of {:?}", raw);
 
 			assert_eq!(raw.solution.voter_count(), active_voters as usize);
 			assert_eq!(raw.solution.unique_targets().len(), desired_targets as usize);
@@ -332,8 +334,8 @@ pub mod kusama {
 	);
 
 	#[derive(Debug)]
-	pub struct Config;
-	impl pallet_election_provider_multi_phase::unsigned::MinerConfig for Config {
+	pub struct MinerConfig;
+	impl pallet_election_provider_multi_phase::unsigned::MinerConfig for MinerConfig {
 		type AccountId = AccountId;
 		type MaxLength = static_types::MaxLength;
 		type MaxWeight = static_types::MaxWeight;
@@ -436,6 +438,7 @@ fn get_weight<T: Encode>(tx: subxt::tx::StaticTxPayload<T>) -> Weight {
 			Bytes(buffer)
 		};
 
+		log::debug!(target: LOG_TARGET, "call data = {:?}", call_data.len());
 		let bytes: Bytes = client
 			.rpc()
 			.client
