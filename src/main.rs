@@ -44,6 +44,7 @@ use futures::future::{BoxFuture, FutureExt};
 use jsonrpsee::ws_client::WsClientBuilder;
 use opt::Command;
 use prelude::*;
+use tokio::sync::oneshot;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -74,20 +75,32 @@ async fn main() -> Result<(), Error> {
 		.map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
 	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
 
+	let (tx_runtime, rx_runtime) = oneshot::channel();
+
 	chain::SHARED_CLIENT.set(api.clone()).expect("shared client only set once; qed");
 
 	let outcome = any_runtime!(chain, {
-		tls_update_runtime_constants(&api);
+		update_runtime_constants(&api)?;
 
 		// Start a new tokio task to perform the runtime updates in the background.
-		let update_client = api.subscribe_to_updates();
+		// if the runtime upgrade fails it will close down the entire staking miner.
+		let api2 = api.clone();
 		tokio::spawn(async move {
-			match update_client.perform_runtime_updates().await {
+			let update_client = api2.subscribe_to_updates();
+
+			match update_client
+				.perform_runtime_updates()
+				.await
+				.map_err(Into::into)
+				.and_then(|_| update_runtime_constants(&api2))
+			{
 				Ok(()) => {
 					crate::prometheus::on_runtime_upgrade();
 				},
 				Err(e) => {
 					log::error!(target: LOG_TARGET, "Runtime update failed with result: {:?}", e);
+					let _ = tx_runtime.send(e);
+					return
 				},
 			}
 		});
@@ -98,7 +111,7 @@ async fn main() -> Result<(), Error> {
 			Command::EmergencySolution(cfg) => emergency_cmd(api, cfg).boxed(),
 		};
 
-		run_command(fut).await
+		run_command(fut, rx_runtime).await
 	});
 
 	log::info!(target: LOG_TARGET, "round of execution finished. outcome = {:?}", outcome);
@@ -106,7 +119,10 @@ async fn main() -> Result<(), Error> {
 }
 
 #[cfg(target_family = "unix")]
-async fn run_command(fut: BoxFuture<'_, Result<(), Error>>) -> Result<(), Error> {
+async fn run_command(
+	fut: BoxFuture<'_, Result<(), Error>>,
+	runtime_upgrade_failed: oneshot::Receiver<Error>,
+) -> Result<(), Error> {
 	use tokio::signal::unix::{signal, SignalKind};
 
 	let mut stream_int = signal(SignalKind::interrupt()).map_err(Error::Io)?;
@@ -119,15 +135,30 @@ async fn run_command(fut: BoxFuture<'_, Result<(), Error>>) -> Result<(), Error>
 		_ = stream_term.recv() => {
 			Ok(())
 		}
+		res = runtime_upgrade_failed => {
+			match res {
+				Ok(err) => Err(err),
+				Err(_) => unreachable!("The channel always sends a message before closing; qed"),
+			}
+		}
 		res = fut => res,
 	}
 }
 
 #[cfg(not(unix))]
-async fn run_command(fut: BoxFuture<'_, Result<(), Error>>) -> Result<(), E> {
+async fn run_command(
+	fut: BoxFuture<'_, Result<(), Error>>,
+	runtime_upgrade_failed: oneshot::Receiver<()>,
+) -> Result<(), E> {
 	use tokio::signal::ctrl_c;
 	select! {
 		_ = ctrl_c() => {},
+		res = runtime_upgrade_failed => {
+			match res {
+				Ok(err) => Err(err),
+				Err(_) => unreachable!("The channel always sends a message before closing; qed"),
+			}
+		}
 		res = fut => res,
 	}
 }

@@ -116,19 +116,23 @@ macro_rules! helpers_for_runtime {
 				Ok((voters, targets, desired_targets))
 			}
 
-			pub fn [<update_runtime_constants_$runtime>](api: &SubxtClient) {
+			pub fn [<update_runtime_constants_$runtime>](api: &SubxtClient) -> Result<(), Error> {
 				use chain::static_types;
 				use sp_runtime::Perbill;
 				use crate::chain::[<$runtime>]::runtime;
 
 				// maximum weight of the signed submission is exposed from metadata and MUST be this.
-				let max_weight = api.constants().at(&runtime::constants().election_provider_multi_phase().signed_max_weight()).expect("constant `max weight` must exist").ref_time;
+				let max_weight = api.constants().at(&runtime::constants().election_provider_multi_phase().signed_max_weight())
+					.map_err(|_| Error::Other("Metadata outdated: `signed_max_weight` failed".to_string()))?
+					.ref_time;
 
-				// allow up to 75% of the block size to be used for signed submission, length-wise. This
-				// value can be adjusted a bit if needed.
-				let max_length = Perbill::from_rational(90_u32, 100) * api.constants().at(&runtime::constants().system().block_length()).expect("constant `block length` must exist").max.normal;
+				// TODO: https://github.com/paritytech/staking-miner-v2/issues/316
+				let max_length = Perbill::from_rational(90_u32, 100) * api.constants().at(&runtime::constants().system().block_length())
+					.map_err(|_| Error::Other("Metadata outdated: `block_length` failed".to_string()))?
+					.max.normal;
 
-				let db_weight = api.constants().at(&runtime::constants().system().db_weight()).expect("constant `DbWeight` must exist");
+				let db_weight = api.constants().at(&runtime::constants().system().db_weight())
+					.map_err(|_| Error::Other("Metadata outdated: `db_weight` failed".to_string()))?;
 
 				let system_db_weight =
 					frame_support::weights::RuntimeDbWeight { read: db_weight.read, write: db_weight.write };
@@ -142,6 +146,8 @@ macro_rules! helpers_for_runtime {
 				log::trace!(target: LOG_TARGET, "Constant `db_weight`: {:?}", static_types::DbWeight::get());
 				log::trace!(target: LOG_TARGET, "Constant `max_weight`: {:?}", static_types::MaxWeight::get());
 				log::trace!(target: LOG_TARGET, "Constant `max_length`: {:?}", static_types::MaxLength::get());
+
+				Ok(())
 			}
 		}
 	};

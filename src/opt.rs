@@ -41,7 +41,7 @@ macro_rules! any_runtime {
 						$crate::monitor::run_polkadot as monitor_cmd,
 						$crate::dry_run::run_polkadot as dry_run_cmd,
 						$crate::emergency_solution::run_polkadot as emergency_cmd,
-						$crate::helpers::update_runtime_constants_polkadot as tls_update_runtime_constants,
+						$crate::helpers::update_runtime_constants_polkadot as update_runtime_constants,
 						$crate::chain::polkadot::runtime
 					};
 					$($code)*
@@ -60,7 +60,7 @@ macro_rules! any_runtime {
 						$crate::monitor::run_kusama as monitor_cmd,
 						$crate::dry_run::run_kusama as dry_run_cmd,
 						$crate::emergency_solution::run_kusama as emergency_cmd,
-						$crate::helpers::update_runtime_constants_kusama as tls_update_runtime_constants,
+						$crate::helpers::update_runtime_constants_kusama as update_runtime_constants,
 						$crate::chain::kusama::runtime
 					};
 					$($code)*
@@ -79,7 +79,7 @@ macro_rules! any_runtime {
 						$crate::monitor::run_westend as monitor_cmd,
 						$crate::dry_run::run_westend as dry_run_cmd,
 						$crate::emergency_solution::run_westend as emergency_cmd,
-						$crate::helpers::update_runtime_constants_westend as tls_update_runtime_constants,
+						$crate::helpers::update_runtime_constants_westend as update_runtime_constants,
 						$crate::chain::westend::runtime
 					};
 					$($code)*
