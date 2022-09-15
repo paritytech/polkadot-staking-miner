@@ -39,7 +39,8 @@ sp-timestamp = { git = "https://github.com/paritytech/substrate.git", branch = "
 sp-inherents = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
 sp-keyring = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
 frame-system = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
-pallet-transaction-payment = { version = "4.0.0-dev", default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
+pallet-transaction-payment = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+pallet-staking = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
 
 # These dependencies are used for the node template's RPCs
 jsonrpsee = { version = "0.15.1", features = ["server"] }
@@ -59,6 +60,10 @@ frame-benchmarking-cli = { git = "https://github.com/paritytech/substrate.git", 
 # Local Dependencies
 node-template-runtime = { version = "4.0.0-dev", path = "../runtime" }
 
+lazy_static = "1.4.0"
+rand = "0.8.5"
+
+
 # CLI-specific dependencies
 try-runtime-cli = { version = "0.10.0-dev", optional = true, git = "https://github.com/paritytech/substrate.git", branch = "master" }
 
@@ -71,3 +76,4 @@ runtime-benchmarks = ["node-template-runtime/runtime-benchmarks"]
 # Enable features that allow the runtime to be tried and debugged. Name might be subject to change
 # in the near future.
 try-runtime = ["node-template-runtime/try-runtime", "try-runtime-cli"]
+

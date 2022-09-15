@@ -6,13 +6,11 @@
 #[cfg(feature = "std")]
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
-use codec::MaxEncodedLen;
 use election_multi_phase::SolutionAccuracyOf;
 use frame_election_provider_support::{onchain, ElectionDataProvider, SequentialPhragmen};
 use frame_support::{
-	dispatch::TransactionPriority,
-	traits::{ConstU128, ConstU16, ConstU32, U128CurrencyToVote},
-	weights::DispatchClass,
+	dispatch::{DispatchClass, TransactionPriority},
+	traits::{ConstU16, ConstU32, U128CurrencyToVote},
 };
 use frame_system::EnsureRoot;
 use opaque::SessionKeys;
@@ -314,7 +312,7 @@ pub struct PeriodicSessionUntilSolutionQueued<const PERIOD: BlockNumber>;
 impl<const PERIOD: BlockNumber> ShouldEndSession<BlockNumber>
 	for PeriodicSessionUntilSolutionQueued<PERIOD>
 {
-	fn should_end_session(now: BlockNumber) -> bool {
+	fn should_end_session(_: BlockNumber) -> bool {
 		// can still be the normal periodic sessions.
 		let now = System::block_number();
 		let last_election = get_last_election();
@@ -334,13 +332,13 @@ impl<const PERIOD: BlockNumber> frame_support::traits::EstimateNextSessionRotati
 	fn average_session_length() -> BlockNumber {
 		PERIOD
 	}
-	fn estimate_current_session_progress(now: BlockNumber) -> (Option<Permill>, Weight) {
+	fn estimate_current_session_progress(_: BlockNumber) -> (Option<Permill>, Weight) {
 		let now = System::block_number();
 		let since = now - get_last_election();
 		(Some(Permill::from_rational(since, PERIOD)), Weight::from_ref_time(0))
 	}
 
-	fn estimate_next_session_rotation(now: BlockNumber) -> (Option<BlockNumber>, Weight) {
+	fn estimate_next_session_rotation(_: BlockNumber) -> (Option<BlockNumber>, Weight) {
 		(Some(get_last_election() + PERIOD), Weight::from_ref_time(0))
 	}
 }
