@@ -195,7 +195,7 @@ mod hidden {
 	});
 	static SUBMISSION_LENGTH: Lazy<Gauge> = Lazy::new(|| {
 		register_gauge!(opts!(
-			"staking_miner_solution_length_byes",
+			"staking_miner_solution_length_bytes",
 			"Number of bytes in the solution submitted",
 			labels! {"handler" => "all",}
 		))
