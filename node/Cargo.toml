@@ -1,0 +1,73 @@
+[package]
+name = "node-template"
+version = "4.0.0-dev"
+description = "A fresh FRAME-based Substrate node, ready for hacking."
+authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
+homepage = "https://substrate.io/"
+edition = "2021"
+license = "Unlicense"
+publish = false
+repository = "https://github.com/substrate-developer-hub/substrate-node-template/"
+build = "build.rs"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[[bin]]
+name = "node-template"
+
+[dependencies]
+clap = { version = "3.1.18", features = ["derive"] }
+
+sc-cli = { git = "https://github.com/paritytech/substrate.git", features = ["wasmtime"] , branch = "master" }
+sp-core = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sc-executor = { git = "https://github.com/paritytech/substrate.git", features = ["wasmtime"] , branch = "master" }
+sc-service = { git = "https://github.com/paritytech/substrate.git", features = ["wasmtime"] , branch = "master" }
+sc-telemetry = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sc-keystore = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sc-transaction-pool = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sc-transaction-pool-api = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sc-consensus-aura = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sp-consensus-aura = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sp-consensus = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sc-consensus = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sc-finality-grandpa = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sp-finality-grandpa = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sc-client-api = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sp-runtime = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sp-timestamp = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sp-inherents = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sp-keyring = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+frame-system = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+pallet-transaction-payment = { version = "4.0.0-dev", default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
+
+# These dependencies are used for the node template's RPCs
+jsonrpsee = { version = "0.15.1", features = ["server"] }
+sc-rpc = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sp-api = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sc-rpc-api = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sp-blockchain = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sp-block-builder = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sc-basic-authorship = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+substrate-frame-rpc-system = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+pallet-transaction-payment-rpc = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+
+# These dependencies are used for runtime benchmarking
+frame-benchmarking = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+frame-benchmarking-cli = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+
+# Local Dependencies
+node-template-runtime = { version = "4.0.0-dev", path = "../runtime" }
+
+# CLI-specific dependencies
+try-runtime-cli = { version = "0.10.0-dev", optional = true, git = "https://github.com/paritytech/substrate.git", branch = "master" }
+
+[build-dependencies]
+substrate-build-script-utils = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+
+[features]
+default = []
+runtime-benchmarks = ["node-template-runtime/runtime-benchmarks"]
+# Enable features that allow the runtime to be tried and debugged. Name might be subject to change
+# in the near future.
+try-runtime = ["node-template-runtime/try-runtime", "try-runtime-cli"]
