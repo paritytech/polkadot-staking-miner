@@ -147,15 +147,18 @@ macro_rules! monitor_cmd_for {
 					match helpers::[<mine_solution_$runtime>](&api, Some(hash), config.solver).timed().await {
 						(Ok((solution, score, size)), elapsed) => {
 							let elapsed_ms = elapsed.as_millis();
-
 							let encoded_len = solution.encoded_size();
-							let final_weight = chain::MinerConfig::solution_weight(
-								size.voters,
-								size.targets,
-								solution.voter_count() as u32,
-								// this is same as desired_targets
-								solution.unique_targets().len() as u32,
-							);
+							let active_voters = solution.voter_count() as u32;
+							let desired_targets = solution.unique_targets().len() as u32;
+
+							let final_weight = tokio::task::spawn_blocking(move || {
+								chain::MinerConfig::solution_weight(
+									size.voters,
+									size.targets,
+									active_voters,
+									desired_targets
+								)
+							}).await.unwrap();
 
 							log::info!(
 								target: LOG_TARGET,
