@@ -261,8 +261,6 @@ pub mod polkadot {
 				..Default::default()
 			};
 
-			log::debug!(target: LOG_TARGET, "getting weight of {:?}", raw);
-
 			assert_eq!(raw.solution.voter_count(), active_voters as usize);
 			assert_eq!(raw.solution.unique_targets().len(), desired_targets as usize);
 
@@ -438,7 +436,6 @@ fn get_weight<T: Encode>(tx: subxt::tx::StaticTxPayload<T>) -> Weight {
 			Bytes(buffer)
 		};
 
-		log::debug!(target: LOG_TARGET, "call data = {:?}", call_data.len());
 		let bytes: Bytes = client
 			.rpc()
 			.client
@@ -451,7 +448,7 @@ fn get_weight<T: Encode>(tx: subxt::tx::StaticTxPayload<T>) -> Weight {
 
 		let info: RuntimeDispatchInfo<Balance> = Decode::decode(&mut bytes.0.as_ref()).unwrap();
 
-		log::debug!(
+		log::trace!(
 			target: LOG_TARGET,
 			"Received weight of `Solution Extrinsic` from remote node: {:?}",
 			info.weight
