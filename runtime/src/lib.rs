@@ -107,8 +107,8 @@ pub mod opaque {
 //   https://docs.substrate.io/v3/runtime/upgrades#runtime-versioning
 #[sp_version::runtime_version]
 pub const VERSION: RuntimeVersion = RuntimeVersion {
-	spec_name: create_runtime_str!("node-template"),
-	impl_name: create_runtime_str!("node-template"),
+	spec_name: create_runtime_str!("polkadot"),
+	impl_name: create_runtime_str!("polkadot"),
 	authoring_version: 1,
 	// The version of the runtime specification. A full node will not attempt to use its native
 	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
@@ -266,9 +266,10 @@ impl pallet_session::SessionManager<AccountId> for SudoAsStakingSessionManager {
 			|validators| {
 				if let Some(sudo) = validators.iter().find(|v| v == &&sudo_key::Key::get().unwrap())
 				{
-					frame_support::log::info!("overwriting all validators to sudo: {:?}", sudo);
+					frame_support::log::info!(target: "runtime", "overwriting all validators to sudo: {:?}", sudo);
 				} else {
 					frame_support::log::warn!(
+						target: "runtime",
 						"sudo is not even in the validator set {:?}",
 						sudo_key::Key::get().unwrap()
 					);
@@ -283,9 +284,10 @@ impl pallet_session::SessionManager<AccountId> for SudoAsStakingSessionManager {
 			|validators| {
 				if let Some(sudo) = validators.iter().find(|v| v == &&sudo_key::Key::get().unwrap())
 				{
-					frame_support::log::info!("overwriting all validators to sudo: {:?}", sudo);
+					frame_support::log::info!(target: "runtime", "overwriting all validators to sudo: {:?}", sudo);
 				} else {
 					frame_support::log::warn!(
+						target: "runtime",
 						"sudo is not even in the validator set {:?}",
 						sudo_key::Key::get().unwrap()
 					);
@@ -324,7 +326,7 @@ impl<const PERIOD: BlockNumber> ShouldEndSession<BlockNumber>
 	}
 }
 
-const SESSION: BlockNumber = 7 * MINUTES;
+const SESSION: BlockNumber = 1 * MINUTES;
 
 impl<const PERIOD: BlockNumber> frame_support::traits::EstimateNextSessionRotation<BlockNumber>
 	for PeriodicSessionUntilSolutionQueued<PERIOD>
@@ -332,6 +334,7 @@ impl<const PERIOD: BlockNumber> frame_support::traits::EstimateNextSessionRotati
 	fn average_session_length() -> BlockNumber {
 		PERIOD
 	}
+
 	fn estimate_current_session_progress(_: BlockNumber) -> (Option<Permill>, Weight) {
 		let now = System::block_number();
 		let since = now - get_last_election();
@@ -558,10 +561,10 @@ impl pallet_election_provider_multi_phase::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type Currency = Balances;
 	type EstimateCallFee = TransactionPayment;
-	type SignedPhase = ();
 	type MinerConfig = Self;
 	type SignedMaxRefunds = ();
 	type UnsignedPhase = ConstU32<{ SESSION / 2 }>;
+	type SignedPhase = ConstU32<{ SESSION / 2 }>;
 	type BetterUnsignedThreshold = ();
 	type BetterSignedThreshold = ();
 	type OffchainRepeat = ();

@@ -14,10 +14,10 @@ use sp_finality_grandpa::AuthorityId as GrandpaId;
 use sp_runtime::traits::{IdentifyAccount, Verify};
 
 lazy_static::lazy_static! {
-	static ref NOMINATORS: u32 = std::env::var("N").unwrap().parse().unwrap();
-	static ref CANDIDATES: u32 = std::env::var("C").unwrap().parse().unwrap();
-	static ref VALIDATORS: u32 = std::env::var("V").unwrap().parse().unwrap();
-	static ref NOMINATION_DEGREE: NominationDegree = NominationDegree::from_str(std::env::var("ND").unwrap().as_ref()).unwrap();
+	static ref NOMINATORS: u32 = std::env::var("N").unwrap_or("1000".to_string()).parse().unwrap();
+	static ref CANDIDATES: u32 = std::env::var("C").unwrap_or("500".to_string()).parse().unwrap();
+	static ref VALIDATORS: u32 = std::env::var("V").unwrap_or("100".to_string()).parse().unwrap();
+	static ref NOMINATION_DEGREE: NominationDegree = NominationDegree::from_str(std::env::var("ND").unwrap_or("full".to_string()).as_ref()).unwrap();
 }
 
 #[derive(Debug, Clone, Copy)]
