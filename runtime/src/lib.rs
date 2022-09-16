@@ -9,10 +9,10 @@ include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 use election_multi_phase::SolutionAccuracyOf;
 use frame_election_provider_support::{onchain, ElectionDataProvider, SequentialPhragmen};
 use frame_support::{
-	dispatch::{DispatchClass, TransactionPriority},
-	traits::{ConstU16, ConstU32, U128CurrencyToVote},
+	dispatch::{DispatchClass, PerDispatchClass, TransactionPriority},
+	traits::{ConstU16, ConstU32, Get, U128CurrencyToVote},
 };
-use frame_system::EnsureRoot;
+use frame_system::{limits, EnsureRoot};
 use opaque::SessionKeys;
 use pallet_grandpa::{
 	fg_primitives, AuthorityId as GrandpaId, AuthorityList as GrandpaAuthorityList,
@@ -135,23 +135,65 @@ pub fn native_version() -> NativeVersion {
 	NativeVersion { runtime_version: VERSION, can_author_with: Default::default() }
 }
 
-const NORMAL_DISPATCH_RATIO: Perbill = Perbill::from_percent(75);
+sp_api::decl_runtime_apis! {
+	pub trait TestConfig {
+		fn set_length(len: u32);
+		fn set_weight(weight: u64);
+	}
+}
+
+pub mod block_length {
+	use super::*;
+	use frame_support::traits::Get;
+	use frame_system::limits;
+
+	const BLOCK_LENGTH_KEY: &[u8] = b":test_length:";
+	fn get() -> u32 {
+		frame_support::storage::unhashed::get(BLOCK_LENGTH_KEY).unwrap_or(1024)
+	}
+	pub fn set(len: u32) {
+		frame_support::storage::unhashed::put(BLOCK_LENGTH_KEY, &len);
+	}
+
+	pub struct ConfigurableBlockLength;
+	impl Get<limits::BlockLength> for ConfigurableBlockLength {
+		fn get() -> limits::BlockLength {
+			limits::BlockLength { max: PerDispatchClass::new(|_| get()) }
+		}
+	}
+}
+
+pub mod block_weight {
+	use super::*;
+	use frame_system::limits;
+
+	const BLOCK_WEIGHT_KEY: &[u8] = b":test_weight:";
+	fn get() -> u64 {
+		frame_support::storage::unhashed::get(BLOCK_WEIGHT_KEY)
+			.unwrap_or((WEIGHT_PER_SECOND / 100).ref_time())
+	}
+	pub fn set(len: u64) {
+		frame_support::storage::unhashed::put(BLOCK_WEIGHT_KEY, &len);
+	}
+
+	pub struct ConfigurableBlockWeight;
+	impl Get<limits::BlockWeights> for ConfigurableBlockWeight {
+		fn get() -> limits::BlockWeights {
+			limits::BlockWeights::simple_max(Weight::from_ref_time(get()))
+		}
+	}
+}
 
 parameter_types! {
 	pub const Version: RuntimeVersion = VERSION;
 	pub const BlockHashCount: BlockNumber = 2400;
-	/// We allow for 2 seconds of compute with a 6 second average block time.
-	pub BlockWeights: frame_system::limits::BlockWeights = frame_system::limits::BlockWeights
-		::with_sensible_defaults(2u64 * WEIGHT_PER_SECOND, NORMAL_DISPATCH_RATIO);
-	pub BlockLength: frame_system::limits::BlockLength = frame_system::limits::BlockLength
-		::max_with_normal_ratio(5 * 1024 * 1024, NORMAL_DISPATCH_RATIO);
 	pub const SS58Prefix: u8 = 42;
 }
 
 impl frame_system::Config for Runtime {
 	type BaseCallFilter = frame_support::traits::Everything;
-	type BlockWeights = BlockWeights;
-	type BlockLength = BlockLength;
+	type BlockWeights = block_weight::ConfigurableBlockWeight;
+	type BlockLength = block_length::ConfigurableBlockLength;
 	type AccountId = AccountId;
 	type RuntimeCall = RuntimeCall;
 	type Lookup = AccountIdLookup<AccountId, ()>;
@@ -318,7 +360,8 @@ impl<const PERIOD: BlockNumber> ShouldEndSession<BlockNumber>
 		// can still be the normal periodic sessions.
 		let now = System::block_number();
 		let last_election = get_last_election();
-		let will_change = MultiPhase::queued_solution().is_some() || (now - last_election) > PERIOD;
+		let will_change = ElectionProviderMultiPhase::queued_solution().is_some() ||
+			(now - last_election) > PERIOD;
 		if will_change {
 			set_last_election()
 		}
@@ -423,7 +466,7 @@ impl pallet_staking::Config for Runtime {
 	type NextNewSession = Session;
 	type MaxNominatorRewardedPerValidator = MaxNominatorRewardedPerValidator;
 	type OffendingValidatorsThreshold = OffendingValidatorsThreshold;
-	type ElectionProvider = MultiPhase;
+	type ElectionProvider = ElectionProviderMultiPhase;
 	type GenesisElectionProvider = onchain::UnboundedExecution<OnChainSeqPhragmen>;
 	// Alternatively, use pallet_staking::UseNominatorsMap<Runtime> to just use the nominators map.
 	// Note that the aforementioned does not scale to a very large number of nominators.
@@ -442,13 +485,13 @@ parameter_types! {
 
 	// miner configs
 	pub const ElectionUnsignedPriority: TransactionPriority = StakingUnsignedPriority::get() - 1u64;
-	pub MinerMaxWeight: Weight = BlockWeights::get()
+	pub MinerMaxWeight: Weight = Perbill::from_rational(8u32, 10) *
+		<Runtime as frame_system::Config>::BlockWeights::get()
 		.get(DispatchClass::Normal)
-		.max_extrinsic.expect("Normal extrinsics have a weight limit configured; qed")
-		.saturating_sub(BlockExecutionWeight::get());
-	// Solution can occupy 90% of normal block size
-	pub MinerMaxLength: u32 = Perbill::from_rational(9u32, 10) *
-		*BlockLength::get()
+		.max_total
+		.unwrap();
+	pub MinerMaxLength: u32 = Perbill::from_rational(8u32, 10) *
+		*(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get())
 		.max
 		.get(DispatchClass::Normal);
 }
@@ -553,7 +596,7 @@ where
 pub struct IncPerRound<const S: u32, const I: u32>;
 impl<const S: u32, const I: u32> frame_support::traits::Get<u32> for IncPerRound<S, I> {
 	fn get() -> u32 {
-		S + (MultiPhase::round() * I)
+		S + (ElectionProviderMultiPhase::round() * I)
 	}
 }
 
@@ -619,10 +662,9 @@ construct_runtime!(
 		Staking: pallet_staking,
 		BagsList: pallet_bags_list,
 		Session: pallet_session,
-
 		TransactionPayment: pallet_transaction_payment,
 
-		MultiPhase: election_multi_phase,
+		ElectionProviderMultiPhase: election_multi_phase,
 	}
 );
 
@@ -782,6 +824,26 @@ impl_runtime_apis! {
 			len: u32,
 		) -> pallet_transaction_payment::FeeDetails<Balance> {
 			TransactionPayment::query_fee_details(uxt, len)
+		}
+	}
+
+	impl pallet_transaction_payment_rpc_runtime_api::TransactionPaymentCallApi<Block, Balance, RuntimeCall>
+		for Runtime
+	{
+		fn query_call_info(call: RuntimeCall, len: u32) -> pallet_transaction_payment_rpc_runtime_api::RuntimeDispatchInfo<Balance> {
+			TransactionPayment::query_call_info(call, len)
+		}
+		fn query_call_fee_details(call: RuntimeCall, len: u32) -> pallet_transaction_payment::FeeDetails<Balance> {
+			TransactionPayment::query_call_fee_details(call, len)
+		}
+	}
+
+	impl crate::TestConfig<Block> for Runtime {
+		fn set_length(len: u32) {
+			block_length::set(len)
+		}
+		fn set_weight(weight: u64) {
+			block_weight::set(weight)
 		}
 	}
 
