@@ -22,7 +22,6 @@ macro_rules! impl_atomic_u32_parameter_types {
 			static VAL: AtomicU32 = AtomicU32::new(0);
 
 			pub struct $name;
-
 			impl $name {
 				pub fn get() -> u32 {
 					VAL.load(Ordering::SeqCst)
@@ -464,6 +463,7 @@ fn mock_votes(voters: u32, desired_targets: u16) -> Vec<(u32, u16)> {
 }
 
 #[cfg(test)]
+#[test]
 fn mock_votes_works() {
 	assert_eq!(mock_votes(3, 2), vec![(0, 0), (1, 1), (2, 0)]);
 	assert_eq!(mock_votes(3, 3), vec![(0, 0), (1, 1), (2, 2)]);
