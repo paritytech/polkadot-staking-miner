@@ -58,21 +58,20 @@ macro_rules! helpers_for_runtime {
 				api: &SubxtClient,
 				hash: Option<Hash>,
 				solver: Solver
-			) -> Result<(SolutionOf<chain::$runtime::Config>, ElectionScore, SolutionOrSnapshotSize), Error> {
-
+			) -> Result<(SolutionOf<chain::$runtime::MinerConfig>, ElectionScore, SolutionOrSnapshotSize), Error> {
 				let (voters, targets, desired_targets) = [<snapshot_$runtime>](&api, hash).await?;
 
 				let blocking_task = tokio::task::spawn_blocking(move || {
 					match solver {
 						Solver::SeqPhragmen { iterations } => {
 							BalanceIterations::set(iterations);
-							Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<
+							Miner::<chain::$runtime::MinerConfig>::mine_solution_with_snapshot::<
 								SequentialPhragmen<AccountId, Accuracy, Balancing>,
 							>(voters, targets, desired_targets)
 						},
 						Solver::PhragMMS { iterations } => {
 							BalanceIterations::set(iterations);
-							Miner::<chain::$runtime::Config>::mine_solution_with_snapshot::<PhragMMS<AccountId, Accuracy, Balancing>>(
+							Miner::<chain::$runtime::MinerConfig>::mine_solution_with_snapshot::<PhragMMS<AccountId, Accuracy, Balancing>>(
 								voters,
 								targets,
 								desired_targets,
@@ -118,17 +117,26 @@ macro_rules! helpers_for_runtime {
 
 			pub fn [<update_runtime_constants_$runtime>](api: &SubxtClient) {
 				use chain::static_types;
-				use sp_runtime::Perbill;
 				use crate::chain::[<$runtime>]::runtime;
 
 				// maximum weight of the signed submission is exposed from metadata and MUST be this.
-				let max_weight = api.constants().at(&runtime::constants().election_provider_multi_phase().signed_max_weight()).expect("constant `max weight` must exist").ref_time;
-
-				// allow up to 75% of the block size to be used for signed submission, length-wise. This
-				// value can be adjusted a bit if needed.
-				let max_length = Perbill::from_rational(90_u32, 100) * api.constants().at(&runtime::constants().system().block_length()).expect("constant `block length` must exist").max.normal;
-
-				let db_weight = api.constants().at(&runtime::constants().system().db_weight()).expect("constant `DbWeight` must exist");
+				let max_weight = api
+					.constants()
+					.at(&runtime::constants().election_provider_multi_phase().miner_max_weight())
+					.expect("constant `miner_max_weight` must exist")
+					.ref_time;
+				let max_length = api
+					.constants()
+					.at(&runtime::constants().election_provider_multi_phase().miner_max_length())
+					.expect("constant `miner_max_length` must exist");
+				let max_votes_per_voter = api
+					.constants()
+					.at(&runtime::constants().election_provider_multi_phase().miner_max_votes_per_voter())
+					.expect("constant `miner_max_votes_per_voter` must exist");
+				let db_weight = api
+					.constants()
+					.at(&runtime::constants().system().db_weight())
+					.expect("constant `db_weight` must exist");
 
 				let system_db_weight =
 					frame_support::weights::RuntimeDbWeight { read: db_weight.read, write: db_weight.write };
@@ -136,12 +144,12 @@ macro_rules! helpers_for_runtime {
 				static_types::DbWeight::set(system_db_weight);
 				static_types::MaxWeight::set(max_weight);
 				static_types::MaxLength::set(max_length);
-				static_types::MaxVotesPerVoter::set(max_length);
+				static_types::MaxVotesPerVoter::set(max_votes_per_voter);
 
-				log::trace!(target: LOG_TARGET, "Constant `max_votes_per_voter`: {:?}", static_types::MaxVotesPerVoter::get());
-				log::trace!(target: LOG_TARGET, "Constant `db_weight`: {:?}", static_types::DbWeight::get());
-				log::trace!(target: LOG_TARGET, "Constant `max_weight`: {:?}", static_types::MaxWeight::get());
-				log::trace!(target: LOG_TARGET, "Constant `max_length`: {:?}", static_types::MaxLength::get());
+				log::debug!(target: LOG_TARGET, "Constant `max_weight`: {:?}", static_types::MaxWeight::get());
+				log::debug!(target: LOG_TARGET, "Constant `max_length`: {:?}", static_types::MaxLength::get());
+				log::debug!(target: LOG_TARGET, "Constant `max_votes_per_voter`: {:?}", static_types::MaxVotesPerVoter::get());
+				log::debug!(target: LOG_TARGET, "Constant `db_weight`: {:?}", static_types::DbWeight::get());
 			}
 		}
 	};

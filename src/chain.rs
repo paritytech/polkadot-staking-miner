@@ -22,7 +22,6 @@ macro_rules! impl_atomic_u32_parameter_types {
 			static VAL: AtomicU32 = AtomicU32::new(0);
 
 			pub struct $name;
-
 			impl $name {
 				pub fn get() -> u32 {
 					VAL.load(Ordering::SeqCst)
@@ -130,8 +129,8 @@ pub mod westend {
 	);
 
 	#[derive(Debug)]
-	pub struct Config;
-	impl pallet_election_provider_multi_phase::unsigned::MinerConfig for Config {
+	pub struct MinerConfig;
+	impl pallet_election_provider_multi_phase::unsigned::MinerConfig for MinerConfig {
 		type AccountId = AccountId;
 		type MaxLength = static_types::MaxLength;
 		type MaxWeight = static_types::MaxWeight;
@@ -231,8 +230,8 @@ pub mod polkadot {
 	);
 
 	#[derive(Debug)]
-	pub struct Config;
-	impl pallet_election_provider_multi_phase::unsigned::MinerConfig for Config {
+	pub struct MinerConfig;
+	impl pallet_election_provider_multi_phase::unsigned::MinerConfig for MinerConfig {
 		type AccountId = AccountId;
 		type MaxLength = static_types::MaxLength;
 		type MaxWeight = static_types::MaxWeight;
@@ -332,8 +331,8 @@ pub mod kusama {
 	);
 
 	#[derive(Debug)]
-	pub struct Config;
-	impl pallet_election_provider_multi_phase::unsigned::MinerConfig for Config {
+	pub struct MinerConfig;
+	impl pallet_election_provider_multi_phase::unsigned::MinerConfig for MinerConfig {
 		type AccountId = AccountId;
 		type MaxLength = static_types::MaxLength;
 		type MaxWeight = static_types::MaxWeight;
@@ -448,7 +447,7 @@ fn get_weight<T: Encode>(tx: subxt::tx::StaticTxPayload<T>) -> Weight {
 
 		let info: RuntimeDispatchInfo<Balance> = Decode::decode(&mut bytes.0.as_ref()).unwrap();
 
-		log::debug!(
+		log::trace!(
 			target: LOG_TARGET,
 			"Received weight of `Solution Extrinsic` from remote node: {:?}",
 			info.weight
@@ -464,6 +463,7 @@ fn mock_votes(voters: u32, desired_targets: u16) -> Vec<(u32, u16)> {
 }
 
 #[cfg(test)]
+#[test]
 fn mock_votes_works() {
 	assert_eq!(mock_votes(3, 2), vec![(0, 0), (1, 1), (2, 0)]);
 	assert_eq!(mock_votes(3, 3), vec![(0, 0), (1, 1), (2, 2)]);

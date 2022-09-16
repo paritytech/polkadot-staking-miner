@@ -14,15 +14,15 @@
 // You should have received a copy of the GNU General Public License
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
+use super::prelude::LOG_TARGET;
 use futures::channel::oneshot;
+pub use hidden::*;
 use hyper::{
 	header::CONTENT_TYPE,
 	service::{make_service_fn, service_fn},
 	Body, Method, Request, Response,
 };
 use prometheus::{Encoder, TextEncoder};
-
-pub use hidden::*;
 
 async fn serve_req(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
 	let response = match (req.method(), req.uri().path()) {
@@ -58,8 +58,8 @@ impl Drop for GracefulShutdown {
 pub fn run(port: u16) -> Result<GracefulShutdown, String> {
 	let (tx, rx) = oneshot::channel();
 
-	// For every connection, we must make a `Service` to handle all
-	// incoming HTTP requests on said connection.
+	// For every connection, we must make a `Service` to handle all incoming HTTP requests on said
+	// connection.
 	let make_svc = make_service_fn(move |_conn| async move {
 		Ok::<_, std::convert::Infallible>(service_fn(serve_req))
 	});
@@ -69,7 +69,7 @@ pub fn run(port: u16) -> Result<GracefulShutdown, String> {
 		.map_err(|e| format!("Failed bind socket on port {} {:?}", port, e))?
 		.serve(make_svc);
 
-	log::info!("Started prometheus endpoint on http://{}", addr);
+	log::info!(target: LOG_TARGET, "Started prometheus endpoint on http://{}", addr);
 
 	let graceful = server.with_graceful_shutdown(async {
 		rx.await.ok();
@@ -85,17 +85,14 @@ pub fn run(port: u16) -> Result<GracefulShutdown, String> {
 }
 
 mod hidden {
+	use frame_election_provider_support::Weight;
 	use once_cell::sync::Lazy;
-	use prometheus::{
-		labels, opts, register_counter, register_gauge, register_histogram_vec, Counter, Gauge,
-		HistogramVec,
-	};
+	use prometheus::{opts, register_counter, register_gauge, Counter, Gauge};
 
 	static SUBMISSIONS_STARTED: Lazy<Counter> = Lazy::new(|| {
 		register_counter!(opts!(
 			"staking_miner_submissions_started",
 			"Number of submissions started",
-			labels! {"handler" => "all",}
 		))
 		.unwrap()
 	});
@@ -104,67 +101,31 @@ mod hidden {
 		register_counter!(opts!(
 			"staking_miner_submissions_success",
 			"Number of submissions finished successfully",
-			labels! {"handler" => "all",}
 		))
 		.unwrap()
 	});
-	static MINED_SOLUTION_DURATION: Lazy<HistogramVec> = Lazy::new(|| {
-		register_histogram_vec!(
+	static MINED_SOLUTION_DURATION: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(
 			"staking_miner_mining_duration_ms",
-			"The mined solution time in milliseconds.",
-			&["all"],
-			vec![
-				1.0,
-				5.0,
-				25.0,
-				100.0,
-				500.0,
-				1_000.0,
-				2_500.0,
-				10_000.0,
-				25_000.0,
-				100_000.0,
-				1_000_000.0,
-				10_000_000.0,
-			]
+			"The mined solution time in milliseconds."
 		)
 		.unwrap()
 	});
-	static SUBMIT_SOLUTION_AND_WATCH_DURATION: Lazy<HistogramVec> = Lazy::new(|| {
-		register_histogram_vec!(
+	static SUBMIT_SOLUTION_AND_WATCH_DURATION: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(
 			"staking_miner_submit_and_watch_duration_ms",
 			"The time in milliseconds it took to submit the solution to chain and to be included in block",
-			&["all"],
-			vec![
-				1.0,
-				5.0,
-				25.0,
-				100.0,
-				500.0,
-				1_000.0,
-				2_500.0,
-				10_000.0,
-				25_000.0,
-				100_000.0,
-				1_000_000.0,
-				10_000_000.0,
-			]
 		)
 		.unwrap()
 	});
 	static BALANCE: Lazy<Gauge> = Lazy::new(|| {
-		register_gauge!(opts!(
-			"staking_miner_balance",
-			"The balance of the staking miner account",
-			labels! {"handler" => "all",}
-		))
-		.unwrap()
+		register_gauge!(opts!("staking_miner_balance", "The balance of the staking miner account"))
+			.unwrap()
 	});
 	static SCORE_MINIMAL_STAKE: Lazy<Gauge> = Lazy::new(|| {
 		register_gauge!(opts!(
 			"staking_miner_score_minimal_stake",
-			"The minimal winner, in terms of total backing stake",
-			labels! {"handler" => "all",}
+			"The minimal winner, in terms of total backing stake"
 		))
 		.unwrap()
 	});
@@ -172,7 +133,6 @@ mod hidden {
 		register_gauge!(opts!(
 			"staking_miner_score_sum_stake",
 			"The sum of the total backing of all winners",
-			labels! {"handler" => "all",}
 		))
 		.unwrap()
 	});
@@ -180,7 +140,6 @@ mod hidden {
 		register_gauge!(opts!(
 			"staking_miner_score_sum_stake_squared",
 			"The sum squared of the total backing of all winners, aka. the variance.",
-			labels! {"handler" => "all",}
 		))
 		.unwrap()
 	});
@@ -188,12 +147,20 @@ mod hidden {
 		register_counter!(opts!(
 			"staking_miner_runtime_upgrades",
 			"Number of runtime upgrades performed",
-			labels! {"handler" => "all",}
 		))
 		.unwrap()
 	});
-
-	// Exported wrappers.
+	static SUBMISSION_LENGTH: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(opts!(
+			"staking_miner_solution_length_bytes",
+			"Number of bytes in the solution submitted",
+		))
+		.unwrap()
+	});
+	static SUBMISSION_WEIGHT: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(opts!("staking_miner_solution_weight", "Weight of the solution submitted"))
+			.unwrap()
+	});
 
 	pub fn on_runtime_upgrade() {
 		RUNTIME_UPGRADES.inc();
@@ -211,6 +178,14 @@ mod hidden {
 		BALANCE.set(balance);
 	}
 
+	pub fn set_length(len: usize) {
+		SUBMISSION_LENGTH.set(len as f64);
+	}
+
+	pub fn set_weight(weight: Weight) {
+		SUBMISSION_WEIGHT.set(weight as f64)
+	}
+
 	pub fn set_score(score: sp_npos_elections::ElectionScore) {
 		SCORE_MINIMAL_STAKE.set(score.minimal_stake as f64);
 		SCORE_SUM_STAKE.set(score.sum_stake as f64);
@@ -218,12 +193,10 @@ mod hidden {
 	}
 
 	pub fn observe_submit_and_watch_duration(time: f64) {
-		SUBMIT_SOLUTION_AND_WATCH_DURATION
-			.with_label_values(&["all"])
-			.observe(time as f64);
+		SUBMIT_SOLUTION_AND_WATCH_DURATION.set(time as f64);
 	}
 
 	pub fn observe_mined_solution_duration(time: f64) {
-		MINED_SOLUTION_DURATION.with_label_values(&["all"]).observe(time);
+		MINED_SOLUTION_DURATION.set(time);
 	}
 }

@@ -1,10 +1,13 @@
 use crate::{
 	error::Error,
-	helpers::TimedFuture,
+	helpers::{self, TimedFuture},
 	opt::{Listen, MonitorConfig, SubmissionStrategy},
 	prelude::*,
+	prometheus,
 	signer::Signer,
 };
+use codec::Encode;
+use frame_election_provider_support::NposSolution;
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOf};
 use sp_runtime::Perbill;
 use std::sync::Arc;
@@ -74,7 +77,7 @@ macro_rules! monitor_cmd_for {
 						api.storage().fetch(&addr, None).await?.ok_or(Error::AccountDoesNotExists)?
 					};
 					// this is lossy but fine for now.
-					crate::prometheus::set_balance(account_info.data.free as f64);
+					prometheus::set_balance(account_info.data.free as f64);
 				}
 
 				/// Construct extrinsic at given block and watch it.
@@ -141,12 +144,39 @@ macro_rules! monitor_cmd_for {
 					}
 
 					let (solution, score) =
-					match crate::helpers::[<mine_solution_$runtime>](&api, Some(hash), config.solver).timed().await {
+					match helpers::[<mine_solution_$runtime>](&api, Some(hash), config.solver).timed().await {
 						(Ok((solution, score, size)), elapsed) => {
 							let elapsed_ms = elapsed.as_millis();
-							crate::prometheus::observe_mined_solution_duration(elapsed_ms as f64);
-							crate::prometheus::set_score(score);
-							log::trace!(target: LOG_TARGET, "Mined solution with {:?} size: {:?} round: {:?} at: {}, took: {} ms", score, size, round, at.number(), elapsed_ms);
+							let encoded_len = solution.encoded_size();
+							let active_voters = solution.voter_count() as u32;
+							let desired_targets = solution.unique_targets().len() as u32;
+
+							let final_weight = tokio::task::spawn_blocking(move || {
+								chain::MinerConfig::solution_weight(
+									size.voters,
+									size.targets,
+									active_voters,
+									desired_targets
+								)
+							}).await.unwrap();
+
+							log::info!(
+								target: LOG_TARGET,
+								"Mined solution with {:?} size: {:?} round: {:?} at: {}, took: {} ms, len: {:?}, weight = {:?}",
+								score,
+								size,
+								round,
+								at.number(),
+								elapsed_ms,
+								encoded_len,
+								final_weight,
+							);
+
+							prometheus::set_length(encoded_len);
+							prometheus::set_weight(final_weight);
+							prometheus::observe_mined_solution_duration(elapsed_ms as f64);
+							prometheus::set_score(score);
+
 							(solution, score)
 						}
 						(Err(e), _) => {
@@ -190,11 +220,11 @@ macro_rules! monitor_cmd_for {
 						}
 					};
 
-					crate::prometheus::on_submission_attempt();
+					prometheus::on_submission_attempt();
 					match submit_and_watch_solution(&api, signer, (solution, score, round), hash).timed().await {
 						(Ok(_), now) => {
-							crate::prometheus::on_submission_success();
-							crate::prometheus::observe_submit_and_watch_duration(now.as_millis() as f64);
+							prometheus::on_submission_success();
+							prometheus::observe_submit_and_watch_duration(now.as_millis() as f64);
 						}
 						(Err(e), _) => {
 							log::warn!(
@@ -289,7 +319,7 @@ macro_rules! monitor_cmd_for {
 				async fn submit_and_watch_solution(
 					api: &SubxtClient,
 					signer: Signer,
-					(solution, score, round): (SolutionOf<chain::Config>, sp_npos_elections::ElectionScore, u32),
+					(solution, score, round): (SolutionOf<chain::MinerConfig>, sp_npos_elections::ElectionScore, u32),
 					hash: Hash
 				) -> Result<(), Error> {
 
