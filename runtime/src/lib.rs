@@ -149,7 +149,7 @@ pub mod block_length {
 
 	const BLOCK_LENGTH_KEY: &[u8] = b":test_length:";
 	fn get() -> u32 {
-		frame_support::storage::unhashed::get(BLOCK_LENGTH_KEY).unwrap_or(1024)
+		frame_support::storage::unhashed::get(BLOCK_LENGTH_KEY).unwrap_or(4 * 1024)
 	}
 	pub fn set(len: u32) {
 		frame_support::storage::unhashed::put(BLOCK_LENGTH_KEY, &len);
