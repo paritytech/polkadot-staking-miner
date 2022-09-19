@@ -180,10 +180,7 @@ impl std::str::FromStr for Chain {
 			"polkadot" => Ok(Self::Polkadot),
 			"kusama" => Ok(Self::Kusama),
 			"westend" => Ok(Self::Westend),
-			chain => Err(Error::Other(format!(
-				"expected chain to be polkadot, kusama or westend; got: {}",
-				chain
-			))),
+			chain => Err(Error::InvalidChain(chain.to_string())),
 		}
 	}
 }

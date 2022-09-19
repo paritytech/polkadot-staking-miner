@@ -8,7 +8,7 @@ use crate::{
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOf};
 use sp_runtime::Perbill;
 use std::sync::Arc;
-use subxt::{rpc::Subscription, tx::TxStatus, Error as SubxtError};
+use subxt::{rpc::Subscription, tx::TxStatus};
 use tokio::sync::Mutex;
 
 macro_rules! monitor_cmd_for {
@@ -358,28 +358,12 @@ monitor_cmd_for!(kusama);
 monitor_cmd_for!(westend);
 
 fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>, err: Error) {
-	use jsonrpsee::{core::Error as RpcError, types::error::CallError};
-
 	match err {
-		Error::Subxt(SubxtError::Rpc(RpcError::Call(CallError::Custom(e)))) => {
-			const BAD_EXTRINSIC_FORMAT: i32 = 1001;
-			const VERIFICATION_ERROR: i32 = 1002;
-
-			// Check if the transaction gets fatal errors from `author` RPC.
-			// It's possible to get other errors such as outdated nonce and similar
-			// but then it should be possible to try again in the next block or round.
-			if e.code() == BAD_EXTRINSIC_FORMAT || e.code() == VERIFICATION_ERROR {
-				let _ =
-					tx.send(Error::Subxt(SubxtError::Rpc(RpcError::Call(CallError::Custom(e)))));
-			}
+		Error::AlreadySubmitted | Error::BetterScoreExist | Error::IncorrectPhase => {},
+		err => {
+			log::warn!("Got error: {:?}", err);
+			let _ = tx.send(err);
 		},
-		Error::Subxt(SubxtError::Rpc(RpcError::RequestTimeout)) |
-		Error::Subxt(SubxtError::Rpc(RpcError::Call(CallError::Failed(_)))) => (),
-		// Regard the rest of subxt errors has fatal (including rpc)
-		Error::Subxt(e) => {
-			let _ = tx.send(Error::Subxt(e));
-		},
-		_ => (),
 	}
 }
 

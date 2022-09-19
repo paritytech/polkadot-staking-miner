@@ -6,17 +6,15 @@
 // polkadot, that only has `const` and `type`s that are used in the runtime, and we can import
 // that.
 
-use crate::prelude::*;
-use crate::static_types;
+use crate::{prelude::*, static_types};
 use codec::{Decode, Encode};
 use frame_support::{traits::ConstU32, weights::Weight, BoundedVec};
-use jsonrpsee::{core::client::ClientT, rpc_params};
 use once_cell::sync::OnceCell;
 use pallet_transaction_payment::RuntimeDispatchInfo;
 use sp_core::Bytes;
+use subxt::rpc::rpc_params;
 
 pub static SHARED_CLIENT: OnceCell<SubxtClient> = OnceCell::new();
-
 
 #[cfg(feature = "westend")]
 pub mod westend {
@@ -342,7 +340,6 @@ fn get_weight<T: Encode>(tx: subxt::tx::StaticTxPayload<T>) -> Weight {
 
 		let bytes: Bytes = client
 			.rpc()
-			.client
 			.request(
 				"state_call",
 				rpc_params!["TransactionPaymentCallApi_query_call_info", call_data],

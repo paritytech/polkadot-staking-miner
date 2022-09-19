@@ -8,8 +8,6 @@ pub enum Error {
 	RpcError(#[from] jsonrpsee::core::Error),
 	#[error("subxt error: `{0}`")]
 	Subxt(#[from] subxt::Error),
-	#[error("Codec error: `{0}`")]
-	Codec(#[from] codec::Error),
 	#[error("Crypto error: `{0:?}`")]
 	Crypto(sp_core::crypto::SecretStringError),
 	#[error("Incorrect phase")]
@@ -20,6 +18,8 @@ pub enum Error {
 	AccountDoesNotExists,
 	#[error("Submission with better score already exist")]
 	BetterScoreExist,
+	#[error("Invalid chain: `{0}`, staking-miner supports only polkadot, kusama and westend")]
+	InvalidChain(String),
 	#[error("Other error: `{0}`")]
 	Other(String),
 }
