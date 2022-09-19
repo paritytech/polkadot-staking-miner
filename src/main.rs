@@ -38,6 +38,7 @@ mod opt;
 mod prelude;
 mod prometheus;
 mod signer;
+mod static_types;
 
 use clap::Parser;
 use futures::future::{BoxFuture, FutureExt};
@@ -77,7 +78,7 @@ async fn main() -> Result<(), Error> {
 	chain::SHARED_CLIENT.set(api.clone()).expect("shared client only set once; qed");
 
 	let outcome = any_runtime!(chain, {
-		tls_update_runtime_constants(&api);
+		helpers::read_metadata_constants(&api).await.unwrap();
 
 		// Start a new tokio task to perform the runtime updates in the background.
 		let update_client = api.subscribe_to_updates();

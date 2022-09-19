@@ -6,7 +6,10 @@
 // polkadot, that only has `const` and `type`s that are used in the runtime, and we can import
 // that.
 
+use crate::prelude::*;
+use crate::static_types;
 use codec::{Decode, Encode};
+use frame_support::{traits::ConstU32, weights::Weight, BoundedVec};
 use jsonrpsee::{core::client::ClientT, rpc_params};
 use once_cell::sync::OnceCell;
 use pallet_transaction_payment::RuntimeDispatchInfo;
@@ -14,105 +17,6 @@ use sp_core::Bytes;
 
 pub static SHARED_CLIENT: OnceCell<SubxtClient> = OnceCell::new();
 
-macro_rules! impl_atomic_u32_parameter_types {
-	($mod:ident, $name:ident) => {
-		mod $mod {
-			use std::sync::atomic::{AtomicU32, Ordering};
-
-			static VAL: AtomicU32 = AtomicU32::new(0);
-
-			pub struct $name;
-
-			impl $name {
-				pub fn get() -> u32 {
-					VAL.load(Ordering::SeqCst)
-				}
-			}
-
-			impl<I: From<u32>> frame_support::traits::Get<I> for $name {
-				fn get() -> I {
-					I::from(Self::get())
-				}
-			}
-
-			impl $name {
-				pub fn set(val: u32) {
-					VAL.store(val, std::sync::atomic::Ordering::SeqCst);
-				}
-			}
-		}
-
-		pub use $mod::$name;
-	};
-}
-
-mod max_weight {
-	use std::sync::atomic::{AtomicU64, Ordering};
-
-	static VAL: AtomicU64 = AtomicU64::new(0);
-
-	pub struct MaxWeight;
-
-	impl MaxWeight {
-		pub fn get() -> u64 {
-			VAL.load(Ordering::SeqCst)
-		}
-	}
-
-	impl<I: From<u64>> frame_support::traits::Get<I> for MaxWeight {
-		fn get() -> I {
-			I::from(Self::get())
-		}
-	}
-
-	impl MaxWeight {
-		pub fn set(val: u64) {
-			VAL.store(val, std::sync::atomic::Ordering::SeqCst);
-		}
-	}
-}
-
-mod db_weight {
-	use frame_support::weights::RuntimeDbWeight;
-	use std::sync::atomic::{AtomicU64, Ordering};
-
-	static READ: AtomicU64 = AtomicU64::new(0);
-	static WRITE: AtomicU64 = AtomicU64::new(0);
-
-	pub struct DbWeight;
-
-	impl DbWeight {
-		pub fn get() -> RuntimeDbWeight {
-			RuntimeDbWeight {
-				read: READ.load(Ordering::SeqCst),
-				write: WRITE.load(Ordering::SeqCst),
-			}
-		}
-
-		pub fn set(weight: RuntimeDbWeight) {
-			READ.store(weight.read, Ordering::SeqCst);
-			WRITE.store(weight.write, Ordering::SeqCst)
-		}
-	}
-
-	impl<I: From<RuntimeDbWeight>> frame_support::traits::Get<I> for DbWeight {
-		fn get() -> I {
-			I::from(Self::get())
-		}
-	}
-}
-
-use crate::prelude::*;
-use frame_support::{traits::ConstU32, weights::Weight, BoundedVec};
-
-pub mod static_types {
-	use super::*;
-
-	impl_atomic_u32_parameter_types!(max_length, MaxLength);
-	impl_atomic_u32_parameter_types!(max_votes_per_voter, MaxVotesPerVoter);
-	pub use db_weight::DbWeight;
-	pub use max_weight::MaxWeight;
-}
 
 #[cfg(feature = "westend")]
 pub mod westend {
@@ -464,6 +368,7 @@ fn mock_votes(voters: u32, desired_targets: u16) -> Vec<(u32, u16)> {
 }
 
 #[cfg(test)]
+#[test]
 fn mock_votes_works() {
 	assert_eq!(mock_votes(3, 2), vec![(0, 0), (1, 1), (2, 0)]);
 	assert_eq!(mock_votes(3, 3), vec![(0, 0), (1, 1), (2, 2)]);

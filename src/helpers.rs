@@ -1,6 +1,6 @@
-use crate::{chain, opt::Solver, prelude::*};
+use crate::{chain, opt::Solver, prelude::*, static_types};
 use frame_election_provider_support::{PhragMMS, SequentialPhragmen};
-use frame_support::BoundedVec;
+use frame_support::{weights::Weight, BoundedVec};
 use pallet_election_provider_multi_phase::{SolutionOf, SolutionOrSnapshotSize};
 use pin_project_lite::pin_project;
 use sp_npos_elections::ElectionScore;
@@ -90,7 +90,7 @@ macro_rules! helpers_for_runtime {
 
 			pub async fn [<snapshot_$runtime>](api: &SubxtClient, hash: Option<Hash>) -> Result<crate::chain::$runtime::epm::Snapshot, Error> {
 				use crate::chain::[<$runtime>]::{epm::RoundSnapshot, runtime};
-				use crate::chain::static_types;
+				use crate::static_types;
 
 				let RoundSnapshot { voters, targets } = api
 					.storage().fetch(&runtime::storage().election_provider_multi_phase().snapshot(), hash)
@@ -115,34 +115,6 @@ macro_rules! helpers_for_runtime {
 
 				Ok((voters, targets, desired_targets))
 			}
-
-			pub fn [<update_runtime_constants_$runtime>](api: &SubxtClient) {
-				use chain::static_types;
-				use sp_runtime::Perbill;
-				use crate::chain::[<$runtime>]::runtime;
-
-				// maximum weight of the signed submission is exposed from metadata and MUST be this.
-				let max_weight = api.constants().at(&runtime::constants().election_provider_multi_phase().signed_max_weight()).expect("constant `max weight` must exist").ref_time;
-
-				// allow up to 75% of the block size to be used for signed submission, length-wise. This
-				// value can be adjusted a bit if needed.
-				let max_length = Perbill::from_rational(90_u32, 100) * api.constants().at(&runtime::constants().system().block_length()).expect("constant `block length` must exist").max.normal;
-
-				let db_weight = api.constants().at(&runtime::constants().system().db_weight()).expect("constant `DbWeight` must exist");
-
-				let system_db_weight =
-					frame_support::weights::RuntimeDbWeight { read: db_weight.read, write: db_weight.write };
-
-				static_types::DbWeight::set(system_db_weight);
-				static_types::MaxWeight::set(max_weight);
-				static_types::MaxLength::set(max_length);
-				static_types::MaxVotesPerVoter::set(max_length);
-
-				log::trace!(target: LOG_TARGET, "Constant `max_votes_per_voter`: {:?}", static_types::MaxVotesPerVoter::get());
-				log::trace!(target: LOG_TARGET, "Constant `db_weight`: {:?}", static_types::DbWeight::get());
-				log::trace!(target: LOG_TARGET, "Constant `max_weight`: {:?}", static_types::MaxWeight::get());
-				log::trace!(target: LOG_TARGET, "Constant `max_length`: {:?}", static_types::MaxLength::get());
-			}
 		}
 	};
 }
@@ -153,3 +125,43 @@ helpers_for_runtime!(polkadot);
 helpers_for_runtime!(kusama);
 #[cfg(feature = "westend")]
 helpers_for_runtime!(westend);
+
+pub(crate) async fn read_metadata_constants(api: &SubxtClient) -> Result<(), Error> {
+	let max_weight = {
+		let val = api
+			.constants()
+			.at(&subxt::dynamic::constant("ElectionProviderMultiPhase", "SignedMaxWeight"))?;
+
+		deserialize_scale_value::<Weight>(val)?
+	};
+
+	let max_length: u32 = {
+		let val = api
+			.constants()
+			.at(&subxt::dynamic::constant("ElectionProviderMultiPhase", "MinerMaxLength"))
+			.expect("MinerMaxLength");
+
+		deserialize_scale_value::<u32>(val)?
+	};
+
+	let max_votes_per_voter: u32 = {
+		let val = api
+			.constants()
+			.at(&subxt::dynamic::constant("ElectionProviderMultiPhase", "MinerMaxVotesPerVoter"))
+			.expect("MinerMaxVotesPerVoter");
+
+		deserialize_scale_value::<u32>(val)?
+	};
+
+	static_types::MaxWeight::set(max_weight);
+	static_types::MaxLength::set(max_length);
+	static_types::MaxVotesPerVoter::set(max_votes_per_voter);
+
+	Ok(())
+}
+
+fn deserialize_scale_value<'a, T: serde::Deserialize<'a>>(
+	val: scale_value::Value<scale_value::scale::TypeId>,
+) -> Result<T, Error> {
+	scale_value::serde::from_value::<_, T>(val).map_err(|e| Error::Other(e.to_string()))
+}
