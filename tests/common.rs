@@ -41,6 +41,22 @@ pub fn find_ws_url_from_output(read: impl Read + Send) -> (String, String) {
 	(ws_url, data)
 }
 
+pub fn run_staking_miner_playground() -> (KillChildOnDrop, String) {
+	let mut node_cmd = KillChildOnDrop(
+		process::Command::new("staking-miner-playground")
+			.stdout(process::Stdio::piped())
+			.stderr(process::Stdio::piped())
+			.args(&["--dev"])
+			.env("RUST_LOG", "runtime=debug")
+			.spawn()
+			.unwrap(),
+	);
+
+	let stderr = node_cmd.stderr.take().unwrap();
+	let (ws_url, _) = find_ws_url_from_output(stderr);
+	(node_cmd, ws_url)
+}
+
 /// Start a polkadot node on chain polkadot-dev, kusama-dev or westend-dev.
 pub fn run_polkadot_node(chain: Chain) -> (KillChildOnDrop, String) {
 	let chain_str = format!("{}-dev", chain.to_string());
@@ -63,9 +79,7 @@ pub fn run_polkadot_node(chain: Chain) -> (KillChildOnDrop, String) {
 	);
 
 	let stderr = node_cmd.stderr.take().unwrap();
-
 	let (ws_url, _) = find_ws_url_from_output(stderr);
-
 	(node_cmd, ws_url)
 }
 

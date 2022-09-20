@@ -4,8 +4,8 @@
 pub mod common;
 
 use assert_cmd::cargo::cargo_bin;
-use codec::Decode;
-use common::{init_logger, run_polkadot_node, KillChildOnDrop};
+use codec::{Decode, Encode};
+use common::{init_logger, run_polkadot_node, run_staking_miner_playground, KillChildOnDrop};
 use pallet_election_provider_multi_phase::ReadySolution;
 use sp_storage::StorageChangeSet;
 use staking_miner::{
@@ -14,18 +14,92 @@ use staking_miner::{
 	prelude::{AccountId, Hash, SubxtClient},
 };
 use std::{
-	process,
+	io::{BufRead, BufReader},
+	println, process,
 	time::{Duration, Instant},
 };
 use subxt::{
 	ext::sp_core::Bytes,
-	rpc::{rpc_params, SubscriptionClientT},
+	rpc::{rpc_params, ClientT, SubscriptionClientT},
 };
 
 const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(60 * 15);
 
 #[tokio::test]
-async fn submit_monitor_works() {
+async fn default_trimming_works() {
+	let (_drop, ws_url) = run_staking_miner_playground();
+	let mut miner = KillChildOnDrop(
+		process::Command::new(cargo_bin(env!("CARGO_PKG_NAME")))
+			.stdout(process::Stdio::piped())
+			.stderr(process::Stdio::piped())
+			.env("RUST_LOG", "runtime=debug,staking-miner=debug")
+			.args(&["--uri", &ws_url, "monitor", "--seed-or-path", "//Alice", "seq-phragmen"])
+			.spawn()
+			.unwrap(),
+	);
+
+	loop {
+		if let Some(stdout) = miner.stdout.take() {
+			let reader = BufReader::new(stdout);
+			reader
+				.lines()
+				.filter_map(|line| line.ok())
+				.for_each(|line| println!("OUT: {}", line));
+		}
+
+		if let Some(stderr) = miner.stderr.take() {
+			let reader = BufReader::new(stderr);
+			reader
+				.lines()
+				.filter_map(|line| line.ok())
+				.for_each(|line| println!("ERR: {}", line));
+		}
+	}
+}
+
+#[tokio::test]
+async fn constants_updated_on_the_fly() {
+	let (_drop, ws_url) = run_staking_miner_playground();
+	let mut miner = KillChildOnDrop(
+		process::Command::new(cargo_bin(env!("CARGO_PKG_NAME")))
+			.stdout(process::Stdio::piped())
+			.stderr(process::Stdio::piped())
+			.env("RUST_LOG", "runtime=debug,staking-miner=debug")
+			.args(&["--uri", &ws_url, "monitor", "--seed-or-path", "//Alice", "seq-phragmen"])
+			.spawn()
+			.unwrap(),
+	);
+
+	let api = SubxtClient::from_url(&ws_url).await.unwrap();
+	let call_data = Bytes(1024u32.encode());
+	let _ = api
+		.rpc()
+		.client
+		.request::<()>("state_call", rpc_params!["TestApi_set_length", call_data])
+		.await
+		.unwrap();
+
+	loop {
+		if let Some(stdout) = miner.stdout.take() {
+			let reader = BufReader::new(stdout);
+			reader
+				.lines()
+				.filter_map(|line| line.ok())
+				.for_each(|line| println!("OUT: {}", line));
+		}
+
+		if let Some(stderr) = miner.stderr.take() {
+			let reader = BufReader::new(stderr);
+			reader
+				.lines()
+				.filter_map(|line| line.ok())
+				.for_each(|line| println!("ERR: {}", line));
+		}
+	}
+}
+
+#[tokio::test]
+async fn submit_monitor_works_basic() {
 	init_logger();
 	test_submit_solution(Chain::Polkadot).await;
 	test_submit_solution(Chain::Kusama).await;
@@ -35,9 +109,8 @@ async fn submit_monitor_works() {
 async fn test_submit_solution(chain: Chain) {
 	let (_drop, ws_url) = run_polkadot_node(chain);
 
-	let crate_name = env!("CARGO_PKG_NAME");
 	let _miner = KillChildOnDrop(
-		process::Command::new(cargo_bin(crate_name))
+		process::Command::new(cargo_bin(env!("CARGO_PKG_NAME")))
 			.stdout(process::Stdio::piped())
 			.stderr(process::Stdio::piped())
 			.args(&["--uri", &ws_url, "--seed-or-path", "//Alice", "monitor", "seq-phragmen"])
@@ -47,10 +120,7 @@ async fn test_submit_solution(chain: Chain) {
 
 	any_runtime!(chain, {
 		let api = SubxtClient::from_url(&ws_url).await.unwrap();
-
 		let now = Instant::now();
-
-		let mut success = false;
 
 		let key = Bytes(
 			runtime::storage()
