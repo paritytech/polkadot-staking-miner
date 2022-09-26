@@ -17,10 +17,7 @@ use std::{
 	process,
 	time::{Duration, Instant},
 };
-use subxt::{
-	ext::sp_core::Bytes,
-	rpc::{rpc_params, SubscriptionClientT},
-};
+use subxt::{ext::sp_core::Bytes, rpc::rpc_params};
 
 const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(60 * 15);
 
@@ -50,8 +47,6 @@ async fn test_submit_solution(chain: Chain) {
 
 		let now = Instant::now();
 
-		let mut success = false;
-
 		let key = Bytes(
 			runtime::storage()
 				.election_provider_multi_phase()
@@ -61,7 +56,6 @@ async fn test_submit_solution(chain: Chain) {
 
 		let mut sub = api
 			.rpc()
-			.client
 			.subscribe("state_subscribeStorage", rpc_params![vec![key]], "state_unsubscribeStorage")
 			.await
 			.unwrap();
