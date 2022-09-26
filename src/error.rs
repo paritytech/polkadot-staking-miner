@@ -27,5 +27,5 @@ pub enum Error {
 	#[error("Transaction rejected: {0}")]
 	TransactionRejected(String),
 	#[error("Subscription closed")]
-	SubscriptionClosed
+	SubscriptionClosed,
 }

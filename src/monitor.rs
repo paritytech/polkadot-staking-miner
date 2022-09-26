@@ -389,11 +389,11 @@ monitor_cmd_for!(westend);
 
 fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>, err: Error) {
 	match err {
-		Error::AlreadySubmitted
-		| Error::BetterScoreExist
-		| Error::IncorrectPhase
-		| Error::TransactionRejected(_)
-		| Error::SubscriptionClosed => {},
+		Error::AlreadySubmitted |
+		Error::BetterScoreExist |
+		Error::IncorrectPhase |
+		Error::TransactionRejected(_) |
+		Error::SubscriptionClosed => {},
 		err => {
 			let _ = tx.send(err);
 		},
