@@ -150,7 +150,7 @@ async fn run_command(
 	}
 }
 
-/// Runs until the RPC connection fails or the incompatible metadata.
+/// Runs until the RPC connection fails or updating the metadata failed.
 async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
 	let updater = api.subscribe_to_updates();
 
@@ -158,7 +158,7 @@ async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
 		Ok(u) => u,
 		Err(e) => {
 			let _ = tx.send(e.into());
-			return;
+			return
 		},
 	};
 
@@ -172,10 +172,10 @@ async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
 					Ok(u) => u,
 					Err(e) => {
 						let _ = tx.send(e.into());
-						return;
+						return
 					},
 				};
-				continue;
+				continue
 			},
 		};
 
@@ -184,7 +184,7 @@ async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
 			Ok(()) => {
 				if let Err(e) = helpers::read_metadata_constants(&api).await {
 					let _ = tx.send(e.into());
-					return;
+					return
 				}
 				prometheus::on_runtime_upgrade();
 				log::info!(target: LOG_TARGET, "upgrade to version: {} successful", version);
