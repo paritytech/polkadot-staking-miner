@@ -343,7 +343,7 @@ macro_rules! monitor_cmd_for {
 								return Err(err.into());
 							},
 							None => {
-								return Err(Error::Other(format!("Submit solution failed; watch_extrinsic at {:?} closed", hash)));
+								return Err(Error::SubscriptionClosed);
 							},
 						};
 
@@ -370,7 +370,7 @@ macro_rules! monitor_cmd_for {
 								return Ok(());
 							}
 							_ => {
-								return Err(Error::Other(format!("Stopping listen due to other status {:?}", status)));
+								return Err(Error::TransactionRejected(format!("{:?}", status)));
 							},
 						}
 					}
@@ -389,7 +389,11 @@ monitor_cmd_for!(westend);
 
 fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>, err: Error) {
 	match err {
-		Error::AlreadySubmitted | Error::BetterScoreExist | Error::IncorrectPhase => {},
+		Error::AlreadySubmitted
+		| Error::BetterScoreExist
+		| Error::IncorrectPhase
+		| Error::TransactionRejected(_)
+		| Error::SubscriptionClosed => {},
 		err => {
 			let _ = tx.send(err);
 		},

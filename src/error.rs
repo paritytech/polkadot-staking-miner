@@ -24,4 +24,8 @@ pub enum Error {
 	Other(String),
 	#[error("Invalid metadata: {0}")]
 	InvalidMetadata(String),
+	#[error("Transaction rejected: {0}")]
+	TransactionRejected(String),
+	#[error("Subscription closed")]
+	SubscriptionClosed
 }
