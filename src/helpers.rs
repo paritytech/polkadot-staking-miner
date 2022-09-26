@@ -153,6 +153,10 @@ pub(crate) async fn read_metadata_constants(api: &SubxtClient) -> Result<(), Err
 		deserialize_scale_value::<u32>(val)?
 	};
 
+	log::trace!(target: LOG_TARGET, "ElectionProvider::MaxWeight {}", max_weight.ref_time());
+	log::trace!(target: LOG_TARGET, "ElectionProvider::MaxLength {}", max_length);
+	log::trace!(target: LOG_TARGET, "ElectionProvider::MaxVotesPerVoter {}", max_votes_per_voter);
+
 	static_types::MaxWeight::set(max_weight);
 	static_types::MaxLength::set(max_length);
 	static_types::MaxVotesPerVoter::set(max_votes_per_voter);
@@ -161,7 +165,7 @@ pub(crate) async fn read_metadata_constants(api: &SubxtClient) -> Result<(), Err
 }
 
 fn deserialize_scale_value<'a, T: serde::Deserialize<'a>>(
-	val: scale_value::Value<scale_value::scale::TypeId>,
+	val: subxt::dynamic::DecodedValue,
 ) -> Result<T, Error> {
 	scale_value::serde::from_value::<_, T>(val).map_err(|e| Error::Other(e.to_string()))
 }

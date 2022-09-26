@@ -45,6 +45,7 @@ use futures::future::{BoxFuture, FutureExt};
 use jsonrpsee::ws_client::WsClientBuilder;
 use opt::Command;
 use prelude::*;
+use tokio::sync::oneshot;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -78,20 +79,13 @@ async fn main() -> Result<(), Error> {
 	chain::SHARED_CLIENT.set(api.clone()).expect("shared client only set once; qed");
 
 	let outcome = any_runtime!(chain, {
-		helpers::read_metadata_constants(&api).await.unwrap();
+		helpers::read_metadata_constants(&api).await?;
+
+		let (tx_upgrade, rx_upgrade) = oneshot::channel::<Error>();
 
 		// Start a new tokio task to perform the runtime updates in the background.
-		let update_client = api.subscribe_to_updates();
-		tokio::spawn(async move {
-			match update_client.perform_runtime_updates().await {
-				Ok(()) => {
-					crate::prometheus::on_runtime_upgrade();
-				},
-				Err(e) => {
-					log::error!(target: LOG_TARGET, "Runtime update failed with result: {:?}", e);
-				},
-			}
-		});
+		// if this fails then the miner will be stopped and has to be re-started.
+		tokio::spawn(runtime_upgrade_task(api.clone(), tx_upgrade));
 
 		let fut = match command {
 			Command::Monitor(cfg) => monitor_cmd(api, cfg).boxed(),
@@ -99,7 +93,7 @@ async fn main() -> Result<(), Error> {
 			Command::EmergencySolution(cfg) => emergency_cmd(api, cfg).boxed(),
 		};
 
-		run_command(fut).await
+		run_command(fut, rx_upgrade).await
 	});
 
 	log::info!(target: LOG_TARGET, "round of execution finished. outcome = {:?}", outcome);
@@ -107,7 +101,10 @@ async fn main() -> Result<(), Error> {
 }
 
 #[cfg(target_family = "unix")]
-async fn run_command(fut: BoxFuture<'_, Result<(), Error>>) -> Result<(), Error> {
+async fn run_command(
+	fut: BoxFuture<'_, Result<(), Error>>,
+	rx_upgrade: oneshot::Receiver<Error>,
+) -> Result<(), Error> {
 	use tokio::signal::unix::{signal, SignalKind};
 
 	let mut stream_int = signal(SignalKind::interrupt()).map_err(Error::Io)?;
@@ -120,16 +117,77 @@ async fn run_command(fut: BoxFuture<'_, Result<(), Error>>) -> Result<(), Error>
 		_ = stream_term.recv() => {
 			Ok(())
 		}
+		res = rx_upgrade => {
+			match res {
+				Ok(err) => Err(err),
+				Err(_) => unreachable!("A message is sent before the upgrade task is closed; qed"),
+			}
+		},
 		res = fut => res,
 	}
 }
 
 #[cfg(not(unix))]
-async fn run_command(fut: BoxFuture<'_, Result<(), Error>>) -> Result<(), E> {
+async fn run_command(
+	fut: BoxFuture<'_, Result<(), Error>>,
+	rx_upgrade: oneshot::Receiver<Error>,
+) -> Result<(), Error> {
 	use tokio::signal::ctrl_c;
 	select! {
 		_ = ctrl_c() => {},
+		res = rx_upgrade => {
+			match res {
+				Ok(err) => Err(err),
+				Err(_) => unreachable!("A message is sent before the upgrade task is closed; qed"),
+			}
+		},
 		res = fut => res,
+	}
+}
+
+/// Runs until the RPC connection fails or the incompatible metadata.
+async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
+	let updater = api.subscribe_to_updates();
+
+	let mut update_stream = match updater.runtime_updates().await {
+		Ok(u) => u,
+		Err(e) => {
+			let _ = tx.send(e.into());
+			return;
+		},
+	};
+
+	loop {
+		// if the runtime upgrade subscription fails then try establish a new one and if it fails quit.
+		let update = match update_stream.next().await {
+			Some(Ok(update)) => update,
+			_ => {
+				log::warn!(target: LOG_TARGET, "Runtime upgrade subscription failed");
+				update_stream = match updater.runtime_updates().await {
+					Ok(u) => u,
+					Err(e) => {
+						let _ = tx.send(e.into());
+						return;
+					},
+				};
+				continue;
+			},
+		};
+
+		let version = update.runtime_version().spec_version;
+		match updater.apply_update(update) {
+			Ok(()) => {
+				if let Err(e) = helpers::read_metadata_constants(&api).await {
+					let _ = tx.send(e.into());
+					return;
+				}
+				prometheus::on_runtime_upgrade();
+				log::info!(target: LOG_TARGET, "upgrade to version: {} successful", version);
+			},
+			Err(e) => {
+				log::warn!(target: LOG_TARGET, "upgrade to version: {} failed: {:?}", version, e);
+			},
+		}
 	}
 }
 

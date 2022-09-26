@@ -21,8 +21,8 @@ pin-project-lite = "0.2"
 parking_lot = "0.12.1"
 
 # subxt
-subxt = { git = "https://github.com/paritytech/subxt" }
-scale-value = "0.5.0"
+subxt = "0.24.0"
+scale-value = "0.6.0"
 
 # substrate
 sp-io = { git = "https://github.com/paritytech/substrate", branch = "master" }
