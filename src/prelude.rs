@@ -41,7 +41,9 @@ pub use subxt::ext::{
 };
 
 /// Default URI to connect to.
-pub const DEFAULT_URI: &str = "wss://rpc.polkadot.io:443";
+///
+/// This will never work on a remote node, so we might as well try a local node.
+pub const DEFAULT_URI: &str = "ws://127.0.0.1:9944";
 /// Default port to start the prometheus server on.
 pub const DEFAULT_PROMETHEUS_PORT: u16 = 9999;
 /// The logging target.

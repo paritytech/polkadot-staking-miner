@@ -56,7 +56,12 @@ async fn main() -> Result<(), Error> {
 	log::debug!(target: LOG_TARGET, "attempting to connect to {:?}", uri);
 
 	let rpc = loop {
-		match WsClientBuilder::default().max_request_body_size(u32::MAX).build(&uri).await {
+		match WsClientBuilder::default()
+			.max_request_body_size(u32::MAX)
+			.request_timeout(std::time::Duration::from_secs(600))
+			.build(&uri)
+			.await
+		{
 			Ok(rpc) => break rpc,
 			Err(e) => {
 				log::warn!(
