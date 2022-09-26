@@ -35,7 +35,6 @@ mod max_weight {
 	use std::sync::atomic::{AtomicU64, Ordering};
 
 	static VAL: AtomicU64 = AtomicU64::new(0);
-
 	pub struct MaxWeight;
 
 	impl MaxWeight {

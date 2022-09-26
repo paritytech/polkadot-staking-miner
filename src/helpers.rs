@@ -125,36 +125,53 @@ helpers_for_runtime!(kusama);
 #[cfg(feature = "westend")]
 helpers_for_runtime!(westend);
 
+#[derive(Copy, Clone, Debug)]
+struct EpmConstant {
+	epm: &'static str,
+	constant: &'static str,
+}
+
+impl EpmConstant {
+	const fn new(constant: &'static str) -> Self {
+		Self { epm: "ElectionProviderMultiPhase", constant }
+	}
+
+	const fn to_parts(&self) -> (&'static str, &'static str) {
+		(self.epm, self.constant)
+	}
+
+	fn to_string(&self) -> String {
+		format!("{}::{}", self.epm, self.constant)
+	}
+}
+
 pub(crate) async fn read_metadata_constants(api: &SubxtClient) -> Result<(), Error> {
-	let max_weight = {
-		let val = api
-			.constants()
-			.at(&subxt::dynamic::constant("ElectionProviderMultiPhase", "SignedMaxWeight"))?;
+	const SIGNED_MAX_WEIGHT: EpmConstant = EpmConstant::new("SignedMaxWeight");
+	const MAX_LENGTH: EpmConstant = EpmConstant::new("MinerMaxLength");
+	const MAX_VOTES_PER_VOTER: EpmConstant = EpmConstant::new("MinerMaxVotesPerVoter");
 
-		deserialize_scale_value::<Weight>(val)?
-	};
+	let max_weight = read_constant::<Weight>(api, SIGNED_MAX_WEIGHT)?;
+	let max_length: u32 = read_constant(api, MAX_LENGTH)?;
+	let max_votes_per_voter: u32 = read_constant(api, MAX_VOTES_PER_VOTER)?;
 
-	let max_length: u32 = {
-		let val = api
-			.constants()
-			.at(&subxt::dynamic::constant("ElectionProviderMultiPhase", "MinerMaxLength"))
-			.expect("MinerMaxLength");
-
-		deserialize_scale_value::<u32>(val)?
-	};
-
-	let max_votes_per_voter: u32 = {
-		let val = api
-			.constants()
-			.at(&subxt::dynamic::constant("ElectionProviderMultiPhase", "MinerMaxVotesPerVoter"))
-			.expect("MinerMaxVotesPerVoter");
-
-		deserialize_scale_value::<u32>(val)?
-	};
-
-	log::trace!(target: LOG_TARGET, "ElectionProvider::MaxWeight {}", max_weight.ref_time());
-	log::trace!(target: LOG_TARGET, "ElectionProvider::MaxLength {}", max_length);
-	log::trace!(target: LOG_TARGET, "ElectionProvider::MaxVotesPerVoter {}", max_votes_per_voter);
+	log::trace!(
+		target: LOG_TARGET,
+		"updating metadata constant `{}`: {}",
+		SIGNED_MAX_WEIGHT.to_string(),
+		max_weight.ref_time()
+	);
+	log::trace!(
+		target: LOG_TARGET,
+		"updating metadata constant `{}`: {}",
+		MAX_LENGTH.to_string(),
+		max_length
+	);
+	log::trace!(
+		target: LOG_TARGET,
+		"updating metadata constant `{}`: {}",
+		MAX_VOTES_PER_VOTER.to_string(),
+		max_votes_per_voter
+	);
 
 	static_types::MaxWeight::set(max_weight);
 	static_types::MaxLength::set(max_length);
@@ -163,8 +180,22 @@ pub(crate) async fn read_metadata_constants(api: &SubxtClient) -> Result<(), Err
 	Ok(())
 }
 
-fn deserialize_scale_value<'a, T: serde::Deserialize<'a>>(
-	val: subxt::dynamic::DecodedValue,
+fn invalid_metadata_error<E: std::error::Error>(item: String, err: E) -> Error {
+	Error::InvalidMetadata(format!("{} failed: {}", item, err))
+}
+
+fn read_constant<'a, T: serde::Deserialize<'a>>(
+	api: &SubxtClient,
+	constant: EpmConstant,
 ) -> Result<T, Error> {
-	scale_value::serde::from_value::<_, T>(val).map_err(|e| Error::Other(e.to_string()))
+	let (epm_name, constant) = constant.to_parts();
+
+	let val = api
+		.constants()
+		.at(&subxt::dynamic::constant(epm_name, constant))
+		.map_err(|e| invalid_metadata_error(constant.to_string(), e))?;
+
+	scale_value::serde::from_value::<_, T>(val).map_err(|e| {
+		Error::InvalidMetadata(format!("Decoding `{}` failed {}", std::any::type_name::<T>(), e))
+	})
 }
