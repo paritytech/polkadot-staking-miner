@@ -3498,7 +3498,6 @@ dependencies = [
  "pallet-election-provider-multi-phase",
  "pallet-transaction-payment",
  "parity-scale-codec",
- "parking_lot",
  "paste",
  "pin-project-lite",
  "prometheus",

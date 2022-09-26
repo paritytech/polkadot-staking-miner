@@ -361,7 +361,6 @@ fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>
 	match err {
 		Error::AlreadySubmitted | Error::BetterScoreExist | Error::IncorrectPhase => {},
 		err => {
-			log::warn!("Got error: {:?}", err);
 			let _ = tx.send(err);
 		},
 	}
