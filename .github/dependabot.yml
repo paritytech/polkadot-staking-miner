@@ -2,6 +2,16 @@ version: 2
 updates:
   - package-ecosystem: "cargo"
     directory: "/"
+    # Handle updates for substrate polkadot manually.
+    ignore:
+      - dependency-name: "substrate-*"
+      - dependency-name: "sc-*"
+      - dependency-name: "sp-*"
+      - dependency-name: "frame-*"
+      - dependency-name: "pallet-*"
+      - dependency-name: "fork-tree"
+      - dependency-name: "polkadot-*"
+      - dependency-name: "node-template-*"
     schedule:
       interval: "daily"
 
