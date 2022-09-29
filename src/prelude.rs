@@ -63,3 +63,28 @@ pub type SubxtClient = subxt::OnlineClient<Config>;
 
 /// Config used by the staking-miner
 pub type Config = subxt::PolkadotConfig;
+
+#[subxt::subxt(
+	runtime_metadata_path = "artifacts/metadata.scale",
+	derive_for_all_types = "Clone, Debug, Eq, PartialEq",
+	derive_for_type(
+		type = "pallet_election_provider_multi_phase::RoundSnapshot",
+		derive = "Default"
+	)
+)]
+pub mod runtime {
+	#[subxt(substitute_type = "sp_arithmetic::per_things::PerU16")]
+	use ::sp_runtime::PerU16;
+
+	#[subxt(substitute_type = "pallet_election_provider_multi_phase::RawSolution")]
+	use ::pallet_election_provider_multi_phase::RawSolution;
+
+	#[subxt(substitute_type = "sp_npos_elections::ElectionScore")]
+	use ::sp_npos_elections::ElectionScore;
+
+	#[subxt(substitute_type = "pallet_election_provider_multi_phase::Phase")]
+	use ::pallet_election_provider_multi_phase::Phase;
+
+	#[subxt(substitute_type = "pallet_election_provider_multi_phase::SolutionOrSnapshotSize")]
+	use ::pallet_election_provider_multi_phase::SolutionOrSnapshotSize;
+}

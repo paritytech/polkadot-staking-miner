@@ -1,8 +1,10 @@
-use crate::{chain, opt::Solver, prelude::*, static_types};
-use frame_election_provider_support::{PhragMMS, SequentialPhragmen};
+use crate::{opt::Solver, prelude::*, static_types};
+use codec::Encode;
+use frame_election_provider_support::{NposSolution, PhragMMS, SequentialPhragmen};
 use frame_support::{weights::Weight, BoundedVec};
-use pallet_election_provider_multi_phase::{SolutionOf, SolutionOrSnapshotSize};
+use pallet_election_provider_multi_phase::{RawSolution, SolutionOf, SolutionOrSnapshotSize};
 use pin_project_lite::pin_project;
+use runtime::runtime_types::pallet_election_provider_multi_phase::RoundSnapshot;
 use sp_npos_elections::ElectionScore;
 use std::{
 	future::Future,
@@ -10,6 +12,12 @@ use std::{
 	task::{Context, Poll},
 	time::{Duration, Instant},
 };
+use subxt::dynamic::Value;
+use subxt::tx::DynamicTxPayload;
+
+pub type BoundedVoters =
+	Vec<(AccountId, VoteWeight, BoundedVec<AccountId, static_types::MaxVotesPerVoter>)>;
+pub type Snapshot = (BoundedVoters, Vec<AccountId>, u32);
 
 pin_project! {
 	pub struct Timed<Fut>
@@ -50,80 +58,77 @@ pub trait TimedFuture: Sized + Future {
 
 impl<F: Future> TimedFuture for F {}
 
-macro_rules! helpers_for_runtime {
-	($runtime:tt) => {
-		paste::paste! {
-			/// The monitor command.
-			pub(crate) async fn [<mine_solution_$runtime>](
-				api: &SubxtClient,
-				hash: Option<Hash>,
-				solver: Solver
-			) -> Result<(SolutionOf<chain::$runtime::MinerConfig>, ElectionScore, SolutionOrSnapshotSize), Error> {
-				let (voters, targets, desired_targets) = [<snapshot_$runtime>](&api, hash).await?;
+pub async fn mine_solution<T>(
+	api: &SubxtClient,
+	hash: Option<Hash>,
+	solver: Solver,
+) -> Result<(SolutionOf<T>, ElectionScore, SolutionOrSnapshotSize), Error>
+where
+	T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
+		+ Send
+		+ Sync
+		+ 'static,
+	T::Solution: Send,
+{
+	let (voters, targets, desired_targets) = snapshot::<T>(&api, hash).await?;
 
-				let blocking_task = tokio::task::spawn_blocking(move || {
-					match solver {
-						Solver::SeqPhragmen { iterations } => {
-							BalanceIterations::set(iterations);
-							Miner::<chain::$runtime::MinerConfig>::mine_solution_with_snapshot::<
-								SequentialPhragmen<AccountId, Accuracy, Balancing>,
-							>(voters, targets, desired_targets)
-						},
-						Solver::PhragMMS { iterations } => {
-							BalanceIterations::set(iterations);
-							Miner::<chain::$runtime::MinerConfig>::mine_solution_with_snapshot::<PhragMMS<AccountId, Accuracy, Balancing>>(
-								voters,
-								targets,
-								desired_targets,
-							)
-						},
-					}
-				}).await;
+	let blocking_task = tokio::task::spawn_blocking(move || match solver {
+		Solver::SeqPhragmen { iterations } => {
+			BalanceIterations::set(iterations);
+			Miner::<T>::mine_solution_with_snapshot::<
+				SequentialPhragmen<AccountId, Accuracy, Balancing>,
+			>(voters, targets, desired_targets)
+		},
+		Solver::PhragMMS { iterations } => {
+			BalanceIterations::set(iterations);
+			Miner::<T>::mine_solution_with_snapshot::<PhragMMS<AccountId, Accuracy, Balancing>>(
+				voters,
+				targets,
+				desired_targets,
+			)
+		},
+	})
+	.await;
 
-				match blocking_task {
-					Ok(Ok(res)) => Ok(res),
-					Ok(Err(err)) => Err(Error::Other(format!("{:?}", err))),
-					Err(err) => Err(Error::Other(format!("{:?}", err))),
-				}
-			}
-
-			pub async fn [<snapshot_$runtime>](api: &SubxtClient, hash: Option<Hash>) -> Result<crate::chain::$runtime::epm::Snapshot, Error> {
-				use crate::chain::[<$runtime>]::{epm::RoundSnapshot, runtime};
-				use crate::static_types;
-
-				let RoundSnapshot { voters, targets } = api
-					.storage().fetch(&runtime::storage().election_provider_multi_phase().snapshot(), hash)
-					.await?
-					.unwrap_or_default();
-
-				let desired_targets = api
-					.storage()
-					.fetch(&runtime::storage().election_provider_multi_phase().desired_targets(), hash)
-					.await?
-					.unwrap_or_default();
-
-				let voters: Vec<_> = voters
-					.into_iter()
-					.map(|(a, b, mut c)| {
-						let mut bounded_vec: BoundedVec<AccountId, static_types::MaxVotesPerVoter> = BoundedVec::default();
-						// If this fails just crash the task.
-						bounded_vec.try_append(&mut c.0).unwrap_or_else(|_| panic!("BoundedVec capacity: {} failed; `MinerConfig::MaxVotesPerVoter` is different from the chain data; this is a bug please file an issue", static_types::MaxVotesPerVoter::get()));
-						(a, b, bounded_vec)
-					})
-					.collect();
-
-				Ok((voters, targets, desired_targets))
-			}
-		}
-	};
+	match blocking_task {
+		Ok(Ok(res)) => Ok(res),
+		Ok(Err(err)) => Err(Error::Other(format!("{:?}", err))),
+		Err(err) => Err(Error::Other(format!("{:?}", err))),
+	}
 }
 
-#[cfg(feature = "polkadot")]
-helpers_for_runtime!(polkadot);
-#[cfg(feature = "kusama")]
-helpers_for_runtime!(kusama);
-#[cfg(feature = "westend")]
-helpers_for_runtime!(westend);
+pub async fn snapshot<T: MinerConfig + Send + Sync + 'static>(
+	api: &SubxtClient,
+	hash: Option<Hash>,
+) -> Result<Snapshot, Error>
+where
+	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
+	T::Solution: Send,
+{
+	let RoundSnapshot { voters, targets } = api
+		.storage()
+		.fetch(&runtime::storage().election_provider_multi_phase().snapshot(), hash)
+		.await?
+		.unwrap_or_default();
+
+	let desired_targets = api
+		.storage()
+		.fetch(&runtime::storage().election_provider_multi_phase().desired_targets(), hash)
+		.await?
+		.unwrap_or_default();
+
+	let voters: Vec<_> = voters
+	.into_iter()
+	.map(|(a, b, mut c)| {
+		let mut bounded_vec: BoundedVec<AccountId, static_types::MaxVotesPerVoter> = BoundedVec::default();
+		// If this fails just crash the task.
+		bounded_vec.try_append(&mut c.0).unwrap_or_else(|_| panic!("BoundedVec capacity: {} failed; `MinerConfig::MaxVotesPerVoter` is different from the chain data; this is a bug please file an issue", static_types::MaxVotesPerVoter::get()));
+		(a, b, bounded_vec)
+	})
+	.collect();
+
+	Ok((voters, targets, desired_targets))
+}
 
 #[derive(Copy, Clone, Debug)]
 struct EpmConstant {
@@ -198,4 +203,32 @@ fn read_constant<'a, T: serde::Deserialize<'a>>(
 	scale_value::serde::from_value::<_, T>(val).map_err(|e| {
 		Error::InvalidMetadata(format!("Decoding `{}` failed {}", std::any::type_name::<T>(), e))
 	})
+}
+
+pub fn signed_solution_tx<S: NposSolution + Encode>(
+	solution: RawSolution<S>,
+) -> DynamicTxPayload<'static> {
+	let encoded_solution = solution.encode();
+
+	subxt::dynamic::tx(
+		"ElectionProviderMultiPhase",
+		"submit",
+		vec![Value::from_bytes(&encoded_solution)],
+	)
+}
+
+pub fn unsigned_solution_tx<S: NposSolution + Encode>(
+	solution: RawSolution<S>,
+	witness: SolutionOrSnapshotSize,
+) -> DynamicTxPayload<'static> {
+	let encoded_solution = solution.encode();
+	let encoded_witness = witness.encode();
+
+	let x = Value::from(encoded_solution);
+
+	subxt::dynamic::tx(
+		"ElectionProviderMultiPhase",
+		"submit_unsigned",
+		vec![Value::from_bytes(&encoded_solution), Value::from_bytes(&encoded_witness)],
+	)
 }

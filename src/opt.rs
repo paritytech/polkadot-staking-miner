@@ -34,61 +34,22 @@ macro_rules! any_runtime {
 	($chain:tt, $($code:tt)*) => {
 		match $chain {
 			Chain::Polkadot => {
-				#[cfg(feature = "polkadot")]
-				{
-					#[allow(unused)]
-					use {
-						$crate::monitor::run_polkadot as monitor_cmd,
-						$crate::dry_run::run_polkadot as dry_run_cmd,
-						$crate::emergency_solution::run_polkadot as emergency_cmd,
-						$crate::chain::polkadot::runtime
-					};
-					$($code)*
-			}
-
-			#[cfg(not(feature = "polkadot"))]
-			{
-				panic!("polkadot feature is not enabled, but target chain is polkadot")
-			}
+				#[allow(unused)]
+				use $crate::chain::polkadot::MinerConfig;
+				$($code)*
 			},
 			Chain::Kusama => {
-				#[cfg(feature = "kusama")]
-				{
-					#[allow(unused)]
-					use {
-						$crate::monitor::run_kusama as monitor_cmd,
-						$crate::dry_run::run_kusama as dry_run_cmd,
-						$crate::emergency_solution::run_kusama as emergency_cmd,
-						$crate::chain::kusama::runtime
-					};
-					$($code)*
-				}
-
-				#[cfg(not(feature = "kusama"))]
-				{
-					panic!("kusama feature is not enabled, but target chain is kusama")
-				}
+				#[allow(unused)]
+				use $crate::chain::kusama::MinerConfig;
+				$($code)*
 			},
 			Chain::Westend => {
-				#[cfg(feature = "westend")]
-				{
-					#[allow(unused)]
-					use {
-						$crate::monitor::run_westend as monitor_cmd,
-						$crate::dry_run::run_westend as dry_run_cmd,
-						$crate::emergency_solution::run_westend as emergency_cmd,
-						$crate::chain::westend::runtime
-					};
-					$($code)*
-				}
-
-				#[cfg(not(feature = "westend"))]
-				{
-					panic!("westend feature is not enabled, but target chain is westend")
-				}
-			}
+				#[allow(unused)]
+				use $crate::chain::westend::MinerConfig;
+				$($code)*
+			},
 		}
-	}
+	};
 }
 
 /// Submission strategy to use.
@@ -125,7 +86,7 @@ impl FromStr for SubmissionStrategy {
 			let percent: u32 = percent.parse().map_err(|e| format!("{:?}", e))?;
 			Self::ClaimBetterThan(Perbill::from_percent(percent))
 		} else {
-			return Err(s.into())
+			return Err(s.into());
 		};
 		Ok(res)
 	}

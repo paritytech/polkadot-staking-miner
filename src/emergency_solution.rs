@@ -16,24 +16,18 @@
 
 //! The emergency-solution command.
 
-use crate::{opt::EmergencySolutionConfig, prelude::*};
+use crate::{opt::EmergencySolutionConfig, prelude::*, static_types};
 
-macro_rules! emergency_cmd_for {
-	($runtime:tt) => {
-		paste::paste! {
-			pub async fn [<run_$runtime>](
-				_api: SubxtClient,
-				_config: EmergencySolutionConfig
-			) -> Result<(), Error> {
-				todo!("not possible to implement yet");
-			}
-		}
-	};
+pub async fn emergency_cmd<T>(
+	_api: SubxtClient,
+	_config: EmergencySolutionConfig,
+) -> Result<(), Error>
+where
+	T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
+		+ Send
+		+ Sync
+		+ 'static,
+	T::Solution: Send,
+{
+	todo!("not possible to implement yet");
 }
-
-#[cfg(feature = "polkadot")]
-emergency_cmd_for!(polkadot);
-#[cfg(feature = "kusama")]
-emergency_cmd_for!(kusama);
-#[cfg(feature = "westend")]
-emergency_cmd_for!(westend);

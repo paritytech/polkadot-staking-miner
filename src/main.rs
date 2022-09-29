@@ -80,29 +80,29 @@ async fn main() -> Result<(), Error> {
 	let _prometheus_handle = prometheus::run(prometheus_port.unwrap_or(DEFAULT_PROMETHEUS_PORT))
 		.map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
 	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
+	helpers::read_metadata_constants(&api).await?;
 
 	chain::SHARED_CLIENT.set(api.clone()).expect("shared client only set once; qed");
 
-	let outcome = any_runtime!(chain, {
-		helpers::read_metadata_constants(&api).await?;
+	// Start a new tokio task to perform the runtime updates in the background.
+	// if this fails then the miner will be stopped and has to be re-started.
+	let (tx_upgrade, rx_upgrade) = oneshot::channel::<Error>();
+	tokio::spawn(runtime_upgrade_task(api.clone(), tx_upgrade));
 
-		let (tx_upgrade, rx_upgrade) = oneshot::channel::<Error>();
-
-		// Start a new tokio task to perform the runtime updates in the background.
-		// if this fails then the miner will be stopped and has to be re-started.
-		tokio::spawn(runtime_upgrade_task(api.clone(), tx_upgrade));
-
+	let res = any_runtime!(chain, {
 		let fut = match command {
-			Command::Monitor(cfg) => monitor_cmd(api, cfg).boxed(),
-			Command::DryRun(cfg) => dry_run_cmd(api, cfg).boxed(),
-			Command::EmergencySolution(cfg) => emergency_cmd(api, cfg).boxed(),
+			Command::Monitor(cfg) => monitor::monitor_cmd::<MinerConfig>(api, cfg).boxed(),
+			Command::DryRun(cfg) => dry_run::dry_run_cmd::<MinerConfig>(api, cfg).boxed(),
+			Command::EmergencySolution(cfg) => {
+				emergency_solution::emergency_cmd::<MinerConfig>(api, cfg).boxed()
+			},
 		};
 
 		run_command(fut, rx_upgrade).await
 	});
 
-	log::info!(target: LOG_TARGET, "round of execution finished. outcome = {:?}", outcome);
-	outcome
+	log::info!(target: LOG_TARGET, "round of execution finished. outcome = {:?}", res);
+	res
 }
 
 #[cfg(target_family = "unix")]
@@ -158,7 +158,7 @@ async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
 		Ok(u) => u,
 		Err(e) => {
 			let _ = tx.send(e.into());
-			return
+			return;
 		},
 	};
 
@@ -172,10 +172,10 @@ async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
 					Ok(u) => u,
 					Err(e) => {
 						let _ = tx.send(e.into());
-						return
+						return;
 					},
 				};
-				continue
+				continue;
 			},
 		};
 
@@ -184,7 +184,7 @@ async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
 			Ok(()) => {
 				if let Err(e) = helpers::read_metadata_constants(&api).await {
 					let _ = tx.send(e.into());
-					return
+					return;
 				}
 				prometheus::on_runtime_upgrade();
 				log::info!(target: LOG_TARGET, "upgrade to version: {} successful", version);

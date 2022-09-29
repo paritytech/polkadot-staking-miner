@@ -6,17 +6,18 @@
 // polkadot, that only has `const` and `type`s that are used in the runtime, and we can import
 // that.
 
-use crate::{prelude::*, static_types};
+use crate::{helpers::unsigned_solution_tx, prelude::*, static_types};
 use codec::{Decode, Encode};
-use frame_support::{traits::ConstU32, weights::Weight, BoundedVec};
+use frame_election_provider_support::traits::NposSolution;
+use frame_support::{traits::ConstU32, weights::Weight};
 use once_cell::sync::OnceCell;
+use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
 use pallet_transaction_payment::RuntimeDispatchInfo;
 use sp_core::Bytes;
 use subxt::rpc::rpc_params;
 
 pub static SHARED_CLIENT: OnceCell<SubxtClient> = OnceCell::new();
 
-#[cfg(feature = "westend")]
 pub mod westend {
 	use super::*;
 
@@ -47,11 +48,8 @@ pub mod westend {
 			active_voters: u32,
 			desired_targets: u32,
 		) -> Weight {
-			use _feps::NposSolution;
-			use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
-
 			// Mock a RawSolution to get the correct weight without having to do the heavy work.
-			let raw = RawSolution {
+			let raw_solution = RawSolution {
 				solution: NposSolution16 {
 					votes1: mock_votes(
 						active_voters,
@@ -62,62 +60,14 @@ pub mod westend {
 				..Default::default()
 			};
 
-			assert_eq!(raw.solution.voter_count(), active_voters as usize);
-			assert_eq!(raw.solution.unique_targets().len(), desired_targets as usize);
+			assert_eq!(raw_solution.solution.voter_count(), active_voters as usize);
+			assert_eq!(raw_solution.solution.unique_targets().len(), desired_targets as usize);
 
-			let tx = runtime::tx()
-				.election_provider_multi_phase()
-				.submit_unsigned(raw, SolutionOrSnapshotSize { voters, targets });
-
-			get_weight(tx)
+			get_weight(raw_solution, SolutionOrSnapshotSize { voters, targets })
 		}
-	}
-
-	#[subxt::subxt(
-		runtime_metadata_path = "artifacts/westend.scale",
-		derive_for_all_types = "Clone, Debug, Eq, PartialEq",
-		derive_for_type(
-			type = "pallet_election_provider_multi_phase::RoundSnapshot",
-			derive = "Default"
-		)
-	)]
-	pub mod runtime {
-		#[subxt(substitute_type = "westend_runtime::NposCompactSolution16")]
-		use crate::chain::westend::NposSolution16;
-
-		#[subxt(substitute_type = "sp_arithmetic::per_things::PerU16")]
-		use ::sp_runtime::PerU16;
-
-		#[subxt(substitute_type = "pallet_election_provider_multi_phase::RawSolution")]
-		use ::pallet_election_provider_multi_phase::RawSolution;
-
-		#[subxt(substitute_type = "sp_npos_elections::ElectionScore")]
-		use ::sp_npos_elections::ElectionScore;
-
-		#[subxt(substitute_type = "pallet_election_provider_multi_phase::Phase")]
-		use ::pallet_election_provider_multi_phase::Phase;
-
-		#[subxt(
-			substitute_type = "pallet_election_provider_multi_phase::SolutionOrSnapshotSize"
-		)]
-		use ::pallet_election_provider_multi_phase::SolutionOrSnapshotSize;
-	}
-
-	pub use runtime::runtime_types;
-
-	pub mod epm {
-		use super::*;
-		pub type BoundedVoters =
-			Vec<(AccountId, VoteWeight, BoundedVec<AccountId, static_types::MaxVotesPerVoter>)>;
-		pub type Snapshot = (BoundedVoters, Vec<AccountId>, u32);
-		pub use super::{
-			runtime::election_provider_multi_phase::*,
-			runtime_types::pallet_election_provider_multi_phase::*,
-		};
 	}
 }
 
-#[cfg(feature = "polkadot")]
 pub mod polkadot {
 	use super::*;
 
@@ -148,9 +98,6 @@ pub mod polkadot {
 			active_voters: u32,
 			desired_targets: u32,
 		) -> Weight {
-			use _feps::NposSolution;
-			use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
-
 			// Mock a RawSolution to get the correct weight without having to do the heavy work.
 			let raw = RawSolution {
 				solution: NposSolution16 {
@@ -166,59 +113,11 @@ pub mod polkadot {
 			assert_eq!(raw.solution.voter_count(), active_voters as usize);
 			assert_eq!(raw.solution.unique_targets().len(), desired_targets as usize);
 
-			let tx = runtime::tx()
-				.election_provider_multi_phase()
-				.submit_unsigned(raw, SolutionOrSnapshotSize { voters, targets });
-
-			get_weight(tx)
+			get_weight(raw, SolutionOrSnapshotSize { voters, targets })
 		}
-	}
-
-	#[subxt::subxt(
-		runtime_metadata_path = "artifacts/polkadot.scale",
-		derive_for_all_types = "Clone, Debug, Eq, PartialEq",
-		derive_for_type(
-			type = "pallet_election_provider_multi_phase::RoundSnapshot",
-			derive = "Default"
-		)
-	)]
-	pub mod runtime {
-		#[subxt(substitute_type = "polkadot_runtime::NposCompactSolution16")]
-		use crate::chain::polkadot::NposSolution16;
-
-		#[subxt(substitute_type = "sp_arithmetic::per_things::PerU16")]
-		use ::sp_runtime::PerU16;
-
-		#[subxt(substitute_type = "pallet_election_provider_multi_phase::RawSolution")]
-		use ::pallet_election_provider_multi_phase::RawSolution;
-
-		#[subxt(substitute_type = "sp_npos_elections::ElectionScore")]
-		use ::sp_npos_elections::ElectionScore;
-
-		#[subxt(substitute_type = "pallet_election_provider_multi_phase::Phase")]
-		use ::pallet_election_provider_multi_phase::Phase;
-
-		#[subxt(
-			substitute_type = "pallet_election_provider_multi_phase::SolutionOrSnapshotSize"
-		)]
-		use ::pallet_election_provider_multi_phase::SolutionOrSnapshotSize;
-	}
-
-	pub use runtime::runtime_types;
-
-	pub mod epm {
-		use super::*;
-		pub type BoundedVoters =
-			Vec<(AccountId, VoteWeight, BoundedVec<AccountId, static_types::MaxVotesPerVoter>)>;
-		pub type Snapshot = (BoundedVoters, Vec<AccountId>, u32);
-		pub use super::{
-			runtime::election_provider_multi_phase::*,
-			runtime_types::pallet_election_provider_multi_phase::*,
-		};
 	}
 }
 
-#[cfg(feature = "kusama")]
 pub mod kusama {
 	use super::*;
 
@@ -249,9 +148,6 @@ pub mod kusama {
 			active_voters: u32,
 			desired_targets: u32,
 		) -> Weight {
-			use _feps::NposSolution;
-			use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
-
 			// Mock a RawSolution to get the correct weight without having to do the heavy work.
 			let raw = RawSolution {
 				solution: NposSolution24 {
@@ -267,62 +163,20 @@ pub mod kusama {
 			assert_eq!(raw.solution.voter_count(), active_voters as usize);
 			assert_eq!(raw.solution.unique_targets().len(), desired_targets as usize);
 
-			let tx = runtime::tx()
-				.election_provider_multi_phase()
-				.submit_unsigned(raw, SolutionOrSnapshotSize { voters, targets });
-
-			get_weight(tx)
+			get_weight(raw, SolutionOrSnapshotSize { voters, targets })
 		}
-	}
-
-	#[subxt::subxt(
-		runtime_metadata_path = "artifacts/kusama.scale",
-		derive_for_all_types = "Clone, Debug, Eq, PartialEq",
-		derive_for_type(
-			type = "pallet_election_provider_multi_phase::RoundSnapshot",
-			derive = "Default"
-		)
-	)]
-	pub mod runtime {
-		#[subxt(substitute_type = "kusama_runtime::NposCompactSolution24")]
-		use crate::chain::kusama::NposSolution24;
-
-		#[subxt(substitute_type = "pallet_election_provider_multi_phase::RawSolution")]
-		use ::pallet_election_provider_multi_phase::RawSolution;
-
-		#[subxt(substitute_type = "sp_arithmetic::per_things::PerU16")]
-		use ::sp_runtime::PerU16;
-
-		#[subxt(substitute_type = "sp_npos_elections::ElectionScore")]
-		use ::sp_npos_elections::ElectionScore;
-
-		#[subxt(substitute_type = "pallet_election_provider_multi_phase::Phase")]
-		use ::pallet_election_provider_multi_phase::Phase;
-
-		#[subxt(
-			substitute_type = "pallet_election_provider_multi_phase::SolutionOrSnapshotSize"
-		)]
-		use ::pallet_election_provider_multi_phase::SolutionOrSnapshotSize;
-	}
-
-	pub use runtime::runtime_types;
-
-	pub mod epm {
-		use super::*;
-		pub type BoundedVoters =
-			Vec<(AccountId, VoteWeight, BoundedVec<AccountId, static_types::MaxVotesPerVoter>)>;
-		pub type Snapshot = (BoundedVoters, Vec<AccountId>, u32);
-		pub use super::{
-			runtime::election_provider_multi_phase::*,
-			runtime_types::pallet_election_provider_multi_phase::*,
-		};
 	}
 }
 
 /// Helper to fetch the weight from a remote node
 ///
 /// Panics: if the RPC call fails or if decoding the response as a `Weight` fails.
-fn get_weight<T: Encode>(tx: subxt::tx::StaticTxPayload<T>) -> Weight {
+fn get_weight<S: Encode + NposSolution>(
+	raw_solution: RawSolution<S>,
+	witness: SolutionOrSnapshotSize,
+) -> Weight {
+	let tx = unsigned_solution_tx(raw_solution, witness);
+
 	futures::executor::block_on(async {
 		let client = SHARED_CLIENT.get().expect("shared client is configured as start; qed");
 
