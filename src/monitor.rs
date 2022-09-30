@@ -1,6 +1,6 @@
 use crate::{
 	error::Error,
-	helpers::{self, TimedFuture},
+	helpers::{self, signed_solution_tx, TimedFuture},
 	opt::{Listen, MonitorConfig, SubmissionStrategy},
 	prelude::*,
 	prometheus,
@@ -12,7 +12,7 @@ use frame_election_provider_support::NposSolution;
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOf};
 use sp_runtime::Perbill;
 use std::sync::Arc;
-use subxt::{dynamic::Value, rpc::Subscription, tx::TxStatus};
+use subxt::{rpc::Subscription, tx::TxStatus};
 use tokio::sync::Mutex;
 
 pub async fn monitor_cmd<T>(api: SubxtClient, config: MonitorConfig) -> Result<(), Error>
@@ -85,11 +85,11 @@ where
 
 fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>, err: Error) {
 	match err {
-		Error::AlreadySubmitted
-		| Error::BetterScoreExist
-		| Error::IncorrectPhase
-		| Error::TransactionRejected(_)
-		| Error::SubscriptionClosed => {},
+		Error::AlreadySubmitted |
+		Error::BetterScoreExist |
+		Error::IncorrectPhase |
+		Error::TransactionRejected(_) |
+		Error::SubscriptionClosed => {},
 		err => {
 			let _ = tx.send(err);
 		},
@@ -121,7 +121,7 @@ async fn mine_and_submit_solution<T>(
 		Ok(none) => none,
 		Err(e) => {
 			kill_main_task_if_critical_err(&tx, e.into());
-			return;
+			return
 		},
 	};
 	signer.set_nonce(nonce);
@@ -135,7 +135,7 @@ async fn mine_and_submit_solution<T>(
 		);
 
 		kill_main_task_if_critical_err(&tx, e);
-		return;
+		return
 	}
 
 	let round = match api
@@ -150,7 +150,7 @@ async fn mine_and_submit_solution<T>(
 		Err(e) => {
 			log::error!(target: LOG_TARGET, "Mining solution failed: {:?}", e);
 			kill_main_task_if_critical_err(&tx, e.into());
-			return;
+			return
 		},
 	};
 
@@ -165,7 +165,7 @@ async fn mine_and_submit_solution<T>(
 		);
 
 		kill_main_task_if_critical_err(&tx, e);
-		return;
+		return
 	}
 
 	let (solution, score) =
@@ -203,7 +203,7 @@ async fn mine_and_submit_solution<T>(
 			},
 			(Err(e), _) => {
 				kill_main_task_if_critical_err(&tx, e);
-				return;
+				return
 			},
 		};
 
@@ -211,7 +211,7 @@ async fn mine_and_submit_solution<T>(
 		Ok(head) => head,
 		Err(e) => {
 			kill_main_task_if_critical_err(&tx, e);
-			return;
+			return
 		},
 	};
 
@@ -223,7 +223,7 @@ async fn mine_and_submit_solution<T>(
 			at.number
 		);
 		kill_main_task_if_critical_err(&tx, e);
-		return;
+		return
 	}
 
 	match ensure_no_better_solution(&api, best_head, score, config.submission_strategy)
@@ -245,7 +245,7 @@ async fn mine_and_submit_solution<T>(
 				at.number
 			);
 			kill_main_task_if_critical_err(&tx, e);
-			return;
+			return
 		},
 	};
 
@@ -303,7 +303,7 @@ async fn ensure_no_previous_solution(
 
 		if let Some(submission) = submission {
 			if &submission.who == us {
-				return Err(Error::AlreadySubmitted);
+				return Err(Error::AlreadySubmitted)
 			}
 		}
 	}
@@ -331,7 +331,7 @@ async fn ensure_no_better_solution(
 
 	for (other_score, _) in indices.0 {
 		if !score.strict_threshold_better(other_score, epsilon) {
-			return Err(Error::BetterScoreExist);
+			return Err(Error::BetterScoreExist)
 		}
 	}
 
@@ -344,10 +344,7 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 	(solution, score, round): (SolutionOf<T>, sp_npos_elections::ElectionScore, u32),
 	hash: Hash,
 ) -> Result<(), Error> {
-	let raw = RawSolution { solution, score, round }.encode();
-
-	let tx =
-		subxt::dynamic::tx("ElectionProviderMultiPhase", "submit", vec![Value::from_bytes(&raw)]);
+	let tx = signed_solution_tx(RawSolution { solution, score, round })?;
 
 	let mut status_sub =
 		api.tx().sign_and_submit_then_watch_default(&tx, &*signer).await.map_err(|e| {
@@ -365,11 +362,9 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 					hash,
 					err
 				);
-				return Err(err.into());
+				return Err(err.into())
 			},
-			None => {
-				return Err(Error::SubscriptionClosed);
-			},
+			None => return Err(Error::SubscriptionClosed),
 		};
 
 		match status {
@@ -390,18 +385,16 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 						"No SolutionStored event found at {:?}",
 						details.block_hash()
 					)))
-				};
+				}
 			},
 			TxStatus::Retracted(hash) => {
 				log::info!(target: LOG_TARGET, "Retracted at {:?}", hash);
 			},
 			TxStatus::Finalized(details) => {
 				log::info!(target: LOG_TARGET, "Finalized at {:?}", details.block_hash());
-				return Ok(());
+				return Ok(())
 			},
-			_ => {
-				return Err(Error::TransactionRejected(format!("{:?}", status)));
-			},
+			_ => return Err(Error::TransactionRejected(format!("{:?}", status))),
 		}
 	}
 }

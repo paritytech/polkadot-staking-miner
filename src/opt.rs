@@ -86,7 +86,7 @@ impl FromStr for SubmissionStrategy {
 			let percent: u32 = percent.parse().map_err(|e| format!("{:?}", e))?;
 			Self::ClaimBetterThan(Perbill::from_percent(percent))
 		} else {
-			return Err(s.into());
+			return Err(s.into())
 		};
 		Ok(res)
 	}

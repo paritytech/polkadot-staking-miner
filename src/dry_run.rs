@@ -65,7 +65,7 @@ where
 		raw_solution.encode().len(),
 	);
 
-	let tx = signed_solution_tx(raw_solution);
+	let tx = signed_solution_tx(raw_solution)?;
 	let xt = api.tx().create_signed(&tx, &*signer, ExtrinsicParams::default()).await?;
 
 	let outcome = api.rpc().dry_run(xt.encoded(), config.at).await?;

@@ -93,9 +93,8 @@ async fn main() -> Result<(), Error> {
 		let fut = match command {
 			Command::Monitor(cfg) => monitor::monitor_cmd::<MinerConfig>(api, cfg).boxed(),
 			Command::DryRun(cfg) => dry_run::dry_run_cmd::<MinerConfig>(api, cfg).boxed(),
-			Command::EmergencySolution(cfg) => {
-				emergency_solution::emergency_cmd::<MinerConfig>(api, cfg).boxed()
-			},
+			Command::EmergencySolution(cfg) =>
+				emergency_solution::emergency_cmd::<MinerConfig>(api, cfg).boxed(),
 		};
 
 		run_command(fut, rx_upgrade).await
@@ -158,7 +157,7 @@ async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
 		Ok(u) => u,
 		Err(e) => {
 			let _ = tx.send(e.into());
-			return;
+			return
 		},
 	};
 
@@ -172,10 +171,10 @@ async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
 					Ok(u) => u,
 					Err(e) => {
 						let _ = tx.send(e.into());
-						return;
+						return
 					},
 				};
-				continue;
+				continue
 			},
 		};
 
@@ -184,7 +183,7 @@ async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
 			Ok(()) => {
 				if let Err(e) = helpers::read_metadata_constants(&api).await {
 					let _ = tx.send(e.into());
-					return;
+					return
 				}
 				prometheus::on_runtime_upgrade();
 				log::info!(target: LOG_TARGET, "upgrade to version: {} successful", version);

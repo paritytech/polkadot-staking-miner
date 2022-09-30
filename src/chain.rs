@@ -13,6 +13,7 @@ use frame_support::{traits::ConstU32, weights::Weight};
 use once_cell::sync::OnceCell;
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
 use pallet_transaction_payment::RuntimeDispatchInfo;
+use scale_info::TypeInfo;
 use sp_core::Bytes;
 use subxt::rpc::rpc_params;
 
@@ -171,11 +172,12 @@ pub mod kusama {
 /// Helper to fetch the weight from a remote node
 ///
 /// Panics: if the RPC call fails or if decoding the response as a `Weight` fails.
-fn get_weight<S: Encode + NposSolution>(
+fn get_weight<S: Encode + NposSolution + TypeInfo + 'static>(
 	raw_solution: RawSolution<S>,
 	witness: SolutionOrSnapshotSize,
 ) -> Weight {
-	let tx = unsigned_solution_tx(raw_solution, witness);
+	let tx =
+		unsigned_solution_tx(raw_solution, witness).expect("Failed to create dynamic transaction");
 
 	futures::executor::block_on(async {
 		let client = SHARED_CLIENT.get().expect("shared client is configured as start; qed");

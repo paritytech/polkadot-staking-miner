@@ -5,6 +5,8 @@ use frame_support::{weights::Weight, BoundedVec};
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOf, SolutionOrSnapshotSize};
 use pin_project_lite::pin_project;
 use runtime::runtime_types::pallet_election_provider_multi_phase::RoundSnapshot;
+use scale_info::{PortableRegistry, TypeInfo};
+use scale_value::scale::{decode_as_type, DecodeError, TypeId};
 use sp_npos_elections::ElectionScore;
 use std::{
 	future::Future,
@@ -12,8 +14,7 @@ use std::{
 	task::{Context, Poll},
 	time::{Duration, Instant},
 };
-use subxt::dynamic::Value;
-use subxt::tx::DynamicTxPayload;
+use subxt::{dynamic::Value, tx::DynamicTxPayload};
 
 pub type BoundedVoters =
 	Vec<(AccountId, VoteWeight, BoundedVec<AccountId, static_types::MaxVotesPerVoter>)>;
@@ -205,30 +206,49 @@ fn read_constant<'a, T: serde::Deserialize<'a>>(
 	})
 }
 
-pub fn signed_solution_tx<S: NposSolution + Encode>(
+pub fn signed_solution_tx<S: NposSolution + Encode + TypeInfo + 'static>(
 	solution: RawSolution<S>,
-) -> DynamicTxPayload<'static> {
-	let encoded_solution = solution.encode();
+) -> Result<DynamicTxPayload<'static>, Error> {
+	let scale_solution = to_scale_value(solution).map_err(|e| {
+		Error::DynamicTransaction(format!("Failed to decode `RawSolution`: {:?}", e))
+	})?;
 
-	subxt::dynamic::tx(
-		"ElectionProviderMultiPhase",
-		"submit",
-		vec![Value::from_bytes(&encoded_solution)],
-	)
+	Ok(subxt::dynamic::tx("ElectionProviderMultiPhase", "submit", vec![scale_solution]))
 }
 
-pub fn unsigned_solution_tx<S: NposSolution + Encode>(
+pub fn unsigned_solution_tx<S: NposSolution + Encode + TypeInfo + 'static>(
 	solution: RawSolution<S>,
 	witness: SolutionOrSnapshotSize,
-) -> DynamicTxPayload<'static> {
-	let encoded_solution = solution.encode();
-	let encoded_witness = witness.encode();
+) -> Result<DynamicTxPayload<'static>, Error> {
+	let scale_solution = to_scale_value(solution).map_err(|e| {
+		Error::DynamicTransaction(format!("Failed to decode `RawSolution`: {:?}", e))
+	})?;
+	let scale_witness = to_scale_value(witness).map_err(|e| {
+		Error::DynamicTransaction(format!("Failed to decode `SolutionOrSnapshotSize`: {:?}", e))
+	})?;
 
-	let x = Value::from(encoded_solution);
-
-	subxt::dynamic::tx(
+	Ok(subxt::dynamic::tx(
 		"ElectionProviderMultiPhase",
 		"submit_unsigned",
-		vec![Value::from_bytes(&encoded_solution), Value::from_bytes(&encoded_witness)],
-	)
+		vec![scale_solution, scale_witness],
+	))
+}
+
+fn make_type<T: scale_info::TypeInfo + 'static>() -> (TypeId, PortableRegistry) {
+	let m = scale_info::MetaType::new::<T>();
+	let mut types = scale_info::Registry::new();
+	let id = types.register_type(&m);
+	let portable_registry: PortableRegistry = types.into();
+
+	(id.into(), portable_registry)
+}
+
+fn to_scale_value<T: scale_info::TypeInfo + 'static + Encode>(
+	val: T,
+) -> Result<Value, DecodeError> {
+	let (ty_id, types) = make_type::<T>();
+
+	let bytes = val.encode();
+
+	decode_as_type(&mut bytes.as_ref(), ty_id, &types).map(|v| v.remove_context())
 }

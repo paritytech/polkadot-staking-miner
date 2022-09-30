@@ -28,4 +28,6 @@ pub enum Error {
 	TransactionRejected(String),
 	#[error("Subscription closed")]
 	SubscriptionClosed,
+	#[error("Dynamic transaction error: {0}")]
+	DynamicTransaction(String),
 }
