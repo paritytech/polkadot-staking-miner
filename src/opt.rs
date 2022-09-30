@@ -35,17 +35,17 @@ macro_rules! any_runtime {
 		match $chain {
 			Chain::Polkadot => {
 				#[allow(unused)]
-				use $crate::chain::polkadot::MinerConfig;
+				use $crate::static_types::polkadot::MinerConfig;
 				$($code)*
 			},
 			Chain::Kusama => {
 				#[allow(unused)]
-				use $crate::chain::kusama::MinerConfig;
+				use $crate::static_types::kusama::MinerConfig;
 				$($code)*
 			},
 			Chain::Westend => {
 				#[allow(unused)]
-				use $crate::chain::westend::MinerConfig;
+				use $crate::static_types::westend::MinerConfig;
 				$($code)*
 			},
 		}

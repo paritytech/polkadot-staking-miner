@@ -1,12 +1,9 @@
 use crate::{opt::Solver, prelude::*, static_types};
-use codec::Encode;
-use frame_election_provider_support::{NposSolution, PhragMMS, SequentialPhragmen};
-use frame_support::{weights::Weight, BoundedVec};
-use pallet_election_provider_multi_phase::{RawSolution, SolutionOf, SolutionOrSnapshotSize};
+use frame_election_provider_support::{PhragMMS, SequentialPhragmen};
+use frame_support::BoundedVec;
+use pallet_election_provider_multi_phase::{SolutionOf, SolutionOrSnapshotSize};
 use pin_project_lite::pin_project;
 use runtime::runtime_types::pallet_election_provider_multi_phase::RoundSnapshot;
-use scale_info::{PortableRegistry, TypeInfo};
-use scale_value::scale::{decode_as_type, DecodeError, TypeId};
 use sp_npos_elections::ElectionScore;
 use std::{
 	future::Future,
@@ -14,11 +11,6 @@ use std::{
 	task::{Context, Poll},
 	time::{Duration, Instant},
 };
-use subxt::{dynamic::Value, tx::DynamicTxPayload};
-
-pub type BoundedVoters =
-	Vec<(AccountId, VoteWeight, BoundedVec<AccountId, static_types::MaxVotesPerVoter>)>;
-pub type Snapshot = (BoundedVoters, Vec<AccountId>, u32);
 
 pin_project! {
 	pub struct Timed<Fut>
@@ -131,124 +123,14 @@ where
 	Ok((voters, targets, desired_targets))
 }
 
-#[derive(Copy, Clone, Debug)]
-struct EpmConstant {
-	epm: &'static str,
-	constant: &'static str,
+pub fn mock_votes(voters: u32, desired_targets: u16) -> Vec<(u32, u16)> {
+	assert!(voters >= desired_targets as u32);
+	(0..voters).zip((0..desired_targets).cycle()).collect()
 }
 
-impl EpmConstant {
-	const fn new(constant: &'static str) -> Self {
-		Self { epm: "ElectionProviderMultiPhase", constant }
-	}
-
-	const fn to_parts(&self) -> (&'static str, &'static str) {
-		(self.epm, self.constant)
-	}
-
-	fn to_string(&self) -> String {
-		format!("{}::{}", self.epm, self.constant)
-	}
-}
-
-pub(crate) async fn read_metadata_constants(api: &SubxtClient) -> Result<(), Error> {
-	const SIGNED_MAX_WEIGHT: EpmConstant = EpmConstant::new("SignedMaxWeight");
-	const MAX_LENGTH: EpmConstant = EpmConstant::new("MinerMaxLength");
-	const MAX_VOTES_PER_VOTER: EpmConstant = EpmConstant::new("MinerMaxVotesPerVoter");
-
-	let max_weight = read_constant::<Weight>(api, SIGNED_MAX_WEIGHT)?;
-	let max_length: u32 = read_constant(api, MAX_LENGTH)?;
-	let max_votes_per_voter: u32 = read_constant(api, MAX_VOTES_PER_VOTER)?;
-
-	log::trace!(
-		target: LOG_TARGET,
-		"updating metadata constant `{}`: {}",
-		SIGNED_MAX_WEIGHT.to_string(),
-		max_weight.ref_time()
-	);
-	log::trace!(
-		target: LOG_TARGET,
-		"updating metadata constant `{}`: {}",
-		MAX_LENGTH.to_string(),
-		max_length
-	);
-	log::trace!(
-		target: LOG_TARGET,
-		"updating metadata constant `{}`: {}",
-		MAX_VOTES_PER_VOTER.to_string(),
-		max_votes_per_voter
-	);
-
-	static_types::MaxWeight::set(max_weight);
-	static_types::MaxLength::set(max_length);
-	static_types::MaxVotesPerVoter::set(max_votes_per_voter);
-
-	Ok(())
-}
-
-fn invalid_metadata_error<E: std::error::Error>(item: String, err: E) -> Error {
-	Error::InvalidMetadata(format!("{} failed: {}", item, err))
-}
-
-fn read_constant<'a, T: serde::Deserialize<'a>>(
-	api: &SubxtClient,
-	constant: EpmConstant,
-) -> Result<T, Error> {
-	let (epm_name, constant) = constant.to_parts();
-
-	let val = api
-		.constants()
-		.at(&subxt::dynamic::constant(epm_name, constant))
-		.map_err(|e| invalid_metadata_error(constant.to_string(), e))?;
-
-	scale_value::serde::from_value::<_, T>(val).map_err(|e| {
-		Error::InvalidMetadata(format!("Decoding `{}` failed {}", std::any::type_name::<T>(), e))
-	})
-}
-
-pub fn signed_solution_tx<S: NposSolution + Encode + TypeInfo + 'static>(
-	solution: RawSolution<S>,
-) -> Result<DynamicTxPayload<'static>, Error> {
-	let scale_solution = to_scale_value(solution).map_err(|e| {
-		Error::DynamicTransaction(format!("Failed to decode `RawSolution`: {:?}", e))
-	})?;
-
-	Ok(subxt::dynamic::tx("ElectionProviderMultiPhase", "submit", vec![scale_solution]))
-}
-
-pub fn unsigned_solution_tx<S: NposSolution + Encode + TypeInfo + 'static>(
-	solution: RawSolution<S>,
-	witness: SolutionOrSnapshotSize,
-) -> Result<DynamicTxPayload<'static>, Error> {
-	let scale_solution = to_scale_value(solution).map_err(|e| {
-		Error::DynamicTransaction(format!("Failed to decode `RawSolution`: {:?}", e))
-	})?;
-	let scale_witness = to_scale_value(witness).map_err(|e| {
-		Error::DynamicTransaction(format!("Failed to decode `SolutionOrSnapshotSize`: {:?}", e))
-	})?;
-
-	Ok(subxt::dynamic::tx(
-		"ElectionProviderMultiPhase",
-		"submit_unsigned",
-		vec![scale_solution, scale_witness],
-	))
-}
-
-fn make_type<T: scale_info::TypeInfo + 'static>() -> (TypeId, PortableRegistry) {
-	let m = scale_info::MetaType::new::<T>();
-	let mut types = scale_info::Registry::new();
-	let id = types.register_type(&m);
-	let portable_registry: PortableRegistry = types.into();
-
-	(id.into(), portable_registry)
-}
-
-fn to_scale_value<T: scale_info::TypeInfo + 'static + Encode>(
-	val: T,
-) -> Result<Value, DecodeError> {
-	let (ty_id, types) = make_type::<T>();
-
-	let bytes = val.encode();
-
-	decode_as_type(&mut bytes.as_ref(), ty_id, &types).map(|v| v.remove_context())
+#[cfg(test)]
+#[test]
+fn mock_votes_works() {
+	assert_eq!(mock_votes(3, 2), vec![(0, 0), (1, 1), (2, 0)]);
+	assert_eq!(mock_votes(3, 3), vec![(0, 0), (1, 1), (2, 2)]);
 }

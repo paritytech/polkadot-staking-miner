@@ -19,12 +19,8 @@
 use pallet_election_provider_multi_phase::RawSolution;
 
 use crate::{
-	error::Error,
-	helpers::{mine_solution, signed_solution_tx},
-	opt::DryRunConfig,
-	prelude::*,
-	signer::Signer,
-	static_types,
+	epm_dynamic, error::Error, helpers::mine_solution, opt::DryRunConfig, prelude::*,
+	signer::Signer, static_types,
 };
 use codec::Encode;
 
@@ -65,7 +61,7 @@ where
 		raw_solution.encode().len(),
 	);
 
-	let tx = signed_solution_tx(raw_solution)?;
+	let tx = epm_dynamic::signed_solution(raw_solution)?;
 	let xt = api.tx().create_signed(&tx, &*signer, ExtrinsicParams::default()).await?;
 
 	let outcome = api.rpc().dry_run(xt.encoded(), config.at).await?;

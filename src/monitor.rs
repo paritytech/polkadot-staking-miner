@@ -1,13 +1,14 @@
 use crate::{
+	epm_dynamic,
 	error::Error,
-	helpers::{self, signed_solution_tx, TimedFuture},
+	helpers::{self, TimedFuture},
 	opt::{Listen, MonitorConfig, SubmissionStrategy},
 	prelude::*,
 	prometheus,
 	signer::Signer,
 	static_types,
 };
-use codec::Encode;
+use codec::{Decode, Encode};
 use frame_election_provider_support::NposSolution;
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOf};
 use sp_runtime::Perbill;
@@ -156,7 +157,9 @@ async fn mine_and_submit_solution<T>(
 
 	let _lock = submit_lock.lock().await;
 
-	if let Err(e) = ensure_no_previous_solution(&api, hash, signer.account_id()).await {
+	if let Err(e) =
+		ensure_no_previous_solution::<T::Solution>(&api, hash, signer.account_id()).await
+	{
 		log::debug!(
 			target: LOG_TARGET,
 			"ensure_no_previous_solution failed: {:?}; skipping block: {}",
@@ -288,18 +291,19 @@ async fn ensure_signed_phase(api: &SubxtClient, hash: Hash) -> Result<(), Error>
 }
 
 /// Ensure that our current `us` have not submitted anything previously.
-async fn ensure_no_previous_solution(
+async fn ensure_no_previous_solution<T>(
 	api: &SubxtClient,
 	at: Hash,
 	us: &AccountId,
-) -> Result<(), Error> {
+) -> Result<(), Error>
+where
+	T: NposSolution + scale_info::TypeInfo + Decode + 'static,
+{
 	let addr = runtime::storage().election_provider_multi_phase().signed_submission_indices();
 	let indices = api.storage().fetch_or_default(&addr, Some(at)).await?;
 
 	for (_score, idx) in indices.0 {
-		let addr = runtime::storage().election_provider_multi_phase().signed_submissions_map(&idx);
-
-		let submission = api.storage().fetch(&addr, Some(at)).await?;
+		let submission = epm_dynamic::signed_submission_at::<T>(idx, at, api).await?;
 
 		if let Some(submission) = submission {
 			if &submission.who == us {
@@ -344,7 +348,7 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 	(solution, score, round): (SolutionOf<T>, sp_npos_elections::ElectionScore, u32),
 	hash: Hash,
 ) -> Result<(), Error> {
-	let tx = signed_solution_tx(RawSolution { solution, score, round })?;
+	let tx = epm_dynamic::signed_solution(RawSolution { solution, score, round })?;
 
 	let mut status_sub =
 		api.tx().sign_and_submit_then_watch_default(&tx, &*signer).await.map_err(|e| {

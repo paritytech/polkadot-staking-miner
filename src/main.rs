@@ -28,9 +28,9 @@
 //!   development. It is intended to run this bot with a `restart = true` way, so that it reports it
 //!   crash, but resumes work thereafter.
 
-mod chain;
 mod dry_run;
 mod emergency_solution;
+mod epm_dynamic;
 mod error;
 mod helpers;
 mod monitor;
@@ -80,9 +80,9 @@ async fn main() -> Result<(), Error> {
 	let _prometheus_handle = prometheus::run(prometheus_port.unwrap_or(DEFAULT_PROMETHEUS_PORT))
 		.map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
 	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
-	helpers::read_metadata_constants(&api).await?;
+	epm_dynamic::update_metadata_constants(&api).await?;
 
-	chain::SHARED_CLIENT.set(api.clone()).expect("shared client only set once; qed");
+	SHARED_CLIENT.set(api.clone()).expect("shared client only set once; qed");
 
 	// Start a new tokio task to perform the runtime updates in the background.
 	// if this fails then the miner will be stopped and has to be re-started.
@@ -181,7 +181,7 @@ async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
 		let version = update.runtime_version().spec_version;
 		match updater.apply_update(update) {
 			Ok(()) => {
-				if let Err(e) = helpers::read_metadata_constants(&api).await {
+				if let Err(e) = epm_dynamic::update_metadata_constants(&api).await {
 					let _ = tx.send(e.into());
 					return
 				}

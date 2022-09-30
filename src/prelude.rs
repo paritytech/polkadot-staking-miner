@@ -25,6 +25,9 @@ pub use crate::{error::Error, opt::*};
 pub use frame_election_provider_support::VoteWeight;
 pub use pallet_election_provider_multi_phase::{Miner, MinerConfig};
 
+use crate::static_types;
+use once_cell::sync::OnceCell;
+
 /// The account id type.
 pub type AccountId = subxt::ext::sp_core::crypto::AccountId32;
 /// The header type. We re-export it here, but we can easily get it from block as well.
@@ -64,6 +67,15 @@ pub type SubxtClient = subxt::OnlineClient<Config>;
 /// Config used by the staking-miner
 pub type Config = subxt::PolkadotConfig;
 
+pub type BoundedVoters = Vec<(
+	AccountId,
+	VoteWeight,
+	frame_support::BoundedVec<AccountId, static_types::MaxVotesPerVoter>,
+)>;
+pub type Snapshot = (BoundedVoters, Vec<AccountId>, u32);
+pub type SignedSubmission<S> =
+	pallet_election_provider_multi_phase::SignedSubmission<AccountId, Balance, S>;
+
 #[subxt::subxt(
 	runtime_metadata_path = "artifacts/metadata.scale",
 	derive_for_all_types = "Clone, Debug, Eq, PartialEq",
@@ -88,3 +100,5 @@ pub mod runtime {
 	#[subxt(substitute_type = "pallet_election_provider_multi_phase::SolutionOrSnapshotSize")]
 	use ::pallet_election_provider_multi_phase::SolutionOrSnapshotSize;
 }
+
+pub static SHARED_CLIENT: OnceCell<SubxtClient> = OnceCell::new();

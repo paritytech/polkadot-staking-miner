@@ -10,6 +10,8 @@ pub enum Error {
 	Subxt(#[from] subxt::Error),
 	#[error("Crypto error: `{0:?}`")]
 	Crypto(sp_core::crypto::SecretStringError),
+	#[error("Codec error: `{0}`")]
+	Codec(#[from] codec::Error),
 	#[error("Incorrect phase")]
 	IncorrectPhase,
 	#[error("Submission is already submitted")]
