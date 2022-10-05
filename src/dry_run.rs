@@ -1,4 +1,4 @@
-// Copyright 2021 Parity Technologies (UK) Ltd.
+// Copyright 2021-2022 Parity Technologies (UK) Ltd.
 // This file is part of Polkadot.
 
 // Polkadot is free software: you can redistribute it and/or modify
@@ -18,10 +18,7 @@
 
 use pallet_election_provider_multi_phase::RawSolution;
 
-use crate::{
-	epm_dynamic, error::Error, helpers::mine_solution, opt::DryRunConfig, prelude::*,
-	signer::Signer, static_types,
-};
+use crate::{epm, error::Error, opt::DryRunConfig, prelude::*, signer::Signer, static_types};
 use codec::Encode;
 
 pub async fn dry_run_cmd<T>(api: SubxtClient, config: DryRunConfig) -> Result<(), Error>
@@ -42,7 +39,8 @@ where
 
 	log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer, account_info);
 
-	let (solution, score, _size) = mine_solution::<T>(&api, config.at, config.solver).await?;
+	let (solution, score, _size) =
+		epm::fetch_snapshot_and_mine_solution::<T>(&api, config.at, config.solver).await?;
 
 	let round = api
 		.storage()
@@ -61,7 +59,7 @@ where
 		raw_solution.encode().len(),
 	);
 
-	let tx = epm_dynamic::signed_solution(raw_solution)?;
+	let tx = epm::signed_solution(raw_solution)?;
 	let xt = api.tx().create_signed(&tx, &*signer, ExtrinsicParams::default()).await?;
 
 	let outcome = api.rpc().dry_run(xt.encoded(), config.at).await?;

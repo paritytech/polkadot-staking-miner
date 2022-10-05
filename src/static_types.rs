@@ -1,4 +1,20 @@
-use crate::{epm_dynamic, helpers::mock_votes, prelude::*};
+// Copyright 2021-2022 Parity Technologies (UK) Ltd.
+// This file is part of Polkadot.
+
+// Polkadot is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+
+// Polkadot is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+
+// You should have received a copy of the GNU General Public License
+// along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
+
+use crate::{epm, prelude::*};
 use frame_election_provider_support::traits::NposSolution;
 use frame_support::{traits::ConstU32, weights::Weight};
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
@@ -95,9 +111,9 @@ pub mod westend {
 			desired_targets: u32,
 		) -> Weight {
 			// Mock a RawSolution to get the correct weight without having to do the heavy work.
-			let raw_solution = RawSolution {
+			let raw = RawSolution {
 				solution: NposSolution16 {
-					votes1: mock_votes(
+					votes1: epm::mock_votes(
 						active_voters,
 						desired_targets.try_into().expect("Desired targets < u16::MAX"),
 					),
@@ -106,13 +122,14 @@ pub mod westend {
 				..Default::default()
 			};
 
-			assert_eq!(raw_solution.solution.voter_count(), active_voters as usize);
-			assert_eq!(raw_solution.solution.unique_targets().len(), desired_targets as usize);
+			assert_eq!(raw.solution.voter_count(), active_voters as usize);
+			assert_eq!(raw.solution.unique_targets().len(), desired_targets as usize);
 
-			epm_dynamic::runtime_api_solution_weight(
-				raw_solution,
+			futures::executor::block_on(epm::runtime_api_solution_weight(
+				raw,
 				SolutionOrSnapshotSize { voters, targets },
-			)
+			))
+			.expect("solution_weight should work")
 		}
 	}
 }
@@ -151,7 +168,7 @@ pub mod polkadot {
 			// Mock a RawSolution to get the correct weight without having to do the heavy work.
 			let raw = RawSolution {
 				solution: NposSolution16 {
-					votes1: mock_votes(
+					votes1: epm::mock_votes(
 						active_voters,
 						desired_targets.try_into().expect("Desired targets < u16::MAX"),
 					),
@@ -163,10 +180,11 @@ pub mod polkadot {
 			assert_eq!(raw.solution.voter_count(), active_voters as usize);
 			assert_eq!(raw.solution.unique_targets().len(), desired_targets as usize);
 
-			epm_dynamic::runtime_api_solution_weight(
+			futures::executor::block_on(epm::runtime_api_solution_weight(
 				raw,
 				SolutionOrSnapshotSize { voters, targets },
-			)
+			))
+			.expect("solution_weight should work")
 		}
 	}
 }
@@ -203,7 +221,7 @@ pub mod kusama {
 			// Mock a RawSolution to get the correct weight without having to do the heavy work.
 			let raw = RawSolution {
 				solution: NposSolution24 {
-					votes1: mock_votes(
+					votes1: epm::mock_votes(
 						active_voters,
 						desired_targets.try_into().expect("Desired targets < u16::MAX"),
 					),
@@ -215,10 +233,11 @@ pub mod kusama {
 			assert_eq!(raw.solution.voter_count(), active_voters as usize);
 			assert_eq!(raw.solution.unique_targets().len(), desired_targets as usize);
 
-			epm_dynamic::runtime_api_solution_weight(
+			futures::executor::block_on(epm::runtime_api_solution_weight(
 				raw,
 				SolutionOrSnapshotSize { voters, targets },
-			)
+			))
+			.expect("solution_weight should work")
 		}
 	}
 }

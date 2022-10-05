@@ -1,7 +1,23 @@
+// Copyright 2021-2022 Parity Technologies (UK) Ltd.
+// This file is part of Polkadot.
+
+// Polkadot is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+
+// Polkadot is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+
+// You should have received a copy of the GNU General Public License
+// along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
+
 use crate::{
-	epm_dynamic,
+	epm,
 	error::Error,
-	helpers::{self, TimedFuture},
+	helpers::TimedFuture,
 	opt::{Listen, MonitorConfig, SubmissionStrategy},
 	prelude::*,
 	prometheus,
@@ -172,7 +188,10 @@ async fn mine_and_submit_solution<T>(
 	}
 
 	let (solution, score) =
-		match helpers::mine_solution::<T>(&api, Some(hash), config.solver).timed().await {
+		match epm::fetch_snapshot_and_mine_solution::<T>(&api, Some(hash), config.solver)
+			.timed()
+			.await
+		{
 			(Ok((solution, score, size)), elapsed) => {
 				let elapsed_ms = elapsed.as_millis();
 				let encoded_len = solution.encoded_size();
@@ -186,16 +205,16 @@ async fn mine_and_submit_solution<T>(
 				.unwrap();
 
 				log::info!(
-				target: LOG_TARGET,
-				"Mined solution with {:?} size: {:?} round: {:?} at: {}, took: {} ms, len: {:?}, weight = {:?}",
-				score,
-				size,
-				round,
-				at.number(),
-				elapsed_ms,
-				encoded_len,
-				final_weight,
-			);
+					target: LOG_TARGET,
+					"Mined solution with {:?} size: {:?} round: {:?} at: {}, took: {} ms, len: {:?}, weight = {:?}",
+					score,
+					size,
+					round,
+					at.number(),
+					elapsed_ms,
+					encoded_len,
+					final_weight,
+				);
 
 				prometheus::set_length(encoded_len);
 				prometheus::set_weight(final_weight);
@@ -303,7 +322,7 @@ where
 	let indices = api.storage().fetch_or_default(&addr, Some(at)).await?;
 
 	for (_score, idx) in indices.0 {
-		let submission = epm_dynamic::signed_submission_at::<T>(idx, at, api).await?;
+		let submission = epm::signed_submission_at::<T>(idx, at, api).await?;
 
 		if let Some(submission) = submission {
 			if &submission.who == us {
@@ -348,7 +367,7 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 	(solution, score, round): (SolutionOf<T>, sp_npos_elections::ElectionScore, u32),
 	hash: Hash,
 ) -> Result<(), Error> {
-	let tx = epm_dynamic::signed_solution(RawSolution { solution, score, round })?;
+	let tx = epm::signed_solution(RawSolution { solution, score, round })?;
 
 	let mut status_sub =
 		api.tx().sign_and_submit_then_watch_default(&tx, &*signer).await.map_err(|e| {

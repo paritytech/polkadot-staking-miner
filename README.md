@@ -5,13 +5,30 @@
 WARNING this library is under active development DO NOT USE IN PRODUCTION.
 
 The library is a re-write of [polkadot staking miner](https://github.com/paritytech/polkadot/tree/master/utils/staking-miner) using [subxt](https://github.com/paritytech/subxt)
-to avoid hard dependency to each runtime version.
+to avoid hard dependency to each runtime version. It's using a static metadata (metadata.scale) file to generate rust types, instructions how to update metadata can be found [here](#update-metadata)
 
 The intention is that this library will "only break" once the [pallet-election-provider-multi-phase](https://crates.parity.io/pallet_election_provider_multi_phase/index.html) breaks i.e, not on every runtime upgrade.
+
+
 
 You can check the help with:
 ```
 staking-miner --help
+```
+
+## Update metadata
+
+The static metadata file is stored at [`artifacts/metadata.scale`]
+To update the metadata you need to connect to a polkadot, kusama or westend node
+
+```bash
+# Install subxt-cli
+$ cargo install --locked subxt-cli
+# Download metadata from local node and replace the current metadata
+# See `https://github.com/paritytech/subxt/tree/master/cli` for further documentation of the `subxt-cli` tool.
+$ subxt metadata -f bytes > artifacts/metadata.scale
+# Inspect the generated code
+$ subxt codegen --file artifacts/metadata.scale | rustfmt +nightly > code.rs
 ```
 
 

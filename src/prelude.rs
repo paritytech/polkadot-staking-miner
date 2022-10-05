@@ -25,7 +25,6 @@ pub use crate::{error::Error, opt::*};
 pub use frame_election_provider_support::VoteWeight;
 pub use pallet_election_provider_multi_phase::{Miner, MinerConfig};
 
-use crate::static_types;
 use once_cell::sync::OnceCell;
 
 /// The account id type.
@@ -67,12 +66,7 @@ pub type SubxtClient = subxt::OnlineClient<Config>;
 /// Config used by the staking-miner
 pub type Config = subxt::PolkadotConfig;
 
-pub type BoundedVoters = Vec<(
-	AccountId,
-	VoteWeight,
-	frame_support::BoundedVec<AccountId, static_types::MaxVotesPerVoter>,
-)>;
-pub type Snapshot = (BoundedVoters, Vec<AccountId>, u32);
+/// Submission type used by the staking miner.
 pub type SignedSubmission<S> =
 	pallet_election_provider_multi_phase::SignedSubmission<AccountId, Balance, S>;
 

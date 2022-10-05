@@ -1,4 +1,4 @@
-// Copyright 2021 Parity Technologies (UK) Ltd.
+// Copyright 2021-2022 Parity Technologies (UK) Ltd.
 // This file is part of Polkadot.
 
 // Polkadot is free software: you can redistribute it and/or modify
@@ -30,7 +30,7 @@
 
 mod dry_run;
 mod emergency_solution;
-mod epm_dynamic;
+mod epm;
 mod error;
 mod helpers;
 mod monitor;
@@ -80,7 +80,7 @@ async fn main() -> Result<(), Error> {
 	let _prometheus_handle = prometheus::run(prometheus_port.unwrap_or(DEFAULT_PROMETHEUS_PORT))
 		.map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
 	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
-	epm_dynamic::update_metadata_constants(&api).await?;
+	epm::update_metadata_constants(&api).await?;
 
 	SHARED_CLIENT.set(api.clone()).expect("shared client only set once; qed");
 
@@ -181,7 +181,7 @@ async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
 		let version = update.runtime_version().spec_version;
 		match updater.apply_update(update) {
 			Ok(()) => {
-				if let Err(e) = epm_dynamic::update_metadata_constants(&api).await {
+				if let Err(e) = epm::update_metadata_constants(&api).await {
 					let _ = tx.send(e.into());
 					return
 				}
