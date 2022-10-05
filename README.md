@@ -18,7 +18,8 @@ staking-miner --help
 
 ## Update metadata
 
-The static metadata file is stored at [`artifacts/metadata.scale`]
+The static metadata file is stored at [artifacts/metadata.scale](artifacts/metadata.scale)
+
 To update the metadata you need to connect to a polkadot, kusama or westend node
 
 ```bash
