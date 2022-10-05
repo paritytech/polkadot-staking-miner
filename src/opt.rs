@@ -1,3 +1,19 @@
+// Copyright 2021-2022 Parity Technologies (UK) Ltd.
+// This file is part of Polkadot.
+
+// Polkadot is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+
+// Polkadot is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+
+// You should have received a copy of the GNU General Public License
+// along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
+
 use crate::{error::Error, prelude::*};
 
 use clap::*;
@@ -34,64 +50,22 @@ macro_rules! any_runtime {
 	($chain:tt, $($code:tt)*) => {
 		match $chain {
 			Chain::Polkadot => {
-				#[cfg(feature = "polkadot")]
-				{
-					#[allow(unused)]
-					use {
-						$crate::monitor::run_polkadot as monitor_cmd,
-						$crate::dry_run::run_polkadot as dry_run_cmd,
-						$crate::emergency_solution::run_polkadot as emergency_cmd,
-						$crate::helpers::update_runtime_constants_polkadot as tls_update_runtime_constants,
-						$crate::chain::polkadot::runtime
-					};
-					$($code)*
-			}
-
-			#[cfg(not(feature = "polkadot"))]
-			{
-				panic!("polkadot feature is not enabled, but target chain is polkadot")
-			}
+				#[allow(unused)]
+				use $crate::static_types::polkadot::MinerConfig;
+				$($code)*
 			},
 			Chain::Kusama => {
-				#[cfg(feature = "kusama")]
-				{
-					#[allow(unused)]
-					use {
-						$crate::monitor::run_kusama as monitor_cmd,
-						$crate::dry_run::run_kusama as dry_run_cmd,
-						$crate::emergency_solution::run_kusama as emergency_cmd,
-						$crate::helpers::update_runtime_constants_kusama as tls_update_runtime_constants,
-						$crate::chain::kusama::runtime
-					};
-					$($code)*
-				}
-
-				#[cfg(not(feature = "kusama"))]
-				{
-					panic!("kusama feature is not enabled, but target chain is kusama")
-				}
+				#[allow(unused)]
+				use $crate::static_types::kusama::MinerConfig;
+				$($code)*
 			},
 			Chain::Westend => {
-				#[cfg(feature = "westend")]
-				{
-					#[allow(unused)]
-					use {
-						$crate::monitor::run_westend as monitor_cmd,
-						$crate::dry_run::run_westend as dry_run_cmd,
-						$crate::emergency_solution::run_westend as emergency_cmd,
-						$crate::helpers::update_runtime_constants_westend as tls_update_runtime_constants,
-						$crate::chain::westend::runtime
-					};
-					$($code)*
-				}
-
-				#[cfg(not(feature = "westend"))]
-				{
-					panic!("westend feature is not enabled, but target chain is westend")
-				}
-			}
+				#[allow(unused)]
+				use $crate::static_types::westend::MinerConfig;
+				$($code)*
+			},
 		}
-	}
+	};
 }
 
 /// Submission strategy to use.
@@ -183,10 +157,7 @@ impl std::str::FromStr for Chain {
 			"polkadot" => Ok(Self::Polkadot),
 			"kusama" => Ok(Self::Kusama),
 			"westend" => Ok(Self::Westend),
-			chain => Err(Error::Other(format!(
-				"expected chain to be polkadot, kusama or westend; got: {}",
-				chain
-			))),
+			chain => Err(Error::InvalidChain(chain.to_string())),
 		}
 	}
 }

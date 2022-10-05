@@ -9,18 +9,14 @@ use common::{init_logger, run_polkadot_node, KillChildOnDrop};
 use pallet_election_provider_multi_phase::ReadySolution;
 use sp_storage::StorageChangeSet;
 use staking_miner::{
-	any_runtime,
 	opt::Chain,
-	prelude::{AccountId, Hash, SubxtClient},
+	prelude::{runtime, AccountId, Hash, SubxtClient},
 };
 use std::{
 	process,
 	time::{Duration, Instant},
 };
-use subxt::{
-	ext::sp_core::Bytes,
-	rpc::{rpc_params, SubscriptionClientT},
-};
+use subxt::{ext::sp_core::Bytes, rpc::rpc_params};
 
 const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(60 * 15);
 
@@ -45,41 +41,36 @@ async fn test_submit_solution(chain: Chain) {
 			.unwrap(),
 	);
 
-	any_runtime!(chain, {
-		let api = SubxtClient::from_url(&ws_url).await.unwrap();
+	let api = SubxtClient::from_url(&ws_url).await.unwrap();
 
-		let now = Instant::now();
+	let now = Instant::now();
 
-		let mut success = false;
+	let key = Bytes(
+		runtime::storage()
+			.election_provider_multi_phase()
+			.queued_solution()
+			.to_root_bytes(),
+	);
 
-		let key = Bytes(
-			runtime::storage()
-				.election_provider_multi_phase()
-				.queued_solution()
-				.to_root_bytes(),
-		);
+	let mut sub = api
+		.rpc()
+		.subscribe("state_subscribeStorage", rpc_params![vec![key]], "state_unsubscribeStorage")
+		.await
+		.unwrap();
 
-		let mut sub = api
-			.rpc()
-			.client
-			.subscribe("state_subscribeStorage", rpc_params![vec![key]], "state_unsubscribeStorage")
-			.await
-			.unwrap();
+	let mut success = false;
 
-		let mut success = false;
+	while now.elapsed() < MAX_DURATION_FOR_SUBMIT_SOLUTION {
+		let x: StorageChangeSet<Hash> = sub.next().await.unwrap().unwrap();
 
-		while now.elapsed() < MAX_DURATION_FOR_SUBMIT_SOLUTION {
-			let x: StorageChangeSet<Hash> = sub.next().await.unwrap().unwrap();
-
-			if let Some(data) = x.changes[0].clone().1 {
-				let solution: ReadySolution<AccountId> = Decode::decode(&mut data.0.as_slice())
-					.expect("Failed to decode storage as QueuedSolution");
-				println!("solution: {:?}", solution);
-				success = true;
-				break
-			}
+		if let Some(data) = x.changes[0].clone().1 {
+			let solution: ReadySolution<AccountId> = Decode::decode(&mut data.0.as_slice())
+				.expect("Failed to decode storage as QueuedSolution");
+			println!("solution: {:?}", solution);
+			success = true;
+			break
 		}
+	}
 
-		assert!(success);
-	});
+	assert!(success);
 }

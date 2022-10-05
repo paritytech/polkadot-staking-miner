@@ -20,7 +20,8 @@ tokio = { version = "1.21", features = ["macros", "rt-multi-thread", "sync", "si
 pin-project-lite = "0.2"
 
 # subxt
-subxt = { git = "https://github.com/paritytech/subxt" }
+subxt = "0.24.0"
+scale-value = "0.6.0"
 
 # substrate
 sp-io = { git = "https://github.com/paritytech/substrate", branch = "master" }

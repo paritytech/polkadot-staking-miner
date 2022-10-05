@@ -183,7 +183,7 @@ mod hidden {
 	}
 
 	pub fn set_weight(weight: Weight) {
-		SUBMISSION_WEIGHT.set(weight as f64)
+		SUBMISSION_WEIGHT.set(weight.ref_time() as f64)
 	}
 
 	pub fn set_score(score: sp_npos_elections::ElectionScore) {
