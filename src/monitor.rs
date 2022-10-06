@@ -27,7 +27,7 @@ use crate::{
 use codec::{Decode, Encode};
 use frame_election_provider_support::NposSolution;
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOf};
-use sp_runtime::Perbill;
+use sp_runtime::traits::Header as HeaderT;
 use std::sync::Arc;
 use subxt::{rpc::Subscription, tx::TxStatus};
 use tokio::sync::Mutex;
@@ -343,7 +343,7 @@ async fn ensure_no_better_solution(
 	let epsilon = match strategy {
 		// don't care about current scores.
 		SubmissionStrategy::Always => return Ok(()),
-		SubmissionStrategy::IfLeading => Perbill::zero(),
+		SubmissionStrategy::IfLeading => Accuracy::zero(),
 		SubmissionStrategy::ClaimBetterThan(epsilon) => epsilon,
 	};
 

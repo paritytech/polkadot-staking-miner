@@ -24,23 +24,18 @@
 pub use crate::{error::Error, opt::*};
 pub use frame_election_provider_support::VoteWeight;
 pub use pallet_election_provider_multi_phase::{Miner, MinerConfig};
+pub use subxt::ext::{sp_core, sp_runtime};
 
 use once_cell::sync::OnceCell;
 
 /// The account id type.
-pub type AccountId = subxt::ext::sp_core::crypto::AccountId32;
+pub type AccountId = sp_core::crypto::AccountId32;
 /// The header type. We re-export it here, but we can easily get it from block as well.
-pub type Header =
-	subxt::ext::sp_runtime::generic::Header<u32, subxt::ext::sp_runtime::traits::BlakeTwo256>;
+pub type Header = sp_runtime::generic::Header<u32, sp_runtime::traits::BlakeTwo256>;
 /// The header type. We re-export it here, but we can easily get it from block as well.
 pub type Hash = sp_core::H256;
 /// Balance type
 pub type Balance = u128;
-
-pub use subxt::ext::{
-	sp_core,
-	sp_runtime::traits::{Block as BlockT, Header as HeaderT},
-};
 
 /// Default URI to connect to.
 ///
@@ -80,7 +75,7 @@ pub type SignedSubmission<S> =
 )]
 pub mod runtime {
 	#[subxt(substitute_type = "sp_arithmetic::per_things::PerU16")]
-	use ::sp_runtime::PerU16;
+	use crate::prelude::sp_runtime::PerU16;
 
 	#[subxt(substitute_type = "pallet_election_provider_multi_phase::RawSolution")]
 	use ::pallet_election_provider_multi_phase::RawSolution;

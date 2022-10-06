@@ -50,19 +50,36 @@ macro_rules! any_runtime {
 	($chain:tt, $($code:tt)*) => {
 		match $chain {
 			Chain::Polkadot => {
-				#[allow(unused)]
-				use $crate::static_types::polkadot::MinerConfig;
-				$($code)*
+				if cfg!(feature = "polkadot")
+				{
+					#[allow(unused)]
+					use $crate::static_types::polkadot::MinerConfig;
+					$($code)*
+
+				} else {
+					panic!("polkadot feature is not enabled but target chain is polkadot; recompile with `--features polkadot`");
+				}
 			},
 			Chain::Kusama => {
-				#[allow(unused)]
-				use $crate::static_types::kusama::MinerConfig;
-				$($code)*
+				if cfg!(feature = "kusama")
+				{
+					#[allow(unused)]
+					use $crate::static_types::kusama::MinerConfig;
+					$($code)*
+				} else {
+					panic!("kusama feature is not enabled but target chain is kusama; recompile with `--features kusama`");
+				}
 			},
 			Chain::Westend => {
-				#[allow(unused)]
-				use $crate::static_types::westend::MinerConfig;
-				$($code)*
+				if cfg!(feature = "westend")
+				{
+					#[allow(unused)]
+					use $crate::static_types::westend::MinerConfig;
+					$($code)*
+
+				} else {
+					panic!("westend feature is not enabled but target chain is westend; recompile with `--features westend`");
+				}
 			},
 		}
 	};
