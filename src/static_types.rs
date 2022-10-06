@@ -14,11 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::{epm, prelude::*};
-use frame_election_provider_support::traits::NposSolution;
-use frame_support::weights::Weight;
-use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
-
 macro_rules! impl_atomic_u32_parameter_types {
 	($mod:ident, $name:ident) => {
 		mod $mod {
@@ -84,6 +79,10 @@ pub use max_weight::MaxWeight;
 #[cfg(feature = "westend")]
 pub mod westend {
 	use super::*;
+	use crate::{epm, prelude::*};
+	use frame_election_provider_support::traits::NposSolution;
+	use frame_support::weights::Weight;
+	use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
 	use westend_runtime::NposCompactSolution16;
 
 	#[derive(Debug)]
@@ -128,6 +127,9 @@ pub mod westend {
 #[cfg(feature = "polkadot")]
 pub mod polkadot {
 	use super::*;
+	use crate::{epm, prelude::*};
+	use frame_election_provider_support::traits::NposSolution;
+	use frame_support::weights::Weight;
 	use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
 	use polkadot_runtime::NposCompactSolution16;
 
@@ -173,7 +175,11 @@ pub mod polkadot {
 #[cfg(feature = "kusama")]
 pub mod kusama {
 	use super::*;
+	use crate::{epm, prelude::*};
+	use frame_election_provider_support::traits::NposSolution;
+	use frame_support::weights::Weight;
 	use kusama_runtime::NposCompactSolution24;
+	use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
 
 	#[derive(Debug)]
 	pub struct MinerConfig;
