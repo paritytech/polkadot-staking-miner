@@ -1,9 +1,20 @@
-use crate::{chain, opt::Solver, prelude::*};
-use frame_election_provider_support::{PhragMMS, SequentialPhragmen};
-use frame_support::BoundedVec;
-use pallet_election_provider_multi_phase::{SolutionOf, SolutionOrSnapshotSize};
+// Copyright 2021-2022 Parity Technologies (UK) Ltd.
+// This file is part of Polkadot.
+
+// Polkadot is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+
+// Polkadot is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+
+// You should have received a copy of the GNU General Public License
+// along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
+
 use pin_project_lite::pin_project;
-use sp_npos_elections::ElectionScore;
 use std::{
 	future::Future,
 	pin::Pin,
@@ -49,115 +60,3 @@ pub trait TimedFuture: Sized + Future {
 }
 
 impl<F: Future> TimedFuture for F {}
-
-macro_rules! helpers_for_runtime {
-	($runtime:tt) => {
-		paste::paste! {
-			/// The monitor command.
-			pub(crate) async fn [<mine_solution_$runtime>](
-				api: &SubxtClient,
-				hash: Option<Hash>,
-				solver: Solver
-			) -> Result<(SolutionOf<chain::$runtime::MinerConfig>, ElectionScore, SolutionOrSnapshotSize), Error> {
-				let (voters, targets, desired_targets) = [<snapshot_$runtime>](&api, hash).await?;
-
-				let blocking_task = tokio::task::spawn_blocking(move || {
-					match solver {
-						Solver::SeqPhragmen { iterations } => {
-							BalanceIterations::set(iterations);
-							Miner::<chain::$runtime::MinerConfig>::mine_solution_with_snapshot::<
-								SequentialPhragmen<AccountId, Accuracy, Balancing>,
-							>(voters, targets, desired_targets)
-						},
-						Solver::PhragMMS { iterations } => {
-							BalanceIterations::set(iterations);
-							Miner::<chain::$runtime::MinerConfig>::mine_solution_with_snapshot::<PhragMMS<AccountId, Accuracy, Balancing>>(
-								voters,
-								targets,
-								desired_targets,
-							)
-						},
-					}
-				}).await;
-
-				match blocking_task {
-					Ok(Ok(res)) => Ok(res),
-					Ok(Err(err)) => Err(Error::Other(format!("{:?}", err))),
-					Err(err) => Err(Error::Other(format!("{:?}", err))),
-				}
-			}
-
-			pub async fn [<snapshot_$runtime>](api: &SubxtClient, hash: Option<Hash>) -> Result<crate::chain::$runtime::epm::Snapshot, Error> {
-				use crate::chain::[<$runtime>]::{epm::RoundSnapshot, runtime};
-				use crate::chain::static_types;
-
-				let RoundSnapshot { voters, targets } = api
-					.storage().fetch(&runtime::storage().election_provider_multi_phase().snapshot(), hash)
-					.await?
-					.unwrap_or_default();
-
-				let desired_targets = api
-					.storage()
-					.fetch(&runtime::storage().election_provider_multi_phase().desired_targets(), hash)
-					.await?
-					.unwrap_or_default();
-
-				let voters: Vec<_> = voters
-					.into_iter()
-					.map(|(a, b, mut c)| {
-						let mut bounded_vec: BoundedVec<AccountId, static_types::MaxVotesPerVoter> = BoundedVec::default();
-						// If this fails just crash the task.
-						bounded_vec.try_append(&mut c.0).unwrap_or_else(|_| panic!("BoundedVec capacity: {} failed; `MinerConfig::MaxVotesPerVoter` is different from the chain data; this is a bug please file an issue", static_types::MaxVotesPerVoter::get()));
-						(a, b, bounded_vec)
-					})
-					.collect();
-
-				Ok((voters, targets, desired_targets))
-			}
-
-			pub fn [<update_runtime_constants_$runtime>](api: &SubxtClient) {
-				use chain::static_types;
-				use crate::chain::[<$runtime>]::runtime;
-
-				// maximum weight of the signed submission is exposed from metadata and MUST be this.
-				let max_weight = api
-					.constants()
-					.at(&runtime::constants().election_provider_multi_phase().miner_max_weight())
-					.expect("constant `miner_max_weight` must exist")
-					.ref_time;
-				let max_length = api
-					.constants()
-					.at(&runtime::constants().election_provider_multi_phase().miner_max_length())
-					.expect("constant `miner_max_length` must exist");
-				let max_votes_per_voter = api
-					.constants()
-					.at(&runtime::constants().election_provider_multi_phase().miner_max_votes_per_voter())
-					.expect("constant `miner_max_votes_per_voter` must exist");
-				let db_weight = api
-					.constants()
-					.at(&runtime::constants().system().db_weight())
-					.expect("constant `db_weight` must exist");
-
-				let system_db_weight =
-					frame_support::weights::RuntimeDbWeight { read: db_weight.read, write: db_weight.write };
-
-				static_types::DbWeight::set(system_db_weight);
-				static_types::MaxWeight::set(max_weight);
-				static_types::MaxLength::set(max_length);
-				static_types::MaxVotesPerVoter::set(max_votes_per_voter);
-
-				log::debug!(target: LOG_TARGET, "Constant `max_weight`: {:?}", static_types::MaxWeight::get());
-				log::debug!(target: LOG_TARGET, "Constant `max_length`: {:?}", static_types::MaxLength::get());
-				log::debug!(target: LOG_TARGET, "Constant `max_votes_per_voter`: {:?}", static_types::MaxVotesPerVoter::get());
-				log::debug!(target: LOG_TARGET, "Constant `db_weight`: {:?}", static_types::DbWeight::get());
-			}
-		}
-	};
-}
-
-#[cfg(feature = "polkadot")]
-helpers_for_runtime!(polkadot);
-#[cfg(feature = "kusama")]
-helpers_for_runtime!(kusama);
-#[cfg(feature = "westend")]
-helpers_for_runtime!(westend);

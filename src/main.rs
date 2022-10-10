@@ -1,4 +1,4 @@
-// Copyright 2021 Parity Technologies (UK) Ltd.
+// Copyright 2021-2022 Parity Technologies (UK) Ltd.
 // This file is part of Polkadot.
 
 // Polkadot is free software: you can redistribute it and/or modify
@@ -28,9 +28,9 @@
 //!   development. It is intended to run this bot with a `restart = true` way, so that it reports it
 //!   crash, but resumes work thereafter.
 
-mod chain;
 mod dry_run;
 mod emergency_solution;
+mod epm;
 mod error;
 mod helpers;
 mod monitor;
@@ -38,12 +38,14 @@ mod opt;
 mod prelude;
 mod prometheus;
 mod signer;
+mod static_types;
 
 use clap::Parser;
 use futures::future::{BoxFuture, FutureExt};
 use jsonrpsee::ws_client::WsClientBuilder;
 use opt::Command;
 use prelude::*;
+use tokio::sync::oneshot;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -78,40 +80,35 @@ async fn main() -> Result<(), Error> {
 	let _prometheus_handle = prometheus::run(prometheus_port.unwrap_or(DEFAULT_PROMETHEUS_PORT))
 		.map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
 	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
+	epm::update_metadata_constants(&api).await?;
 
-	chain::SHARED_CLIENT.set(api.clone()).expect("shared client only set once; qed");
+	SHARED_CLIENT.set(api.clone()).expect("shared client only set once; qed");
 
-	let outcome = any_runtime!(chain, {
-		tls_update_runtime_constants(&api);
+	// Start a new tokio task to perform the runtime updates in the background.
+	// if this fails then the miner will be stopped and has to be re-started.
+	let (tx_upgrade, rx_upgrade) = oneshot::channel::<Error>();
+	tokio::spawn(runtime_upgrade_task(api.clone(), tx_upgrade));
 
-		// Start a new tokio task to perform the runtime updates in the background.
-		let update_client = api.subscribe_to_updates();
-		tokio::spawn(async move {
-			match update_client.perform_runtime_updates().await {
-				Ok(()) => {
-					crate::prometheus::on_runtime_upgrade();
-				},
-				Err(e) => {
-					log::error!(target: LOG_TARGET, "Runtime update failed with result: {:?}", e);
-				},
-			}
-		});
-
+	let res = any_runtime!(chain, {
 		let fut = match command {
-			Command::Monitor(cfg) => monitor_cmd(api, cfg).boxed(),
-			Command::DryRun(cfg) => dry_run_cmd(api, cfg).boxed(),
-			Command::EmergencySolution(cfg) => emergency_cmd(api, cfg).boxed(),
+			Command::Monitor(cfg) => monitor::monitor_cmd::<MinerConfig>(api, cfg).boxed(),
+			Command::DryRun(cfg) => dry_run::dry_run_cmd::<MinerConfig>(api, cfg).boxed(),
+			Command::EmergencySolution(cfg) =>
+				emergency_solution::emergency_cmd::<MinerConfig>(api, cfg).boxed(),
 		};
 
-		run_command(fut).await
+		run_command(fut, rx_upgrade).await
 	});
 
-	log::info!(target: LOG_TARGET, "round of execution finished. outcome = {:?}", outcome);
-	outcome
+	log::info!(target: LOG_TARGET, "round of execution finished. outcome = {:?}", res);
+	res
 }
 
 #[cfg(target_family = "unix")]
-async fn run_command(fut: BoxFuture<'_, Result<(), Error>>) -> Result<(), Error> {
+async fn run_command(
+	fut: BoxFuture<'_, Result<(), Error>>,
+	rx_upgrade: oneshot::Receiver<Error>,
+) -> Result<(), Error> {
 	use tokio::signal::unix::{signal, SignalKind};
 
 	let mut stream_int = signal(SignalKind::interrupt()).map_err(Error::Io)?;
@@ -124,16 +121,77 @@ async fn run_command(fut: BoxFuture<'_, Result<(), Error>>) -> Result<(), Error>
 		_ = stream_term.recv() => {
 			Ok(())
 		}
+		res = rx_upgrade => {
+			match res {
+				Ok(err) => Err(err),
+				Err(_) => unreachable!("A message is sent before the upgrade task is closed; qed"),
+			}
+		},
 		res = fut => res,
 	}
 }
 
 #[cfg(not(unix))]
-async fn run_command(fut: BoxFuture<'_, Result<(), Error>>) -> Result<(), E> {
+async fn run_command(
+	fut: BoxFuture<'_, Result<(), Error>>,
+	rx_upgrade: oneshot::Receiver<Error>,
+) -> Result<(), Error> {
 	use tokio::signal::ctrl_c;
 	select! {
 		_ = ctrl_c() => {},
+		res = rx_upgrade => {
+			match res {
+				Ok(err) => Err(err),
+				Err(_) => unreachable!("A message is sent before the upgrade task is closed; qed"),
+			}
+		},
 		res = fut => res,
+	}
+}
+
+/// Runs until the RPC connection fails or updating the metadata failed.
+async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
+	let updater = api.subscribe_to_updates();
+
+	let mut update_stream = match updater.runtime_updates().await {
+		Ok(u) => u,
+		Err(e) => {
+			let _ = tx.send(e.into());
+			return
+		},
+	};
+
+	loop {
+		// if the runtime upgrade subscription fails then try establish a new one and if it fails quit.
+		let update = match update_stream.next().await {
+			Some(Ok(update)) => update,
+			_ => {
+				log::warn!(target: LOG_TARGET, "Runtime upgrade subscription failed");
+				update_stream = match updater.runtime_updates().await {
+					Ok(u) => u,
+					Err(e) => {
+						let _ = tx.send(e.into());
+						return
+					},
+				};
+				continue
+			},
+		};
+
+		let version = update.runtime_version().spec_version;
+		match updater.apply_update(update) {
+			Ok(()) => {
+				if let Err(e) = epm::update_metadata_constants(&api).await {
+					let _ = tx.send(e.into());
+					return
+				}
+				prometheus::on_runtime_upgrade();
+				log::info!(target: LOG_TARGET, "upgrade to version: {} successful", version);
+			},
+			Err(e) => {
+				log::warn!(target: LOG_TARGET, "upgrade to version: {} failed: {:?}", version, e);
+			},
+		}
 	}
 }
 

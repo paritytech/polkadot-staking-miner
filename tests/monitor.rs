@@ -9,9 +9,8 @@ use common::{init_logger, run_polkadot_node, run_staking_miner_playground, KillC
 use pallet_election_provider_multi_phase::ReadySolution;
 use sp_storage::StorageChangeSet;
 use staking_miner::{
-	any_runtime,
 	opt::Chain,
-	prelude::{AccountId, Hash, SubxtClient},
+	prelude::{runtime, AccountId, Hash, SubxtClient},
 };
 use std::{
 	io::{BufRead, BufReader},
@@ -118,38 +117,36 @@ async fn test_submit_solution(chain: Chain) {
 			.unwrap(),
 	);
 
-	any_runtime!(chain, {
-		let api = SubxtClient::from_url(&ws_url).await.unwrap();
-		let now = Instant::now();
+	let api = SubxtClient::from_url(&ws_url).await.unwrap();
 
-		let key = Bytes(
-			runtime::storage()
-				.election_provider_multi_phase()
-				.queued_solution()
-				.to_root_bytes(),
-		);
+	let now = Instant::now();
 
-		let mut sub = api
-			.rpc()
-			.client
-			.subscribe("state_subscribeStorage", rpc_params![vec![key]], "state_unsubscribeStorage")
-			.await
-			.unwrap();
+	let key = Bytes(
+		runtime::storage()
+			.election_provider_multi_phase()
+			.queued_solution()
+			.to_root_bytes(),
+	);
 
-		let mut success = false;
+	let mut sub = api
+		.rpc()
+		.subscribe("state_subscribeStorage", rpc_params![vec![key]], "state_unsubscribeStorage")
+		.await
+		.unwrap();
 
-		while now.elapsed() < MAX_DURATION_FOR_SUBMIT_SOLUTION {
-			let x: StorageChangeSet<Hash> = sub.next().await.unwrap().unwrap();
+	let mut success = false;
 
-			if let Some(data) = x.changes[0].clone().1 {
-				let solution: ReadySolution<AccountId> = Decode::decode(&mut data.0.as_slice())
-					.expect("Failed to decode storage as QueuedSolution");
-				println!("solution: {:?}", solution);
-				success = true;
-				break
-			}
+	while now.elapsed() < MAX_DURATION_FOR_SUBMIT_SOLUTION {
+		let x: StorageChangeSet<Hash> = sub.next().await.unwrap().unwrap();
+
+		if let Some(data) = x.changes[0].clone().1 {
+			let solution: ReadySolution<AccountId> = Decode::decode(&mut data.0.as_slice())
+				.expect("Failed to decode storage as QueuedSolution");
+			println!("solution: {:?}", solution);
+			success = true;
+			break
 		}
+	}
 
-		assert!(success);
-	});
+	assert!(success);
 }
