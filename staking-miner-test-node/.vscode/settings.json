@@ -1,0 +1,50 @@
+{
+	"workbench.colorCustomizations": {
+		"activityBar.activeBackground": "#567fc2",
+		"activityBar.activeBorder": "#e6b9ca",
+		"activityBar.background": "#567fc2",
+		"activityBar.foreground": "#e7e7e7",
+		"activityBar.inactiveForeground": "#e7e7e799",
+		"activityBarBadge.background": "#e6b9ca",
+		"activityBarBadge.foreground": "#15202b",
+		"statusBar.background": "#3d66a8",
+		"statusBar.foreground": "#e7e7e7",
+		"statusBarItem.hoverBackground": "#567fc2",
+		"titleBar.activeBackground": "#3d66a8",
+		"titleBar.activeForeground": "#e7e7e7",
+		"titleBar.inactiveBackground": "#3d66a899",
+		"titleBar.inactiveForeground": "#e7e7e799",
+		"sash.hoverBorder": "#567fc2",
+		"statusBarItem.remoteBackground": "#3d66a8",
+		"statusBarItem.remoteForeground": "#e7e7e7",
+		"commandCenter.border": "#e7e7e799"
+	},
+	"peacock.color": "#3d66a8",
+	"rust-analyzer.inlayHints.parameterHints": false,
+	"rust-analyzer.inlayHints.typeHints": false,
+	"rust-analyzer.updates.channel": "stable",
+	"rust-analyzer.checkOnSave.enable": true,
+	"rust-analyzer.rustfmt.extraArgs": [
+		"+nightly"
+	],
+	"rust-analyzer.checkOnSave.allFeatures": true,
+	"rust-analyzer.checkOnSave.allTargets": true,
+	"rust-analyzer.lruCapacity": 9192,
+	"rust-analyzer.checkOnSave.overrideCommand": [
+		"cargo",
+		"+nightly",
+		"check",
+		"--tests",
+		"--message-format",
+		"json"
+	],
+	"rust-analyzer.cargo.features": [],
+	"rust-analyzer.diagnostics.disabled": [
+		"unresolved-macro-call"
+	],
+	"rust-analyzer.cargo.autoreload": true,
+	"[rust]": {
+		"editor.formatOnSave": true,
+		"editor.defaultFormatter": "rust-lang.rust-analyzer",
+	},
+}
