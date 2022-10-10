@@ -17,10 +17,7 @@ use std::{
 	println, process,
 	time::{Duration, Instant},
 };
-use subxt::{
-	ext::sp_core::Bytes,
-	rpc::{rpc_params, ClientT, SubscriptionClientT},
-};
+use subxt::{ext::sp_core::Bytes, rpc::rpc_params};
 
 const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(60 * 15);
 
@@ -73,7 +70,6 @@ async fn constants_updated_on_the_fly() {
 	let call_data = Bytes(1024u32.encode());
 	let _ = api
 		.rpc()
-		.client
 		.request::<()>("state_call", rpc_params!["TestApi_set_length", call_data])
 		.await
 		.unwrap();
