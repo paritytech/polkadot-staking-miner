@@ -6,7 +6,7 @@ pub mod common;
 use assert_cmd::cargo::cargo_bin;
 use codec::Decode;
 use common::{init_logger, run_polkadot_node, KillChildOnDrop};
-use pallet_election_provider_multi_phase::ReadySolution;
+use pallet_election_provider_multi_phase::{ElectionCompute, ReadySolution};
 use sp_storage::StorageChangeSet;
 use staking_miner::{
 	opt::Chain,
@@ -32,17 +32,17 @@ async fn test_submit_solution(chain: Chain) {
 	let (_drop, ws_url) = run_polkadot_node(chain);
 
 	let crate_name = env!("CARGO_PKG_NAME");
+
 	let _miner = KillChildOnDrop(
 		process::Command::new(cargo_bin(crate_name))
 			.stdout(process::Stdio::piped())
 			.stderr(process::Stdio::piped())
-			.args(&["--uri", &ws_url, "--seed-or-path", "//Alice", "monitor", "seq-phragmen"])
+			.args(&["--uri", &ws_url, "monitor", "--seed-or-path", "//Alice", "seq-phragmen"])
 			.spawn()
 			.unwrap(),
 	);
 
 	let api = SubxtClient::from_url(&ws_url).await.unwrap();
-
 	let now = Instant::now();
 
 	let key = Bytes(
@@ -66,7 +66,8 @@ async fn test_submit_solution(chain: Chain) {
 		if let Some(data) = x.changes[0].clone().1 {
 			let solution: ReadySolution<AccountId> = Decode::decode(&mut data.0.as_slice())
 				.expect("Failed to decode storage as QueuedSolution");
-			println!("solution: {:?}", solution);
+			eprintln!("solution: {:?}", solution);
+			assert!(solution.compute == ElectionCompute::Signed);
 			success = true;
 			break
 		}
