@@ -16,12 +16,11 @@
 
 //! Wrappers or helpers for [`pallet_election_provider_multi_phase`].
 
-use crate::{opt::Solver, prelude::*, static_types};
+use crate::{helpers::RuntimeDispatchInfo, opt::Solver, prelude::*, static_types};
 use codec::{Decode, Encode};
 use frame_election_provider_support::{NposSolution, PhragMMS, SequentialPhragmen};
 use frame_support::{weights::Weight, BoundedVec};
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOf, SolutionOrSnapshotSize};
-use pallet_transaction_payment::RuntimeDispatchInfo;
 use runtime::runtime_types::pallet_election_provider_multi_phase::RoundSnapshot;
 use scale_info::{PortableRegistry, TypeInfo};
 use scale_value::scale::{decode_as_type, encode_as_type, TypeId};
@@ -277,7 +276,7 @@ pub async fn runtime_api_solution_weight<S: Encode + NposSolution + TypeInfo + '
 		.request("state_call", rpc_params!["TransactionPaymentCallApi_query_call_info", call_data])
 		.await?;
 
-	let info: RuntimeDispatchInfo<Balance> = Decode::decode(&mut bytes.0.as_ref())?;
+	let info: RuntimeDispatchInfo = Decode::decode(&mut bytes.0.as_ref())?;
 
 	log::trace!(
 		target: LOG_TARGET,
