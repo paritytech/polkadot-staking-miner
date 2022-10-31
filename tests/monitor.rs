@@ -17,6 +17,7 @@ use std::{
 	time::{Duration, Instant},
 };
 use subxt::{ext::sp_core::Bytes, rpc::rpc_params};
+use tokio::time::timeout;
 
 const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(60 * 15);
 
@@ -61,7 +62,13 @@ async fn test_submit_solution(chain: Chain) {
 	let mut success = false;
 
 	while now.elapsed() < MAX_DURATION_FOR_SUBMIT_SOLUTION {
-		let x: StorageChangeSet<Hash> = sub.next().await.unwrap().unwrap();
+		let x: StorageChangeSet<Hash> =
+			match timeout(MAX_DURATION_FOR_SUBMIT_SOLUTION, sub.next()).await {
+				Err(e) => panic!("Timeout exceeded: {:?}", e),
+				Ok(Some(Ok(storage))) => storage,
+				Ok(None) => panic!("Subscription closed"),
+				Ok(Some(Err(e))) => panic!("Failed to decode StorageChangeSet {:?}", e),
+			};
 
 		if let Some(data) = x.changes[0].clone().1 {
 			let solution: ReadySolution<AccountId> = Decode::decode(&mut data.0.as_slice())
