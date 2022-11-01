@@ -248,7 +248,7 @@ async fn mine_and_submit_solution<T>(
 		return
 	}
 
-	match ensure_solution_passes_strategy(&api, best_head, score, config.submission_strategy)
+	match ensure_no_better_solution(&api, best_head, score, config.submission_strategy)
 		.timed()
 		.await
 	{
@@ -321,7 +321,7 @@ where
 	let addr = runtime::storage().election_provider_multi_phase().signed_submission_indices();
 	let indices = api.storage().fetch_or_default(&addr, Some(at)).await?;
 
-	for (_score, _, idx) in indices.0 {
+	for (_score, idx) in indices.0 {
 		let submission = epm::signed_submission_at::<T>(idx, at, api).await?;
 
 		if let Some(submission) = submission {
@@ -334,31 +334,31 @@ where
 	Ok(())
 }
 
-async fn ensure_solution_passes_strategy(
+async fn ensure_no_better_solution(
 	api: &SubxtClient,
 	at: Hash,
 	score: sp_npos_elections::ElectionScore,
 	strategy: SubmissionStrategy,
 ) -> Result<(), Error> {
-	// don't care about current scores.
-	if matches!(strategy, SubmissionStrategy::Always) {
-		return Ok(())
-	}
+	let epsilon = match strategy {
+		// don't care about current scores.
+		SubmissionStrategy::Always => return Ok(()),
+		SubmissionStrategy::IfLeading => Perbill::zero(),
+		SubmissionStrategy::ClaimBetterThan(epsilon) => epsilon,
+	};
 
 	let addr = runtime::storage().election_provider_multi_phase().signed_submission_indices();
 	let indices = api.storage().fetch_or_default(&addr, Some(at)).await?;
 
 	log::debug!(target: LOG_TARGET, "submitted solutions: {:?}", indices.0);
 
-	if indices
-		.0
-		.last()
-		.map_or(true, |(best_score, _, _)| score_passes_strategy(score, *best_score, strategy))
-	{
-		Ok(())
-	} else {
-		Err(Error::BetterScoreExist)
+	for (other_score, _) in indices.0 {
+		if !score.strict_threshold_better(other_score, epsilon) {
+			return Err(Error::BetterScoreExist)
+		}
 	}
+
+	Ok(())
 }
 
 async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
@@ -441,66 +441,5 @@ async fn get_latest_head(api: &SubxtClient, listen: Listen) -> Result<Hash, Erro
 			Err(e) => Err(e.into()),
 		},
 		Listen::Finalized => api.rpc().finalized_head().await.map_err(Into::into),
-	}
-}
-
-/// Returns `true` if `our_score` better the onchain `best_score` according the given strategy.
-pub(crate) fn score_passes_strategy(
-	our_score: sp_npos_elections::ElectionScore,
-	best_score: sp_npos_elections::ElectionScore,
-	strategy: SubmissionStrategy,
-) -> bool {
-	match strategy {
-		SubmissionStrategy::Always => true,
-		SubmissionStrategy::IfLeading =>
-			our_score == best_score ||
-				our_score.strict_threshold_better(best_score, Perbill::zero()),
-		SubmissionStrategy::ClaimBetterThan(epsilon) =>
-			our_score.strict_threshold_better(best_score, epsilon),
-		SubmissionStrategy::ClaimNoWorseThan(epsilon) =>
-			!best_score.strict_threshold_better(our_score, epsilon),
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn score_passes_strategy_works() {
-		let s = |x| sp_npos_elections::ElectionScore { minimal_stake: x, ..Default::default() };
-		let two = Perbill::from_percent(2);
-
-		// anything passes Always
-		assert!(score_passes_strategy(s(0), s(0), SubmissionStrategy::Always));
-		assert!(score_passes_strategy(s(5), s(0), SubmissionStrategy::Always));
-		assert!(score_passes_strategy(s(5), s(10), SubmissionStrategy::Always));
-
-		// if leading
-		assert!(score_passes_strategy(s(0), s(0), SubmissionStrategy::IfLeading));
-		assert!(score_passes_strategy(s(1), s(0), SubmissionStrategy::IfLeading));
-		assert!(score_passes_strategy(s(2), s(0), SubmissionStrategy::IfLeading));
-		assert!(!score_passes_strategy(s(5), s(10), SubmissionStrategy::IfLeading));
-		assert!(!score_passes_strategy(s(9), s(10), SubmissionStrategy::IfLeading));
-		assert!(score_passes_strategy(s(10), s(10), SubmissionStrategy::IfLeading));
-
-		// if better by 2%
-		assert!(!score_passes_strategy(s(50), s(100), SubmissionStrategy::ClaimBetterThan(two)));
-		assert!(!score_passes_strategy(s(100), s(100), SubmissionStrategy::ClaimBetterThan(two)));
-		assert!(!score_passes_strategy(s(101), s(100), SubmissionStrategy::ClaimBetterThan(two)));
-		assert!(!score_passes_strategy(s(102), s(100), SubmissionStrategy::ClaimBetterThan(two)));
-		assert!(score_passes_strategy(s(103), s(100), SubmissionStrategy::ClaimBetterThan(two)));
-		assert!(score_passes_strategy(s(150), s(100), SubmissionStrategy::ClaimBetterThan(two)));
-
-		// if no less than 2% worse
-		assert!(!score_passes_strategy(s(50), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
-		assert!(!score_passes_strategy(s(97), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
-		assert!(score_passes_strategy(s(98), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
-		assert!(score_passes_strategy(s(99), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
-		assert!(score_passes_strategy(s(100), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
-		assert!(score_passes_strategy(s(101), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
-		assert!(score_passes_strategy(s(102), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
-		assert!(score_passes_strategy(s(103), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
-		assert!(score_passes_strategy(s(150), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
 	}
 }
