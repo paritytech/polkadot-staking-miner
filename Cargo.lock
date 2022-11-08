@@ -1227,6 +1227,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyper-rustls"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d87c48c02e0dc5e3b849a2041db3029fd066650f8f717c07bf8ed78ccb895cac"
+dependencies = [
+ "http",
+ "hyper",
+ "log",
+ "rustls",
+ "rustls-native-certs",
+ "tokio",
+ "tokio-rustls",
+ "webpki-roots",
+]
+
+[[package]]
 name = "ident_case"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1318,6 +1334,7 @@ checksum = "8bd0d559d5e679b1ab2f869b486a11182923863b1b3ee8b421763cdd707b783a"
 dependencies = [
  "jsonrpsee-client-transport",
  "jsonrpsee-core",
+ "jsonrpsee-http-client",
  "jsonrpsee-proc-macros",
  "jsonrpsee-types",
  "jsonrpsee-ws-client",
@@ -1358,6 +1375,27 @@ dependencies = [
  "futures-channel",
  "futures-timer",
  "futures-util",
+ "hyper",
+ "jsonrpsee-types",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-futures",
+]
+
+[[package]]
+name = "jsonrpsee-http-client"
+version = "0.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52f7c0e2333ab2115c302eeb4f137c8a4af5ab609762df68bbda8f06496677c9"
+dependencies = [
+ "async-trait",
+ "hyper",
+ "hyper-rustls",
+ "jsonrpsee-core",
  "jsonrpsee-types",
  "rustc-hash",
  "serde",
@@ -3591,8 +3629,7 @@ checksum = "6bdef32e8150c2a081110b42772ffe7d7c9032b606bc226c8260fd97e0976601"
 [[package]]
 name = "subxt"
 version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a8757ee0e19f87e722577282ab1386c86592a4b13ff963b9c6ec4176348104c"
+source = "git+https://github.com/paritytech/subxt#33a9ec91afd16c459871e24ae18576f7afbb87c1"
 dependencies = [
  "bitvec",
  "derivative",
@@ -3618,12 +3655,13 @@ dependencies = [
 [[package]]
 name = "subxt-codegen"
 version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb77f93e11e6ff3ff95fe33e3d24c27c342e16feca8ef47759993614ebe90d2c"
+source = "git+https://github.com/paritytech/subxt#33a9ec91afd16c459871e24ae18576f7afbb87c1"
 dependencies = [
  "darling",
  "frame-metadata",
  "heck",
+ "hex",
+ "jsonrpsee",
  "parity-scale-codec",
  "proc-macro-error",
  "proc-macro2",
@@ -3631,13 +3669,13 @@ dependencies = [
  "scale-info",
  "subxt-metadata",
  "syn",
+ "tokio",
 ]
 
 [[package]]
 name = "subxt-macro"
 version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "051cc21d77a54ae944b872eafdf9edfe1d9134fdfcfc3477dc10f763c76564a9"
+source = "git+https://github.com/paritytech/subxt#33a9ec91afd16c459871e24ae18576f7afbb87c1"
 dependencies = [
  "darling",
  "proc-macro-error",
@@ -3648,8 +3686,7 @@ dependencies = [
 [[package]]
 name = "subxt-metadata"
 version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ed78d80db3a97d55e8b1cfecc1f6f9e21793a589d4e2e5f4fe2d6d5850c2e54"
+source = "git+https://github.com/paritytech/subxt#33a9ec91afd16c459871e24ae18576f7afbb87c1"
 dependencies = [
  "frame-metadata",
  "parity-scale-codec",

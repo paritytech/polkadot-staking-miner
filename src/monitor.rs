@@ -29,7 +29,7 @@ use frame_election_provider_support::NposSolution;
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOf};
 use sp_runtime::Perbill;
 use std::sync::Arc;
-use subxt::{rpc::Subscription, tx::TxStatus};
+use subxt::{error::RpcError, rpc::Subscription, tx::TxStatus};
 use tokio::sync::Mutex;
 
 pub async fn monitor_cmd<T>(api: SubxtClient, config: MonitorConfig) -> Result<(), Error>
@@ -101,12 +101,57 @@ where
 }
 
 fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>, err: Error) {
+	use jsonrpsee::{core::Error as JsonRpseeError, types::error::CallError};
+	use subxt::Error as SubxtError;
+
 	match err {
 		Error::AlreadySubmitted |
 		Error::BetterScoreExist |
 		Error::IncorrectPhase |
 		Error::TransactionRejected(_) |
 		Error::SubscriptionClosed => {},
+		Error::Subxt(SubxtError::Rpc(rpc_err)) => {
+			log::debug!(target: LOG_TARGET, "rpc error: {:?}", rpc_err);
+
+			match rpc_err {
+				RpcError::ClientError(e) => {
+					let jsonrpsee_err = match e.downcast::<JsonRpseeError>() {
+						Ok(e) => *e,
+						Err(_) => {
+							let _ = tx.send(Error::Other(
+								"Failed to downcast RPC error; this is a bug please file an issue"
+									.to_string(),
+							));
+							return
+						},
+					};
+
+					match jsonrpsee_err {
+						JsonRpseeError::Call(CallError::Custom(e)) => {
+							const BAD_EXTRINSIC_FORMAT: i32 = 1001;
+							const VERIFICATION_ERROR: i32 = 1002;
+
+							// Check if the transaction gets fatal errors from the `author` RPC.
+							// It's possible to get other errors such as outdated nonce and similar
+							// but then it should be possible to try again in the next block or round.
+							if e.code() == BAD_EXTRINSIC_FORMAT || e.code() == VERIFICATION_ERROR {
+								let _ = tx.send(Error::Subxt(SubxtError::Rpc(
+									RpcError::ClientError(Box::new(CallError::Custom(e))),
+								)));
+							}
+						},
+						JsonRpseeError::Call(CallError::Failed(_)) => {},
+						JsonRpseeError::RequestTimeout => {},
+						err => {
+							let _ = tx.send(Error::Subxt(SubxtError::Rpc(RpcError::ClientError(
+								Box::new(err),
+							))));
+						},
+					}
+				},
+				RpcError::SubscriptionDropped => (),
+			}
+		},
 		err => {
 			let _ = tx.send(err);
 		},
@@ -118,7 +163,7 @@ async fn mine_and_submit_solution<T>(
 	tx: tokio::sync::mpsc::UnboundedSender<Error>,
 	at: Header,
 	api: SubxtClient,
-	mut signer: Signer,
+	signer: Signer,
 	config: MonitorConfig,
 	submit_lock: Arc<Mutex<()>>,
 ) where
@@ -141,7 +186,6 @@ async fn mine_and_submit_solution<T>(
 			return
 		},
 	};
-	signer.set_nonce(nonce);
 
 	if let Err(e) = ensure_signed_phase(&api, hash).await {
 		log::debug!(
@@ -272,7 +316,7 @@ async fn mine_and_submit_solution<T>(
 	};
 
 	prometheus::on_submission_attempt();
-	match submit_and_watch_solution::<T>(&api, signer, (solution, score, round), hash)
+	match submit_and_watch_solution::<T>(&api, signer, (solution, score, round), hash, nonce)
 		.timed()
 		.await
 	{
@@ -366,14 +410,18 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 	signer: Signer,
 	(solution, score, round): (SolutionOf<T>, sp_npos_elections::ElectionScore, u32),
 	hash: Hash,
+	nonce: u32,
 ) -> Result<(), Error> {
 	let tx = epm::signed_solution(RawSolution { solution, score, round })?;
 
-	let mut status_sub =
-		api.tx().sign_and_submit_then_watch_default(&tx, &*signer).await.map_err(|e| {
-			log::warn!(target: LOG_TARGET, "submit solution failed: {:?}", e);
-			e
-		})?;
+	let xt = api
+		.tx()
+		.create_signed_with_nonce(&tx, &*signer, nonce, ExtrinsicParams::default())?;
+
+	let mut status_sub = xt.submit_and_watch().await.map_err(|e| {
+		log::warn!(target: LOG_TARGET, "submit solution failed: {:?}", e);
+		e
+	})?;
 
 	loop {
 		let status = match status_sub.next_item().await {
@@ -427,8 +475,8 @@ async fn heads_subscription(
 	listen: Listen,
 ) -> Result<Subscription<Header>, Error> {
 	match listen {
-		Listen::Head => api.rpc().subscribe_blocks().await,
-		Listen::Finalized => api.rpc().subscribe_finalized_blocks().await,
+		Listen::Head => api.rpc().subscribe_best_block_headers().await,
+		Listen::Finalized => api.rpc().subscribe_finalized_block_headers().await,
 	}
 	.map_err(Into::into)
 }

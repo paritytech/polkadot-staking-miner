@@ -29,7 +29,7 @@ where
 		+ 'static,
 	T::Solution: Send,
 {
-	let mut signer = Signer::new(&config.seed_or_path)?;
+	let signer = Signer::new(&config.seed_or_path)?;
 
 	let account_info = api
 		.storage()
@@ -50,7 +50,6 @@ where
 
 	let raw_solution = RawSolution { solution, score, round };
 	let nonce = api.rpc().system_account_next_index(signer.account_id()).await?;
-	signer.set_nonce(nonce);
 
 	log::info!(
 		target: LOG_TARGET,
@@ -60,7 +59,9 @@ where
 	);
 
 	let tx = epm::signed_solution(raw_solution)?;
-	let xt = api.tx().create_signed(&tx, &*signer, ExtrinsicParams::default()).await?;
+	let xt = api
+		.tx()
+		.create_signed_with_nonce(&tx, &*signer, nonce, ExtrinsicParams::default())?;
 
 	let outcome = api.rpc().dry_run(xt.encoded(), config.at).await?;
 
