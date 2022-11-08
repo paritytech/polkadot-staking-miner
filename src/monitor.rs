@@ -110,12 +110,12 @@ fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>
 		Error::IncorrectPhase |
 		Error::TransactionRejected(_) |
 		Error::SubscriptionClosed => {},
-		Error::Subxt(SubxtError::Rpc(e)) => {
-			log::debug!(target: LOG_TARGET, "rpc error: {:?}", e);
+		Error::Subxt(SubxtError::Rpc(rpc_err)) => {
+			log::debug!(target: LOG_TARGET, "rpc error: {:?}", rpc_err);
 
-			match e {
+			match rpc_err {
 				RpcError::ClientError(e) => {
-					let e = match e.downcast::<JsonRpseeError>() {
+					let jsonrpsee_err = match e.downcast::<JsonRpseeError>() {
 						Ok(e) => *e,
 						Err(_) => {
 							let _ = tx.send(Error::Other(
@@ -126,12 +126,12 @@ fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>
 						},
 					};
 
-					match e {
+					match jsonrpsee_err {
 						JsonRpseeError::Call(CallError::Custom(e)) => {
 							const BAD_EXTRINSIC_FORMAT: i32 = 1001;
 							const VERIFICATION_ERROR: i32 = 1002;
 
-							// Check if the transaction gets fatal errors from `author` RPC.
+							// Check if the transaction gets fatal errors from the `author` RPC.
 							// It's possible to get other errors such as outdated nonce and similar
 							// but then it should be possible to try again in the next block or round.
 							if e.code() == BAD_EXTRINSIC_FORMAT || e.code() == VERIFICATION_ERROR {
