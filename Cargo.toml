@@ -20,7 +20,7 @@ tokio = { version = "1.21", features = ["macros", "rt-multi-thread", "sync", "si
 pin-project-lite = "0.2"
 
 # subxt
-subxt = "0.24.0"
+subxt = { git = "https://github.com/paritytech/subxt" }
 scale-value = "0.6.0"
 
 # substrate
