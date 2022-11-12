@@ -35,6 +35,9 @@ async fn default_trimming_works() {
 			.unwrap(),
 	);
 
+	// TODO(niklasad1): search for a log that states that trimming occurred such as
+	// 2022-11-12T15:02:25.202431Z DEBUG runtime::election-provider: 🗳 from 938 assignments, truncating to 750 for length, removing 188
+
 	loop {
 		if let Some(stdout) = miner.stdout.take() {
 			let reader = BufReader::new(stdout);
