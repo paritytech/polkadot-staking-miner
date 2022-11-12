@@ -136,7 +136,7 @@ nightly-test-notification:
   needs:                           ["nightly-test"]
   when:                            always
   script:
-    - TEST_JOB_STATUS=$(<nightly_test_result)
+    - \[ ! -f nightly_test_result \] && TEST_JOB_STATUS=failed || TEST_JOB_STATUS=$(<nightly_test_result)
     - 'curl
         -X POST
         -H "Accept: application/vnd.github+json"

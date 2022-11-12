@@ -16,15 +16,14 @@
 
 //! Wrappers or helpers for [`pallet_election_provider_multi_phase`].
 
-use crate::{opt::Solver, prelude::*, static_types};
+use crate::{helpers::RuntimeDispatchInfo, opt::Solver, prelude::*, static_types};
 use codec::{Decode, Encode};
 use frame_election_provider_support::{NposSolution, PhragMMS, SequentialPhragmen};
 use frame_support::{weights::Weight, BoundedVec};
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOf, SolutionOrSnapshotSize};
-use pallet_transaction_payment::RuntimeDispatchInfo;
 use runtime::runtime_types::pallet_election_provider_multi_phase::RoundSnapshot;
 use scale_info::{PortableRegistry, TypeInfo};
-use scale_value::scale::{decode_as_type, encode_as_type, TypeId};
+use scale_value::scale::{decode_as_type, TypeId};
 use sp_core::Bytes;
 use sp_npos_elections::ElectionScore;
 use subxt::{dynamic::Value, rpc::rpc_params, tx::DynamicTxPayload};
@@ -100,7 +99,8 @@ fn read_constant<'a, T: serde::Deserialize<'a>>(
 	let val = api
 		.constants()
 		.at(&subxt::dynamic::constant(epm_name, constant))
-		.map_err(|e| invalid_metadata_error(constant.to_string(), e))?;
+		.map_err(|e| invalid_metadata_error(constant.to_string(), e))?
+		.to_value()?;
 
 	scale_value::serde::from_value::<_, T>(val).map_err(|e| {
 		Error::InvalidMetadata(format!("Decoding `{}` failed {}", std::any::type_name::<T>(), e))
@@ -140,9 +140,7 @@ pub async fn signed_submission_at<S: NposSolution + Decode + TypeInfo + 'static>
 
 	match api.storage().fetch(&addr, Some(at)).await {
 		Ok(Some(val)) => {
-			let val = val.remove_context();
-			let v = encode_scale_value::<SignedSubmission<S>>(&val)?;
-			let submissions = Decode::decode(&mut v.as_ref())?;
+			let submissions = Decode::decode(&mut val.encoded())?;
 			Ok(Some(submissions))
 		},
 		Ok(None) => Ok(None),
@@ -236,21 +234,6 @@ fn to_scale_value<T: scale_info::TypeInfo + 'static + Encode>(val: T) -> Result<
 		})
 }
 
-fn encode_scale_value<T: TypeInfo + 'static>(val: &Value) -> Result<Vec<u8>, Error> {
-	let (ty_id, types) = make_type::<T>();
-
-	let mut bytes = Vec::new();
-
-	encode_as_type(val, ty_id, &types, &mut bytes).map_err(|e| {
-		Error::DynamicTransaction(format!(
-			"Failed to encode {}: {:?}",
-			std::any::type_name::<T>(),
-			e
-		))
-	})?;
-	Ok(bytes)
-}
-
 /// Fetch the weight for `RawSolution` from a remote node
 pub async fn runtime_api_solution_weight<S: Encode + NposSolution + TypeInfo + 'static>(
 	raw_solution: RawSolution<S>,
@@ -277,7 +260,7 @@ pub async fn runtime_api_solution_weight<S: Encode + NposSolution + TypeInfo + '
 		.request("state_call", rpc_params!["TransactionPaymentCallApi_query_call_info", call_data])
 		.await?;
 
-	let info: RuntimeDispatchInfo<Balance> = Decode::decode(&mut bytes.0.as_ref())?;
+	let info: RuntimeDispatchInfo = Decode::decode(&mut bytes.0.as_ref())?;
 
 	log::trace!(
 		target: LOG_TARGET,

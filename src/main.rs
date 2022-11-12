@@ -45,6 +45,7 @@ use futures::future::{BoxFuture, FutureExt};
 use jsonrpsee::ws_client::WsClientBuilder;
 use opt::Command;
 use prelude::*;
+use std::sync::Arc;
 use tokio::sync::oneshot;
 use tracing_subscriber::EnvFilter;
 
@@ -74,7 +75,7 @@ async fn main() -> Result<(), Error> {
 		tokio::time::sleep(std::time::Duration::from_millis(2_500)).await;
 	};
 
-	let api = SubxtClient::from_rpc_client(rpc).await?;
+	let api = SubxtClient::from_rpc_client(Arc::new(rpc)).await?;
 	let runtime_version = api.rpc().runtime_version(None).await?;
 	let chain = Chain::try_from(runtime_version)?;
 	let _prometheus_handle = prometheus::run(prometheus_port.unwrap_or(DEFAULT_PROMETHEUS_PORT))

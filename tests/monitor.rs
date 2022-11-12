@@ -6,7 +6,7 @@ pub mod common;
 use assert_cmd::cargo::cargo_bin;
 use codec::{Decode, Encode};
 use common::{init_logger, run_polkadot_node, run_staking_miner_playground, KillChildOnDrop};
-use pallet_election_provider_multi_phase::ReadySolution;
+use pallet_election_provider_multi_phase::{ElectionCompute, ReadySolution};
 use sp_storage::StorageChangeSet;
 use staking_miner::{
 	opt::Chain,
@@ -18,6 +18,7 @@ use std::{
 	time::{Duration, Instant},
 };
 use subxt::{ext::sp_core::Bytes, rpc::rpc_params};
+use tokio::time::timeout;
 
 const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(60 * 15);
 
@@ -108,13 +109,12 @@ async fn test_submit_solution(chain: Chain) {
 		process::Command::new(cargo_bin(env!("CARGO_PKG_NAME")))
 			.stdout(process::Stdio::piped())
 			.stderr(process::Stdio::piped())
-			.args(&["--uri", &ws_url, "--seed-or-path", "//Alice", "monitor", "seq-phragmen"])
+			.args(&["--uri", &ws_url, "monitor", "--seed-or-path", "//Alice", "seq-phragmen"])
 			.spawn()
 			.unwrap(),
 	);
 
 	let api = SubxtClient::from_url(&ws_url).await.unwrap();
-
 	let now = Instant::now();
 
 	let key = Bytes(
@@ -133,12 +133,19 @@ async fn test_submit_solution(chain: Chain) {
 	let mut success = false;
 
 	while now.elapsed() < MAX_DURATION_FOR_SUBMIT_SOLUTION {
-		let x: StorageChangeSet<Hash> = sub.next().await.unwrap().unwrap();
+		let x: StorageChangeSet<Hash> =
+			match timeout(MAX_DURATION_FOR_SUBMIT_SOLUTION, sub.next()).await {
+				Err(e) => panic!("Timeout exceeded: {:?}", e),
+				Ok(Some(Ok(storage))) => storage,
+				Ok(None) => panic!("Subscription closed"),
+				Ok(Some(Err(e))) => panic!("Failed to decode StorageChangeSet {:?}", e),
+			};
 
 		if let Some(data) = x.changes[0].clone().1 {
 			let solution: ReadySolution<AccountId> = Decode::decode(&mut data.0.as_slice())
 				.expect("Failed to decode storage as QueuedSolution");
-			println!("solution: {:?}", solution);
+			eprintln!("solution: {:?}", solution);
+			assert!(solution.compute == ElectionCompute::Signed);
 			success = true;
 			break
 		}

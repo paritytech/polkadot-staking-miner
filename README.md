@@ -25,7 +25,7 @@ To update the metadata you need to connect to a polkadot, kusama or westend node
 ```bash
 # Install subxt-cli
 $ cargo install --locked subxt-cli
-# Download metadata from local node and replace the current metadata
+# Download the metadata from a local node and replace the current metadata
 # See `https://github.com/paritytech/subxt/tree/master/cli` for further documentation of the `subxt-cli` tool.
 $ subxt metadata -f bytes > artifacts/metadata.scale
 # Inspect the generated code

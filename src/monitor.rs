@@ -29,7 +29,7 @@ use frame_election_provider_support::NposSolution;
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOf};
 use sp_runtime::Perbill;
 use std::sync::Arc;
-use subxt::{rpc::Subscription, tx::TxStatus};
+use subxt::{error::RpcError, rpc::Subscription, tx::TxStatus};
 use tokio::sync::Mutex;
 
 pub async fn monitor_cmd<T>(api: SubxtClient, config: MonitorConfig) -> Result<(), Error>
@@ -101,12 +101,57 @@ where
 }
 
 fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>, err: Error) {
+	use jsonrpsee::{core::Error as JsonRpseeError, types::error::CallError};
+	use subxt::Error as SubxtError;
+
 	match err {
 		Error::AlreadySubmitted |
 		Error::BetterScoreExist |
 		Error::IncorrectPhase |
 		Error::TransactionRejected(_) |
 		Error::SubscriptionClosed => {},
+		Error::Subxt(SubxtError::Rpc(rpc_err)) => {
+			log::debug!(target: LOG_TARGET, "rpc error: {:?}", rpc_err);
+
+			match rpc_err {
+				RpcError::ClientError(e) => {
+					let jsonrpsee_err = match e.downcast::<JsonRpseeError>() {
+						Ok(e) => *e,
+						Err(_) => {
+							let _ = tx.send(Error::Other(
+								"Failed to downcast RPC error; this is a bug please file an issue"
+									.to_string(),
+							));
+							return
+						},
+					};
+
+					match jsonrpsee_err {
+						JsonRpseeError::Call(CallError::Custom(e)) => {
+							const BAD_EXTRINSIC_FORMAT: i32 = 1001;
+							const VERIFICATION_ERROR: i32 = 1002;
+
+							// Check if the transaction gets fatal errors from the `author` RPC.
+							// It's possible to get other errors such as outdated nonce and similar
+							// but then it should be possible to try again in the next block or round.
+							if e.code() == BAD_EXTRINSIC_FORMAT || e.code() == VERIFICATION_ERROR {
+								let _ = tx.send(Error::Subxt(SubxtError::Rpc(
+									RpcError::ClientError(Box::new(CallError::Custom(e))),
+								)));
+							}
+						},
+						JsonRpseeError::Call(CallError::Failed(_)) => {},
+						JsonRpseeError::RequestTimeout => {},
+						err => {
+							let _ = tx.send(Error::Subxt(SubxtError::Rpc(RpcError::ClientError(
+								Box::new(err),
+							))));
+						},
+					}
+				},
+				RpcError::SubscriptionDropped => (),
+			}
+		},
 		err => {
 			let _ = tx.send(err);
 		},
@@ -118,7 +163,7 @@ async fn mine_and_submit_solution<T>(
 	tx: tokio::sync::mpsc::UnboundedSender<Error>,
 	at: Header,
 	api: SubxtClient,
-	mut signer: Signer,
+	signer: Signer,
 	config: MonitorConfig,
 	submit_lock: Arc<Mutex<()>>,
 ) where
@@ -141,7 +186,6 @@ async fn mine_and_submit_solution<T>(
 			return
 		},
 	};
-	signer.set_nonce(nonce);
 
 	if let Err(e) = ensure_signed_phase(&api, hash).await {
 		log::debug!(
@@ -248,7 +292,7 @@ async fn mine_and_submit_solution<T>(
 		return
 	}
 
-	match ensure_no_better_solution(&api, best_head, score, config.submission_strategy)
+	match ensure_solution_passes_strategy(&api, best_head, score, config.submission_strategy)
 		.timed()
 		.await
 	{
@@ -272,7 +316,7 @@ async fn mine_and_submit_solution<T>(
 	};
 
 	prometheus::on_submission_attempt();
-	match submit_and_watch_solution::<T>(&api, signer, (solution, score, round), hash)
+	match submit_and_watch_solution::<T>(&api, signer, (solution, score, round), hash, nonce)
 		.timed()
 		.await
 	{
@@ -321,7 +365,7 @@ where
 	let addr = runtime::storage().election_provider_multi_phase().signed_submission_indices();
 	let indices = api.storage().fetch_or_default(&addr, Some(at)).await?;
 
-	for (_score, idx) in indices.0 {
+	for (_score, _, idx) in indices.0 {
 		let submission = epm::signed_submission_at::<T>(idx, at, api).await?;
 
 		if let Some(submission) = submission {
@@ -334,31 +378,31 @@ where
 	Ok(())
 }
 
-async fn ensure_no_better_solution(
+async fn ensure_solution_passes_strategy(
 	api: &SubxtClient,
 	at: Hash,
 	score: sp_npos_elections::ElectionScore,
 	strategy: SubmissionStrategy,
 ) -> Result<(), Error> {
-	let epsilon = match strategy {
-		// don't care about current scores.
-		SubmissionStrategy::Always => return Ok(()),
-		SubmissionStrategy::IfLeading => Perbill::zero(),
-		SubmissionStrategy::ClaimBetterThan(epsilon) => epsilon,
-	};
+	// don't care about current scores.
+	if matches!(strategy, SubmissionStrategy::Always) {
+		return Ok(())
+	}
 
 	let addr = runtime::storage().election_provider_multi_phase().signed_submission_indices();
 	let indices = api.storage().fetch_or_default(&addr, Some(at)).await?;
 
 	log::debug!(target: LOG_TARGET, "submitted solutions: {:?}", indices.0);
 
-	for (other_score, _) in indices.0 {
-		if !score.strict_threshold_better(other_score, epsilon) {
-			return Err(Error::BetterScoreExist)
-		}
+	if indices
+		.0
+		.last()
+		.map_or(true, |(best_score, _, _)| score_passes_strategy(score, *best_score, strategy))
+	{
+		Ok(())
+	} else {
+		Err(Error::BetterScoreExist)
 	}
-
-	Ok(())
 }
 
 async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
@@ -366,14 +410,18 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 	signer: Signer,
 	(solution, score, round): (SolutionOf<T>, sp_npos_elections::ElectionScore, u32),
 	hash: Hash,
+	nonce: u32,
 ) -> Result<(), Error> {
 	let tx = epm::signed_solution(RawSolution { solution, score, round })?;
 
-	let mut status_sub =
-		api.tx().sign_and_submit_then_watch_default(&tx, &*signer).await.map_err(|e| {
-			log::warn!(target: LOG_TARGET, "submit solution failed: {:?}", e);
-			e
-		})?;
+	let xt = api
+		.tx()
+		.create_signed_with_nonce(&tx, &*signer, nonce, ExtrinsicParams::default())?;
+
+	let mut status_sub = xt.submit_and_watch().await.map_err(|e| {
+		log::warn!(target: LOG_TARGET, "submit solution failed: {:?}", e);
+		e
+	})?;
 
 	loop {
 		let status = match status_sub.next_item().await {
@@ -427,8 +475,8 @@ async fn heads_subscription(
 	listen: Listen,
 ) -> Result<Subscription<Header>, Error> {
 	match listen {
-		Listen::Head => api.rpc().subscribe_blocks().await,
-		Listen::Finalized => api.rpc().subscribe_finalized_blocks().await,
+		Listen::Head => api.rpc().subscribe_best_block_headers().await,
+		Listen::Finalized => api.rpc().subscribe_finalized_block_headers().await,
 	}
 	.map_err(Into::into)
 }
@@ -441,5 +489,66 @@ async fn get_latest_head(api: &SubxtClient, listen: Listen) -> Result<Hash, Erro
 			Err(e) => Err(e.into()),
 		},
 		Listen::Finalized => api.rpc().finalized_head().await.map_err(Into::into),
+	}
+}
+
+/// Returns `true` if `our_score` better the onchain `best_score` according the given strategy.
+pub(crate) fn score_passes_strategy(
+	our_score: sp_npos_elections::ElectionScore,
+	best_score: sp_npos_elections::ElectionScore,
+	strategy: SubmissionStrategy,
+) -> bool {
+	match strategy {
+		SubmissionStrategy::Always => true,
+		SubmissionStrategy::IfLeading =>
+			our_score == best_score ||
+				our_score.strict_threshold_better(best_score, Perbill::zero()),
+		SubmissionStrategy::ClaimBetterThan(epsilon) =>
+			our_score.strict_threshold_better(best_score, epsilon),
+		SubmissionStrategy::ClaimNoWorseThan(epsilon) =>
+			!best_score.strict_threshold_better(our_score, epsilon),
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn score_passes_strategy_works() {
+		let s = |x| sp_npos_elections::ElectionScore { minimal_stake: x, ..Default::default() };
+		let two = Perbill::from_percent(2);
+
+		// anything passes Always
+		assert!(score_passes_strategy(s(0), s(0), SubmissionStrategy::Always));
+		assert!(score_passes_strategy(s(5), s(0), SubmissionStrategy::Always));
+		assert!(score_passes_strategy(s(5), s(10), SubmissionStrategy::Always));
+
+		// if leading
+		assert!(score_passes_strategy(s(0), s(0), SubmissionStrategy::IfLeading));
+		assert!(score_passes_strategy(s(1), s(0), SubmissionStrategy::IfLeading));
+		assert!(score_passes_strategy(s(2), s(0), SubmissionStrategy::IfLeading));
+		assert!(!score_passes_strategy(s(5), s(10), SubmissionStrategy::IfLeading));
+		assert!(!score_passes_strategy(s(9), s(10), SubmissionStrategy::IfLeading));
+		assert!(score_passes_strategy(s(10), s(10), SubmissionStrategy::IfLeading));
+
+		// if better by 2%
+		assert!(!score_passes_strategy(s(50), s(100), SubmissionStrategy::ClaimBetterThan(two)));
+		assert!(!score_passes_strategy(s(100), s(100), SubmissionStrategy::ClaimBetterThan(two)));
+		assert!(!score_passes_strategy(s(101), s(100), SubmissionStrategy::ClaimBetterThan(two)));
+		assert!(!score_passes_strategy(s(102), s(100), SubmissionStrategy::ClaimBetterThan(two)));
+		assert!(score_passes_strategy(s(103), s(100), SubmissionStrategy::ClaimBetterThan(two)));
+		assert!(score_passes_strategy(s(150), s(100), SubmissionStrategy::ClaimBetterThan(two)));
+
+		// if no less than 2% worse
+		assert!(!score_passes_strategy(s(50), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
+		assert!(!score_passes_strategy(s(97), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
+		assert!(score_passes_strategy(s(98), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
+		assert!(score_passes_strategy(s(99), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
+		assert!(score_passes_strategy(s(100), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
+		assert!(score_passes_strategy(s(101), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
+		assert!(score_passes_strategy(s(102), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
+		assert!(score_passes_strategy(s(103), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
+		assert!(score_passes_strategy(s(150), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
 	}
 }

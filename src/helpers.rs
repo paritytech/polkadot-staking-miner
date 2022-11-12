@@ -14,7 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
+use codec::Decode;
+use frame_support::weights::Weight;
 use pin_project_lite::pin_project;
+use serde::Deserialize;
 use std::{
 	future::Future,
 	pin::Pin,
@@ -60,3 +63,13 @@ pub trait TimedFuture: Sized + Future {
 }
 
 impl<F: Future> TimedFuture for F {}
+
+/// Custom `RuntimeDispatchInfo` type definition similar to
+/// what is in substrate but only tries to decode the `weight` field.
+///
+/// All other fields are not used by the staking miner.
+#[derive(Decode, Default, Debug, Deserialize)]
+pub struct RuntimeDispatchInfo {
+	/// Weight of this dispatch.
+	pub weight: Weight,
+}

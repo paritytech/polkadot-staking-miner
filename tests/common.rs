@@ -72,7 +72,7 @@ pub fn run_polkadot_node(chain: Chain) -> (KillChildOnDrop, String) {
 				"--alice",
 				"--execution",
 				"Native",
-				"--offchain-worker=Always",
+				"--offchain-worker=Never",
 			])
 			.spawn()
 			.unwrap(),
