@@ -179,7 +179,10 @@ pub mod block_weight {
 	pub struct ConfigurableBlockWeight;
 	impl Get<limits::BlockWeights> for ConfigurableBlockWeight {
 		fn get() -> limits::BlockWeights {
-			limits::BlockWeights::simple_max(Weight::from_ref_time(get()))
+			// TODO(niklasad1):
+			// limits::BlockWeights::simple_max(frame_support::weights::Weight::from_ref_time(get()));
+			// panics ^^
+			limits::BlockWeights::default()
 		}
 	}
 }
@@ -196,6 +199,7 @@ impl frame_system::Config for Runtime {
 	type BlockLength = block_length::ConfigurableBlockLength;
 	type AccountId = AccountId;
 	type RuntimeCall = RuntimeCall;
+	type RuntimeOrigin = RuntimeOrigin;
 	type Lookup = AccountIdLookup<AccountId, ()>;
 	type Index = Index;
 	type BlockNumber = BlockNumber;
@@ -203,7 +207,6 @@ impl frame_system::Config for Runtime {
 	type Hashing = BlakeTwo256;
 	type Header = generic::Header<BlockNumber, BlakeTwo256>;
 	type RuntimeEvent = RuntimeEvent;
-	type Origin = Origin;
 	type BlockHashCount = BlockHashCount;
 	type DbWeight = RocksDbWeight;
 	type Version = Version;
@@ -423,6 +426,7 @@ parameter_types! {
 	pub const MaxNominatorRewardedPerValidator: u32 = 256;
 	pub const OffendingValidatorsThreshold: Perbill = Perbill::from_percent(17);
 	pub Lookahead: BlockNumber = 5u32.into();
+	pub HistoryDepth: u32 = 84;
 }
 pub struct StakingBenchmarkingConfig;
 impl pallet_staking::BenchmarkingConfig for StakingBenchmarkingConfig {
@@ -467,12 +471,14 @@ impl pallet_staking::Config for Runtime {
 	type MaxNominatorRewardedPerValidator = MaxNominatorRewardedPerValidator;
 	type OffendingValidatorsThreshold = OffendingValidatorsThreshold;
 	type ElectionProvider = ElectionProviderMultiPhase;
-	type GenesisElectionProvider = onchain::UnboundedExecution<OnChainSeqPhragmen>;
+	type GenesisElectionProvider = onchain::OnChainExecution<OnChainSeqPhragmen>;
 	// Alternatively, use pallet_staking::UseNominatorsMap<Runtime> to just use the nominators map.
 	// Note that the aforementioned does not scale to a very large number of nominators.
 	type VoterList = BagsList;
 	type WeightInfo = pallet_staking::weights::SubstrateWeight<Runtime>;
 	type BenchmarkingConfig = StakingBenchmarkingConfig;
+	type HistoryDepth = HistoryDepth;
+	type TargetList = pallet_staking::UseValidatorsMap<Self>;
 }
 
 parameter_types! {
@@ -534,6 +540,12 @@ parameter_types! {
 		frame_election_provider_support::NposSolution
 	>::LIMIT as u32;
 	pub const MaxElectingVoters: u32 = 25_000;
+	pub MaxOnChainElectingVoters: u32 = 5000;
+	pub MaxOnChainElectableTargets: u16 = 1250;
+	// The maximum winners that can be elected by the Election pallet which is equivalent to the
+	// maximum active validators the staking pallet can have.
+	pub MaxActiveValidators: u32 = 1000;
+
 }
 
 /// The numbers configured here could always be more than the the maximum limits of staking pallet
@@ -559,11 +571,9 @@ impl onchain::Config for OnChainSeqPhragmen {
 	>;
 	type DataProvider = <Runtime as pallet_election_provider_multi_phase::Config>::DataProvider;
 	type WeightInfo = frame_election_provider_support::weights::SubstrateWeight<Runtime>;
-}
-
-impl onchain::BoundedConfig for OnChainSeqPhragmen {
-	type VotersBound = MaxElectingVoters;
-	type TargetsBound = ConstU32<2_000>;
+	type MaxWinners = <Runtime as pallet_election_provider_multi_phase::Config>::MaxWinners;
+	type VotersBound = MaxOnChainElectingVoters;
+	type TargetsBound = MaxOnChainElectableTargets;
 }
 
 impl pallet_election_provider_multi_phase::MinerConfig for Runtime {
@@ -621,13 +631,14 @@ impl pallet_election_provider_multi_phase::Config for Runtime {
 	type SlashHandler = (); // burn slashes
 	type RewardHandler = (); // nothing to do upon rewards
 	type DataProvider = Staking;
-	type Fallback = onchain::BoundedExecution<OnChainSeqPhragmen>;
-	type GovernanceFallback = onchain::BoundedExecution<OnChainSeqPhragmen>;
+	type Fallback = onchain::OnChainExecution<OnChainSeqPhragmen>;
+	type GovernanceFallback = onchain::OnChainExecution<OnChainSeqPhragmen>;
 	type Solver = SequentialPhragmen<AccountId, SolutionAccuracyOf<Self>, ()>;
 	type WeightInfo = pallet_election_provider_multi_phase::weights::SubstrateWeight<Self>;
 	type ForceOrigin = EnsureRoot<Self::AccountId>;
 	type MaxElectableTargets = ConstU16<{ u16::MAX }>;
 	type MaxElectingVoters = MaxElectingVoters;
+	type MaxWinners = MaxActiveValidators;
 	// type MaxElectingVoters = IncPerRound<10_000, 1000>;
 	type BenchmarkingConfig = ElectionProviderBenchmarkConfig;
 }
