@@ -136,7 +136,7 @@ pub fn native_version() -> NativeVersion {
 }
 
 sp_api::decl_runtime_apis! {
-	pub trait TestConfig {
+	pub trait TestConfigApi {
 		fn set_length(len: u32);
 		fn set_weight(weight: u64);
 	}
@@ -179,9 +179,19 @@ pub mod block_weight {
 	pub struct ConfigurableBlockWeight;
 	impl Get<limits::BlockWeights> for ConfigurableBlockWeight {
 		fn get() -> limits::BlockWeights {
-			// TODO(niklasad1):
-			// limits::BlockWeights::simple_max(frame_support::weights::Weight::from_ref_time(get()));
-			// panics ^^
+			// limits::BlockWeights::simple_max(frame_support::weights::Weight::from_ref_time(get()))
+			//
+			// TODO(niklasad1): I don't understand why this panics, seems to works in substrate
+			//
+			// ```bash
+			// Thread 'tokio-runtime-worker' panicked at 'We only specify max_total and leave base values as defaults; qed: ValidationErrors { has_errors: true, errors: ["[DispatchClass::Normal] Weight { ref_time: 10000000000, proof_size: 0 } (total)
+			// has to be greater than Weight { ref_time: 0, proof_size: 0 } (base block) & Weight { ref_time: 0, proof_size: 0 } (base extrinsic)", "[DispatchClass::Normal] Weight { ref_time: 10000000000, proof_size: 0 }
+			// (max block) must fit at least one extrinsic Weight { ref_time: 0, proof_size: 0 } (base weight)", "[DispatchClass::Operational] Weight { ref_time: 10000000000, proof_size: 0 } (total) has to be greater than Weight { ref_time: 0, proof_size: 0 }
+			// (base block) & Weight { ref_time: 0, proof_size: 0 } (base extrinsic)", "[DispatchClass::Operational] Weight { ref_time: 10000000000, proof_size: 0 } (max block) must fit at least one extrinsic Weight { ref_time: 0, proof_size: 0 } (base weight)",
+			// "[DispatchClass::Mandatory] Weight { ref_time: 10000000000, proof_size: 0 } (max block) must fit at least one extrinsic Weight { ref_time: 0, proof_size: 0 } (base weight)"] }'
+			// ````
+
+			// HACK for now which makes it not possible to configure the block weight via RPC.
 			limits::BlockWeights::default()
 		}
 	}
@@ -674,7 +684,6 @@ construct_runtime!(
 		BagsList: pallet_bags_list,
 		Session: pallet_session,
 		TransactionPayment: pallet_transaction_payment,
-
 		ElectionProviderMultiPhase: election_multi_phase,
 	}
 );
@@ -849,7 +858,7 @@ impl_runtime_apis! {
 		}
 	}
 
-	impl crate::TestConfig<Block> for Runtime {
+	impl crate::TestConfigApi<Block> for Runtime {
 		fn set_length(len: u32) {
 			block_length::set(len)
 		}

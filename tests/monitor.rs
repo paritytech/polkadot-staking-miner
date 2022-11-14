@@ -7,6 +7,7 @@ use assert_cmd::cargo::cargo_bin;
 use codec::{Decode, Encode};
 use common::{init_logger, run_polkadot_node, run_staking_miner_playground, KillChildOnDrop};
 use pallet_election_provider_multi_phase::{ElectionCompute, ReadySolution};
+use regex::Regex;
 use sp_storage::StorageChangeSet;
 use staking_miner::{
 	opt::Chain,
@@ -25,7 +26,7 @@ const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(60 * 15);
 #[tokio::test]
 async fn default_trimming_works() {
 	let (_drop, ws_url) = run_staking_miner_playground();
-	let mut miner = KillChildOnDrop(
+	let miner = KillChildOnDrop(
 		process::Command::new(cargo_bin(env!("CARGO_PKG_NAME")))
 			.stdout(process::Stdio::piped())
 			.stderr(process::Stdio::piped())
@@ -35,32 +36,13 @@ async fn default_trimming_works() {
 			.unwrap(),
 	);
 
-	// TODO(niklasad1): search for a log that states that trimming occurred such as
-	// 2022-11-12T15:02:25.202431Z DEBUG runtime::election-provider: 🗳 from 938 assignments, truncating to 750 for length, removing 188
-
-	loop {
-		if let Some(stdout) = miner.stdout.take() {
-			let reader = BufReader::new(stdout);
-			reader
-				.lines()
-				.filter_map(|line| line.ok())
-				.for_each(|line| println!("OUT: {}", line));
-		}
-
-		if let Some(stderr) = miner.stderr.take() {
-			let reader = BufReader::new(stderr);
-			reader
-				.lines()
-				.filter_map(|line| line.ok())
-				.for_each(|line| println!("ERR: {}", line));
-		}
-	}
+	assert!(has_trimming_output(miner));
 }
 
 #[tokio::test]
 async fn constants_updated_on_the_fly() {
 	let (_drop, ws_url) = run_staking_miner_playground();
-	let mut miner = KillChildOnDrop(
+	let miner = KillChildOnDrop(
 		process::Command::new(cargo_bin(env!("CARGO_PKG_NAME")))
 			.stdout(process::Stdio::piped())
 			.stderr(process::Stdio::piped())
@@ -71,30 +53,25 @@ async fn constants_updated_on_the_fly() {
 	);
 
 	let api = SubxtClient::from_url(&ws_url).await.unwrap();
-	let call_data = Bytes(1024u32.encode());
 	let _ = api
 		.rpc()
-		.request::<()>("state_call", rpc_params!["TestApi_set_length", call_data])
+		.request::<Bytes>(
+			"state_call",
+			rpc_params!["TestConfigApi_set_length", Bytes(1024_u32.encode())],
+		)
 		.await
 		.unwrap();
 
-	loop {
-		if let Some(stdout) = miner.stdout.take() {
-			let reader = BufReader::new(stdout);
-			reader
-				.lines()
-				.filter_map(|line| line.ok())
-				.for_each(|line| println!("OUT: {}", line));
-		}
+	let _ = api
+		.rpc()
+		.request::<Bytes>(
+			"state_call",
+			rpc_params!["TestConfigApi_set_weight", Bytes(2048_u64.encode())],
+		)
+		.await
+		.unwrap();
 
-		if let Some(stderr) = miner.stderr.take() {
-			let reader = BufReader::new(stderr);
-			reader
-				.lines()
-				.filter_map(|line| line.ok())
-				.for_each(|line| println!("ERR: {}", line));
-		}
-	}
+	assert!(has_trimming_output(miner));
 }
 
 #[tokio::test]
@@ -155,4 +132,50 @@ async fn test_submit_solution(chain: Chain) {
 	}
 
 	assert!(success);
+}
+
+// Helper that parses the CLI output to find logging outputs based on the following:
+//
+// i) DEBUG runtime::election-provider: 🗳 from 934 assignments, truncating to 1501 for weight, removing 0
+// ii) DEBUG runtime::election-provider: 🗳 from 931 assignments, truncating to 755 for length, removing 176
+//
+// Thus, the only way to ensure that trimming actually works.
+fn has_trimming_output(mut miner: KillChildOnDrop) -> bool {
+	let trimming_re = Regex::new(
+		r#"from (\d+) assignments, truncating to (\d+) for (?P<target>weight|length), removing (\d+)"#,
+	)
+	.unwrap();
+
+	let mut got_truncate_len = false;
+	let mut got_truncate_weight = false;
+
+	let now = Instant::now();
+
+	while !got_truncate_weight || !got_truncate_len {
+		let stdout = miner.stdout.take().unwrap();
+		for line in BufReader::new(stdout).lines() {
+			let line = line.unwrap();
+			println!("OK: {}", line);
+
+			if let Some(caps) = trimming_re.captures(&line) {
+				if caps.name("target").unwrap().as_str() == "weight" {
+					got_truncate_weight = true;
+				}
+
+				if caps.name("target").unwrap().as_str() == "length" {
+					got_truncate_len = true;
+				}
+			}
+
+			if got_truncate_weight && got_truncate_len {
+				return true
+			}
+
+			if now.elapsed() > Duration::from_secs(5 * 60) {
+				break
+			}
+		}
+	}
+
+	false
 }
