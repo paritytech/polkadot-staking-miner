@@ -181,7 +181,7 @@ pub mod block_weight {
 		fn get() -> limits::BlockWeights {
 			// limits::BlockWeights::simple_max(frame_support::weights::Weight::from_ref_time(get()))
 			//
-			// TODO(niklasad1): I don't understand why this panics, seems to works in substrate
+			// TODO(niklasad1): I don't understand why this panics, seems to work in substrate
 			//
 			// ```bash
 			// Thread 'tokio-runtime-worker' panicked at 'We only specify max_total and leave base values as defaults; qed: ValidationErrors { has_errors: true, errors: ["[DispatchClass::Normal] Weight { ref_time: 10000000000, proof_size: 0 } (total)
