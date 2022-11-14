@@ -15,8 +15,8 @@ default:
       - api_failure
 
 variables:
-  # change to production after https://github.com/paritytech/ci_cd/issues/535 is closed
-  CI_IMAGE:                        "paritytech/ci-linux:staging"
+  CI_IMAGE:                        "paritytech/ci-linux:production"
+  BUILDAH_IMAGE:                   "quay.io/buildah/stable:v1.27"
 
 .common-refs:                      &common-refs
   rules:
@@ -168,7 +168,7 @@ build-push-image:
   stage:                           publish
   <<:                              *kubernetes-env
   <<:                              *publish-refs
-  image:                           quay.io/buildah/stable
+  image:                           $BUILDAH_IMAGE
   variables:
     GIT_STRATEGY:                  none
     DOCKER_USER:                   $Docker_Hub_User_Parity
