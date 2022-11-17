@@ -6,7 +6,6 @@ pub mod common;
 use assert_cmd::cargo::cargo_bin;
 use codec::Decode;
 use common::{init_logger, run_polkadot_node, KillChildOnDrop};
-use pallet_election_provider_multi_phase::{ElectionCompute, ReadySolution};
 use sp_storage::StorageChangeSet;
 use staking_miner::{
 	opt::Chain,
@@ -30,8 +29,11 @@ async fn submit_monitor_works() {
 }
 
 async fn test_submit_solution(chain: Chain) {
-	let (_drop, ws_url) = run_polkadot_node(chain);
+	use runtime::runtime_types::pallet_election_provider_multi_phase::{
+		ElectionCompute, ReadySolution,
+	};
 
+	let (_drop, ws_url) = run_polkadot_node(chain);
 	let crate_name = env!("CARGO_PKG_NAME");
 
 	let _miner = KillChildOnDrop(
