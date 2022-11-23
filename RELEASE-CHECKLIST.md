@@ -41,7 +41,7 @@ We also assume that ongoing work done is being merged directly to the `main` bra
     git clone https://github.com/paritytech/polkadot && cd polkadot
     git checkout v0.9.33 # use the release you want to test against
     cargo build --features fast-runtime
-    cp ./target/debug/polkadot /usr/local/bin/polkadot #have the polkadot binary in your path
+    cp ./target/debug/polkadot /usr/local/bin/polkadot # have the polkadot binary in your path requires by the tests.
     cd .. # assumes you were in the staking-miner repo
     cargo test --features slow-tests -- --nocapture
     ```
