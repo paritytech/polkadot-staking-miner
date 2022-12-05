@@ -316,9 +316,16 @@ async fn mine_and_submit_solution<T>(
 	};
 
 	prometheus::on_submission_attempt();
-	match submit_and_watch_solution::<T>(&api, signer, (solution, score, round), hash, nonce)
-		.timed()
-		.await
+	match submit_and_watch_solution::<T>(
+		&api,
+		signer,
+		(solution, score, round),
+		hash,
+		nonce,
+		config.listen,
+	)
+	.timed()
+	.await
 	{
 		(Ok(_), now) => {
 			prometheus::on_submission_success();
@@ -411,6 +418,7 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 	(solution, score, round): (SolutionOf<T>, sp_npos_elections::ElectionScore, u32),
 	hash: Hash,
 	nonce: u32,
+	listen: Listen,
 ) -> Result<(), Error> {
 	let tx = epm::signed_solution(RawSolution { solution, score, round })?;
 
@@ -448,11 +456,13 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 						.find_first::<runtime::election_provider_multi_phase::events::SolutionStored>(
 						);
 
-				return if let Ok(Some(_)) = solution_stored {
+				if let Ok(Some(_)) = solution_stored {
 					log::info!(target: LOG_TARGET, "Included at {:?}", details.block_hash());
-					Ok(())
+					if let Listen::Head = listen {
+						return Ok(())
+					}
 				} else {
-					Err(Error::Other(format!(
+					return Err(Error::Other(format!(
 						"No SolutionStored event found at {:?}",
 						details.block_hash()
 					)))
