@@ -27,7 +27,6 @@ Tested against:
 - Kusama v9330
 - Westend v9330
 
-
 ## [v0.1.0] - 2022-11-23
 
 The first release of staking miner v2.
