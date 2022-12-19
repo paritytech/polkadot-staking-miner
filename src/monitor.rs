@@ -173,8 +173,11 @@ async fn mine_and_submit_solution<T>(
 		+ 'static,
 	T::Solution: Send,
 {
+	let _lock = submit_lock.lock().await;
 	let hash = at.hash();
 	log::trace!(target: LOG_TARGET, "new event at #{:?} ({:?})", at.number, hash);
+
+	tokio::time::sleep(std::time::Duration::from_secs(config.delay as u64)).await;
 
 	// NOTE: as we try to send at each block then the nonce is used guard against
 	// submitting twice. Because once a solution has been accepted on chain
@@ -214,8 +217,6 @@ async fn mine_and_submit_solution<T>(
 			return
 		},
 	};
-
-	let _lock = submit_lock.lock().await;
 
 	if let Err(e) =
 		ensure_no_previous_solution::<T::Solution>(&api, hash, signer.account_id()).await

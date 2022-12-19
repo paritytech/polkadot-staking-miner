@@ -223,6 +223,17 @@ pub struct MonitorConfig {
 	/// configured, it might re-try and lose funds through transaction fees/deposits.
 	#[clap(long, short, env = "SEED")]
 	pub seed_or_path: String,
+
+	/// Delay in number seconds to wait until starting mining a solution.
+	///
+	/// At every block when a solution is attempted
+	/// a delay can be enforced to avoid submitting at
+	/// "same time" and risk potential races with other miners.
+	///
+	/// When this is enabled and there are competing solutions, your solution might not be submitted
+	/// if the scores are equal.
+	#[clap(long, default_value_t = 0)]
+	pub delay: usize,
 }
 
 #[derive(Debug, Clone, Parser)]
@@ -280,4 +291,11 @@ pub struct Opt {
 	/// The prometheus endpoint TCP port.
 	#[clap(long, short, env = "PROMETHEUS_PORT")]
 	pub prometheus_port: Option<u16>,
+
+	/// Sets a custom logging filter. Syntax is `<target>=<level>`, e.g. -lstaking-miner=debug.
+	///
+	/// Log levels (least to most verbose) are error, warn, info, debug, and trace.
+	/// By default, all targets log `info`. The global log level can be set with `-l<level>`.
+	#[clap(long, short, default_value = "info")]
+	pub log: String,
 }

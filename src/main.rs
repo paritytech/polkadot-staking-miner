@@ -51,9 +51,13 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-	tracing_subscriber::fmt().with_env_filter(EnvFilter::from_default_env()).init();
+	let Opt { uri, command, prometheus_port, log } = Opt::parse();
 
-	let Opt { uri, command, prometheus_port } = Opt::parse();
+	tracing_subscriber::fmt()
+		.with_env_filter(EnvFilter::from_default_env())
+		.with_env_filter(log)
+		.init();
+
 	log::debug!(target: LOG_TARGET, "attempting to connect to {:?}", uri);
 
 	let rpc = loop {
@@ -213,6 +217,8 @@ mod tests {
 			"//Alice",
 			"--listen",
 			"head",
+			"--delay",
+			"12",
 			"seq-phragmen",
 		])
 		.unwrap();
@@ -227,6 +233,7 @@ mod tests {
 					solver: Solver::SeqPhragmen { iterations: 10 },
 					submission_strategy: SubmissionStrategy::IfLeading,
 					seed_or_path: "//Alice".to_string(),
+					delay: 12,
 				}),
 			}
 		);
