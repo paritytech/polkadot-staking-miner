@@ -215,8 +215,6 @@ async fn mine_and_submit_solution<T>(
 		},
 	};
 
-	let _lock = submit_lock.lock().await;
-
 	if let Err(e) =
 		ensure_no_previous_solution::<T::Solution>(&api, hash, signer.account_id()).await
 	{
@@ -230,6 +228,8 @@ async fn mine_and_submit_solution<T>(
 		kill_main_task_if_critical_err(&tx, e);
 		return
 	}
+
+	let _lock = submit_lock.lock().await;
 
 	let (solution, score) =
 		match epm::fetch_snapshot_and_mine_solution::<T>(&api, Some(hash), config.solver)
@@ -288,6 +288,20 @@ async fn mine_and_submit_solution<T>(
 			e,
 			at.number
 		);
+		kill_main_task_if_critical_err(&tx, e);
+		return
+	}
+
+	if let Err(e) =
+		ensure_no_previous_solution::<T::Solution>(&api, best_head, signer.account_id()).await
+	{
+		log::debug!(
+			target: LOG_TARGET,
+			"ensure_no_previous_solution failed: {:?}; skipping block: {:?}",
+			e,
+			best_head,
+		);
+
 		kill_main_task_if_critical_err(&tx, e);
 		return
 	}
@@ -425,6 +439,14 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 	let xt = api
 		.tx()
 		.create_signed_with_nonce(&tx, &*signer, nonce, ExtrinsicParams::default())?;
+
+	let outcome = api.rpc().dry_run(xt.encoded(), None).await?;
+
+	match outcome {
+		Ok(Ok(())) => (),
+		Ok(Err(e)) => return Err(Error::TransactionRejected(format!("{:?}", e))),
+		Err(e) => return Err(Error::TransactionRejected(e.to_string())),
+	};
 
 	let mut status_sub = xt.submit_and_watch().await.map_err(|e| {
 		log::warn!(target: LOG_TARGET, "submit solution failed: {:?}", e);
