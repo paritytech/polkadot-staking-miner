@@ -130,11 +130,15 @@ fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>
 						JsonRpseeError::Call(CallError::Custom(e)) => {
 							const BAD_EXTRINSIC_FORMAT: i32 = 1001;
 							const VERIFICATION_ERROR: i32 = 1002;
+							use jsonrpsee::types::error::ErrorCode;
 
 							// Check if the transaction gets fatal errors from the `author` RPC.
 							// It's possible to get other errors such as outdated nonce and similar
 							// but then it should be possible to try again in the next block or round.
-							if e.code() == BAD_EXTRINSIC_FORMAT || e.code() == VERIFICATION_ERROR {
+							if e.code() == BAD_EXTRINSIC_FORMAT ||
+								e.code() == VERIFICATION_ERROR || e.code() ==
+								ErrorCode::MethodNotFound.code()
+							{
 								let _ = tx.send(Error::Subxt(SubxtError::Rpc(
 									RpcError::ClientError(Box::new(CallError::Custom(e))),
 								)));
@@ -337,6 +341,7 @@ async fn mine_and_submit_solution<T>(
 		hash,
 		nonce,
 		config.listen,
+		config.dry_run,
 	)
 	.timed()
 	.await
@@ -433,6 +438,7 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 	hash: Hash,
 	nonce: u32,
 	listen: Listen,
+	dry_run: bool,
 ) -> Result<(), Error> {
 	let tx = epm::signed_solution(RawSolution { solution, score, round })?;
 
@@ -440,13 +446,13 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 		.tx()
 		.create_signed_with_nonce(&tx, &*signer, nonce, ExtrinsicParams::default())?;
 
-	let outcome = api.rpc().dry_run(xt.encoded(), None).await?;
-
-	match outcome {
-		Ok(Ok(())) => (),
-		Ok(Err(e)) => return Err(Error::TransactionRejected(format!("{:?}", e))),
-		Err(e) => return Err(Error::TransactionRejected(e.to_string())),
-	};
+	if dry_run {
+		match api.rpc().dry_run(xt.encoded(), None).await? {
+			Ok(Ok(())) => (),
+			Ok(Err(e)) => return Err(Error::TransactionRejected(format!("{:?}", e))),
+			Err(e) => return Err(Error::TransactionRejected(e.to_string())),
+		};
+	}
 
 	let mut status_sub = xt.submit_and_watch().await.map_err(|e| {
 		log::warn!(target: LOG_TARGET, "submit solution failed: {:?}", e);

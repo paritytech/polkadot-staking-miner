@@ -227,6 +227,7 @@ mod tests {
 					solver: Solver::SeqPhragmen { iterations: 10 },
 					submission_strategy: SubmissionStrategy::IfLeading,
 					seed_or_path: "//Alice".to_string(),
+					dry_run: false,
 				}),
 			}
 		);

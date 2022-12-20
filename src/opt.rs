@@ -223,6 +223,13 @@ pub struct MonitorConfig {
 	/// configured, it might re-try and lose funds through transaction fees/deposits.
 	#[clap(long, short, env = "SEED")]
 	pub seed_or_path: String,
+
+	/// Verify the submission by `dry-run` the extrinsic to check the validity.
+	/// If it fails then the block is ignored.
+	///
+	/// This requires a RPC endpoint that exposes unsafe RPC methods.
+	#[clap(long)]
+	pub dry_run: bool,
 }
 
 #[derive(Debug, Clone, Parser)]
