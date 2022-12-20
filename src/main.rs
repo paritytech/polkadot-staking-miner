@@ -228,6 +228,7 @@ mod tests {
 			Opt {
 				uri: "hi".to_string(),
 				prometheus_port: Some(9999),
+				log: "info".to_string(),
 				command: Command::Monitor(MonitorConfig {
 					listen: Listen::Head,
 					solver: Solver::SeqPhragmen { iterations: 10 },
@@ -257,6 +258,7 @@ mod tests {
 			Opt {
 				uri: "hi".to_string(),
 				prometheus_port: None,
+				log: "info".to_string(),
 				command: Command::DryRun(DryRunConfig {
 					at: None,
 					solver: Solver::PhragMMS { iterations: 10 },
@@ -286,10 +288,11 @@ mod tests {
 			Opt {
 				uri: "hi".to_string(),
 				prometheus_port: None,
+				log: "info".to_string(),
 				command: Command::EmergencySolution(EmergencySolutionConfig {
 					take: Some(99),
 					at: None,
-					solver: Solver::PhragMMS { iterations: 1337 }
+					solver: Solver::PhragMMS { iterations: 1337 },
 				}),
 			}
 		);
