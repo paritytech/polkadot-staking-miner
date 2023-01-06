@@ -26,10 +26,11 @@ use crate::{
 };
 use codec::{Decode, Encode};
 use frame_election_provider_support::NposSolution;
+use jsonrpsee::{core::Error as JsonRpseeError, types::error::CallError};
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOf};
 use sp_runtime::Perbill;
 use std::sync::Arc;
-use subxt::{error::RpcError, rpc::Subscription, tx::TxStatus};
+use subxt::{error::RpcError, rpc::Subscription, tx::TxStatus, Error as SubxtError};
 use tokio::sync::Mutex;
 
 pub async fn monitor_cmd<T>(api: SubxtClient, config: MonitorConfig) -> Result<(), Error>
@@ -48,6 +49,11 @@ where
 	};
 
 	log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer, account_info);
+
+	// ensure that `rpc-methods == unsafe`.
+	if config.dry_run {
+		dry_run_works(&api).await?;
+	}
 
 	let mut subscription = heads_subscription(&api, config.listen).await?;
 	let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
@@ -101,9 +107,6 @@ where
 }
 
 fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>, err: Error) {
-	use jsonrpsee::{core::Error as JsonRpseeError, types::error::CallError};
-	use subxt::Error as SubxtError;
-
 	match err {
 		Error::AlreadySubmitted |
 		Error::BetterScoreExist |
@@ -546,6 +549,29 @@ pub(crate) fn score_passes_strategy(
 		SubmissionStrategy::ClaimNoWorseThan(epsilon) =>
 			!best_score.strict_threshold_better(our_score, epsilon),
 	}
+}
+
+async fn dry_run_works(api: &SubxtClient) -> Result<(), Error> {
+	if let Err(SubxtError::Rpc(RpcError::ClientError(e))) = api.rpc().dry_run(&[], None).await {
+		let rpc_err = match e.downcast::<JsonRpseeError>() {
+			Ok(e) => *e,
+			Err(_) =>
+				return Err(Error::Other(
+					"Failed to downcast RPC error; this is a bug please file an issue".to_string(),
+				)),
+		};
+
+		if let JsonRpseeError::Call(CallError::Custom(e)) = rpc_err {
+			if e.message() == "RPC call is unsafe to be called externally" {
+				return Err(Error::Other(
+					"dry-run requires a RPC endpoint with `--rpc-methods unsafe`; \
+						either connect to another RPC endpoint or disable dry-run"
+						.to_string(),
+				))
+			}
+		}
+	}
+	Ok(())
 }
 
 #[cfg(test)]

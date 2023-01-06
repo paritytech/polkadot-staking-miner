@@ -225,9 +225,10 @@ pub struct MonitorConfig {
 	pub seed_or_path: String,
 
 	/// Verify the submission by `dry-run` the extrinsic to check the validity.
-	/// If it fails then the block is ignored.
+	/// If the extrinsic is invalid then the submission is ignored and the next block will attempted again.
 	///
-	/// This requires a RPC endpoint that exposes unsafe RPC methods.
+	/// This requires a RPC endpoint that exposes unsafe RPC methods, if the RPC endpoint doesn't expose unsafe RPC methods
+	/// then the miner will be terminated.
 	#[clap(long)]
 	pub dry_run: bool,
 }
