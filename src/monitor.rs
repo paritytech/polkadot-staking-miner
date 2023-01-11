@@ -50,8 +50,8 @@ where
 
 	log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer, account_info);
 
-	// ensure that `rpc-methods == unsafe`.
 	if config.dry_run {
+		// if we want to try-run, ensure the node supports it. 
 		dry_run_works(&api).await?;
 	}
 
