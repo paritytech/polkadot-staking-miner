@@ -52,11 +52,8 @@ use tracing_subscriber::EnvFilter;
 #[tokio::main]
 async fn main() -> Result<(), Error> {
 	let Opt { uri, command, prometheus_port, log } = Opt::parse();
-
-	tracing_subscriber::fmt()
-		.with_env_filter(EnvFilter::from_default_env())
-		.with_env_filter(log)
-		.init();
+	let filter = EnvFilter::from_default_env().add_directive(log.parse()?);
+	tracing_subscriber::fmt().with_env_filter(filter).init();
 
 	log::debug!(target: LOG_TARGET, "attempting to connect to {:?}", uri);
 
