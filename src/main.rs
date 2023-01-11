@@ -51,9 +51,10 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-	tracing_subscriber::fmt().with_env_filter(EnvFilter::from_default_env()).init();
+	let Opt { uri, command, prometheus_port, log } = Opt::parse();
+	let filter = EnvFilter::from_default_env().add_directive(log.parse()?);
+	tracing_subscriber::fmt().with_env_filter(filter).init();
 
-	let Opt { uri, command, prometheus_port } = Opt::parse();
 	log::debug!(target: LOG_TARGET, "attempting to connect to {:?}", uri);
 
 	let rpc = loop {
@@ -213,6 +214,8 @@ mod tests {
 			"//Alice",
 			"--listen",
 			"head",
+			"--delay",
+			"12",
 			"seq-phragmen",
 		])
 		.unwrap();
@@ -222,11 +225,13 @@ mod tests {
 			Opt {
 				uri: "hi".to_string(),
 				prometheus_port: Some(9999),
+				log: "info".to_string(),
 				command: Command::Monitor(MonitorConfig {
 					listen: Listen::Head,
 					solver: Solver::SeqPhragmen { iterations: 10 },
 					submission_strategy: SubmissionStrategy::IfLeading,
 					seed_or_path: "//Alice".to_string(),
+					delay: 12,
 					dry_run: false,
 				}),
 			}
@@ -251,6 +256,7 @@ mod tests {
 			Opt {
 				uri: "hi".to_string(),
 				prometheus_port: None,
+				log: "info".to_string(),
 				command: Command::DryRun(DryRunConfig {
 					at: None,
 					solver: Solver::PhragMMS { iterations: 10 },
@@ -280,10 +286,11 @@ mod tests {
 			Opt {
 				uri: "hi".to_string(),
 				prometheus_port: None,
+				log: "info".to_string(),
 				command: Command::EmergencySolution(EmergencySolutionConfig {
 					take: Some(99),
 					at: None,
-					solver: Solver::PhragMMS { iterations: 1337 }
+					solver: Solver::PhragMMS { iterations: 1337 },
 				}),
 			}
 		);

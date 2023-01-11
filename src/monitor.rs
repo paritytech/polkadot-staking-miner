@@ -236,6 +236,7 @@ async fn mine_and_submit_solution<T>(
 		return
 	}
 
+	tokio::time::sleep(std::time::Duration::from_secs(config.delay as u64)).await;
 	let _lock = submit_lock.lock().await;
 
 	let (solution, score) =
