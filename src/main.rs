@@ -235,6 +235,7 @@ mod tests {
 					submission_strategy: SubmissionStrategy::IfLeading,
 					seed_or_path: "//Alice".to_string(),
 					delay: 12,
+					dry_run: false,
 				}),
 			}
 		);
