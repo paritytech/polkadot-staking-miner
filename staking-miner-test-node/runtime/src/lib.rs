@@ -138,7 +138,11 @@ pub fn native_version() -> NativeVersion {
 sp_api::decl_runtime_apis! {
 	pub trait TestConfigApi {
 		fn set_length(len: u32);
+		fn get_length() -> u32;
+
+
 		fn set_weight(weight: u64);
+		fn get_weight() -> u64;
 	}
 }
 
@@ -148,11 +152,15 @@ pub mod block_length {
 	use frame_system::limits;
 
 	const BLOCK_LENGTH_KEY: &[u8] = b":test_length:";
-	fn get() -> u32 {
-		frame_support::storage::unhashed::get(BLOCK_LENGTH_KEY).unwrap_or(4 * 1024)
+	pub fn get() -> u32 {
+		let res = frame_support::storage::unhashed::get(BLOCK_LENGTH_KEY).unwrap_or(4 * 1024);
+		frame_support::log::info!(target: "runtime", "TEST_BLOCK_LENGTH_KEY::get={}", res);
+		res
 	}
 	pub fn set(len: u32) {
+		frame_support::log::info!(target: "runtime", "TEST_BLOCK_LENGTH_KEY::set={}", len);
 		frame_support::storage::unhashed::put(BLOCK_LENGTH_KEY, &len);
+		assert_eq!(len, get());
 	}
 
 	pub struct ConfigurableBlockLength;
@@ -168,12 +176,16 @@ pub mod block_weight {
 	use frame_system::limits;
 
 	const BLOCK_WEIGHT_KEY: &[u8] = b":test_weight:";
-	fn get() -> u64 {
-		frame_support::storage::unhashed::get(BLOCK_WEIGHT_KEY)
-			.unwrap_or((WEIGHT_PER_SECOND / 100).ref_time())
+	pub fn get() -> u64 {
+		let res = frame_support::storage::unhashed::get(BLOCK_WEIGHT_KEY)
+			.unwrap_or((WEIGHT_PER_SECOND / 100).ref_time());
+		frame_support::log::info!(target: "runtime", "TEST_BLOCK_WEIGHT_KEY::get={}", res);
+		res
 	}
 	pub fn set(len: u64) {
+		frame_support::log::info!(target: "runtime", "TEST_BLOCK_WEIGHT_KEY::set={}", len);
 		frame_support::storage::unhashed::put(BLOCK_WEIGHT_KEY, &len);
+		assert_eq!(len, block_weight::get());
 	}
 
 	pub struct ConfigurableBlockWeight;
@@ -849,8 +861,18 @@ impl_runtime_apis! {
 		fn set_length(len: u32) {
 			block_length::set(len)
 		}
+
+		fn get_length() -> u32 {
+			block_length::get()
+		}
+
+
 		fn set_weight(weight: u64) {
 			block_weight::set(weight)
+		}
+
+		fn get_weight() -> u64 {
+			block_weight::get()
 		}
 	}
 

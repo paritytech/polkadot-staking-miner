@@ -2,7 +2,7 @@ use staking_miner::prelude::Chain;
 use std::{
 	io::{BufRead, BufReader, Read},
 	ops::{Deref, DerefMut},
-	process::{self, Child},
+	process::{self, Child, ChildStderr, ChildStdout},
 };
 use tracing_subscriber::EnvFilter;
 
@@ -103,4 +103,29 @@ impl DerefMut for KillChildOnDrop {
 	fn deref_mut(&mut self) -> &mut Self::Target {
 		&mut self.0
 	}
+}
+
+pub fn spawn_cli_output_threads(
+	stdout: ChildStdout,
+	stderr: ChildStderr,
+	tx: tokio::sync::mpsc::UnboundedSender<String>,
+) {
+	let tx2 = tx.clone();
+	std::thread::spawn(move || {
+		for line in BufReader::new(stdout).lines() {
+			if let Ok(line) = line {
+				println!("OK: {}", line);
+				let _ = tx2.send(line);
+			}
+		}
+	});
+
+	std::thread::spawn(move || {
+		for line in BufReader::new(stderr).lines() {
+			if let Ok(line) = line {
+				println!("ERR: {}", line);
+				let _ = tx.send(line);
+			}
+		}
+	});
 }

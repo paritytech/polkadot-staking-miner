@@ -26,10 +26,11 @@ use crate::{
 };
 use codec::{Decode, Encode};
 use frame_election_provider_support::NposSolution;
+use jsonrpsee::{core::Error as JsonRpseeError, types::error::CallError};
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOf};
 use sp_runtime::Perbill;
 use std::sync::Arc;
-use subxt::{error::RpcError, rpc::Subscription, tx::TxStatus};
+use subxt::{error::RpcError, rpc::Subscription, tx::TxStatus, Error as SubxtError};
 use tokio::sync::Mutex;
 
 pub async fn monitor_cmd<T>(api: SubxtClient, config: MonitorConfig) -> Result<(), Error>
@@ -48,6 +49,11 @@ where
 	};
 
 	log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer, account_info);
+
+	if config.dry_run {
+		// if we want to try-run, ensure the node supports it.
+		dry_run_works(&api).await?;
+	}
 
 	let mut subscription = heads_subscription(&api, config.listen).await?;
 	let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
@@ -101,9 +107,6 @@ where
 }
 
 fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>, err: Error) {
-	use jsonrpsee::{core::Error as JsonRpseeError, types::error::CallError};
-	use subxt::Error as SubxtError;
-
 	match err {
 		Error::AlreadySubmitted |
 		Error::BetterScoreExist |
@@ -130,11 +133,15 @@ fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>
 						JsonRpseeError::Call(CallError::Custom(e)) => {
 							const BAD_EXTRINSIC_FORMAT: i32 = 1001;
 							const VERIFICATION_ERROR: i32 = 1002;
+							use jsonrpsee::types::error::ErrorCode;
 
 							// Check if the transaction gets fatal errors from the `author` RPC.
 							// It's possible to get other errors such as outdated nonce and similar
 							// but then it should be possible to try again in the next block or round.
-							if e.code() == BAD_EXTRINSIC_FORMAT || e.code() == VERIFICATION_ERROR {
+							if e.code() == BAD_EXTRINSIC_FORMAT ||
+								e.code() == VERIFICATION_ERROR || e.code() ==
+								ErrorCode::MethodNotFound.code()
+							{
 								let _ = tx.send(Error::Subxt(SubxtError::Rpc(
 									RpcError::ClientError(Box::new(CallError::Custom(e))),
 								)));
@@ -215,8 +222,6 @@ async fn mine_and_submit_solution<T>(
 		},
 	};
 
-	let _lock = submit_lock.lock().await;
-
 	if let Err(e) =
 		ensure_no_previous_solution::<T::Solution>(&api, hash, signer.account_id()).await
 	{
@@ -230,6 +235,9 @@ async fn mine_and_submit_solution<T>(
 		kill_main_task_if_critical_err(&tx, e);
 		return
 	}
+
+	tokio::time::sleep(std::time::Duration::from_secs(config.delay as u64)).await;
+	let _lock = submit_lock.lock().await;
 
 	let (solution, score) =
 		match epm::fetch_snapshot_and_mine_solution::<T>(&api, Some(hash), config.solver)
@@ -292,6 +300,20 @@ async fn mine_and_submit_solution<T>(
 		return
 	}
 
+	if let Err(e) =
+		ensure_no_previous_solution::<T::Solution>(&api, best_head, signer.account_id()).await
+	{
+		log::debug!(
+			target: LOG_TARGET,
+			"ensure_no_previous_solution failed: {:?}; skipping block: {:?}",
+			e,
+			best_head,
+		);
+
+		kill_main_task_if_critical_err(&tx, e);
+		return
+	}
+
 	match ensure_solution_passes_strategy(&api, best_head, score, config.submission_strategy)
 		.timed()
 		.await
@@ -316,9 +338,17 @@ async fn mine_and_submit_solution<T>(
 	};
 
 	prometheus::on_submission_attempt();
-	match submit_and_watch_solution::<T>(&api, signer, (solution, score, round), hash, nonce)
-		.timed()
-		.await
+	match submit_and_watch_solution::<T>(
+		&api,
+		signer,
+		(solution, score, round),
+		hash,
+		nonce,
+		config.listen,
+		config.dry_run,
+	)
+	.timed()
+	.await
 	{
 		(Ok(_), now) => {
 			prometheus::on_submission_success();
@@ -411,12 +441,22 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 	(solution, score, round): (SolutionOf<T>, sp_npos_elections::ElectionScore, u32),
 	hash: Hash,
 	nonce: u32,
+	listen: Listen,
+	dry_run: bool,
 ) -> Result<(), Error> {
 	let tx = epm::signed_solution(RawSolution { solution, score, round })?;
 
 	let xt = api
 		.tx()
 		.create_signed_with_nonce(&tx, &*signer, nonce, ExtrinsicParams::default())?;
+
+	if dry_run {
+		match api.rpc().dry_run(xt.encoded(), None).await? {
+			Ok(Ok(())) => (),
+			Ok(Err(e)) => return Err(Error::TransactionRejected(format!("{:?}", e))),
+			Err(e) => return Err(Error::TransactionRejected(e.to_string())),
+		};
+	}
 
 	let mut status_sub = xt.submit_and_watch().await.map_err(|e| {
 		log::warn!(target: LOG_TARGET, "submit solution failed: {:?}", e);
@@ -448,11 +488,13 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 						.find_first::<runtime::election_provider_multi_phase::events::SolutionStored>(
 						);
 
-				return if let Ok(Some(_)) = solution_stored {
+				if let Ok(Some(_)) = solution_stored {
 					log::info!(target: LOG_TARGET, "Included at {:?}", details.block_hash());
-					Ok(())
+					if let Listen::Head = listen {
+						return Ok(())
+					}
 				} else {
-					Err(Error::Other(format!(
+					return Err(Error::Other(format!(
 						"No SolutionStored event found at {:?}",
 						details.block_hash()
 					)))
@@ -508,6 +550,29 @@ pub(crate) fn score_passes_strategy(
 		SubmissionStrategy::ClaimNoWorseThan(epsilon) =>
 			!best_score.strict_threshold_better(our_score, epsilon),
 	}
+}
+
+async fn dry_run_works(api: &SubxtClient) -> Result<(), Error> {
+	if let Err(SubxtError::Rpc(RpcError::ClientError(e))) = api.rpc().dry_run(&[], None).await {
+		let rpc_err = match e.downcast::<JsonRpseeError>() {
+			Ok(e) => *e,
+			Err(_) =>
+				return Err(Error::Other(
+					"Failed to downcast RPC error; this is a bug please file an issue".to_string(),
+				)),
+		};
+
+		if let JsonRpseeError::Call(CallError::Custom(e)) = rpc_err {
+			if e.message() == "RPC call is unsafe to be called externally" {
+				return Err(Error::Other(
+					"dry-run requires a RPC endpoint with `--rpc-methods unsafe`; \
+						either connect to another RPC endpoint or disable dry-run"
+						.to_string(),
+				))
+			}
+		}
+	}
+	Ok(())
 }
 
 #[cfg(test)]

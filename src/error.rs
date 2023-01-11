@@ -18,6 +18,8 @@ use crate::prelude::sp_core;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
+	#[error("Failed to parse log directive: `{0}´")]
+	LogParse(#[from] tracing_subscriber::filter::ParseError),
 	#[error("I/O error: `{0}`")]
 	Io(#[from] std::io::Error),
 	#[error("RPC error: `{0}`")]
