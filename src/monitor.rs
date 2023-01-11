@@ -51,7 +51,7 @@ where
 	log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer, account_info);
 
 	if config.dry_run {
-		// if we want to try-run, ensure the node supports it. 
+		// if we want to try-run, ensure the node supports it.
 		dry_run_works(&api).await?;
 	}
 
