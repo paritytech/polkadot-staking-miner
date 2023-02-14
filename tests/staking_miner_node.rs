@@ -19,7 +19,9 @@ use subxt::{ext::sp_core::Bytes, rpc::rpc_params};
 #[tokio::test]
 async fn constants_updated_on_the_fly() {
 	init_logger();
-	let (_drop, ws_url) = run_staking_miner_playground();
+	// let (_drop, ws_url) = run_staking_miner_playground();
+
+	let ws_url = "ws://127.0.0.1:9944";
 
 	let miner = KillChildOnDrop(
 		process::Command::new(cargo_bin(env!("CARGO_PKG_NAME")))

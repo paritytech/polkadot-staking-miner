@@ -6,6 +6,7 @@
 #[cfg(feature = "std")]
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
+use codec::Encode;
 use election_multi_phase::SolutionAccuracyOf;
 use frame_election_provider_support::{onchain, ElectionDataProvider, SequentialPhragmen};
 use frame_support::{
@@ -157,9 +158,11 @@ pub mod block_length {
 		frame_support::log::info!(target: "runtime", "TEST_BLOCK_LENGTH_KEY::get={}", res);
 		res
 	}
+
+	#[inline(never)]
 	pub fn set(len: u32) {
 		frame_support::log::info!(target: "runtime", "TEST_BLOCK_LENGTH_KEY::set={}", len);
-		frame_support::storage::unhashed::put(BLOCK_LENGTH_KEY, &len);
+		frame_support::storage::unhashed::put_raw(BLOCK_LENGTH_KEY, &len.encode());
 		assert_eq!(len, get());
 	}
 
@@ -182,9 +185,11 @@ pub mod block_weight {
 		frame_support::log::info!(target: "runtime", "TEST_BLOCK_WEIGHT_KEY::get={}", res);
 		res
 	}
+
+	#[inline(never)]
 	pub fn set(len: u64) {
 		frame_support::log::info!(target: "runtime", "TEST_BLOCK_WEIGHT_KEY::set={}", len);
-		frame_support::storage::unhashed::put(BLOCK_WEIGHT_KEY, &len);
+		frame_support::storage::unhashed::put_raw(BLOCK_WEIGHT_KEY, &len.encode());
 		assert_eq!(len, block_weight::get());
 	}
 
@@ -539,6 +544,7 @@ mod solution_24 {
 }
 
 use solution_16::NposSolution16;
+#[allow(unused)]
 use solution_24::NposSolution24;
 type FinalSolution = NposSolution16;
 
