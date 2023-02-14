@@ -163,8 +163,8 @@ mod hidden {
 	});
 	static ERA: Lazy<Gauge> = Lazy::new(|| {
 		register_gauge!(opts!(
-			"staking_miner_era_hours",
-			"The time in hours between each era (election) occurs"
+			"staking_miner_submission_interval_hours",
+			"The time in hours between each submission occurs",
 		))
 		.unwrap()
 	});
@@ -199,7 +199,7 @@ mod hidden {
 		SCORE_SUM_STAKE_SQUARED.set(score.sum_stake_squared as f64);
 	}
 
-	pub fn set_era(era: u32) {
+	pub fn set_submission_interval(era: u32) {
 		ERA.set(era as f64);
 	}
 

@@ -69,7 +69,8 @@ pub(crate) async fn update_metadata_constants(api: &SubxtClient) -> Result<(), E
 	let num_sessions_per_era: u32 = read_constant(api, SESSIONS_PER_ERA)?;
 
 	// era = session * seconds per slot * number sessions per era
-	let era_hours: u32 = (session * SLOT_DURATION_SECS * num_sessions_per_era) / (60 * 60);
+	let submission_interval_hours: u32 =
+		(session * SLOT_DURATION_SECS * num_sessions_per_era) / (60 * 60);
 
 	log::trace!(
 		target: LOG_TARGET,
@@ -89,13 +90,16 @@ pub(crate) async fn update_metadata_constants(api: &SubxtClient) -> Result<(), E
 		MAX_VOTES_PER_VOTER.to_string(),
 		max_votes_per_voter
 	);
-	log::trace!(target: LOG_TARGET, "updating metadata constant `Era`: `{}h`", era_hours);
+	log::trace!(
+		target: LOG_TARGET,
+		"updating metadata constant `Era`: `{submission_interval_hours}h`"
+	);
 
 	static_types::MaxWeight::set(max_weight);
 	static_types::MaxLength::set(max_length);
 	static_types::MaxVotesPerVoter::set(max_votes_per_voter);
-	static_types::Era::set(era_hours);
-	prometheus::set_era(era_hours);
+	static_types::SubmissionInterval::set(submission_interval_hours);
+	prometheus::set_submission_interval(submission_interval_hours);
 
 	Ok(())
 }
