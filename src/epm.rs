@@ -55,19 +55,21 @@ pub(crate) async fn update_metadata_constants(api: &SubxtClient) -> Result<(), E
 	const SIGNED_MAX_WEIGHT: Constant = Constant::new(EPM_PALLET_NAME, "SignedMaxWeight");
 	const MAX_LENGTH: Constant = Constant::new(EPM_PALLET_NAME, "MinerMaxLength");
 	const MAX_VOTES_PER_VOTER: Constant = Constant::new(EPM_PALLET_NAME, "MinerMaxVotesPerVoter");
+	const EPOCH_DURATION: Constant = Constant::new("Babe", "EpochDuration");
+	const SESSIONS_PER_ERA: Constant = Constant::new("Staking", "SessionsPerEra");
 
 	// TODO: no constant is exposed directly for this, hardcoded for now.
 	const SLOT_DURATION_SECS: u32 = 6;
-	const EPOCH_DURATION: Constant = Constant::new("Babe", "EpochDuration");
-	const SESSIONS_PER_ERA: Constant = Constant::new("Staking", "SessionsPerEra");
 
 	let max_weight = read_constant::<Weight>(api, SIGNED_MAX_WEIGHT)?;
 	let max_length: u32 = read_constant(api, MAX_LENGTH)?;
 	let max_votes_per_voter: u32 = read_constant(api, MAX_VOTES_PER_VOTER)?;
-	let epoch: u32 = read_constant(api, EPOCH_DURATION)?;
-	let sessions: u32 = read_constant(api, SESSIONS_PER_ERA)?;
-	// era = epoch * sessions * slot
-	let era_hours: u32 = (epoch * sessions * SLOT_DURATION_SECS) / (60 * 60);
+	// session == epoch
+	let session: u32 = read_constant(api, EPOCH_DURATION)?;
+	let num_sessions_per_era: u32 = read_constant(api, SESSIONS_PER_ERA)?;
+
+	// era = session * seconds per slot * number sessions per era
+	let era_hours: u32 = (session * SLOT_DURATION_SECS * num_sessions_per_era) / (60 * 60);
 
 	log::trace!(
 		target: LOG_TARGET,
