@@ -161,6 +161,13 @@ mod hidden {
 		register_gauge!(opts!("staking_miner_solution_weight", "Weight of the solution submitted"))
 			.unwrap()
 	});
+	static ERA: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(opts!(
+			"staking_miner_era_hours",
+			"The time in hours between each era (election) occurs"
+		))
+		.unwrap()
+	});
 
 	pub fn on_runtime_upgrade() {
 		RUNTIME_UPGRADES.inc();
@@ -190,6 +197,10 @@ mod hidden {
 		SCORE_MINIMAL_STAKE.set(score.minimal_stake as f64);
 		SCORE_SUM_STAKE.set(score.sum_stake as f64);
 		SCORE_SUM_STAKE_SQUARED.set(score.sum_stake_squared as f64);
+	}
+
+	pub fn set_era(era: u32) {
+		ERA.set(era as f64);
 	}
 
 	pub fn observe_submit_and_watch_duration(time: f64) {

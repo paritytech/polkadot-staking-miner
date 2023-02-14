@@ -16,7 +16,7 @@
 
 //! Wrappers or helpers for [`pallet_election_provider_multi_phase`].
 
-use crate::{helpers::RuntimeDispatchInfo, opt::Solver, prelude::*, static_types};
+use crate::{helpers::RuntimeDispatchInfo, opt::Solver, prelude::*, prometheus, static_types};
 use codec::{Decode, Encode};
 use frame_election_provider_support::{NposSolution, PhragMMS, SequentialPhragmen};
 use frame_support::{weights::Weight, BoundedVec};
@@ -31,34 +31,43 @@ use subxt::{dynamic::Value, rpc::rpc_params, tx::DynamicTxPayload};
 const EPM_PALLET_NAME: &str = "ElectionProviderMultiPhase";
 
 #[derive(Copy, Clone, Debug)]
-struct EpmConstant {
-	epm: &'static str,
+struct Constant {
+	pallet: &'static str,
 	constant: &'static str,
 }
 
-impl EpmConstant {
-	const fn new(constant: &'static str) -> Self {
-		Self { epm: EPM_PALLET_NAME, constant }
+impl Constant {
+	const fn new(pallet: &'static str, constant: &'static str) -> Self {
+		Self { pallet, constant }
 	}
 
 	const fn to_parts(&self) -> (&'static str, &'static str) {
-		(self.epm, self.constant)
+		(self.pallet, self.constant)
 	}
 
 	fn to_string(&self) -> String {
-		format!("{}::{}", self.epm, self.constant)
+		format!("{}::{}", self.pallet, self.constant)
 	}
 }
 
 /// Read the constants from the metadata and updates the static types.
 pub(crate) async fn update_metadata_constants(api: &SubxtClient) -> Result<(), Error> {
-	const SIGNED_MAX_WEIGHT: EpmConstant = EpmConstant::new("SignedMaxWeight");
-	const MAX_LENGTH: EpmConstant = EpmConstant::new("MinerMaxLength");
-	const MAX_VOTES_PER_VOTER: EpmConstant = EpmConstant::new("MinerMaxVotesPerVoter");
+	const SIGNED_MAX_WEIGHT: Constant = Constant::new(EPM_PALLET_NAME, "SignedMaxWeight");
+	const MAX_LENGTH: Constant = Constant::new(EPM_PALLET_NAME, "MinerMaxLength");
+	const MAX_VOTES_PER_VOTER: Constant = Constant::new(EPM_PALLET_NAME, "MinerMaxVotesPerVoter");
+
+	// TODO: no constant is exposed directly for this, hardcoded for now.
+	const SLOT_DURATION_SECS: u32 = 6;
+	const EPOCH_DURATION: Constant = Constant::new("Babe", "EpochDuration");
+	const SESSIONS_PER_ERA: Constant = Constant::new("Staking", "SessionsPerEra");
 
 	let max_weight = read_constant::<Weight>(api, SIGNED_MAX_WEIGHT)?;
 	let max_length: u32 = read_constant(api, MAX_LENGTH)?;
 	let max_votes_per_voter: u32 = read_constant(api, MAX_VOTES_PER_VOTER)?;
+	let epoch: u32 = read_constant(api, EPOCH_DURATION)?;
+	let sessions: u32 = read_constant(api, SESSIONS_PER_ERA)?;
+	// era = epoch * sessions * slot
+	let era_hours: u32 = (epoch * sessions * SLOT_DURATION_SECS) / (60 * 60);
 
 	log::trace!(
 		target: LOG_TARGET,
@@ -78,10 +87,13 @@ pub(crate) async fn update_metadata_constants(api: &SubxtClient) -> Result<(), E
 		MAX_VOTES_PER_VOTER.to_string(),
 		max_votes_per_voter
 	);
+	log::trace!(target: LOG_TARGET, "updating metadata constant `Era`: `{}h`", era_hours);
 
 	static_types::MaxWeight::set(max_weight);
 	static_types::MaxLength::set(max_length);
 	static_types::MaxVotesPerVoter::set(max_votes_per_voter);
+	static_types::Era::set(era_hours);
+	prometheus::set_era(era_hours);
 
 	Ok(())
 }
@@ -92,7 +104,7 @@ fn invalid_metadata_error<E: std::error::Error>(item: String, err: E) -> Error {
 
 fn read_constant<'a, T: serde::Deserialize<'a>>(
 	api: &SubxtClient,
-	constant: EpmConstant,
+	constant: Constant,
 ) -> Result<T, Error> {
 	let (epm_name, constant) = constant.to_parts();
 
