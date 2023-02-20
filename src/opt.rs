@@ -169,10 +169,10 @@ impl std::str::FromStr for Chain {
 	}
 }
 
-impl TryFrom<subxt::rpc::RuntimeVersion> for Chain {
+impl TryFrom<subxt::rpc::types::RuntimeVersion> for Chain {
 	type Error = Error;
 
-	fn try_from(rv: subxt::rpc::RuntimeVersion) -> Result<Self, Error> {
+	fn try_from(rv: subxt::rpc::types::RuntimeVersion) -> Result<Self, Error> {
 		let json = rv
 			.other
 			.get("specName")

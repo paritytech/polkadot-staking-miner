@@ -4,9 +4,9 @@
 pub mod common;
 
 use assert_cmd::cargo::cargo_bin;
-use codec::{Decode, Encode};
-use common::{init_logger, run_polkadot_node, run_staking_miner_playground, KillChildOnDrop};
-use regex::Regex;
+use codec::Decode;
+use common::{init_logger, run_polkadot_node, KillChildOnDrop};
+use sp_core::Bytes;
 use sp_storage::StorageChangeSet;
 use staking_miner::{
 	opt::Chain,
@@ -17,7 +17,7 @@ use std::{
 	println, process,
 	time::{Duration, Instant},
 };
-use subxt::{ext::sp_core::Bytes, rpc::rpc_params};
+use subxt::rpc::rpc_params;
 use tokio::time::timeout;
 
 const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(60 * 15);

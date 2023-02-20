@@ -30,7 +30,9 @@ use jsonrpsee::{core::Error as JsonRpseeError, types::error::CallError};
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOf};
 use sp_runtime::Perbill;
 use std::sync::Arc;
-use subxt::{error::RpcError, rpc::Subscription, tx::TxStatus, Error as SubxtError};
+use subxt::{
+	config::Header as _, error::RpcError, rpc::Subscription, tx::TxStatus, Error as SubxtError,
+};
 use tokio::sync::Mutex;
 
 pub async fn monitor_cmd<T>(api: SubxtClient, config: MonitorConfig) -> Result<(), Error>
@@ -45,7 +47,12 @@ where
 
 	let account_info = {
 		let addr = runtime::storage().system().account(signer.account_id());
-		api.storage().fetch(&addr, None).await?.ok_or(Error::AccountDoesNotExists)?
+		api.storage()
+			.at(None)
+			.await?
+			.fetch(&addr)
+			.await?
+			.ok_or(Error::AccountDoesNotExists)?
 	};
 
 	log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer, account_info);
@@ -97,10 +104,13 @@ where
 			submit_lock.clone(),
 		));
 
-		let account_info = {
-			let addr = runtime::storage().system().account(signer.account_id());
-			api.storage().fetch(&addr, None).await?.ok_or(Error::AccountDoesNotExists)?
-		};
+		let account_info = api
+			.storage()
+			.at(None)
+			.await?
+			.fetch(&runtime::storage().system().account(signer.account_id()))
+			.await?
+			.ok_or(Error::AccountDoesNotExists)?;
 		// this is lossy but fine for now.
 		prometheus::set_balance(account_info.data.free as f64);
 	}
@@ -206,15 +216,19 @@ async fn mine_and_submit_solution<T>(
 		return
 	}
 
-	let round = match api
-		.storage()
-		.fetch(&runtime::storage().election_provider_multi_phase().round(), Some(hash))
-		.await
-	{
-		Ok(Some(round)) => round,
-		// Default round is 1
-		// https://github.com/paritytech/substrate/blob/49b06901eb65f2c61ff0934d66987fd955d5b8f5/frame/election-provider-multi-phase/src/lib.rs#L1188
-		Ok(None) => 1,
+	let fut = async {
+		api.storage()
+			.at(Some(hash))
+			.await?
+			.fetch(&runtime::storage().election_provider_multi_phase().round())
+			.await
+			// Default round is 1
+			// https://github.com/paritytech/substrate/blob/49b06901eb65f2c61ff0934d66987fd955d5b8f5/frame/election-provider-multi-phase/src/lib.rs#L1188
+			.map(|r| r.unwrap_or(1))
+	};
+
+	let round = match fut.await {
+		Ok(round) => round,
 		Err(e) => {
 			log::error!(target: LOG_TARGET, "Mining solution failed: {:?}", e);
 			kill_main_task_if_critical_err(&tx, e.into());
@@ -371,15 +385,12 @@ async fn ensure_signed_phase(api: &SubxtClient, hash: Hash) -> Result<(), Error>
 	use pallet_election_provider_multi_phase::Phase;
 
 	let addr = runtime::storage().election_provider_multi_phase().current_phase();
-	let res = api.storage().fetch(&addr, Some(hash)).await;
+	let phase = api.storage().at(Some(hash)).await?.fetch(&addr).await?;
 
-	match res {
-		Ok(Some(Phase::Signed)) => Ok(()),
-		Ok(Some(_)) => Err(Error::IncorrectPhase),
-		// Default phase is None
-		// https://github.com/paritytech/substrate/blob/49b06901eb65f2c61ff0934d66987fd955d5b8f5/frame/election-provider-multi-phase/src/lib.rs#L1193
-		Ok(None) => Err(Error::IncorrectPhase),
-		Err(e) => Err(e.into()),
+	if let Some(Phase::Signed) = phase {
+		Ok(())
+	} else {
+		Err(Error::IncorrectPhase)
 	}
 }
 
@@ -393,7 +404,7 @@ where
 	T: NposSolution + scale_info::TypeInfo + Decode + 'static,
 {
 	let addr = runtime::storage().election_provider_multi_phase().signed_submission_indices();
-	let indices = api.storage().fetch_or_default(&addr, Some(at)).await?;
+	let indices = api.storage().at(Some(at)).await?.fetch_or_default(&addr).await?;
 
 	for (_score, _, idx) in indices.0 {
 		let submission = epm::signed_submission_at::<T>(idx, at, api).await?;
@@ -420,7 +431,7 @@ async fn ensure_solution_passes_strategy(
 	}
 
 	let addr = runtime::storage().election_provider_multi_phase().signed_submission_indices();
-	let indices = api.storage().fetch_or_default(&addr, Some(at)).await?;
+	let indices = api.storage().at(Some(at)).await?.fetch_or_default(&addr).await?;
 
 	log::debug!(target: LOG_TARGET, "submitted solutions: {:?}", indices.0);
 
@@ -452,9 +463,8 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 
 	if dry_run {
 		match api.rpc().dry_run(xt.encoded(), None).await? {
-			Ok(Ok(())) => (),
-			Ok(Err(e)) => return Err(Error::TransactionRejected(format!("{:?}", e))),
-			Err(e) => return Err(Error::TransactionRejected(e.to_string())),
+			Ok(()) => (),
+			Err(e) => return Err(Error::TransactionRejected(format!("{e:?}"))),
 		};
 	}
 

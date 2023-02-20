@@ -33,7 +33,9 @@ where
 
 	let account_info = api
 		.storage()
-		.fetch(&runtime::storage().system().account(signer.account_id()), None)
+		.at(None)
+		.await?
+		.fetch(&runtime::storage().system().account(signer.account_id()))
 		.await?
 		.ok_or(Error::AccountDoesNotExists)?;
 
@@ -44,9 +46,11 @@ where
 
 	let round = api
 		.storage()
-		.fetch(&runtime::storage().election_provider_multi_phase().round(), config.at)
+		.at(config.at)
 		.await?
-		.expect("The round must exist");
+		.fetch(&runtime::storage().election_provider_multi_phase().round())
+		.await?
+		.unwrap_or(1);
 
 	let raw_solution = RawSolution { solution, score, round };
 	let nonce = api.rpc().system_account_next_index(signer.account_id()).await?;
@@ -68,8 +72,7 @@ where
 	log::info!(target: LOG_TARGET, "dry-run outcome is {:?}", outcome);
 
 	match outcome {
-		Ok(Ok(())) => Ok(()),
-		Ok(Err(e)) => Err(Error::Other(format!("{:?}", e))),
-		Err(e) => Err(Error::Other(format!("{:?}", e))),
+		Ok(()) => Ok(()),
+		Err(e) => Err(Error::Other(format!("{e:?}"))),
 	}
 }

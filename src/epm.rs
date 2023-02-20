@@ -41,12 +41,14 @@ impl EpmConstant {
 		Self { epm: EPM_PALLET_NAME, constant }
 	}
 
-	const fn to_parts(&self) -> (&'static str, &'static str) {
+	const fn to_parts(self) -> (&'static str, &'static str) {
 		(self.epm, self.constant)
 	}
+}
 
-	fn to_string(&self) -> String {
-		format!("{}::{}", self.epm, self.constant)
+impl std::fmt::Display for EpmConstant {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.write_fmt(format_args!("{}::{}", self.epm, self.constant))
 	}
 }
 
@@ -138,7 +140,7 @@ pub async fn signed_submission_at<S: NposSolution + Decode + TypeInfo + 'static>
 	let scale_idx = Value::u128(idx as u128);
 	let addr = subxt::dynamic::storage(EPM_PALLET_NAME, "SignedSubmissionsMap", vec![scale_idx]);
 
-	match api.storage().fetch(&addr, Some(at)).await {
+	match api.storage().at(Some(at)).await?.fetch(&addr).await {
 		Ok(Some(val)) => {
 			let submissions = Decode::decode(&mut val.encoded())?;
 			Ok(Some(submissions))
@@ -164,13 +166,17 @@ where
 {
 	let RoundSnapshot { voters, targets } = api
 		.storage()
-		.fetch(&runtime::storage().election_provider_multi_phase().snapshot(), hash)
+		.at(hash)
+		.await?
+		.fetch(&runtime::storage().election_provider_multi_phase().snapshot())
 		.await?
 		.unwrap_or_default();
 
 	let desired_targets = api
 		.storage()
-		.fetch(&runtime::storage().election_provider_multi_phase().desired_targets(), hash)
+		.at(hash)
+		.await?
+		.fetch(&runtime::storage().election_provider_multi_phase().desired_targets())
 		.await?
 		.unwrap_or_default();
 
