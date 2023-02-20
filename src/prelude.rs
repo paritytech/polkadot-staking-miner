@@ -28,19 +28,16 @@ pub use pallet_election_provider_multi_phase::{Miner, MinerConfig};
 use once_cell::sync::OnceCell;
 
 /// The account id type.
-pub type AccountId = subxt::ext::sp_core::crypto::AccountId32;
+pub type AccountId = subxt::utils::AccountId32;
 /// The header type. We re-export it here, but we can easily get it from block as well.
 pub type Header =
-	subxt::ext::sp_runtime::generic::Header<u32, subxt::ext::sp_runtime::traits::BlakeTwo256>;
+	subxt::config::substrate::SubstrateHeader<u32, subxt::config::substrate::BlakeTwo256>;
 /// The header type. We re-export it here, but we can easily get it from block as well.
 pub type Hash = sp_core::H256;
 /// Balance type
 pub type Balance = u128;
 
-pub use subxt::ext::{
-	sp_core,
-	sp_runtime::traits::{Block as BlockT, Header as HeaderT},
-};
+pub use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 
 /// Default URI to connect to.
 ///
@@ -58,7 +55,7 @@ pub type Pair = sp_core::sr25519::Pair;
 pub type Accuracy = sp_runtime::Perbill;
 
 /// Extrinsics params used on all chains.
-pub use subxt::tx::PolkadotExtrinsicParamsBuilder as ExtrinsicParams;
+pub use subxt::config::polkadot::PolkadotExtrinsicParamsBuilder as ExtrinsicParams;
 
 /// Subxt client used by the staking miner on all chains.
 pub type SubxtClient = subxt::OnlineClient<Config>;
@@ -76,23 +73,25 @@ pub type SignedSubmission<S> =
 	derive_for_type(
 		type = "pallet_election_provider_multi_phase::RoundSnapshot",
 		derive = "Default"
+	),
+	substitute_type(type = "sp_arithmetic::per_things::PerU16", with = "::sp_runtime::PerU16"),
+	substitute_type(
+		type = "pallet_election_provider_multi_phase::RawSolution",
+		with = "::pallet_election_provider_multi_phase::RawSolution"
+	),
+	substitute_type(
+		type = "sp_npos_elections::ElectionScore",
+		with = "::sp_npos_elections::ElectionScore"
+	),
+	substitute_type(
+		type = "pallet_election_provider_multi_phase::Phase",
+		with = "::pallet_election_provider_multi_phase::Phase"
+	),
+	substitute_type(
+		type = "pallet_election_provider_multi_phase::SolutionOrSnapshotSize",
+		with = "::pallet_election_provider_multi_phase::SolutionOrSnapshotSize"
 	)
 )]
-pub mod runtime {
-	#[subxt(substitute_type = "sp_arithmetic::per_things::PerU16")]
-	use ::sp_runtime::PerU16;
-
-	#[subxt(substitute_type = "pallet_election_provider_multi_phase::RawSolution")]
-	use ::pallet_election_provider_multi_phase::RawSolution;
-
-	#[subxt(substitute_type = "sp_npos_elections::ElectionScore")]
-	use ::sp_npos_elections::ElectionScore;
-
-	#[subxt(substitute_type = "pallet_election_provider_multi_phase::Phase")]
-	use ::pallet_election_provider_multi_phase::Phase;
-
-	#[subxt(substitute_type = "pallet_election_provider_multi_phase::SolutionOrSnapshotSize")]
-	use ::pallet_election_provider_multi_phase::SolutionOrSnapshotSize;
-}
+pub mod runtime {}
 
 pub static SHARED_CLIENT: OnceCell<SubxtClient> = OnceCell::new();

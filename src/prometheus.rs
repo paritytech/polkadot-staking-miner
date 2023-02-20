@@ -193,7 +193,7 @@ mod hidden {
 	}
 
 	pub fn observe_submit_and_watch_duration(time: f64) {
-		SUBMIT_SOLUTION_AND_WATCH_DURATION.set(time as f64);
+		SUBMIT_SOLUTION_AND_WATCH_DURATION.set(time);
 	}
 
 	pub fn observe_mined_solution_duration(time: f64) {

@@ -34,7 +34,7 @@ pub struct Signer {
 
 impl std::fmt::Display for Signer {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{}", self.signer.address())
+		write!(f, "{:?}", self.signer.address())
 	}
 }
 

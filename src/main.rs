@@ -153,7 +153,7 @@ async fn run_command(
 
 /// Runs until the RPC connection fails or updating the metadata failed.
 async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
-	let updater = api.subscribe_to_updates();
+	let updater = api.updater();
 
 	let mut update_stream = match updater.runtime_updates().await {
 		Ok(u) => u,
@@ -184,7 +184,7 @@ async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
 		match updater.apply_update(update) {
 			Ok(()) => {
 				if let Err(e) = epm::update_metadata_constants(&api).await {
-					let _ = tx.send(e.into());
+					let _ = tx.send(e);
 					return
 				}
 				prometheus::on_runtime_upgrade();
