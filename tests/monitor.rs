@@ -22,7 +22,7 @@ use tokio::time::timeout;
 const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(60 * 15);
 
 #[tokio::test]
-async fn submit_monitor_works() {
+async fn submit_monitor_works_basic() {
 	init_logger();
 	test_submit_solution(Chain::Polkadot).await;
 	test_submit_solution(Chain::Kusama).await;
@@ -35,10 +35,9 @@ async fn test_submit_solution(chain: Chain) {
 	};
 
 	let (_drop, ws_url) = run_polkadot_node(chain);
-	let crate_name = env!("CARGO_PKG_NAME");
 
 	let _miner = KillChildOnDrop(
-		process::Command::new(cargo_bin(crate_name))
+		process::Command::new(cargo_bin(env!("CARGO_PKG_NAME")))
 			.stdout(process::Stdio::piped())
 			.stderr(process::Stdio::piped())
 			.args(&["--uri", &ws_url, "monitor", "--seed-or-path", "//Alice", "seq-phragmen"])

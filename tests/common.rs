@@ -2,7 +2,7 @@ use staking_miner::prelude::Chain;
 use std::{
 	io::{BufRead, BufReader, Read},
 	ops::{Deref, DerefMut},
-	process::{self, Child},
+	process::{self, Child, ChildStderr, ChildStdout},
 };
 use tracing_subscriber::EnvFilter;
 
@@ -41,6 +41,22 @@ pub fn find_ws_url_from_output(read: impl Read + Send) -> (String, String) {
 	(ws_url, data)
 }
 
+pub fn run_staking_miner_playground() -> (KillChildOnDrop, String) {
+	let mut node_cmd = KillChildOnDrop(
+		process::Command::new("staking-miner-playground")
+			.stdout(process::Stdio::piped())
+			.stderr(process::Stdio::piped())
+			.args(&["--dev"])
+			.env("RUST_LOG", "runtime=debug")
+			.spawn()
+			.unwrap(),
+	);
+
+	let stderr = node_cmd.stderr.take().unwrap();
+	let (ws_url, _) = find_ws_url_from_output(stderr);
+	(node_cmd, ws_url)
+}
+
 /// Start a polkadot node on chain polkadot-dev, kusama-dev or westend-dev.
 pub fn run_polkadot_node(chain: Chain) -> (KillChildOnDrop, String) {
 	let chain_str = format!("{}-dev", chain.to_string());
@@ -63,9 +79,7 @@ pub fn run_polkadot_node(chain: Chain) -> (KillChildOnDrop, String) {
 	);
 
 	let stderr = node_cmd.stderr.take().unwrap();
-
 	let (ws_url, _) = find_ws_url_from_output(stderr);
-
 	(node_cmd, ws_url)
 }
 
@@ -89,4 +103,29 @@ impl DerefMut for KillChildOnDrop {
 	fn deref_mut(&mut self) -> &mut Self::Target {
 		&mut self.0
 	}
+}
+
+pub fn spawn_cli_output_threads(
+	stdout: ChildStdout,
+	stderr: ChildStderr,
+	tx: tokio::sync::mpsc::UnboundedSender<String>,
+) {
+	let tx2 = tx.clone();
+	std::thread::spawn(move || {
+		for line in BufReader::new(stdout).lines() {
+			if let Ok(line) = line {
+				println!("OK: {}", line);
+				let _ = tx2.send(line);
+			}
+		}
+	});
+
+	std::thread::spawn(move || {
+		for line in BufReader::new(stderr).lines() {
+			if let Ok(line) = line {
+				println!("ERR: {}", line);
+				let _ = tx.send(line);
+			}
+		}
+	});
 }

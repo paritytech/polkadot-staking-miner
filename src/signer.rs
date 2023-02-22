@@ -21,7 +21,7 @@ use sp_core::Pair as _;
 use subxt::tx::Signer as _;
 
 // A signer type, parameterized for using with `subxt`.
-type PairSigner = subxt::tx::PairSigner<subxt::PolkadotConfig, sp_core::sr25519::Pair>;
+pub type PairSigner = subxt::tx::PairSigner<subxt::PolkadotConfig, sp_core::sr25519::Pair>;
 
 // Signer wrapper.
 //
