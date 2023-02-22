@@ -13,8 +13,7 @@ use staking_miner::{
 	prelude::{runtime, AccountId, Hash, SubxtClient},
 };
 use std::{
-	io::{BufRead, BufReader},
-	println, process,
+	process,
 	time::{Duration, Instant},
 };
 use subxt::rpc::rpc_params;

@@ -4,26 +4,26 @@
 pub mod common;
 
 use assert_cmd::cargo::cargo_bin;
-use codec::{Decode, Encode};
+use codec::Decode;
 use common::{
 	init_logger, run_staking_miner_playground, spawn_cli_output_threads, KillChildOnDrop,
 };
 use regex::Regex;
-use staking_miner::prelude::SubxtClient;
+use scale_info::TypeInfo;
+use sp_keyring::AccountKeyring;
+use staking_miner::{prelude::SubxtClient, signer::PairSigner};
 use std::{
 	process,
 	time::{Duration, Instant},
 };
-use subxt::{ext::sp_core::Bytes, rpc::rpc_params};
+use subxt::dynamic::Value;
 
 #[tokio::test]
 async fn constants_updated_on_the_fly() {
 	init_logger();
-	// let (_drop, ws_url) = run_staking_miner_playground();
+	let (_drop, ws_url) = run_staking_miner_playground();
 
-	let ws_url = "ws://127.0.0.1:9944";
-
-	let miner = KillChildOnDrop(
+	let _miner = KillChildOnDrop(
 		process::Command::new(cargo_bin(env!("CARGO_PKG_NAME")))
 			.stdout(process::Stdio::piped())
 			.stderr(process::Stdio::piped())
@@ -34,49 +34,20 @@ async fn constants_updated_on_the_fly() {
 	);
 
 	let api = SubxtClient::from_url(&ws_url).await.unwrap();
+	let signer = PairSigner::new(AccountKeyring::Alice.pair());
 
 	let length: u32 = 1024;
 	let weight: u64 = 2048;
 
-	let _ = api
-		.rpc()
-		.request::<Bytes>(
-			"state_call",
-			rpc_params!["TestConfigApi_set_length", Bytes(length.encode())],
-		)
-		.await
-		.unwrap();
+	submit_tx("ConfigBlock", "set_block_weight", &api, vec![Value::u128(weight as u128)], &signer)
+		.await;
+	submit_tx("ConfigBlock", "set_block_length", &api, vec![Value::u128(length as u128)], &signer)
+		.await;
 
-	let _ = api
-		.rpc()
-		.request::<Bytes>(
-			"state_call",
-			rpc_params!["TestConfigApi_set_weight", Bytes(weight.encode())],
-		)
-		.await
-		.unwrap();
+	tokio::time::sleep(std::time::Duration::from_secs(12)).await;
 
-	assert!(has_trimming_output(miner).await);
-
-	let read_length = api
-		.rpc()
-		.request::<Bytes>("state_call", rpc_params!["TestConfigApi_get_length", Bytes(vec![])])
-		.await
-		.unwrap();
-
-	let read_length: u32 = Decode::decode(&mut read_length.as_ref()).unwrap();
-
-	assert_eq!(length, read_length);
-
-	let read_weight = api
-		.rpc()
-		.request::<Bytes>("state_call", rpc_params!["TestConfigApi_get_weight", Bytes(vec![])])
-		.await
-		.unwrap();
-
-	let read_weight: u64 = Decode::decode(&mut read_weight.as_ref()).unwrap();
-
-	assert_eq!(weight, read_weight);
+	assert_eq!(weight, read_storage::<u64>("ConfigBlock", "BlockWeight", &api, vec![]).await);
+	assert_eq!(length, read_storage::<u32>("ConfigBlock", "BlockLength", &api, vec![]).await);
 }
 
 #[tokio::test]
@@ -140,4 +111,26 @@ async fn has_trimming_output(mut miner: KillChildOnDrop) -> bool {
 	}
 
 	false
+}
+
+async fn submit_tx(
+	pallet: &str,
+	name: &str,
+	api: &SubxtClient,
+	params: Vec<Value>,
+	signer: &PairSigner,
+) {
+	let tx = subxt::dynamic::tx(pallet, name, params);
+	_ = api.tx().sign_and_submit_then_watch_default(&tx, signer).await.unwrap();
+}
+
+async fn read_storage<T: Decode + TypeInfo + 'static>(
+	pallet: &str,
+	name: &str,
+	api: &SubxtClient,
+	params: Vec<Value>,
+) -> T {
+	let addr = subxt::dynamic::storage(pallet, name, params);
+	let val = api.storage().at(None).await.unwrap().fetch(&addr).await.unwrap().unwrap();
+	Decode::decode(&mut val.encoded()).unwrap()
 }

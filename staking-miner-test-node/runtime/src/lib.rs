@@ -6,7 +6,8 @@
 #[cfg(feature = "std")]
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
-use codec::Encode;
+pub mod pallet_config_block;
+
 use election_multi_phase::SolutionAccuracyOf;
 use frame_election_provider_support::{onchain, ElectionDataProvider, SequentialPhragmen};
 use frame_support::{
@@ -136,34 +137,15 @@ pub fn native_version() -> NativeVersion {
 	NativeVersion { runtime_version: VERSION, can_author_with: Default::default() }
 }
 
-sp_api::decl_runtime_apis! {
-	pub trait TestConfigApi {
-		fn set_length(len: u32);
-		fn get_length() -> u32;
-
-
-		fn set_weight(weight: u64);
-		fn get_weight() -> u64;
-	}
-}
-
 pub mod block_length {
 	use super::*;
 	use frame_support::traits::Get;
 	use frame_system::limits;
 
-	const BLOCK_LENGTH_KEY: &[u8] = b":test_length:";
 	pub fn get() -> u32 {
-		let res = frame_support::storage::unhashed::get(BLOCK_LENGTH_KEY).unwrap_or(4 * 1024);
-		frame_support::log::info!(target: "runtime", "TEST_BLOCK_LENGTH_KEY::get={}", res);
+		let res = ConfigBlock::block_length().expect("ConfigBlock::BlockLength should be set");
+		frame_support::log::trace!(target: "runtime", "ConfigBlock::BlockLength: {res}");
 		res
-	}
-
-	#[inline(never)]
-	pub fn set(len: u32) {
-		frame_support::log::info!(target: "runtime", "TEST_BLOCK_LENGTH_KEY::set={}", len);
-		frame_support::storage::unhashed::put_raw(BLOCK_LENGTH_KEY, &len.encode());
-		assert_eq!(len, get());
 	}
 
 	pub struct ConfigurableBlockLength;
@@ -178,19 +160,10 @@ pub mod block_weight {
 	use super::*;
 	use frame_system::limits;
 
-	const BLOCK_WEIGHT_KEY: &[u8] = b":test_weight:";
 	pub fn get() -> u64 {
-		let res = frame_support::storage::unhashed::get(BLOCK_WEIGHT_KEY)
-			.unwrap_or((WEIGHT_PER_SECOND / 100).ref_time());
-		frame_support::log::info!(target: "runtime", "TEST_BLOCK_WEIGHT_KEY::get={}", res);
+		let res = ConfigBlock::block_weight().expect("ConfigBlock::BlockWeight should be set");
+		frame_support::log::trace!(target: "runtime", "ConfigBlock::BlockWeight: {res}");
 		res
-	}
-
-	#[inline(never)]
-	pub fn set(len: u64) {
-		frame_support::log::info!(target: "runtime", "TEST_BLOCK_WEIGHT_KEY::set={}", len);
-		frame_support::storage::unhashed::put_raw(BLOCK_WEIGHT_KEY, &len.encode());
-		assert_eq!(len, block_weight::get());
 	}
 
 	pub struct ConfigurableBlockWeight;
@@ -306,6 +279,10 @@ impl pallet_transaction_payment::Config for Runtime {
 impl pallet_sudo::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type RuntimeCall = RuntimeCall;
+}
+
+impl pallet_config_block::Config for Runtime {
+	type RuntimeEvent = RuntimeEvent;
 }
 
 pub(crate) mod sudo_key {
@@ -690,6 +667,7 @@ construct_runtime!(
 		Session: pallet_session,
 		TransactionPayment: pallet_transaction_payment,
 		ElectionProviderMultiPhase: election_multi_phase,
+		ConfigBlock: pallet_config_block,
 	}
 );
 
@@ -860,25 +838,6 @@ impl_runtime_apis! {
 		}
 		fn query_call_fee_details(call: RuntimeCall, len: u32) -> pallet_transaction_payment::FeeDetails<Balance> {
 			TransactionPayment::query_call_fee_details(call, len)
-		}
-	}
-
-	impl crate::TestConfigApi<Block> for Runtime {
-		fn set_length(len: u32) {
-			block_length::set(len)
-		}
-
-		fn get_length() -> u32 {
-			block_length::get()
-		}
-
-
-		fn set_weight(weight: u64) {
-			block_weight::set(weight)
-		}
-
-		fn get_weight() -> u64 {
-			block_weight::get()
 		}
 	}
 

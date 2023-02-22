@@ -197,5 +197,6 @@ fn testnet_genesis(wasm_binary: &[u8], _enable_println: bool) -> GenesisConfig {
 		grandpa: GrandpaConfig { authorities: vec![] },
 		sudo: SudoConfig { key: Some(root_key) },
 		transaction_payment: Default::default(),
+		config_block: Default::default(),
 	}
 }
