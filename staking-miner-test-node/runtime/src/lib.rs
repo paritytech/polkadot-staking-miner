@@ -137,53 +137,19 @@ pub fn native_version() -> NativeVersion {
 	NativeVersion { runtime_version: VERSION, can_author_with: Default::default() }
 }
 
-pub mod block_length {
-	use super::*;
-	use frame_support::traits::Get;
-	use frame_system::limits;
-
-	pub fn get() -> u32 {
-		let res = ConfigBlock::block_length().expect("ConfigBlock::BlockLength should be set");
-		frame_support::log::trace!(target: "runtime", "ConfigBlock::BlockLength: {res}");
-		res
-	}
-
-	pub struct ConfigurableBlockLength;
-	impl Get<limits::BlockLength> for ConfigurableBlockLength {
-		fn get() -> limits::BlockLength {
-			limits::BlockLength { max: PerDispatchClass::new(|_| get()) }
-		}
-	}
-}
-
-pub mod block_weight {
-	use super::*;
-	use frame_system::limits;
-
-	pub fn get() -> u64 {
-		let res = ConfigBlock::block_weight().expect("ConfigBlock::BlockWeight should be set");
-		frame_support::log::trace!(target: "runtime", "ConfigBlock::BlockWeight: {res}");
-		res
-	}
-
-	pub struct ConfigurableBlockWeight;
-	impl Get<limits::BlockWeights> for ConfigurableBlockWeight {
-		fn get() -> limits::BlockWeights {
-			limits::BlockWeights::simple_max(Weight::from_parts(get(), u64::MAX))
-		}
-	}
-}
-
 parameter_types! {
 	pub const Version: RuntimeVersion = VERSION;
 	pub const BlockHashCount: BlockNumber = 2400;
 	pub const SS58Prefix: u8 = 42;
+
+	pub ConfigurableBlockLength: limits::BlockLength = limits::BlockLength { max: PerDispatchClass::new(|_| ConfigBlock::block_length()) };
+	pub ConfigurableBlockWeight: limits::BlockWeights = limits::BlockWeights::simple_max(Weight::from_parts(ConfigBlock::block_weight(), u64::MAX));
 }
 
 impl frame_system::Config for Runtime {
 	type BaseCallFilter = frame_support::traits::Everything;
-	type BlockWeights = block_weight::ConfigurableBlockWeight;
-	type BlockLength = block_length::ConfigurableBlockLength;
+	type BlockWeights = ConfigurableBlockWeight;
+	type BlockLength = ConfigurableBlockLength;
 	type AccountId = AccountId;
 	type RuntimeCall = RuntimeCall;
 	type RuntimeOrigin = RuntimeOrigin;
