@@ -93,6 +93,13 @@ check-code:
     - cargo install cargo-hack
     - cargo hack check --workspace --each-feature --all-targets
 
+check-staking-miner-playground:
+  stage:                           check
+  <<:                              *docker-env
+  <<:                              *common-refs
+  script:
+    - cargo check --manifest-path staking-miner-playground/Cargo.toml
+
 ### stage:                         test
 
 test-ubuntu:
@@ -119,6 +126,11 @@ nightly-test:
     - polkadot --version
     - cd -
     - rm -rf polkadot
+    - cd staking-miner-playground
+    - cargo build --release
+    - mv ./target/release/staking-miner-playground /usr/bin
+    - staking-miner-playground --version
+    - cd -
     - RUST_LOG=info cargo test --workspace --all-features -- --nocapture
     - cargo clean
   after_script:
