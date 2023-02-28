@@ -7,7 +7,7 @@ edition = "2021"
 [dependencies]
 codec = { package = "parity-scale-codec", version = "3.0.0" }
 scale-info = { package = "scale-info", version = "2.3.1" }
-clap = { version = "3.2", features = ["derive", "env"] }
+clap = { version = "4.1", features = ["derive", "env"] }
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"]   }
 jsonrpsee = { version = "0.16", features = ["ws-client"] }
 log = "0.4"
