@@ -55,12 +55,13 @@ mod max_weight {
 	use frame_support::weights::Weight;
 	use std::sync::atomic::{AtomicU64, Ordering};
 
-	static VAL: AtomicU64 = AtomicU64::new(0);
+	static REF_TIME: AtomicU64 = AtomicU64::new(0);
+	static PROOF_SIZE: AtomicU64 = AtomicU64::new(0);
 	pub struct MaxWeight;
 
 	impl MaxWeight {
 		pub fn get() -> Weight {
-			Weight::from_ref_time(VAL.load(Ordering::SeqCst))
+			Weight::from_parts(REF_TIME.load(Ordering::SeqCst), PROOF_SIZE.load(Ordering::SeqCst))
 		}
 	}
 
@@ -72,7 +73,8 @@ mod max_weight {
 
 	impl MaxWeight {
 		pub fn set(weight: Weight) {
-			VAL.store(weight.ref_time(), std::sync::atomic::Ordering::SeqCst);
+			REF_TIME.store(weight.ref_time(), Ordering::SeqCst);
+			PROOF_SIZE.store(weight.proof_size(), Ordering::SeqCst);
 		}
 	}
 }
