@@ -41,8 +41,15 @@ where
 
 	log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer, account_info);
 
+	let round = api
+		.storage()
+		.at(config.at)
+		.await?
+		.fetch_or_default(&runtime::storage().election_provider_multi_phase().round())
+		.await?;
+
 	let (solution, score, _size) =
-		epm::fetch_snapshot_and_mine_solution::<T>(&api, config.at, config.solver).await?;
+		epm::fetch_snapshot_and_mine_solution::<T>(&api, config.at, config.solver, round).await?;
 
 	let round = api
 		.storage()

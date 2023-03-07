@@ -19,9 +19,8 @@
 use crate::{helpers::RuntimeDispatchInfo, opt::Solver, prelude::*, static_types};
 use codec::{Decode, Encode};
 use frame_election_provider_support::{NposSolution, PhragMMS, SequentialPhragmen};
-use frame_support::{weights::Weight, BoundedVec};
+use frame_support::weights::Weight;
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOf, SolutionOrSnapshotSize};
-use runtime::runtime_types::pallet_election_provider_multi_phase::RoundSnapshot;
 use scale_info::{PortableRegistry, TypeInfo};
 use scale_value::scale::{decode_as_type, TypeId};
 use sp_core::Bytes;
@@ -29,6 +28,11 @@ use sp_npos_elections::ElectionScore;
 use subxt::{dynamic::Value, rpc::rpc_params, tx::DynamicTxPayload};
 
 const EPM_PALLET_NAME: &str = "ElectionProviderMultiPhase";
+
+type MinerVoterOf =
+	frame_election_provider_support::Voter<AccountId, crate::static_types::MaxVotesPerVoter>;
+
+type RoundSnapshot = pallet_election_provider_multi_phase::RoundSnapshot<AccountId, MinerVoterOf>;
 
 #[derive(Copy, Clone, Debug)]
 struct EpmConstant {
@@ -57,33 +61,26 @@ pub(crate) async fn update_metadata_constants(api: &SubxtClient) -> Result<(), E
 	const SIGNED_MAX_WEIGHT: EpmConstant = EpmConstant::new("SignedMaxWeight");
 	const MAX_LENGTH: EpmConstant = EpmConstant::new("MinerMaxLength");
 	const MAX_VOTES_PER_VOTER: EpmConstant = EpmConstant::new("MinerMaxVotesPerVoter");
+	const MAX_WINNERS: EpmConstant = EpmConstant::new("MinerMaxWinners");
+
+	fn log_metadata(metadata: EpmConstant, val: impl std::fmt::Display) {
+		log::trace!(target: LOG_TARGET, "updating metadata constant `{metadata}`: {val}",);
+	}
 
 	let max_weight = read_constant::<Weight>(api, SIGNED_MAX_WEIGHT)?;
 	let max_length: u32 = read_constant(api, MAX_LENGTH)?;
 	let max_votes_per_voter: u32 = read_constant(api, MAX_VOTES_PER_VOTER)?;
+	let max_winners: u32 = read_constant(api, MAX_WINNERS)?;
 
-	log::trace!(
-		target: LOG_TARGET,
-		"updating metadata constant `{}`: {}",
-		SIGNED_MAX_WEIGHT.to_string(),
-		max_weight.ref_time()
-	);
-	log::trace!(
-		target: LOG_TARGET,
-		"updating metadata constant `{}`: {}",
-		MAX_LENGTH.to_string(),
-		max_length
-	);
-	log::trace!(
-		target: LOG_TARGET,
-		"updating metadata constant `{}`: {}",
-		MAX_VOTES_PER_VOTER.to_string(),
-		max_votes_per_voter
-	);
+	log_metadata(SIGNED_MAX_WEIGHT, max_weight);
+	log_metadata(MAX_LENGTH, max_length);
+	log_metadata(MAX_VOTES_PER_VOTER, max_votes_per_voter);
+	log_metadata(MAX_WINNERS, max_winners);
 
 	static_types::MaxWeight::set(max_weight);
 	static_types::MaxLength::set(max_length);
 	static_types::MaxVotesPerVoter::set(max_votes_per_voter);
+	static_types::MaxWinners::set(max_winners);
 
 	Ok(())
 }
@@ -150,12 +147,28 @@ pub async fn signed_submission_at<S: NposSolution + Decode + TypeInfo + 'static>
 	}
 }
 
+/// Helper to the signed submissions at the block `at`.
+pub async fn snapshot_at(at: Option<Hash>, api: &SubxtClient) -> Result<RoundSnapshot, Error> {
+	let empty = Vec::<Value>::new();
+	let addr = subxt::dynamic::storage(EPM_PALLET_NAME, "Snapshot", empty);
+
+	match api.storage().at(at).await?.fetch(&addr).await {
+		Ok(Some(val)) => {
+			let snapshot = Decode::decode(&mut val.encoded())?;
+			Ok(snapshot)
+		},
+		Ok(None) => Err(Error::EmptySnapshot),
+		Err(err) => Err(err.into()),
+	}
+}
+
 /// Helper to fetch snapshot data via RPC
 /// and compute an NPos solution via [`pallet_election_provider_multi_phase`].
 pub async fn fetch_snapshot_and_mine_solution<T>(
 	api: &SubxtClient,
 	hash: Option<Hash>,
 	solver: Solver,
+	round: u32,
 ) -> Result<(SolutionOf<T>, ElectionScore, SolutionOrSnapshotSize), Error>
 where
 	T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
@@ -164,31 +177,24 @@ where
 		+ 'static,
 	T::Solution: Send,
 {
-	let RoundSnapshot { voters, targets } = api
-		.storage()
-		.at(hash)
-		.await?
-		.fetch(&runtime::storage().election_provider_multi_phase().snapshot())
-		.await?
-		.unwrap_or_default();
-
+	let snapshot = snapshot_at(hash, &api).await?;
 	let desired_targets = api
 		.storage()
 		.at(hash)
 		.await?
 		.fetch(&runtime::storage().election_provider_multi_phase().desired_targets())
 		.await?
-		.unwrap_or_default();
+		.expect("Snapshot is non-empty should exist; qed");
 
-	let voters: Vec<_> = voters
-	.into_iter()
-	.map(|(a, b, mut c)| {
-		let mut bounded_vec: BoundedVec<AccountId, static_types::MaxVotesPerVoter> = BoundedVec::default();
-		// If this fails just crash the task.
-		bounded_vec.try_append(&mut c.0).unwrap_or_else(|_| panic!("BoundedVec capacity: {} failed; `MinerConfig::MaxVotesPerVoter` is different from the chain data; this is a bug please file an issue", static_types::MaxVotesPerVoter::get()));
-		(a, b, bounded_vec)
-	})
-	.collect();
+	let minimum_untrusted_score = api
+		.storage()
+		.at(hash)
+		.await?
+		.fetch(&runtime::storage().election_provider_multi_phase().minimum_untrusted_score())
+		.await?;
+
+	let voters = snapshot.voters.clone();
+	let targets = snapshot.targets.clone();
 
 	let blocking_task = tokio::task::spawn_blocking(move || match solver {
 		Solver::SeqPhragmen { iterations } => {
@@ -209,9 +215,32 @@ where
 	.await;
 
 	match blocking_task {
-		Ok(Ok(res)) => Ok(res),
+		Ok(Ok((solution, score, solution_or_snapshot))) => {
+			log::info!(
+				target: LOG_TARGET,
+				"mined solution: {:?}, score: {:?}, solution_or_snapshot: {:?}",
+				solution,
+				score,
+				solution_or_snapshot
+			);
+
+			match Miner::<T>::feasibility_check(
+				RawSolution { solution: solution.clone(), score, round },
+				pallet_election_provider_multi_phase::ElectionCompute::Signed,
+				desired_targets,
+				snapshot,
+				round,
+				minimum_untrusted_score,
+			) {
+				Ok(_) => Ok((solution, score, solution_or_snapshot)),
+				Err(e) => {
+					log::error!(target: LOG_TARGET, "Solution feasibility error {:?}", e);
+					Err(Error::Feasibility(format!("{:?}", e)))
+				},
+			}
+		},
 		Ok(Err(err)) => Err(Error::Other(format!("{:?}", err))),
-		Err(err) => Err(Error::Other(format!("{:?}", err))),
+		Err(err) => Err(err.into()),
 	}
 }
 
@@ -278,14 +307,18 @@ pub async fn runtime_api_solution_weight<S: Encode + NposSolution + TypeInfo + '
 }
 
 /// Helper to mock the votes based on `voters` and `desired_targets`.
-pub fn mock_votes(voters: u32, desired_targets: u16) -> Vec<(u32, u16)> {
-	assert!(voters >= desired_targets as u32);
-	(0..voters).zip((0..desired_targets).cycle()).collect()
+pub fn mock_votes(voters: u32, desired_targets: u16) -> Option<Vec<(u32, u16)>> {
+	if voters >= desired_targets as u32 {
+		Some((0..voters).zip((0..desired_targets).cycle()).collect())
+	} else {
+		None
+	}
 }
 
 #[cfg(test)]
 #[test]
 fn mock_votes_works() {
-	assert_eq!(mock_votes(3, 2), vec![(0, 0), (1, 1), (2, 0)]);
-	assert_eq!(mock_votes(3, 3), vec![(0, 0), (1, 1), (2, 2)]);
+	assert_eq!(mock_votes(3, 2), Some(vec![(0, 0), (1, 1), (2, 0)]));
+	assert_eq!(mock_votes(3, 3), Some(vec![(0, 0), (1, 1), (2, 2)]));
+	assert_eq!(mock_votes(2, 3), None);
 }

@@ -17,7 +17,7 @@
 use crate::{
 	epm,
 	error::Error,
-	helpers::TimedFuture,
+	helpers::{kill_main_task_if_critical_err, TimedFuture},
 	opt::{Listen, MonitorConfig, SubmissionStrategy},
 	prelude::*,
 	prometheus,
@@ -116,65 +116,6 @@ where
 	}
 }
 
-fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>, err: Error) {
-	match err {
-		Error::AlreadySubmitted |
-		Error::BetterScoreExist |
-		Error::IncorrectPhase |
-		Error::TransactionRejected(_) |
-		Error::SubscriptionClosed => {},
-		Error::Subxt(SubxtError::Rpc(rpc_err)) => {
-			log::debug!(target: LOG_TARGET, "rpc error: {:?}", rpc_err);
-
-			match rpc_err {
-				RpcError::ClientError(e) => {
-					let jsonrpsee_err = match e.downcast::<JsonRpseeError>() {
-						Ok(e) => *e,
-						Err(_) => {
-							let _ = tx.send(Error::Other(
-								"Failed to downcast RPC error; this is a bug please file an issue"
-									.to_string(),
-							));
-							return
-						},
-					};
-
-					match jsonrpsee_err {
-						JsonRpseeError::Call(CallError::Custom(e)) => {
-							const BAD_EXTRINSIC_FORMAT: i32 = 1001;
-							const VERIFICATION_ERROR: i32 = 1002;
-							use jsonrpsee::types::error::ErrorCode;
-
-							// Check if the transaction gets fatal errors from the `author` RPC.
-							// It's possible to get other errors such as outdated nonce and similar
-							// but then it should be possible to try again in the next block or round.
-							if e.code() == BAD_EXTRINSIC_FORMAT ||
-								e.code() == VERIFICATION_ERROR || e.code() ==
-								ErrorCode::MethodNotFound.code()
-							{
-								let _ = tx.send(Error::Subxt(SubxtError::Rpc(
-									RpcError::ClientError(Box::new(CallError::Custom(e))),
-								)));
-							}
-						},
-						JsonRpseeError::Call(CallError::Failed(_)) => {},
-						JsonRpseeError::RequestTimeout => {},
-						err => {
-							let _ = tx.send(Error::Subxt(SubxtError::Rpc(RpcError::ClientError(
-								Box::new(err),
-							))));
-						},
-					}
-				},
-				RpcError::SubscriptionDropped => (),
-			}
-		},
-		err => {
-			let _ = tx.send(err);
-		},
-	}
-}
-
 /// Construct extrinsic at given block and watch it.
 async fn mine_and_submit_solution<T>(
 	tx: tokio::sync::mpsc::UnboundedSender<Error>,
@@ -220,11 +161,8 @@ async fn mine_and_submit_solution<T>(
 		api.storage()
 			.at(Some(hash))
 			.await?
-			.fetch(&runtime::storage().election_provider_multi_phase().round())
+			.fetch_or_default(&runtime::storage().election_provider_multi_phase().round())
 			.await
-			// Default round is 1
-			// https://github.com/paritytech/substrate/blob/49b06901eb65f2c61ff0934d66987fd955d5b8f5/frame/election-provider-multi-phase/src/lib.rs#L1188
-			.map(|r| r.unwrap_or(1))
 	};
 
 	let round = match fut.await {
@@ -254,7 +192,7 @@ async fn mine_and_submit_solution<T>(
 	let _lock = submit_lock.lock().await;
 
 	let (solution, score) =
-		match epm::fetch_snapshot_and_mine_solution::<T>(&api, Some(hash), config.solver)
+		match epm::fetch_snapshot_and_mine_solution::<T>(&api, Some(hash), config.solver, round)
 			.timed()
 			.await
 		{

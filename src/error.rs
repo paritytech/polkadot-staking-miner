@@ -48,4 +48,10 @@ pub enum Error {
 	SubscriptionClosed,
 	#[error("Dynamic transaction error: {0}")]
 	DynamicTransaction(String),
+	#[error("Feasibility error: {0}")]
+	Feasibility(String),
+	#[error("{0}")]
+	JoinError(#[from] tokio::task::JoinError),
+	#[error("Empty snapshot")]
+	EmptySnapshot,
 }
