@@ -8,10 +8,9 @@ edition = "2021"
 codec = { package = "parity-scale-codec", version = "3.0.0" }
 scale-info = { package = "scale-info", version = "2.3.1" }
 clap = { version = "3.2", features = ["derive", "env"] }
-tracing-subscriber = { version = "0.3.16", features = ["env-filter"]   }
+tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
 jsonrpsee = { version = "0.16", features = ["ws-client"] }
 log = "0.4"
-paste = "1.0"
 serde = "1.0"
 serde_json = "1.0"
 futures = "0.3"
@@ -24,13 +23,10 @@ subxt = "0.27.1"
 scale-value = "0.6.0"
 
 # substrate
-sp-io = "17.0.0"
-frame-system = "16.0.0"
 frame-election-provider-support = "16.0.0"
 pallet-election-provider-multi-phase = "15.0.0"
 sp-npos-elections = "14.0.0"
 frame-support = "16.0.0"
-sp-version = "16.0.0"
 sp-core = "16.0.0"
 sp-runtime = "18.0.0"
 

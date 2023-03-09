@@ -3547,7 +3547,6 @@ dependencies = [
  "clap",
  "frame-election-provider-support",
  "frame-support",
- "frame-system",
  "futures",
  "hyper",
  "jsonrpsee",
@@ -3555,7 +3554,6 @@ dependencies = [
  "once_cell",
  "pallet-election-provider-multi-phase",
  "parity-scale-codec",
- "paste",
  "pin-project-lite",
  "prometheus",
  "regex",
@@ -3564,12 +3562,10 @@ dependencies = [
  "serde",
  "serde_json",
  "sp-core",
- "sp-io",
  "sp-keyring",
  "sp-npos-elections",
  "sp-runtime",
  "sp-storage",
- "sp-version",
  "subxt",
  "thiserror",
  "tokio",
@@ -4042,7 +4038,7 @@ checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
  "digest 0.10.6",
- "rand 0.7.3",
+ "rand 0.8.5",
  "static_assertions",
 ]
 
