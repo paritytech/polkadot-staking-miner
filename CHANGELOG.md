@@ -40,7 +40,7 @@ This is a patch release that fixes a bug which takes the `Weight::proof_size` in
 
 ### Compatibility
 Tested against:
-- Polkadot v9370
+- Polkadot v9390
 - Kusama v9390
 - Westend v9390
 
