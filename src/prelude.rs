@@ -24,6 +24,7 @@
 pub use crate::{error::Error, opt::*};
 pub use frame_election_provider_support::VoteWeight;
 pub use pallet_election_provider_multi_phase::{Miner, MinerConfig};
+pub use subxt::ext::sp_core;
 
 use once_cell::sync::OnceCell;
 
@@ -37,7 +38,7 @@ pub type Hash = sp_core::H256;
 /// Balance type
 pub type Balance = u128;
 
-pub use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
+pub use subxt::ext::sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 
 /// Default URI to connect to.
 ///
@@ -74,7 +75,10 @@ pub type SignedSubmission<S> =
 		type = "pallet_election_provider_multi_phase::RoundSnapshot",
 		derive = "Default"
 	),
-	substitute_type(type = "sp_arithmetic::per_things::PerU16", with = "::sp_runtime::PerU16"),
+	substitute_type(
+		type = "sp_arithmetic::per_things::PerU16",
+		with = "::subxt::ext::sp_runtime::PerU16"
+	),
 	substitute_type(
 		type = "pallet_election_provider_multi_phase::RawSolution",
 		with = "::pallet_election_provider_multi_phase::RawSolution"
