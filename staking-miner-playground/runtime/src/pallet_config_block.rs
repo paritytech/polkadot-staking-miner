@@ -5,7 +5,7 @@
 
 use frame_support::{
 	dispatch::DispatchResult,
-	weights::{constants::WEIGHT_PER_SECOND, Weight},
+	weights::{constants::WEIGHT_REF_TIME_PER_SECOND, Weight},
 };
 use sp_std::marker::PhantomData;
 
@@ -23,7 +23,6 @@ pub mod pallet {
 	}
 
 	#[pallet::pallet]
-	#[pallet::generate_store(pub(super) trait Store)]
 	pub struct Pallet<T>(_);
 
 	#[pallet::event]
@@ -45,6 +44,7 @@ pub mod pallet {
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::weight(0)]
+		#[pallet::call_index(0)]
 		pub fn set_block_length(_origin: OriginFor<T>, length: u32) -> DispatchResult {
 			frame_support::log::trace!("ConfigBlock::set_block_length: {length}");
 			BlockLength::<T>::put(length);
@@ -53,6 +53,7 @@ pub mod pallet {
 		}
 
 		#[pallet::weight(0)]
+		#[pallet::call_index(1)]
 		pub fn set_block_weight(_origin: OriginFor<T>, weight: u64) -> DispatchResult {
 			frame_support::log::trace!("ConfigBlock::set_block_weight: {weight}");
 			BlockWeight::<T>::put(weight);
@@ -68,7 +69,7 @@ pub mod pallet {
 
 	#[pallet::type_value]
 	pub fn DefaultBlockWeight() -> u64 {
-		(WEIGHT_PER_SECOND / 100).ref_time()
+		WEIGHT_REF_TIME_PER_SECOND / 100
 	}
 
 	#[pallet::storage]

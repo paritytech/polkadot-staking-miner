@@ -19,10 +19,10 @@ name = "staking-miner-playground"
 [dependencies]
 clap = { version = "4.0.9", features = ["derive"] }
 
-sc-cli = { git = "https://github.com/paritytech/substrate.git", features = ["wasmtime"] , branch = "master" }
+sc-cli = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
 sp-core = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
-sc-executor = { git = "https://github.com/paritytech/substrate.git", features = ["wasmtime"] , branch = "master" }
-sc-service = { git = "https://github.com/paritytech/substrate.git", features = ["wasmtime"] , branch = "master" }
+sc-executor = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sc-service = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
 sc-telemetry = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
 sc-keystore = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
 sc-transaction-pool = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
@@ -31,8 +31,8 @@ sc-consensus-aura = { git = "https://github.com/paritytech/substrate.git", branc
 sp-consensus-aura = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
 sp-consensus = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
 sc-consensus = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
-sc-finality-grandpa = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
-sp-finality-grandpa = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sc-consensus-grandpa = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+sp-consensus-grandpa = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
 sc-client-api = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
 sp-runtime = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
 sp-timestamp = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
@@ -43,7 +43,7 @@ pallet-transaction-payment = { git = "https://github.com/paritytech/substrate.gi
 pallet-staking = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
 
 # These dependencies are used for the node template's RPCs
-jsonrpsee = { version = "0.15.1", features = ["server"] }
+jsonrpsee = { version = "0.16.2", features = ["server"] }
 sc-rpc = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
 sp-api = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
 sc-rpc-api = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
@@ -62,7 +62,6 @@ node-template-runtime = { version = "4.0.0-dev", path = "../runtime" }
 
 lazy_static = "1.4.0"
 rand = "0.8.5"
-
 
 # CLI-specific dependencies
 try-runtime-cli = { version = "0.10.0-dev", optional = true, git = "https://github.com/paritytech/substrate.git", branch = "master" }

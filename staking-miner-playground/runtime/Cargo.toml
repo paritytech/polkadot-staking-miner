@@ -19,7 +19,7 @@ scale-info = { version = "2.0.1", default-features = false, features = ["derive"
 pallet-balances = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
 frame-support = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
 pallet-grandpa = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-pallet-randomness-collective-flip = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
+pallet-insecure-randomness-collective-flip = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
 pallet-sudo = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
 pallet-staking = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
 pallet-session = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
@@ -71,7 +71,7 @@ std = [
 	"pallet-aura/std",
 	"frame-election-provider-support/std",
 	"pallet-election-provider-multi-phase/std",
-	"pallet-randomness-collective-flip/std",
+	"pallet-insecure-randomness-collective-flip/std",
 	"pallet-sudo/std",
 	"pallet-timestamp/std",
 	"pallet-transaction-payment-rpc-runtime-api/std",
