@@ -1,8 +1,5 @@
 //! A simple pallet that makes it possible to configure the block length and block weight.
 
-// Ensure we're `no_std` when compiling for Wasm.
-#![cfg_attr(not(feature = "std"), no_std)]
-
 use frame_support::{
 	dispatch::DispatchResult,
 	weights::{constants::WEIGHT_REF_TIME_PER_SECOND, Weight},

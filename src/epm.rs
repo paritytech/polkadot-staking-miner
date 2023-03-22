@@ -216,14 +216,6 @@ where
 
 	match blocking_task {
 		Ok(Ok((solution, score, solution_or_snapshot))) => {
-			log::info!(
-				target: LOG_TARGET,
-				"mined solution: {:?}, score: {:?}, solution_or_snapshot: {:?}",
-				solution,
-				score,
-				solution_or_snapshot
-			);
-
 			match Miner::<T>::feasibility_check(
 				RawSolution { solution: solution.clone(), score, round },
 				pallet_election_provider_multi_phase::ElectionCompute::Signed,
