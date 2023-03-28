@@ -184,7 +184,7 @@ where
 		.await?
 		.fetch(&runtime::storage().election_provider_multi_phase().desired_targets())
 		.await?
-		.expect("Snapshot is non-empty should exist; qed");
+		.expect("Snapshot is non-empty; `desired_target` should exist; qed");
 
 	let minimum_untrusted_score = api
 		.storage()
