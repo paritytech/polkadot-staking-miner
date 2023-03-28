@@ -8,6 +8,17 @@ include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
 pub mod pallet_config_block;
 
+#[macro_export]
+macro_rules! prod_or_test {
+	($prod:expr, $test:expr) => {
+		if cfg!(feature = "test-trimming") {
+			$test
+		} else {
+			$prod
+		}
+	};
+}
+
 use election_multi_phase::SolutionAccuracyOf;
 use frame_election_provider_support::{onchain, ElectionDataProvider, SequentialPhragmen};
 use frame_support::{
@@ -450,15 +461,21 @@ parameter_types! {
 
 	// miner configs
 	pub const ElectionUnsignedPriority: TransactionPriority = StakingUnsignedPriority::get() - 1u64;
-	pub MinerMaxWeight: Weight = Perbill::from_rational(8u32, 10) *
-		<Runtime as frame_system::Config>::BlockWeights::get()
-		.get(DispatchClass::Normal)
-		.max_total
-		.unwrap();
-	pub MinerMaxLength: u32 = Perbill::from_rational(8u32, 10) *
-		*(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get())
-		.max
-		.get(DispatchClass::Normal);
+
+	// TODO(niklasad1): this is a hack to get the number of validators, candidates and nominators
+	// used by node which uses the same env flags.
+	Nominators: u32 = option_env!("N").unwrap_or("1000").parse().expect("env variable `N` must be number");
+	Candidates: u32 = option_env!("C").unwrap_or("500").parse().expect("env variable `C` must be number");
+	Validators: u32 = option_env!("V").unwrap_or("100").parse().expect("env variable `V` must be number");
+
+	// Set the max length to `nominators / 2` to force trimming of length to occur.
+	pub MinerMaxLength: u32 = prod_or_test!(
+		Perbill::from_rational(8u32, 10) * *(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get()).max.get(DispatchClass::Normal),
+		Nominators::get() / 2
+	);
+
+	// TODO trimming weight seems occur with this anyway.
+	pub MinerMaxWeight: Weight = Perbill::from_rational(8u32, 10) * <Runtime as frame_system::Config>::BlockWeights::get().get(DispatchClass::Normal).max_total.unwrap();
 }
 
 mod solution_16 {
@@ -600,7 +617,6 @@ impl pallet_election_provider_multi_phase::Config for Runtime {
 	type MaxElectableTargets = ConstU16<{ u16::MAX }>;
 	type MaxElectingVoters = MaxElectingVoters;
 	type MaxWinners = MaxActiveValidators;
-	// type MaxElectingVoters = IncPerRound<10_000, 1000>;
 	type BenchmarkingConfig = ElectionProviderBenchmarkConfig;
 }
 

@@ -124,7 +124,8 @@ async fn mine_and_submit_solution<T>(
 	signer: Signer,
 	config: MonitorConfig,
 	submit_lock: Arc<Mutex<()>>,
-) where
+) -> Result<(), Error>
+where
 	T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
 		+ Send
 		+ Sync
@@ -202,11 +203,17 @@ async fn mine_and_submit_solution<T>(
 				let active_voters = solution.voter_count() as u32;
 				let desired_targets = solution.unique_targets().len() as u32;
 
-				let final_weight = tokio::task::spawn_blocking(move || {
+				let final_weight_task = tokio::task::spawn_blocking(move || {
 					T::solution_weight(size.voters, size.targets, active_voters, desired_targets)
-				})
-				.await
-				.unwrap();
+				});
+
+				let final_weight = match final_weight_task.await {
+					Ok(w) => w,
+					Err(e) => {
+						kill_main_task_if_critical_err(&tx, e);
+						return;
+					}
+				}
 
 				log::info!(
 					target: LOG_TARGET,
