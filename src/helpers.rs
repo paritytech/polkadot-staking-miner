@@ -14,8 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
+use crate::{error::Error, prelude::*};
 use codec::Decode;
 use frame_support::weights::Weight;
+use jsonrpsee::{core::Error as JsonRpseeError, types::error::CallError};
 use pin_project_lite::pin_project;
 use serde::Deserialize;
 use std::{
@@ -24,6 +26,7 @@ use std::{
 	task::{Context, Poll},
 	time::{Duration, Instant},
 };
+use subxt::error::{Error as SubxtError, RpcError};
 
 pin_project! {
 	pub struct Timed<Fut>
@@ -72,4 +75,66 @@ impl<F: Future> TimedFuture for F {}
 pub struct RuntimeDispatchInfo {
 	/// Weight of this dispatch.
 	pub weight: Weight,
+}
+
+pub fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>, err: Error) {
+	match err {
+		Error::AlreadySubmitted |
+		Error::BetterScoreExist |
+		Error::IncorrectPhase |
+		Error::TransactionRejected(_) |
+		Error::JoinError(_) |
+		Error::Feasibility(_) |
+		Error::EmptySnapshot |
+		Error::SubscriptionClosed => {},
+		Error::Subxt(SubxtError::Rpc(rpc_err)) => {
+			log::debug!(target: LOG_TARGET, "rpc error: {:?}", rpc_err);
+
+			match rpc_err {
+				RpcError::ClientError(e) => {
+					let jsonrpsee_err = match e.downcast::<JsonRpseeError>() {
+						Ok(e) => *e,
+						Err(_) => {
+							let _ = tx.send(Error::Other(
+								"Failed to downcast RPC error; this is a bug please file an issue"
+									.to_string(),
+							));
+							return
+						},
+					};
+
+					match jsonrpsee_err {
+						JsonRpseeError::Call(CallError::Custom(e)) => {
+							const BAD_EXTRINSIC_FORMAT: i32 = 1001;
+							const VERIFICATION_ERROR: i32 = 1002;
+							use jsonrpsee::types::error::ErrorCode;
+
+							// Check if the transaction gets fatal errors from the `author` RPC.
+							// It's possible to get other errors such as outdated nonce and similar
+							// but then it should be possible to try again in the next block or round.
+							if e.code() == BAD_EXTRINSIC_FORMAT ||
+								e.code() == VERIFICATION_ERROR || e.code() ==
+								ErrorCode::MethodNotFound.code()
+							{
+								let _ = tx.send(Error::Subxt(SubxtError::Rpc(
+									RpcError::ClientError(Box::new(CallError::Custom(e))),
+								)));
+							}
+						},
+						JsonRpseeError::Call(CallError::Failed(_)) => {},
+						JsonRpseeError::RequestTimeout => {},
+						err => {
+							let _ = tx.send(Error::Subxt(SubxtError::Rpc(RpcError::ClientError(
+								Box::new(err),
+							))));
+						},
+					}
+				},
+				RpcError::SubscriptionDropped => (),
+			}
+		},
+		err => {
+			let _ = tx.send(err);
+		},
+	}
 }

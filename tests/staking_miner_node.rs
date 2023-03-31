@@ -10,8 +10,10 @@ use common::{
 };
 use regex::Regex;
 use scale_info::TypeInfo;
-use sp_keyring::AccountKeyring;
-use staking_miner::{prelude::SubxtClient, signer::PairSigner};
+use staking_miner::{
+	prelude::SubxtClient,
+	signer::{PairSigner, Signer},
+};
 use std::{
 	process,
 	time::{Duration, Instant},
@@ -34,7 +36,7 @@ async fn constants_updated_on_the_fly() {
 	);
 
 	let api = SubxtClient::from_url(&ws_url).await.unwrap();
-	let signer = PairSigner::new(AccountKeyring::Alice.pair());
+	let signer = Signer::new("//Alice").unwrap();
 
 	let length: u32 = 1024;
 	let weight: u64 = 2048;

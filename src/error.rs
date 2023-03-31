@@ -14,6 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
+use crate::prelude::*;
+
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
 	#[error("Failed to parse log directive: `{0}´")]
@@ -48,4 +50,10 @@ pub enum Error {
 	SubscriptionClosed,
 	#[error("Dynamic transaction error: {0}")]
 	DynamicTransaction(String),
+	#[error("Feasibility error: {0}")]
+	Feasibility(String),
+	#[error("{0}")]
+	JoinError(#[from] tokio::task::JoinError),
+	#[error("Empty snapshot")]
+	EmptySnapshot,
 }

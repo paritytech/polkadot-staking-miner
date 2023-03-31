@@ -6,11 +6,10 @@ pub mod common;
 use assert_cmd::cargo::cargo_bin;
 use codec::Decode;
 use common::{init_logger, run_polkadot_node, KillChildOnDrop};
-use sp_core::Bytes;
 use sp_storage::StorageChangeSet;
 use staking_miner::{
 	opt::Chain,
-	prelude::{runtime, AccountId, Hash, SubxtClient},
+	prelude::{runtime, sp_core::Bytes, Hash, SubxtClient},
 };
 use std::{
 	process,
@@ -73,7 +72,7 @@ async fn test_submit_solution(chain: Chain) {
 			};
 
 		if let Some(data) = x.changes[0].clone().1 {
-			let solution: ReadySolution<AccountId> = Decode::decode(&mut data.0.as_slice())
+			let solution: ReadySolution = Decode::decode(&mut data.0.as_slice())
 				.expect("Failed to decode storage as QueuedSolution");
 			eprintln!("solution: {:?}", solution);
 			assert!(solution.compute == ElectionCompute::Signed);

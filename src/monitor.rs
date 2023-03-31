@@ -17,7 +17,7 @@
 use crate::{
 	epm,
 	error::Error,
-	helpers::TimedFuture,
+	helpers::{kill_main_task_if_critical_err, TimedFuture},
 	opt::{Listen, MonitorConfig, SubmissionStrategy},
 	prelude::*,
 	prometheus,
@@ -26,6 +26,7 @@ use crate::{
 };
 use codec::{Decode, Encode};
 use frame_election_provider_support::NposSolution;
+use futures::future::TryFutureExt;
 use jsonrpsee::{core::Error as JsonRpseeError, types::error::CallError};
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOf};
 use sp_runtime::Perbill;
@@ -95,14 +96,18 @@ where
 
 		// Spawn task and non-recoverable errors are sent back to the main task
 		// such as if the connection has been closed.
-		tokio::spawn(mine_and_submit_solution::<T>(
-			tx.clone(),
-			at,
-			api.clone(),
-			signer.clone(),
-			config.clone(),
-			submit_lock.clone(),
-		));
+		let tx2 = tx.clone();
+		let api2 = api.clone();
+		let signer2 = signer.clone();
+		let config2 = config.clone();
+		let submit_lock2 = submit_lock.clone();
+		tokio::spawn(async move {
+			if let Err(err) =
+				mine_and_submit_solution::<T>(at, api2, signer2, config2, submit_lock2).await
+			{
+				kill_main_task_if_critical_err(&tx2, err)
+			}
+		});
 
 		let account_info = api
 			.storage()
@@ -116,74 +121,15 @@ where
 	}
 }
 
-fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>, err: Error) {
-	match err {
-		Error::AlreadySubmitted |
-		Error::BetterScoreExist |
-		Error::IncorrectPhase |
-		Error::TransactionRejected(_) |
-		Error::SubscriptionClosed => {},
-		Error::Subxt(SubxtError::Rpc(rpc_err)) => {
-			log::debug!(target: LOG_TARGET, "rpc error: {:?}", rpc_err);
-
-			match rpc_err {
-				RpcError::ClientError(e) => {
-					let jsonrpsee_err = match e.downcast::<JsonRpseeError>() {
-						Ok(e) => *e,
-						Err(_) => {
-							let _ = tx.send(Error::Other(
-								"Failed to downcast RPC error; this is a bug please file an issue"
-									.to_string(),
-							));
-							return
-						},
-					};
-
-					match jsonrpsee_err {
-						JsonRpseeError::Call(CallError::Custom(e)) => {
-							const BAD_EXTRINSIC_FORMAT: i32 = 1001;
-							const VERIFICATION_ERROR: i32 = 1002;
-							use jsonrpsee::types::error::ErrorCode;
-
-							// Check if the transaction gets fatal errors from the `author` RPC.
-							// It's possible to get other errors such as outdated nonce and similar
-							// but then it should be possible to try again in the next block or round.
-							if e.code() == BAD_EXTRINSIC_FORMAT ||
-								e.code() == VERIFICATION_ERROR || e.code() ==
-								ErrorCode::MethodNotFound.code()
-							{
-								let _ = tx.send(Error::Subxt(SubxtError::Rpc(
-									RpcError::ClientError(Box::new(CallError::Custom(e))),
-								)));
-							}
-						},
-						JsonRpseeError::Call(CallError::Failed(_)) => {},
-						JsonRpseeError::RequestTimeout => {},
-						err => {
-							let _ = tx.send(Error::Subxt(SubxtError::Rpc(RpcError::ClientError(
-								Box::new(err),
-							))));
-						},
-					}
-				},
-				RpcError::SubscriptionDropped => (),
-			}
-		},
-		err => {
-			let _ = tx.send(err);
-		},
-	}
-}
-
 /// Construct extrinsic at given block and watch it.
 async fn mine_and_submit_solution<T>(
-	tx: tokio::sync::mpsc::UnboundedSender<Error>,
 	at: Header,
 	api: SubxtClient,
 	signer: Signer,
 	config: MonitorConfig,
 	submit_lock: Arc<Mutex<()>>,
-) where
+) -> Result<(), Error>
+where
 	T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
 		+ Send
 		+ Sync
@@ -196,65 +142,47 @@ async fn mine_and_submit_solution<T>(
 	// NOTE: as we try to send at each block then the nonce is used guard against
 	// submitting twice. Because once a solution has been accepted on chain
 	// the "next transaction" at a later block but with the same nonce will be rejected
-	let nonce = match api.rpc().system_account_next_index(signer.account_id()).await {
-		Ok(none) => none,
-		Err(e) => {
-			kill_main_task_if_critical_err(&tx, e.into());
-			return
-		},
-	};
+	let nonce = api.rpc().system_account_next_index(signer.account_id()).await?;
 
-	if let Err(e) = ensure_signed_phase(&api, hash).await {
-		log::debug!(
-			target: LOG_TARGET,
-			"ensure_signed_phase failed: {:?}; skipping block: {}",
-			e,
-			at.number
-		);
+	ensure_signed_phase(&api, hash)
+		.inspect_err(|e| {
+			log::debug!(
+				target: LOG_TARGET,
+				"ensure_signed_phase failed: {:?}; skipping block: {}",
+				e,
+				at.number
+			)
+		})
+		.await?;
 
-		kill_main_task_if_critical_err(&tx, e);
-		return
-	}
-
-	let fut = async {
+	let round_fut = async {
 		api.storage()
 			.at(Some(hash))
 			.await?
-			.fetch(&runtime::storage().election_provider_multi_phase().round())
+			.fetch_or_default(&runtime::storage().election_provider_multi_phase().round())
 			.await
-			// Default round is 1
-			// https://github.com/paritytech/substrate/blob/49b06901eb65f2c61ff0934d66987fd955d5b8f5/frame/election-provider-multi-phase/src/lib.rs#L1188
-			.map(|r| r.unwrap_or(1))
 	};
 
-	let round = match fut.await {
-		Ok(round) => round,
-		Err(e) => {
-			log::error!(target: LOG_TARGET, "Mining solution failed: {:?}", e);
-			kill_main_task_if_critical_err(&tx, e.into());
-			return
-		},
-	};
+	let round = round_fut
+		.inspect_err(|e| log::error!(target: LOG_TARGET, "Mining solution failed: {:?}", e))
+		.await?;
 
-	if let Err(e) =
-		ensure_no_previous_solution::<T::Solution>(&api, hash, signer.account_id()).await
-	{
-		log::debug!(
-			target: LOG_TARGET,
-			"ensure_no_previous_solution failed: {:?}; skipping block: {}",
-			e,
-			at.number
-		);
-
-		kill_main_task_if_critical_err(&tx, e);
-		return
-	}
+	ensure_no_previous_solution::<T::Solution>(&api, hash, signer.account_id())
+		.inspect_err(|e| {
+			log::debug!(
+				target: LOG_TARGET,
+				"ensure_no_previous_solution failed: {:?}; skipping block: {}",
+				e,
+				at.number
+			)
+		})
+		.await?;
 
 	tokio::time::sleep(std::time::Duration::from_secs(config.delay as u64)).await;
 	let _lock = submit_lock.lock().await;
 
 	let (solution, score) =
-		match epm::fetch_snapshot_and_mine_solution::<T>(&api, Some(hash), config.solver)
+		match epm::fetch_snapshot_and_mine_solution::<T>(&api, Some(hash), config.solver, round)
 			.timed()
 			.await
 		{
@@ -267,8 +195,7 @@ async fn mine_and_submit_solution<T>(
 				let final_weight = tokio::task::spawn_blocking(move || {
 					T::solution_weight(size.voters, size.targets, active_voters, desired_targets)
 				})
-				.await
-				.unwrap();
+				.await?;
 
 				log::info!(
 					target: LOG_TARGET,
@@ -289,44 +216,32 @@ async fn mine_and_submit_solution<T>(
 
 				(solution, score)
 			},
-			(Err(e), _) => {
-				kill_main_task_if_critical_err(&tx, e);
-				return
-			},
+			(Err(e), _) => return Err(e),
 		};
 
-	let best_head = match get_latest_head(&api, config.listen).await {
-		Ok(head) => head,
-		Err(e) => {
-			kill_main_task_if_critical_err(&tx, e);
-			return
-		},
-	};
+	let best_head = get_latest_head(&api, config.listen).await?;
 
-	if let Err(e) = ensure_signed_phase(&api, best_head).await {
-		log::debug!(
-			target: LOG_TARGET,
-			"ensure_signed_phase failed: {:?}; skipping block: {}",
-			e,
-			at.number
-		);
-		kill_main_task_if_critical_err(&tx, e);
-		return
-	}
+	ensure_signed_phase(&api, best_head)
+		.inspect_err(|e| {
+			log::debug!(
+				target: LOG_TARGET,
+				"ensure_signed_phase failed: {:?}; skipping block: {}",
+				e,
+				at.number
+			)
+		})
+		.await?;
 
-	if let Err(e) =
-		ensure_no_previous_solution::<T::Solution>(&api, best_head, signer.account_id()).await
-	{
-		log::debug!(
-			target: LOG_TARGET,
-			"ensure_no_previous_solution failed: {:?}; skipping block: {:?}",
-			e,
-			best_head,
-		);
-
-		kill_main_task_if_critical_err(&tx, e);
-		return
-	}
+	ensure_no_previous_solution::<T::Solution>(&api, best_head, signer.account_id())
+		.inspect_err(|e| {
+			log::debug!(
+				target: LOG_TARGET,
+				"ensure_no_previous_solution failed: {:?}; skipping block: {:?}",
+				e,
+				best_head,
+			)
+		})
+		.await?;
 
 	match ensure_solution_passes_strategy(&api, best_head, score, config.submission_strategy)
 		.timed()
@@ -346,8 +261,7 @@ async fn mine_and_submit_solution<T>(
 				e,
 				at.number
 			);
-			kill_main_task_if_critical_err(&tx, e);
-			return
+			return Err(e)
 		},
 	};
 
@@ -375,9 +289,9 @@ async fn mine_and_submit_solution<T>(
 				e,
 				at.number
 			);
-			kill_main_task_if_critical_err(&tx, e);
 		},
 	};
+	Ok(())
 }
 
 /// Ensure that now is the signed phase.
