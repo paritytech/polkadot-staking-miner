@@ -99,6 +99,8 @@ check-staking-miner-playground:
   <<:                              *docker-env
   <<:                              *common-refs
   script:
+    - rustup target add wasm32-unknown-unknown --toolchain nightly
+    - cargo +nightly install wasm-gc
     - cargo check --manifest-path staking-miner-playground/Cargo.toml
 
 ### stage:                         test
