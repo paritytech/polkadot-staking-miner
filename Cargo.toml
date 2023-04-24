@@ -9,7 +9,7 @@ codec = { package = "parity-scale-codec", version = "3.0.0" }
 scale-info = { package = "scale-info", version = "2.5.0" }
 clap = { version = "3.2", features = ["derive", "env"] }
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
-jsonrpsee = { version = "0.16", features = ["ws-client"] }
+jsonrpsee = { version = "0.17", features = ["ws-client"] }
 log = "0.4"
 serde = "1.0"
 serde_json = "1.0"
