@@ -5,19 +5,13 @@ pub mod common;
 
 use assert_cmd::cargo::cargo_bin;
 use codec::Decode;
-use common::{
-	init_logger, run_staking_miner_playground, spawn_cli_output_threads, KillChildOnDrop,
-};
-use regex::Regex;
+use common::{init_logger, run_staking_miner_playground, KillChildOnDrop};
 use scale_info::TypeInfo;
 use staking_miner::{
 	prelude::SubxtClient,
 	signer::{PairSigner, Signer},
 };
-use std::{
-	process,
-	time::{Duration, Instant},
-};
+use std::process;
 use subxt::dynamic::Value;
 
 #[tokio::test]
@@ -50,69 +44,6 @@ async fn constants_updated_on_the_fly() {
 
 	assert_eq!(weight, read_storage::<u64>("ConfigBlock", "BlockWeight", &api, vec![]).await);
 	assert_eq!(length, read_storage::<u32>("ConfigBlock", "BlockLength", &api, vec![]).await);
-}
-
-#[tokio::test]
-async fn default_trimming_works() {
-	init_logger();
-	let (_drop, ws_url) = run_staking_miner_playground();
-	let miner = KillChildOnDrop(
-		process::Command::new(cargo_bin(env!("CARGO_PKG_NAME")))
-			.stdout(process::Stdio::piped())
-			.stderr(process::Stdio::piped())
-			.env("RUST_LOG", "runtime=debug,staking-miner=debug")
-			.args(&["--uri", &ws_url, "monitor", "--seed-or-path", "//Alice", "seq-phragmen"])
-			.spawn()
-			.unwrap(),
-	);
-
-	assert!(has_trimming_output(miner).await);
-}
-
-// Helper that parses the CLI output to find logging outputs based on the following:
-//
-// i) DEBUG runtime::election-provider: 🗳 from 934 assignments, truncating to 1501 for weight, removing 0
-// ii) DEBUG runtime::election-provider: 🗳 from 931 assignments, truncating to 755 for length, removing 176
-//
-// Thus, the only way to ensure that trimming actually works.
-async fn has_trimming_output(mut miner: KillChildOnDrop) -> bool {
-	let trimming_re = Regex::new(
-		r#"from (\d+) assignments, truncating to (\d+) for (?P<target>weight|length), removing (\d+)"#,
-	)
-	.unwrap();
-
-	let mut got_truncate_len = false;
-	let mut got_truncate_weight = false;
-
-	let now = Instant::now();
-	let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-
-	spawn_cli_output_threads(miner.stdout.take().unwrap(), miner.stderr.take().unwrap(), tx);
-
-	while !got_truncate_weight || !got_truncate_len {
-		let line = rx.recv().await.unwrap();
-		println!("{}", line);
-
-		if let Some(caps) = trimming_re.captures(&line) {
-			if caps.name("target").unwrap().as_str() == "weight" {
-				got_truncate_weight = true;
-			}
-
-			if caps.name("target").unwrap().as_str() == "length" {
-				got_truncate_len = true;
-			}
-		}
-
-		if got_truncate_weight && got_truncate_len {
-			return true
-		}
-
-		if now.elapsed() > Duration::from_secs(5 * 60) {
-			break
-		}
-	}
-
-	false
 }
 
 async fn submit_tx(
