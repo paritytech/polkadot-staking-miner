@@ -274,6 +274,15 @@ pub struct DryRunConfig {
 	#[clap(long)]
 	pub force_snapshot: bool,
 
+	/// The number of winners to take, instead of the `desired_targets` in snapshot, it set to `Some`.
+	// Doing this would cause the dry-run to typically fail, but that's fine, the program should
+	// still print out some score, and that should be it.
+	#[clap(long)]
+	pub force_winner_count: Option<u32>,
+
+	// TODO: a nice addition here would be: make this `Option<_>`, and if it is `None`, don't try
+	// and submit anything. Some of the folks using this comment, especially with the new feature
+	// might not care about having an actual accouant or something.
 	/// The path to a file containing the seed of the account. If the file is not found, the seed is
 	/// used as-is.
 	///
