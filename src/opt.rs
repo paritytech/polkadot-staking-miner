@@ -274,15 +274,21 @@ pub struct DryRunConfig {
 	#[clap(long)]
 	pub force_snapshot: bool,
 
+	/// The number of winners to take, instead of the `desired_targets` in snapshot.
+	// Doing this would cause the dry-run to typically fail, but that's fine, the program should
+	// still print out some score, and that should be it.
+	#[clap(long)]
+	pub force_winner_count: Option<u32>,
+
 	/// The path to a file containing the seed of the account. If the file is not found, the seed is
-	/// used as-is.
+	/// used as-is. If this is not provided, we won't attempt to submit anything.
 	///
 	/// Can also be provided via the `SEED` environment variable.
 	///
 	/// WARNING: Don't use an account with a large stash for this. Based on how the bot is
 	/// configured, it might re-try and lose funds through transaction fees/deposits.
 	#[clap(long, short, env = "SEED")]
-	pub seed_or_path: String,
+	pub seed_or_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Parser)]

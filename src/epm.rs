@@ -169,6 +169,7 @@ pub async fn fetch_snapshot_and_mine_solution<T>(
 	hash: Option<Hash>,
 	solver: Solver,
 	round: u32,
+	forced_desired_targets: Option<u32>,
 ) -> Result<(SolutionOf<T>, ElectionScore, SolutionOrSnapshotSize), Error>
 where
 	T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
@@ -178,13 +179,19 @@ where
 	T::Solution: Send,
 {
 	let snapshot = snapshot_at(hash, &api).await?;
-	let desired_targets = api
-		.storage()
-		.at(hash)
-		.await?
-		.fetch(&runtime::storage().election_provider_multi_phase().desired_targets())
-		.await?
-		.expect("Snapshot is non-empty; `desired_target` should exist; qed");
+
+	let desired_targets = match forced_desired_targets {
+		Some(x) => x,
+		None => {
+			api
+				.storage()
+				.at(hash)
+				.await?
+				.fetch(&runtime::storage().election_provider_multi_phase().desired_targets())
+				.await?
+				.expect("Snapshot is non-empty; `desired_target` should exist; qed")
+		}
+	};
 
 	let minimum_untrusted_score = api
 		.storage()

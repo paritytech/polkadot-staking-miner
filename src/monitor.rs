@@ -182,7 +182,7 @@ where
 	let _lock = submit_lock.lock().await;
 
 	let (solution, score) =
-		match epm::fetch_snapshot_and_mine_solution::<T>(&api, Some(hash), config.solver, round)
+		match epm::fetch_snapshot_and_mine_solution::<T>(&api, Some(hash), config.solver, round, None)
 			.timed()
 			.await
 		{

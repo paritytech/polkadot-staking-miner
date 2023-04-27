@@ -29,18 +29,6 @@ where
 		+ 'static,
 	T::Solution: Send,
 {
-	let signer = Signer::new(&config.seed_or_path)?;
-
-	let account_info = api
-		.storage()
-		.at(None)
-		.await?
-		.fetch(&runtime::storage().system().account(signer.account_id()))
-		.await?
-		.ok_or(Error::AccountDoesNotExists)?;
-
-	log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer, account_info);
-
 	let round = api
 		.storage()
 		.at(config.at)
@@ -49,7 +37,7 @@ where
 		.await?;
 
 	let (solution, score, _size) =
-		epm::fetch_snapshot_and_mine_solution::<T>(&api, config.at, config.solver, round).await?;
+		epm::fetch_snapshot_and_mine_solution::<T>(&api, config.at, config.solver, round, config.force_winner_count).await?;
 
 	let round = api
 		.storage()
@@ -60,7 +48,6 @@ where
 		.unwrap_or(1);
 
 	let raw_solution = RawSolution { solution, score, round };
-	let nonce = api.rpc().system_account_next_index(signer.account_id()).await?;
 
 	log::info!(
 		target: LOG_TARGET,
@@ -69,17 +56,31 @@ where
 		raw_solution.encode().len(),
 	);
 
-	let tx = epm::signed_solution(raw_solution)?;
-	let xt = api
-		.tx()
-		.create_signed_with_nonce(&tx, &*signer, nonce, ExtrinsicParams::default())?;
+	// If an account seed or path is provided, then do a dry run to the node. Otherwise,
+	// we've logged the solution above and we do nothing else.
+	if let Some(seed_or_path) = &config.seed_or_path {
+		let signer = Signer::new(seed_or_path)?;
+		let account_info = api
+			.storage()
+			.at(None)
+			.await?
+			.fetch(&runtime::storage().system().account(signer.account_id()))
+			.await?
+			.ok_or(Error::AccountDoesNotExists)?;
 
-	let outcome = api.rpc().dry_run(xt.encoded(), config.at).await?;
+		log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer, account_info);
 
-	log::info!(target: LOG_TARGET, "dry-run outcome is {:?}", outcome);
+		let nonce = api.rpc().system_account_next_index(signer.account_id()).await?;
+		let tx = epm::signed_solution(raw_solution)?;
+		let xt = api
+			.tx()
+			.create_signed_with_nonce(&tx, &*signer, nonce, ExtrinsicParams::default())?;
+		let outcome = api.rpc().dry_run(xt.encoded(), config.at).await?;
 
-	match outcome {
-		Ok(()) => Ok(()),
-		Err(e) => Err(Error::Other(format!("{e:?}"))),
+		log::info!(target: LOG_TARGET, "dry-run outcome is {:?}", outcome);
+
+		outcome.map_err(|e| Error::Other(format!("{e:?}")))?;
 	}
+
+	Ok(())
 }
