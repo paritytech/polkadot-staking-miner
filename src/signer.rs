@@ -16,7 +16,7 @@
 
 //! Wrappers around creating a signer account.
 
-use crate::prelude::*;
+use crate::{error::Error, prelude::*};
 use sp_core::Pair as _;
 use subxt::tx::Signer as _;
 
