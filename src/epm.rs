@@ -182,15 +182,13 @@ where
 
 	let desired_targets = match forced_desired_targets {
 		Some(x) => x,
-		None => {
-			api
-				.storage()
-				.at(hash)
-				.await?
-				.fetch(&runtime::storage().election_provider_multi_phase().desired_targets())
-				.await?
-				.expect("Snapshot is non-empty; `desired_target` should exist; qed")
-		}
+		None => api
+			.storage()
+			.at(hash)
+			.await?
+			.fetch(&runtime::storage().election_provider_multi_phase().desired_targets())
+			.await?
+			.expect("Snapshot is non-empty; `desired_target` should exist; qed"),
 	};
 
 	let minimum_untrusted_score = api

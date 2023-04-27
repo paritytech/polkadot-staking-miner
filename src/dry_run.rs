@@ -36,8 +36,14 @@ where
 		.fetch_or_default(&runtime::storage().election_provider_multi_phase().round())
 		.await?;
 
-	let (solution, score, _size) =
-		epm::fetch_snapshot_and_mine_solution::<T>(&api, config.at, config.solver, round, config.force_winner_count).await?;
+	let (solution, score, _size) = epm::fetch_snapshot_and_mine_solution::<T>(
+		&api,
+		config.at,
+		config.solver,
+		round,
+		config.force_winner_count,
+	)
+	.await?;
 
 	let round = api
 		.storage()
@@ -72,9 +78,9 @@ where
 
 		let nonce = api.rpc().system_account_next_index(signer.account_id()).await?;
 		let tx = epm::signed_solution(raw_solution)?;
-		let xt = api
-			.tx()
-			.create_signed_with_nonce(&tx, &*signer, nonce, ExtrinsicParams::default())?;
+		let xt =
+			api.tx()
+				.create_signed_with_nonce(&tx, &*signer, nonce, ExtrinsicParams::default())?;
 		let outcome = api.rpc().dry_run(xt.encoded(), config.at).await?;
 
 		log::info!(target: LOG_TARGET, "dry-run outcome is {:?}", outcome);
