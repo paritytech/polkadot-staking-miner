@@ -33,6 +33,10 @@ pub struct DryRunConfig {
 	#[clap(subcommand)]
 	pub solver: Solver,
 
+	/// Force create a new snapshot, else expect one to exist onchain.
+	#[clap(long)]
+	pub force_snapshot: bool,
+
 	/// The number of winners to take, instead of the `desired_targets` in snapshot.
 	// Doing this would cause the dry-run to typically fail, but that's fine, the program should
 	// still print out some score, and that should be it.
