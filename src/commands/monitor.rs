@@ -313,7 +313,15 @@ where
 	.timed()
 	.await
 	{
-		(Ok((solution, score, size)), elapsed) => {
+		(Ok(miner_solution), elapsed) => {
+			// check that the solution looks valid:
+			miner_solution.feasibility_check()?;
+
+			// and then get the values we need from it:
+			let solution = miner_solution.solution();
+			let score = miner_solution.score();
+			let size = miner_solution.size();
+
 			let elapsed_ms = elapsed.as_millis();
 			let encoded_len = solution.encoded_size();
 			let active_voters = solution.voter_count() as u32;

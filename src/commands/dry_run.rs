@@ -69,7 +69,7 @@ where
 		.fetch_or_default(&runtime::storage().election_provider_multi_phase().round())
 		.await?;
 
-	let (solution, score, _size) = epm::fetch_snapshot_and_mine_solution::<T>(
+	let miner_solution = epm::fetch_snapshot_and_mine_solution::<T>(
 		&api,
 		config.at,
 		config.solver,
@@ -86,6 +86,8 @@ where
 		.await?
 		.unwrap_or(1);
 
+	let solution = miner_solution.solution();
+	let score = miner_solution.score();
 	let raw_solution = RawSolution { solution, score, round };
 
 	log::info!(
@@ -94,6 +96,9 @@ where
 		score,
 		raw_solution.encode().len(),
 	);
+
+	// Now we've logged the score, check whether the solution makes sense:
+	miner_solution.feasibility_check()?;
 
 	// If an account seed or path is provided, then do a dry run to the node. Otherwise,
 	// we've logged the solution above and we do nothing else.

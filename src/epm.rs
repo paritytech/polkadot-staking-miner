@@ -26,7 +26,7 @@ use crate::{
 use codec::{Decode, Encode};
 use frame_election_provider_support::{NposSolution, PhragMMS, SequentialPhragmen};
 use frame_support::weights::Weight;
-use pallet_election_provider_multi_phase::{RawSolution, SolutionOf, SolutionOrSnapshotSize};
+use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
 use scale_info::{PortableRegistry, TypeInfo};
 use scale_value::scale::{decode_as_type, TypeId};
 use sp_core::Bytes;
@@ -176,7 +176,7 @@ pub async fn fetch_snapshot_and_mine_solution<T>(
 	solver: Solver,
 	round: u32,
 	forced_desired_targets: Option<u32>,
-) -> Result<(SolutionOf<T>, ElectionScore, SolutionOrSnapshotSize), Error>
+) -> Result<MinedSolution<T>, Error>
 where
 	T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
 		+ Send
@@ -226,24 +226,67 @@ where
 	.await;
 
 	match blocking_task {
-		Ok(Ok((solution, score, solution_or_snapshot))) => {
-			match Miner::<T>::feasibility_check(
-				RawSolution { solution: solution.clone(), score, round },
-				pallet_election_provider_multi_phase::ElectionCompute::Signed,
-				desired_targets,
-				snapshot,
-				round,
-				minimum_untrusted_score,
-			) {
-				Ok(_) => Ok((solution, score, solution_or_snapshot)),
-				Err(e) => {
-					log::error!(target: LOG_TARGET, "Solution feasibility error {:?}", e);
-					Err(Error::Feasibility(format!("{:?}", e)))
-				},
-			}
-		},
+		Ok(Ok((solution, score, solution_or_snapshot_size))) => Ok(MinedSolution {
+			round,
+			desired_targets,
+			snapshot,
+			minimum_untrusted_score,
+			solution,
+			score,
+			solution_or_snapshot_size,
+		}),
 		Ok(Err(err)) => Err(Error::Other(format!("{:?}", err))),
 		Err(err) => Err(err.into()),
+	}
+}
+
+/// The result of calling [`fetch_snapshot_and_mine_solution`].
+pub struct MinedSolution<T: MinerConfig> {
+	round: u32,
+	desired_targets: u32,
+	snapshot: RoundSnapshot,
+	minimum_untrusted_score: Option<ElectionScore>,
+	solution: T::Solution,
+	score: ElectionScore,
+	solution_or_snapshot_size: SolutionOrSnapshotSize,
+}
+
+impl<T> MinedSolution<T>
+where
+	T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
+		+ Send
+		+ Sync
+		+ 'static,
+	T::Solution: Send,
+{
+	pub fn solution(&self) -> T::Solution {
+		self.solution.clone()
+	}
+
+	pub fn score(&self) -> ElectionScore {
+		self.score
+	}
+
+	pub fn size(&self) -> SolutionOrSnapshotSize {
+		self.solution_or_snapshot_size
+	}
+
+	/// Check that this solution is feasible
+	pub fn feasibility_check(&self) -> Result<(), Error> {
+		match Miner::<T>::feasibility_check(
+			RawSolution { solution: self.solution.clone(), score: self.score, round: self.round },
+			pallet_election_provider_multi_phase::ElectionCompute::Signed,
+			self.desired_targets,
+			self.snapshot.clone(),
+			self.round,
+			self.minimum_untrusted_score,
+		) {
+			Ok(_) => Ok(()),
+			Err(e) => {
+				log::error!(target: LOG_TARGET, "Solution feasibility error {:?}", e);
+				Err(Error::Feasibility(format!("{:?}", e)))
+			},
+		}
 	}
 }
 
