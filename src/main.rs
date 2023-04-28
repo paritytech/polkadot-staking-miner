@@ -28,12 +28,10 @@
 //!   development. It is intended to run this bot with a `restart = true` way, so that it reports it
 //!   crash, but resumes work thereafter.
 
-mod dry_run;
-mod emergency_solution;
+mod commands;
 mod epm;
 mod error;
 mod helpers;
-mod monitor;
 mod opt;
 mod prelude;
 mod prometheus;
@@ -41,13 +39,70 @@ mod signer;
 mod static_types;
 
 use clap::Parser;
+use error::Error;
 use futures::future::{BoxFuture, FutureExt};
 use jsonrpsee::ws_client::WsClientBuilder;
-use opt::Command;
 use prelude::*;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tracing_subscriber::EnvFilter;
+
+#[derive(Debug, Clone, Parser)]
+#[cfg_attr(test, derive(PartialEq))]
+#[clap(author, version, about)]
+pub struct Opt {
+	/// The `ws` node to connect to.
+	#[clap(long, short, default_value = DEFAULT_URI, env = "URI")]
+	pub uri: String,
+
+	#[clap(subcommand)]
+	pub command: Command,
+
+	/// The prometheus endpoint TCP port.
+	#[clap(long, short, env = "PROMETHEUS_PORT")]
+	pub prometheus_port: Option<u16>,
+
+	/// Sets a custom logging filter. Syntax is `<target>=<level>`, e.g. -lstaking-miner=debug.
+	///
+	/// Log levels (least to most verbose) are error, warn, info, debug, and trace.
+	/// By default, all targets log `info`. The global log level can be set with `-l<level>`.
+	#[clap(long, short, default_value = "info")]
+	pub log: String,
+}
+
+#[derive(Debug, Clone, Parser)]
+#[cfg_attr(test, derive(PartialEq))]
+pub enum Command {
+	/// Monitor for the phase being signed, then compute.
+	Monitor(commands::MonitorConfig),
+	/// Just compute a solution now, and don't submit it.
+	DryRun(commands::DryRunConfig),
+	/// Provide a solution that can be submitted to the chain as an emergency response.
+	EmergencySolution(commands::EmergencySolutionConfig),
+}
+
+// A helper to use different MinerConfig depending on chain.
+macro_rules! any_runtime {
+	($chain:tt, $($code:tt)*) => {
+		match $chain {
+			$crate::opt::Chain::Polkadot => {
+				#[allow(unused)]
+				use $crate::static_types::polkadot::MinerConfig;
+				$($code)*
+			},
+			$crate::opt::Chain::Kusama => {
+				#[allow(unused)]
+				use $crate::static_types::kusama::MinerConfig;
+				$($code)*
+			},
+			$crate::opt::Chain::Westend => {
+				#[allow(unused)]
+				use $crate::static_types::westend::MinerConfig;
+				$($code)*
+			},
+		}
+	};
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -78,7 +133,7 @@ async fn main() -> Result<(), Error> {
 
 	let api = SubxtClient::from_rpc_client(Arc::new(rpc)).await?;
 	let runtime_version = api.rpc().runtime_version(None).await?;
-	let chain = Chain::try_from(runtime_version)?;
+	let chain = opt::Chain::try_from(runtime_version)?;
 	let _prometheus_handle = prometheus::run(prometheus_port.unwrap_or(DEFAULT_PROMETHEUS_PORT))
 		.map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
 	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
@@ -93,10 +148,10 @@ async fn main() -> Result<(), Error> {
 
 	let res = any_runtime!(chain, {
 		let fut = match command {
-			Command::Monitor(cfg) => monitor::monitor_cmd::<MinerConfig>(api, cfg).boxed(),
-			Command::DryRun(cfg) => dry_run::dry_run_cmd::<MinerConfig>(api, cfg).boxed(),
+			Command::Monitor(cfg) => commands::monitor_cmd::<MinerConfig>(api, cfg).boxed(),
+			Command::DryRun(cfg) => commands::dry_run_cmd::<MinerConfig>(api, cfg).boxed(),
 			Command::EmergencySolution(cfg) =>
-				emergency_solution::emergency_cmd::<MinerConfig>(api, cfg).boxed(),
+				commands::emergency_solution_cmd::<MinerConfig>(api, cfg).boxed(),
 		};
 
 		run_command(fut, rx_upgrade).await
@@ -200,6 +255,7 @@ async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use commands::monitor;
 
 	#[test]
 	fn cli_monitor_works() {
@@ -226,10 +282,10 @@ mod tests {
 				uri: "hi".to_string(),
 				prometheus_port: Some(9999),
 				log: "info".to_string(),
-				command: Command::Monitor(MonitorConfig {
-					listen: Listen::Head,
-					solver: Solver::SeqPhragmen { iterations: 10 },
-					submission_strategy: SubmissionStrategy::IfLeading,
+				command: Command::Monitor(commands::MonitorConfig {
+					listen: monitor::Listen::Head,
+					solver: opt::Solver::SeqPhragmen { iterations: 10 },
+					submission_strategy: monitor::SubmissionStrategy::IfLeading,
 					seed_or_path: "//Alice".to_string(),
 					delay: 12,
 					dry_run: false,
@@ -257,9 +313,9 @@ mod tests {
 				uri: "hi".to_string(),
 				prometheus_port: None,
 				log: "info".to_string(),
-				command: Command::DryRun(DryRunConfig {
+				command: Command::DryRun(commands::DryRunConfig {
 					at: None,
-					solver: Solver::PhragMMS { iterations: 10 },
+					solver: opt::Solver::PhragMMS { iterations: 10 },
 					force_snapshot: false,
 					force_winner_count: None,
 					seed_or_path: Some("//Alice".to_string()),
@@ -288,24 +344,12 @@ mod tests {
 				uri: "hi".to_string(),
 				prometheus_port: None,
 				log: "info".to_string(),
-				command: Command::EmergencySolution(EmergencySolutionConfig {
+				command: Command::EmergencySolution(commands::EmergencySolutionConfig {
 					take: Some(99),
 					at: None,
-					solver: Solver::PhragMMS { iterations: 1337 },
+					solver: opt::Solver::PhragMMS { iterations: 1337 },
 				}),
 			}
-		);
-	}
-
-	#[test]
-	fn submission_strategy_from_str_works() {
-		use std::str::FromStr;
-
-		assert_eq!(SubmissionStrategy::from_str("if-leading"), Ok(SubmissionStrategy::IfLeading));
-		assert_eq!(SubmissionStrategy::from_str("always"), Ok(SubmissionStrategy::Always));
-		assert_eq!(
-			SubmissionStrategy::from_str("  percent-better 99   "),
-			Ok(SubmissionStrategy::ClaimBetterThan(Accuracy::from_percent(99)))
 		);
 	}
 }

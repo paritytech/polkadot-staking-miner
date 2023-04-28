@@ -16,7 +16,13 @@
 
 //! Wrappers or helpers for [`pallet_election_provider_multi_phase`].
 
-use crate::{helpers::RuntimeDispatchInfo, opt::Solver, prelude::*, static_types};
+use crate::{
+	error::Error,
+	helpers::RuntimeDispatchInfo,
+	opt::{BalanceIterations, Balancing, Solver},
+	prelude::*,
+	static_types,
+};
 use codec::{Decode, Encode};
 use frame_election_provider_support::{NposSolution, PhragMMS, SequentialPhragmen};
 use frame_support::weights::Weight;
