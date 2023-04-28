@@ -16,9 +16,25 @@
 
 //! The emergency-solution command.
 
-use crate::{opt::EmergencySolutionConfig, prelude::*, static_types};
+use crate::{error::Error, opt::Solver, prelude::*, static_types};
+use clap::Parser;
 
-pub async fn emergency_cmd<T>(
+#[derive(Debug, Clone, Parser)]
+#[cfg_attr(test, derive(PartialEq))]
+pub struct EmergencySolutionConfig {
+	/// The block hash at which scraping happens. If none is provided, the latest head is used.
+	#[clap(long)]
+	pub at: Option<Hash>,
+
+	/// The solver algorithm to use.
+	#[clap(subcommand)]
+	pub solver: Solver,
+
+	/// The number of top backed winners to take. All are taken, if not provided.
+	pub take: Option<usize>,
+}
+
+pub async fn emergency_solution_cmd<T>(
 	_api: SubxtClient,
 	_config: EmergencySolutionConfig,
 ) -> Result<(), Error>

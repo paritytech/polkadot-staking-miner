@@ -1,4 +1,4 @@
-use staking_miner::prelude::Chain;
+use staking_miner::opt::Chain;
 use std::{
 	io::{BufRead, BufReader, Read},
 	ops::{Deref, DerefMut},
