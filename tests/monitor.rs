@@ -51,7 +51,7 @@ async fn default_trimming_works() {
 // Thus, the only way to ensure that trimming actually works.
 async fn has_trimming_output(mut miner: KillChildOnDrop) -> bool {
 	let trimming_re = Regex::new(
-		r#"from (\d+) assignments, truncating to (\d+) for (?P<target>weight|length), removing (\d+)"#,
+		r#"from (\d+) assignments, truncating to (\d+) for (?P<target>weight|length), removing (?P<removed>\d+)"#,
 	)
 	.unwrap();
 
@@ -65,14 +65,17 @@ async fn has_trimming_output(mut miner: KillChildOnDrop) -> bool {
 
 	while !got_truncate_weight || !got_truncate_len {
 		let line = rx.recv().await.unwrap();
-		println!("{}", line);
+		println!("{line}");
+		log::info!("{line}");
 
 		if let Some(caps) = trimming_re.captures(&line) {
-			if caps.name("target").unwrap().as_str() == "weight" {
+			let trimmed_items: usize = caps.name("removed").unwrap().as_str().parse().unwrap();
+
+			if caps.name("target").unwrap().as_str() == "weight" && trimmed_items > 0 {
 				got_truncate_weight = true;
 			}
 
-			if caps.name("target").unwrap().as_str() == "length" {
+			if caps.name("target").unwrap().as_str() == "length" && trimmed_items > 0 {
 				got_truncate_len = true;
 			}
 		}
