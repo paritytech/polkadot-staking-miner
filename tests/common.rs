@@ -3,7 +3,11 @@ use codec::Decode;
 use sp_storage::StorageChangeSet;
 use staking_miner::{
 	opt::Chain,
-	prelude::{runtime, sp_core::Bytes, Hash, SubxtClient},
+	prelude::{
+		runtime::{self},
+		sp_core::Bytes,
+		Hash, SubxtClient,
+	},
 };
 use std::{
 	io::{BufRead, BufReader, Read},
@@ -14,6 +18,10 @@ use std::{
 use subxt::rpc::rpc_params;
 use tokio::time::timeout;
 use tracing_subscriber::EnvFilter;
+
+pub use runtime::runtime_types::pallet_election_provider_multi_phase::{
+	ElectionCompute, ReadySolution,
+};
 
 const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(60 * 15);
 
@@ -147,10 +155,6 @@ pub enum Target {
 }
 
 pub async fn test_submit_solution(target: Target) {
-	use runtime::runtime_types::pallet_election_provider_multi_phase::{
-		ElectionCompute, ReadySolution,
-	};
-
 	let (_drop, ws_url) = match target {
 		Target::PolkadotNode(chain) => run_polkadot_node(chain),
 		Target::StakingMinerPlayground => run_staking_miner_playground(),
@@ -173,7 +177,17 @@ pub async fn test_submit_solution(target: Target) {
 		log::info!("{}", r);
 	});
 
-	let api = SubxtClient::from_url(&ws_url).await.unwrap();
+	let ready_solution = wait_for_mined_solution(&ws_url).await.unwrap();
+
+	log::info!("solution: {:?}", ready_solution);
+	assert!(ready_solution.compute == ElectionCompute::Signed);
+}
+
+/// Wait until a solution is ready on chain
+///
+/// Timeout's after 15 minutes which is regarded as an error.
+pub async fn wait_for_mined_solution(ws_url: &str) -> anyhow::Result<ReadySolution> {
+	let api = SubxtClient::from_url(&ws_url).await?;
 	let now = Instant::now();
 
 	let key = Bytes(
@@ -189,26 +203,23 @@ pub async fn test_submit_solution(target: Target) {
 		.await
 		.unwrap();
 
-	let mut success = false;
-
 	while now.elapsed() < MAX_DURATION_FOR_SUBMIT_SOLUTION {
 		let x: StorageChangeSet<Hash> =
 			match timeout(MAX_DURATION_FOR_SUBMIT_SOLUTION, sub.next()).await {
-				Err(e) => panic!("Timeout exceeded: {:?}", e),
+				Err(e) => return Err(e.into()),
 				Ok(Some(Ok(storage))) => storage,
-				Ok(None) => panic!("Subscription closed"),
-				Ok(Some(Err(e))) => panic!("Failed to decode StorageChangeSet {:?}", e),
+				Ok(None) => return Err(anyhow::anyhow!("Subscription closed")),
+				Ok(Some(Err(e))) => return Err(e.into()),
 			};
 
 		if let Some(data) = x.changes[0].clone().1 {
-			let solution: ReadySolution = Decode::decode(&mut data.0.as_slice())
-				.expect("Failed to decode storage as QueuedSolution");
-			eprintln!("solution: {:?}", solution);
-			assert!(solution.compute == ElectionCompute::Signed);
-			success = true;
-			break
+			let solution: ReadySolution = Decode::decode(&mut data.0.as_slice())?;
+			return Ok(solution)
 		}
 	}
 
-	assert!(success);
+	Err(anyhow::anyhow!(
+		"ReadySolution not found in {}s regarded as error",
+		MAX_DURATION_FOR_SUBMIT_SOLUTION.as_secs()
+	))
 }

@@ -6,7 +6,7 @@ pub mod common;
 use assert_cmd::cargo::cargo_bin;
 use common::{
 	init_logger, run_staking_miner_playground, spawn_cli_output_threads, test_submit_solution,
-	KillChildOnDrop, Target,
+	wait_for_mined_solution, ElectionCompute, KillChildOnDrop, Target,
 };
 use regex::Regex;
 use staking_miner::opt::Chain;
@@ -40,7 +40,14 @@ async fn default_trimming_works() {
 			.unwrap(),
 	);
 
+	let ready_solution_task = tokio::spawn(async move { wait_for_mined_solution(&ws_url).await });
+
 	assert!(has_trimming_output(miner).await);
+
+	let ready_solution =
+		ready_solution_task.await.unwrap().expect("A solution should be mined now");
+	log::info!("solution: {:?}", ready_solution);
+	assert!(ready_solution.compute == ElectionCompute::Signed);
 }
 
 // Helper that parses the CLI output to find logging outputs based on the following:
@@ -81,7 +88,7 @@ async fn has_trimming_output(mut miner: KillChildOnDrop) -> bool {
 		}
 
 		if got_truncate_weight && got_truncate_len {
-			return true
+			break
 		}
 
 		if now.elapsed() > Duration::from_secs(5 * 60) {
@@ -89,5 +96,8 @@ async fn has_trimming_output(mut miner: KillChildOnDrop) -> bool {
 		}
 	}
 
-	false
+	assert!(got_truncate_weight, "Trimming weight logs were not found");
+	assert!(got_truncate_len, "Trimming length logs were not found");
+
+	got_truncate_len && got_truncate_weight
 }
