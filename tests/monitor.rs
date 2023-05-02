@@ -87,10 +87,6 @@ async fn has_trimming_output(mut miner: KillChildOnDrop) -> bool {
 			}
 		}
 
-		if got_truncate_weight && got_truncate_len {
-			break
-		}
-
 		if now.elapsed() > Duration::from_secs(5 * 60) {
 			break
 		}

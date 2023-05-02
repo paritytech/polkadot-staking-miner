@@ -469,13 +469,22 @@ parameter_types! {
 	Validators: u32 = option_env!("V").unwrap_or("100").parse().expect("env variable `V` must be number");
 
 	// Set the max length to `nominators / 2` to force trimming of length to occur.
-	pub MinerMaxLength: u32 = prod_or_test!(
-		Perbill::from_rational(8u32, 10) * *(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get()).max.get(DispatchClass::Normal),
-		Nominators::get() / 2
-	);
+	// pub MinerMaxLength: u32 = prod_or_test!(
+	//     Perbill::from_rational(8u32, 10) * *(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get()).max.get(DispatchClass::Normal),
+	//     Nominators::get() / 2
+	// );
+
+	pub MinerMaxLength: u32 = 600;
 
 	// TODO trimming weight seems occur with this anyway.
-	pub MinerMaxWeight: Weight = Perbill::from_rational(8u32, 10) * <Runtime as frame_system::Config>::BlockWeights::get().get(DispatchClass::Normal).max_total.unwrap();
+	pub MinerMaxWeight: Weight = prod_or_test!(
+		Perbill::from_rational(8u32, 10) * <Runtime as frame_system::Config>::BlockWeights::get().get(DispatchClass::Normal).max_total.unwrap(),
+		Weight::from_parts(9326276000, 3905328)
+	);
+
+	// The maximum winners that can be elected by the Election pallet which is equivalent to the
+	// maximum active validators the staking pallet can have.
+	pub MaxActiveValidators: u32 = Validators::get();
 }
 
 mod solution_16 {
@@ -519,10 +528,6 @@ parameter_types! {
 	pub const MaxElectingVoters: u32 = 25_000;
 	pub MaxOnChainElectingVoters: u32 = 5000;
 	pub MaxOnChainElectableTargets: u16 = 1250;
-	// The maximum winners that can be elected by the Election pallet which is equivalent to the
-	// maximum active validators the staking pallet can have.
-	pub MaxActiveValidators: u32 = 1000;
-
 }
 
 /// The numbers configured here could always be more than the the maximum limits of staking pallet
