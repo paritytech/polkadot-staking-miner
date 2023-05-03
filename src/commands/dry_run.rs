@@ -37,15 +37,21 @@ pub struct DryRunConfig {
 	#[clap(long)]
 	pub force_snapshot: bool,
 
+	/// The number of winners to take, instead of the `desired_targets` in snapshot.
+	// Doing this would cause the dry-run to typically fail, but that's fine, the program should
+	// still print out some score, and that should be it.
+	#[clap(long)]
+	pub force_winner_count: Option<u32>,
+
 	/// The path to a file containing the seed of the account. If the file is not found, the seed is
-	/// used as-is.
+	/// used as-is. If this is not provided, we won't attempt to submit anything.
 	///
 	/// Can also be provided via the `SEED` environment variable.
 	///
 	/// WARNING: Don't use an account with a large stash for this. Based on how the bot is
 	/// configured, it might re-try and lose funds through transaction fees/deposits.
 	#[clap(long, short, env = "SEED")]
-	pub seed_or_path: String,
+	pub seed_or_path: Option<String>,
 }
 
 pub async fn dry_run_cmd<T>(api: SubxtClient, config: DryRunConfig) -> Result<(), Error>
@@ -56,18 +62,6 @@ where
 		+ 'static,
 	T::Solution: Send,
 {
-	let signer = Signer::new(&config.seed_or_path)?;
-
-	let account_info = api
-		.storage()
-		.at(None)
-		.await?
-		.fetch(&runtime::storage().system().account(signer.account_id()))
-		.await?
-		.ok_or(Error::AccountDoesNotExists)?;
-
-	log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer, account_info);
-
 	let round = api
 		.storage()
 		.at(config.at)
@@ -75,8 +69,14 @@ where
 		.fetch_or_default(&runtime::storage().election_provider_multi_phase().round())
 		.await?;
 
-	let (solution, score, _size) =
-		epm::fetch_snapshot_and_mine_solution::<T>(&api, config.at, config.solver, round).await?;
+	let miner_solution = epm::fetch_snapshot_and_mine_solution::<T>(
+		&api,
+		config.at,
+		config.solver,
+		round,
+		config.force_winner_count,
+	)
+	.await?;
 
 	let round = api
 		.storage()
@@ -86,8 +86,9 @@ where
 		.await?
 		.unwrap_or(1);
 
+	let solution = miner_solution.solution();
+	let score = miner_solution.score();
 	let raw_solution = RawSolution { solution, score, round };
-	let nonce = api.rpc().system_account_next_index(signer.account_id()).await?;
 
 	log::info!(
 		target: LOG_TARGET,
@@ -96,17 +97,37 @@ where
 		raw_solution.encode().len(),
 	);
 
-	let tx = epm::signed_solution(raw_solution)?;
-	let xt = api
-		.tx()
-		.create_signed_with_nonce(&tx, &*signer, nonce, ExtrinsicParams::default())?;
-
-	let outcome = api.rpc().dry_run(xt.encoded(), config.at).await?;
-
-	log::info!(target: LOG_TARGET, "dry-run outcome is {:?}", outcome);
-
-	match outcome {
-		Ok(()) => Ok(()),
-		Err(e) => Err(Error::Other(format!("{e:?}"))),
+	// Now we've logged the score, check whether the solution makes sense. No point doing this
+	// if force_winner_count is selected since it'll definitely fail in that case.
+	if config.force_winner_count.is_none() {
+		miner_solution.feasibility_check()?;
 	}
+
+	// If an account seed or path is provided, then do a dry run to the node. Otherwise,
+	// we've logged the solution above and we do nothing else.
+	if let Some(seed_or_path) = &config.seed_or_path {
+		let signer = Signer::new(seed_or_path)?;
+		let account_info = api
+			.storage()
+			.at(None)
+			.await?
+			.fetch(&runtime::storage().system().account(signer.account_id()))
+			.await?
+			.ok_or(Error::AccountDoesNotExists)?;
+
+		log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer, account_info);
+
+		let nonce = api.rpc().system_account_next_index(signer.account_id()).await?;
+		let tx = epm::signed_solution(raw_solution)?;
+		let xt =
+			api.tx()
+				.create_signed_with_nonce(&tx, &*signer, nonce, ExtrinsicParams::default())?;
+		let outcome = api.rpc().dry_run(xt.encoded(), config.at).await?;
+
+		log::info!(target: LOG_TARGET, "dry-run outcome is {:?}", outcome);
+
+		outcome.map_err(|e| Error::Other(format!("{e:?}")))?;
+	}
+
+	Ok(())
 }

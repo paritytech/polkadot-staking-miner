@@ -303,23 +303,36 @@ where
 	tokio::time::sleep(std::time::Duration::from_secs(config.delay as u64)).await;
 	let _lock = submit_lock.lock().await;
 
-	let (solution, score) =
-		match epm::fetch_snapshot_and_mine_solution::<T>(&api, Some(hash), config.solver, round)
-			.timed()
-			.await
-		{
-			(Ok((solution, score, size)), elapsed) => {
-				let elapsed_ms = elapsed.as_millis();
-				let encoded_len = solution.encoded_size();
-				let active_voters = solution.voter_count() as u32;
-				let desired_targets = solution.unique_targets().len() as u32;
+	let (solution, score) = match epm::fetch_snapshot_and_mine_solution::<T>(
+		&api,
+		Some(hash),
+		config.solver,
+		round,
+		None,
+	)
+	.timed()
+	.await
+	{
+		(Ok(miner_solution), elapsed) => {
+			// check that the solution looks valid:
+			miner_solution.feasibility_check()?;
 
-				let final_weight = tokio::task::spawn_blocking(move || {
-					T::solution_weight(size.voters, size.targets, active_voters, desired_targets)
-				})
-				.await?;
+			// and then get the values we need from it:
+			let solution = miner_solution.solution();
+			let score = miner_solution.score();
+			let size = miner_solution.size();
 
-				log::info!(
+			let elapsed_ms = elapsed.as_millis();
+			let encoded_len = solution.encoded_size();
+			let active_voters = solution.voter_count() as u32;
+			let desired_targets = solution.unique_targets().len() as u32;
+
+			let final_weight = tokio::task::spawn_blocking(move || {
+				T::solution_weight(size.voters, size.targets, active_voters, desired_targets)
+			})
+			.await?;
+
+			log::info!(
 					target: LOG_TARGET,
 					"Mined solution with {:?} size: {:?} round: {:?} at: {}, took: {} ms, len: {:?}, weight = {:?}",
 					score,
@@ -331,15 +344,15 @@ where
 					final_weight,
 				);
 
-				prometheus::set_length(encoded_len);
-				prometheus::set_weight(final_weight);
-				prometheus::observe_mined_solution_duration(elapsed_ms as f64);
-				prometheus::set_score(score);
+			prometheus::set_length(encoded_len);
+			prometheus::set_weight(final_weight);
+			prometheus::observe_mined_solution_duration(elapsed_ms as f64);
+			prometheus::set_score(score);
 
-				(solution, score)
-			},
-			(Err(e), _) => return Err(e),
-		};
+			(solution, score)
+		},
+		(Err(e), _) => return Err(e),
+	};
 
 	let best_head = get_latest_head(&api, config.listen).await?;
 

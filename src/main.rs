@@ -317,7 +317,8 @@ mod tests {
 					at: None,
 					solver: opt::Solver::PhragMMS { iterations: 10 },
 					force_snapshot: false,
-					seed_or_path: "//Alice".to_string(),
+					force_winner_count: None,
+					seed_or_path: Some("//Alice".to_string()),
 				}),
 			}
 		);
