@@ -97,8 +97,11 @@ where
 		raw_solution.encode().len(),
 	);
 
-	// Now we've logged the score, check whether the solution makes sense:
-	miner_solution.feasibility_check()?;
+	// Now we've logged the score, check whether the solution makes sense. No point doing this
+	// if force_winner_count is selected since it'll definitely fail in that case.
+	if config.force_winner_count.is_none() {
+		miner_solution.feasibility_check()?;
+	}
 
 	// If an account seed or path is provided, then do a dry run to the node. Otherwise,
 	// we've logged the solution above and we do nothing else.
