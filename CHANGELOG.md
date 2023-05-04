@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog].
 
 ## [v0.1.4] - 2023-05-04
 
-This is release to support new runtime changes in polkadot v0.9.42
+This is a release to support new runtime changes in polkadot v0.9.42.
 
 ## [Added]
 - Allow configuring winner count in dry-run  ([#539](https://github.com/paritytech/staking-miner-v2/pull/539))
