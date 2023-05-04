@@ -10,7 +10,7 @@ This is a release to support new runtime changes in polkadot v0.9.42.
 
 ## [Added]
 - Allow configuring winner count in dry-run  ([#539](https://github.com/paritytech/staking-miner-v2/pull/539))
-- feat: add `feasibility_check` on mined solution  ([#483](https://github.com/paritytech/staking-miner-v2/pull/483))
+- add `feasibility_check` on mined solution  ([#483](https://github.com/paritytech/staking-miner-v2/pull/483))
 
 ## [Changed]
 - `commands` module to expose each sub-command, and put options next to them  ([#540](https://github.com/paritytech/staking-miner-v2/pull/540))
