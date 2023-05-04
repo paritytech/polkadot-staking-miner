@@ -21,12 +21,9 @@
 //! needing to sprinkle `any_runtime` in a few extra places.
 
 // re-exports.
-pub use crate::{error::Error, opt::*};
 pub use frame_election_provider_support::VoteWeight;
 pub use pallet_election_provider_multi_phase::{Miner, MinerConfig};
 pub use subxt::ext::sp_core;
-
-use once_cell::sync::OnceCell;
 
 /// The account id type.
 pub type AccountId = subxt::utils::AccountId32;
@@ -98,4 +95,4 @@ pub type SignedSubmission<S> =
 )]
 pub mod runtime {}
 
-pub static SHARED_CLIENT: OnceCell<SubxtClient> = OnceCell::new();
+pub static SHARED_CLIENT: once_cell::sync::OnceCell<SubxtClient> = once_cell::sync::OnceCell::new();
