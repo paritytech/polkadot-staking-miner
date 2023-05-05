@@ -1,6 +1,7 @@
 use staking_miner::opt::Chain;
 use std::{
 	io::{BufRead, BufReader, Read},
+	net::SocketAddr,
 	ops::{Deref, DerefMut},
 	process::{self, Child, ChildStderr, ChildStdout},
 };
@@ -21,6 +22,7 @@ pub fn find_ws_url_from_output(read: impl Read + Send) -> (String, String) {
 
 	let ws_url = BufReader::new(read)
 		.lines()
+		.take(50)
 		.find_map(|line| {
 			let line =
 				line.expect("failed to obtain next line from stdout for WS address discovery");
@@ -28,13 +30,22 @@ pub fn find_ws_url_from_output(read: impl Read + Send) -> (String, String) {
 
 			data.push_str(&line);
 
-			// does the line contain our port (we expect this specific output from substrate).
-			let sock_addr = match line.split_once("Running JSON-RPC WS server: addr=") {
-				None => return None,
-				Some((_, after)) => after.split_once(",").unwrap().0,
-			};
+			// Read socketaddr from output "Running JSON-RPC server: addr=127.0.0.1:9944, allowed origins=["*"]"
+			let line_end = line
+				.rsplit_once("Running JSON-RPC WS server: addr=")
+				// newest message (jsonrpsee merging http and ws servers):
+				.or_else(|| line.rsplit_once("Running JSON-RPC server: addr="))
+				.map(|(_, line)| line)?;
 
-			Some(format!("ws://{}", sock_addr))
+			// get the socketaddr only.
+			let addr_str = line_end.split_once(",").unwrap().0;
+
+			// expect a valid sockaddr.
+			let addr: SocketAddr = addr_str
+				.parse()
+				.unwrap_or_else(|_| panic!("valid SocketAddr expected but got '{addr_str}'"));
+
+			Some(format!("ws://{}", addr))
 		})
 		.expect("We should get a WebSocket address");
 
