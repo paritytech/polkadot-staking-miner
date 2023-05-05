@@ -22,7 +22,7 @@ pub fn find_ws_url_from_output(read: impl Read + Send) -> (String, String) {
 
 	let ws_url = BufReader::new(read)
 		.lines()
-		.take(1024)
+		.take(1024 * 1024)
 		.find_map(|line| {
 			let line =
 				line.expect("failed to obtain next line from stdout for WS address discovery");
