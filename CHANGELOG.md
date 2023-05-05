@@ -4,6 +4,26 @@ The format is based on [Keep a Changelog].
 
 [Keep a Changelog]: http://keepachangelog.com/en/1.0.0/
 
+## [v0.1.4] - 2023-05-04
+
+This is a release to support new runtime changes in polkadot v0.9.42.
+
+## [Added]
+- Allow configuring winner count in dry-run  ([#539](https://github.com/paritytech/staking-miner-v2/pull/539))
+- add `feasibility_check` on mined solution  ([#483](https://github.com/paritytech/staking-miner-v2/pull/483))
+
+## [Changed]
+- `commands` module to expose each sub-command, and put options next to them  ([#540](https://github.com/paritytech/staking-miner-v2/pull/540))
+
+## [Fixed]
+- fix: update Cargo.lock for v0.1.3  ([#499](https://github.com/paritytech/staking-miner-v2/pull/499))
+
+### Compatibility
+Tested against:
+- Polkadot v9420
+- Kusama v9420
+- Westend v9420
+
 ## [v0.1.3] - 2022-03-21
 
 This is a patch release that fixes a bug which takes the `Weight::proof_size` into account.
