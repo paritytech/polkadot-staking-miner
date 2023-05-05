@@ -68,7 +68,7 @@ pub use pallet_timestamp::Call as TimestampCall;
 use pallet_transaction_payment::CurrencyAdapter;
 #[cfg(any(feature = "std", test))]
 pub use sp_runtime::BuildStorage;
-pub use sp_runtime::{Perbill, Permill};
+pub use sp_runtime::{Perbill, Percent, Permill};
 
 /// An index to a block.
 pub type BlockNumber = u32;
@@ -469,12 +469,10 @@ parameter_types! {
 	Validators: u32 = option_env!("V").unwrap_or("100").parse().expect("env variable `V` must be number");
 
 	// Set the max length to `nominators / 2` to force trimming of length to occur.
-	// pub MinerMaxLength: u32 = prod_or_test!(
-	//     Perbill::from_rational(8u32, 10) * *(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get()).max.get(DispatchClass::Normal),
-	//     Nominators::get() / 2
-	// );
-
-	pub MinerMaxLength: u32 = 600;
+	pub MinerMaxLength: u32 = prod_or_test!(
+		Perbill::from_rational(8u32, 10) * *(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get()).max.get(DispatchClass::Normal),
+		Perbill::from_percent(90) * Nominators::get()
+	);
 
 	// TODO trimming weight seems occur with this anyway.
 	pub MinerMaxWeight: Weight = prod_or_test!(
