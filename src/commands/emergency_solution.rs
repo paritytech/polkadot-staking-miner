@@ -16,8 +16,10 @@
 
 //! The emergency-solution command.
 
-use crate::{error::Error, opt::Solver, prelude::*, static_types};
+use crate::{epm, error::Error, opt::Solver, prelude::*, static_types};
 use clap::Parser;
+use codec::Encode;
+use std::io::Write;
 
 #[derive(Debug, Clone, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -30,13 +32,13 @@ pub struct EmergencySolutionConfig {
 	#[clap(subcommand)]
 	pub solver: Solver,
 
-	/// The number of top backed winners to take. All are taken, if not provided.
-	pub take: Option<usize>,
+	/// The number of top backed winners to take instead. All are taken, if not provided.
+	pub force_winner_count: Option<u32>,
 }
 
 pub async fn emergency_solution_cmd<T>(
-	_api: SubxtClient,
-	_config: EmergencySolutionConfig,
+	api: SubxtClient,
+	config: EmergencySolutionConfig,
 ) -> Result<(), Error>
 where
 	T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
@@ -45,5 +47,51 @@ where
 		+ 'static,
 	T::Solution: Send,
 {
-	todo!("not possible to implement yet");
+	let round = api
+		.storage()
+		.at(config.at)
+		.await?
+		.fetch_or_default(&runtime::storage().election_provider_multi_phase().round())
+		.await?;
+
+	let miner_solution = epm::fetch_snapshot_and_mine_solution::<T>(
+		&api,
+		config.at,
+		config.solver,
+		round,
+		config.force_winner_count,
+	)
+	.await?;
+
+	let ready_solution = miner_solution.feasibility_check()?;
+	let encoded_size = ready_solution.encoded_size();
+	let score = ready_solution.score;
+
+	let mut supports = ready_solution.supports.into_inner();
+
+	// maybe truncate.
+	if let Some(force_winner_count) = config.force_winner_count {
+		log::info!(
+			target: LOG_TARGET,
+			"truncating {} winners to {}",
+			supports.len(),
+			force_winner_count
+		);
+		supports.sort_unstable_by_key(|(_, s)| s.total);
+		supports.truncate(force_winner_count as usize);
+	}
+
+	// write to file and stdout.
+	let encoded_supports = supports.encode();
+	let mut supports_file = std::fs::File::create("solution.supports.bin")?;
+	supports_file.write_all(&encoded_supports)?;
+
+	log::info!(target: LOG_TARGET, "ReadySolution: size {:?} / score = {:?}", encoded_size, score);
+	log::trace!(
+		target: LOG_TARGET,
+		"Supports: {}",
+		sp_core::hexdisplay::HexDisplay::from(&encoded_supports)
+	);
+
+	Ok(())
 }

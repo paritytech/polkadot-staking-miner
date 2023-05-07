@@ -26,7 +26,7 @@ use crate::{
 use codec::{Decode, Encode};
 use frame_election_provider_support::{NposSolution, PhragMMS, SequentialPhragmen};
 use frame_support::weights::Weight;
-use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
+use pallet_election_provider_multi_phase::{RawSolution, ReadySolution, SolutionOrSnapshotSize};
 use scale_info::{PortableRegistry, TypeInfo};
 use scale_value::scale::{decode_as_type, TypeId};
 use sp_core::Bytes;
@@ -110,6 +110,16 @@ fn read_constant<'a, T: serde::Deserialize<'a>>(
 	scale_value::serde::from_value::<_, T>(val).map_err(|e| {
 		Error::InvalidMetadata(format!("Decoding `{}` failed {}", std::any::type_name::<T>(), e))
 	})
+}
+
+/// Helper to construct a set emergency solution transaction.
+pub fn set_emergency_result<A: Encode + TypeInfo + 'static>(
+	supports: frame_election_provider_support::Supports<A>,
+) -> Result<DynamicTxPayload<'static>, Error> {
+	let scale_result = to_scale_value(supports)
+		.map_err(|e| Error::DynamicTransaction(format!("Failed to decode `Supports`: {:?}", e)))?;
+
+	Ok(subxt::dynamic::tx(EPM_PALLET_NAME, "set_emergency_result", vec![scale_result]))
 }
 
 /// Helper to construct a signed solution transaction.
@@ -272,7 +282,9 @@ where
 	}
 
 	/// Check that this solution is feasible
-	pub fn feasibility_check(&self) -> Result<(), Error> {
+	///
+	/// Returns a [`pallet_election_provider_multi_phase::ReadySolution`] if the check passes.
+	pub fn feasibility_check(&self) -> Result<ReadySolution<AccountId, T::MaxWinners>, Error> {
 		match Miner::<T>::feasibility_check(
 			RawSolution { solution: self.solution.clone(), score: self.score, round: self.round },
 			pallet_election_provider_multi_phase::ElectionCompute::Signed,
@@ -281,7 +293,7 @@ where
 			self.round,
 			self.minimum_untrusted_score,
 		) {
-			Ok(_) => Ok(()),
+			Ok(ready_solution) => Ok(ready_solution),
 			Err(e) => {
 				log::error!(target: LOG_TARGET, "Solution feasibility error {:?}", e);
 				Err(Error::Feasibility(format!("{:?}", e)))
