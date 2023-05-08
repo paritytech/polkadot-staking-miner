@@ -463,23 +463,35 @@ parameter_types! {
 	pub const ElectionUnsignedPriority: TransactionPriority = StakingUnsignedPriority::get() - 1u64;
 
 	// This is a hack to get the number of validators, candidates and nominators
-	// used by node which uses the same env flags.
+	// used by node which uses the same env flags as the chain spec builder in the node crate.
 	Nominators: u32 = option_env!("N").unwrap_or("1000").parse().expect("env variable `N` must be number");
 	Candidates: u32 = option_env!("C").unwrap_or("500").parse().expect("env variable `C` must be number");
 	Validators: u32 = option_env!("V").unwrap_or("100").parse().expect("env variable `V` must be number");
 
 	BlockLength: u32 = Perbill::from_rational(8u32, 10) * *(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get()).max.get(DispatchClass::Normal);
 
+
+	// TODO: `trimming` will only work with the default values on `Nominators, Candidates and Validators`.
+	//
+	// The value was retrieved by something like:
+	//
+	// ```
+	// let voters = 1000;
+	// let targets = 500;
+	// let active_voters = 1000;
+	// let desired_targets = 100;
+	// let weight = MinerConfig::solution_weight(voters, targets, active_voters, desired_targets) * Perbill::from_percent(95)
+	// ```
+	WeightTrimming: Weight = Weight::from_parts(9226276000, 3905328);
+
 	pub MinerMaxLength: u32 = prod_or_test!(
-		Perbill::from_rational(8u32, 10) * *(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get()).max.get(DispatchClass::Normal),
+		BlockLength::get(),
 		Perbill::from_percent(90) * BlockLength::get()
 	);
 
-	// Hack to get a value to not trim to much does only work with
-	// Nominators == 1000, Candidates == 500 and Validators == 100
 	pub MinerMaxWeight: Weight = prod_or_test!(
 		Perbill::from_rational(8u32, 10) * <Runtime as frame_system::Config>::BlockWeights::get().get(DispatchClass::Normal).max_total.unwrap(),
-		Weight::from_parts(9226276000, 3905328)
+		WeightTrimming::get()
 	);
 
 	// The maximum winners that can be elected by the Election pallet which is equivalent to the

@@ -46,7 +46,6 @@ use prelude::*;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tracing_subscriber::EnvFilter;
-use codec::Encode;
 
 #[derive(Debug, Clone, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -146,24 +145,6 @@ async fn main() -> Result<(), Error> {
 	// if this fails then the miner will be stopped and has to be re-started.
 	let (tx_upgrade, rx_upgrade) = oneshot::channel::<Error>();
 	tokio::spawn(runtime_upgrade_task(api.clone(), tx_upgrade));
-
-	/*let nominators = 1000;
-	let candidates = 500;
-	let validators = 100;
-	let x = MinerConfig::solution_weight(nominators, validators, nominators, 100);
-
-	let votes = epm::mock_votes(
-		nominators,
-		100,
-	).unwrap();
-
-	// Mock a RawSolution to get the correct weight without having to do the heavy work.
-	let raw = pallet_election_provider_multi_phase::RawSolution {
-		solution: static_types::polkadot::NposSolution16 { votes1: votes, ..Default::default() },
-		..Default::default()
-	};
-
-	let l = Miner::<static_types::polkadot::MinerConfig>::trim_assignments_length(3277, vec![], raw.encoded_size());*/
 
 	let res = any_runtime!(chain, {
 		let fut = match command {
