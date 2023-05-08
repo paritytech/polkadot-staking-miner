@@ -30,7 +30,7 @@ async fn submit_monitor_works_basic() {
 async fn default_trimming_works() {
 	init_logger();
 	let (_drop, ws_url) = run_staking_miner_playground();
-	let miner = KillChildOnDrop(
+	let mut miner = KillChildOnDrop(
 		process::Command::new(cargo_bin(env!("CARGO_PKG_NAME")))
 			.stdout(process::Stdio::piped())
 			.stderr(process::Stdio::piped())
@@ -42,11 +42,10 @@ async fn default_trimming_works() {
 
 	let ready_solution_task = tokio::spawn(async move { wait_for_mined_solution(&ws_url).await });
 
-	assert!(has_trimming_output(miner).await);
+	assert!(has_trimming_output(&mut miner).await);
 
 	let ready_solution =
 		ready_solution_task.await.unwrap().expect("A solution should be mined now");
-	log::info!("solution: {:?}", ready_solution);
 	assert!(ready_solution.compute == ElectionCompute::Signed);
 }
 
@@ -56,7 +55,7 @@ async fn default_trimming_works() {
 // ii) DEBUG runtime::election-provider: 🗳 from 931 assignments, truncating to 755 for length, removing 176
 //
 // Thus, the only way to ensure that trimming actually works.
-async fn has_trimming_output(mut miner: KillChildOnDrop) -> bool {
+async fn has_trimming_output(miner: &mut KillChildOnDrop) -> bool {
 	let trimming_re = Regex::new(
 		r#"from (\d+) assignments, truncating to (\d+) for (?P<target>weight|length), removing (?P<removed>\d+)"#,
 	)
@@ -87,7 +86,7 @@ async fn has_trimming_output(mut miner: KillChildOnDrop) -> bool {
 			}
 		}
 
-		if now.elapsed() > Duration::from_secs(5 * 60) {
+		if now.elapsed() > MAX_DURATION_FOR_SUBMIT_SOLUTION {
 			break
 		}
 	}

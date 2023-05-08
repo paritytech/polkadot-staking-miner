@@ -24,7 +24,7 @@ pub use runtime::runtime_types::pallet_election_provider_multi_phase::{
 	ElectionCompute, ReadySolution,
 };
 
-const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(60 * 15);
+pub const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(60 * 15);
 
 pub fn init_logger() {
 	let _ = tracing_subscriber::fmt()
@@ -41,7 +41,7 @@ pub fn find_ws_url_from_output(read: impl Read + Send) -> (String, String) {
 
 	let ws_url = BufReader::new(read)
 		.lines()
-		.take(50)
+		.take(1024 * 1024)
 		.find_map(|line| {
 			let line =
 				line.expect("failed to obtain next line from stdout for WS address discovery");
@@ -189,8 +189,6 @@ pub async fn test_submit_solution(target: Target) {
 	});
 
 	let ready_solution = wait_for_mined_solution(&ws_url).await.unwrap();
-
-	log::info!("solution: {:?}", ready_solution);
 	assert!(ready_solution.compute == ElectionCompute::Signed);
 }
 
