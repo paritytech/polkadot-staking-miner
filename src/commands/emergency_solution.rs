@@ -89,7 +89,7 @@ where
 	log::info!(target: LOG_TARGET, "ReadySolution: size {:?} / score = {:?}", encoded_size, score);
 	log::trace!(
 		target: LOG_TARGET,
-		"Supports: {}",
+		"Supports: {:?}",
 		sp_core::hexdisplay::HexDisplay::from(&encoded_supports)
 	);
 
