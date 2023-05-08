@@ -7,13 +7,11 @@ use assert_cmd::cargo::cargo_bin;
 use common::{
 	init_logger, run_staking_miner_playground, spawn_cli_output_threads, test_submit_solution,
 	wait_for_mined_solution, ElectionCompute, KillChildOnDrop, Target,
+	MAX_DURATION_FOR_SUBMIT_SOLUTION,
 };
 use regex::Regex;
 use staking_miner::opt::Chain;
-use std::{
-	process,
-	time::{Duration, Instant},
-};
+use std::{process, time::Instant};
 
 #[tokio::test]
 async fn submit_monitor_works_basic() {
