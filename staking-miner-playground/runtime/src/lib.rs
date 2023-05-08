@@ -9,7 +9,7 @@ include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 pub mod pallet_config_block;
 
 #[macro_export]
-macro_rules! prod_or_test {
+macro_rules! prod_or_enforce_trimming {
 	($prod:expr, $test:expr) => {
 		if cfg!(feature = "test-trimming") {
 			$test
@@ -470,7 +470,6 @@ parameter_types! {
 
 	BlockLength: u32 = Perbill::from_rational(8u32, 10) * *(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get()).max.get(DispatchClass::Normal);
 
-
 	// TODO: `trimming` will only work with the default values on `Nominators, Candidates and Validators`.
 	//
 	// The value was retrieved by something like:
@@ -484,12 +483,12 @@ parameter_types! {
 	// ```
 	WeightTrimming: Weight = Weight::from_parts(9226276000, 3905328);
 
-	pub MinerMaxLength: u32 = prod_or_test!(
+	pub MinerMaxLength: u32 = prod_or_enforce_trimming!(
 		BlockLength::get(),
 		Perbill::from_percent(90) * BlockLength::get()
 	);
 
-	pub MinerMaxWeight: Weight = prod_or_test!(
+	pub MinerMaxWeight: Weight = prod_or_enforce_trimming!(
 		Perbill::from_rational(8u32, 10) * <Runtime as frame_system::Config>::BlockWeights::get().get(DispatchClass::Normal).max_total.unwrap(),
 		WeightTrimming::get()
 	);
