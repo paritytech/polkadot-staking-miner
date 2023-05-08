@@ -324,7 +324,7 @@ where
 			let active_voters = solution.voter_count() as u32;
 			let desired_targets = solution.unique_targets().len() as u32;
 
-			log::trace!(target: LOG_TARGET, "Mined solution: desired_targets={}, active_voters={}, voters={}, targets={} encoded_len={}", 
+			log::trace!(target: LOG_TARGET, "Mined solution: desired_targets={}, active_voters={}, voters={}, targets={} encoded_len={}",
 				desired_targets,
 				active_voters,
 				size.voters,
@@ -341,16 +341,16 @@ where
 			.await?;
 
 			log::info!(
-					target: LOG_TARGET,
-					"Mined solution with {:?} size: {:?} round: {:?} at: {}, took: {} ms, len: {:?}, weight = {:?}",
-					score,
-					size,
-					round,
-					at.number(),
-					elapsed_ms,
-					encoded_len,
-					final_weight,
-				);
+				target: LOG_TARGET,
+				"Mined solution with {:?} size: {:?} round: {:?} at: {}, took: {} ms, len: {:?}, weight = {:?}",
+				score,
+				size,
+				round,
+				at.number(),
+				elapsed_ms,
+				encoded_len,
+				final_weight,
+			);
 
 			prometheus::set_length(encoded_len);
 			prometheus::set_weight(final_weight);
