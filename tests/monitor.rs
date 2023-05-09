@@ -19,8 +19,6 @@ async fn submit_monitor_works_basic() {
 	test_submit_solution(Target::PolkadotNode(Chain::Polkadot)).await;
 	test_submit_solution(Target::PolkadotNode(Chain::Kusama)).await;
 	test_submit_solution(Target::PolkadotNode(Chain::Westend)).await;
-	// It's easier to debug this by just connection a staking miner to
-	// staking-miner-playground by `./target/debug/staking-miner --uri ws://localhost:9944 monitor --seed-or-path //Alice --listen finalized seq-phragmen`
 	test_submit_solution(Target::StakingMinerPlayground).await;
 }
 

@@ -313,27 +313,19 @@ where
 	.timed()
 	.await
 	{
-		(Ok(miner_solution), elapsed) => {
+		(Ok(mined_solution), elapsed) => {
+			// check that the solution looks valid:
+			mined_solution.feasibility_check()?;
+
 			// and then get the values we need from it:
-			let solution = miner_solution.solution();
-			let score = miner_solution.score();
-			let size = miner_solution.size();
+			let solution = mined_solution.solution();
+			let score = mined_solution.score();
+			let size = mined_solution.size();
 
 			let elapsed_ms = elapsed.as_millis();
 			let encoded_len = solution.encoded_size();
 			let active_voters = solution.voter_count() as u32;
 			let desired_targets = solution.unique_targets().len() as u32;
-
-			log::trace!(target: LOG_TARGET, "Mined solution: desired_targets={}, active_voters={}, voters={}, targets={} encoded_len={}",
-				desired_targets,
-				active_voters,
-				size.voters,
-				size.targets,
-				encoded_len
-			);
-
-			// check that the solution looks valid:
-			miner_solution.feasibility_check()?;
 
 			let final_weight = tokio::task::spawn_blocking(move || {
 				T::solution_weight(size.voters, size.targets, active_voters, desired_targets)
