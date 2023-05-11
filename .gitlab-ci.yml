@@ -47,7 +47,7 @@ variables:
   before_script:
     - *rust-info-script
   tags:
-    - linux-docker
+    - linux-docker-vm-c2
 
 .kubernetes-env:                   &kubernetes-env
   image:                           "${CI_IMAGE}"
