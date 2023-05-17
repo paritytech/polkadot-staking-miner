@@ -258,6 +258,7 @@ impl pallet_transaction_payment::Config for Runtime {
 impl pallet_sudo::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type RuntimeCall = RuntimeCall;
+	type WeightInfo = ();
 }
 
 impl pallet_config_block::Config for Runtime {
@@ -464,8 +465,6 @@ parameter_types! {
 
 	// This is a hack to get the number of validators, candidates and nominators
 	// used by node which uses the same env flags as the chain spec builder in the node crate.
-	Nominators: u32 = option_env!("N").unwrap_or("1000").parse().expect("env variable `N` must be number");
-	Candidates: u32 = option_env!("C").unwrap_or("500").parse().expect("env variable `C` must be number");
 	Validators: u32 = option_env!("V").unwrap_or("100").parse().expect("env variable `V` must be number");
 
 	BlockLength: u32 = Perbill::from_rational(8u32, 10) * *(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get()).max.get(DispatchClass::Normal);

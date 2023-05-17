@@ -161,13 +161,13 @@ pub fn spawn_cli_output_threads(
 }
 
 pub enum Target {
-	PolkadotNode(Chain),
+	Node(Chain),
 	StakingMinerPlayground,
 }
 
 pub async fn test_submit_solution(target: Target) {
 	let (_drop, ws_url) = match target {
-		Target::PolkadotNode(chain) => run_polkadot_node(chain),
+		Target::Node(chain) => run_polkadot_node(chain),
 		Target::StakingMinerPlayground => run_staking_miner_playground(),
 	};
 

@@ -16,9 +16,9 @@ use std::{process, time::Instant};
 #[tokio::test]
 async fn submit_monitor_works_basic() {
 	init_logger();
-	test_submit_solution(Target::PolkadotNode(Chain::Polkadot)).await;
-	test_submit_solution(Target::PolkadotNode(Chain::Kusama)).await;
-	test_submit_solution(Target::PolkadotNode(Chain::Westend)).await;
+	test_submit_solution(Target::Node(Chain::Polkadot)).await;
+	test_submit_solution(Target::Node(Chain::Kusama)).await;
+	test_submit_solution(Target::Node(Chain::Westend)).await;
 	test_submit_solution(Target::StakingMinerPlayground).await;
 }
 
