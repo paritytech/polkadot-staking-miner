@@ -128,7 +128,7 @@ fn testnet_genesis(wasm_binary: &[u8], _enable_println: bool) -> GenesisConfig {
 	let initial_authorities = vec![authority_keys_from_seed("Alice")]
 		.into_iter()
 		.chain(
-			// because Alice is already inserted above only candidates-1 needs to generated.
+			// because Alice is already inserted above only candidates-1 needs to be generated.
 			(0..candidates - 1)
 				.map(|_| rand_str())
 				.map(|seed| authority_keys_from_seed(seed.as_str())),
