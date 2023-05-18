@@ -4,82 +4,91 @@
 pub mod common;
 
 use assert_cmd::cargo::cargo_bin;
-use codec::Decode;
-use common::{init_logger, run_polkadot_node, KillChildOnDrop};
-use sp_storage::StorageChangeSet;
-use staking_miner::{
-	opt::Chain,
-	prelude::{runtime, sp_core::Bytes, Hash, SubxtClient},
+use common::{
+	init_logger, run_staking_miner_playground, spawn_cli_output_threads, test_submit_solution,
+	wait_for_mined_solution, ElectionCompute, KillChildOnDrop, Target,
+	MAX_DURATION_FOR_SUBMIT_SOLUTION,
 };
-use std::{
-	process,
-	time::{Duration, Instant},
-};
-use subxt::rpc::rpc_params;
-use tokio::time::timeout;
-
-const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(60 * 15);
+use regex::Regex;
+use staking_miner::opt::Chain;
+use std::{process, time::Instant};
 
 #[tokio::test]
 async fn submit_monitor_works_basic() {
 	init_logger();
-	test_submit_solution(Chain::Polkadot).await;
-	test_submit_solution(Chain::Kusama).await;
-	test_submit_solution(Chain::Westend).await;
+	test_submit_solution(Target::Node(Chain::Polkadot)).await;
+	test_submit_solution(Target::Node(Chain::Kusama)).await;
+	test_submit_solution(Target::Node(Chain::Westend)).await;
+	test_submit_solution(Target::StakingMinerPlayground).await;
 }
 
-async fn test_submit_solution(chain: Chain) {
-	use runtime::runtime_types::pallet_election_provider_multi_phase::{
-		ElectionCompute, ReadySolution,
-	};
-
-	let (_drop, ws_url) = run_polkadot_node(chain);
-
-	let _miner = KillChildOnDrop(
+#[tokio::test]
+async fn default_trimming_works() {
+	init_logger();
+	let (_drop, ws_url) = run_staking_miner_playground();
+	let mut miner = KillChildOnDrop(
 		process::Command::new(cargo_bin(env!("CARGO_PKG_NAME")))
 			.stdout(process::Stdio::piped())
 			.stderr(process::Stdio::piped())
+			.env("RUST_LOG", "runtime=debug,staking-miner=debug")
 			.args(&["--uri", &ws_url, "monitor", "--seed-or-path", "//Alice", "seq-phragmen"])
 			.spawn()
 			.unwrap(),
 	);
 
-	let api = SubxtClient::from_url(&ws_url).await.unwrap();
+	let ready_solution_task = tokio::spawn(async move { wait_for_mined_solution(&ws_url).await });
+
+	assert!(has_trimming_output(&mut miner).await);
+
+	let ready_solution =
+		ready_solution_task.await.unwrap().expect("A solution should be mined now");
+	assert!(ready_solution.compute == ElectionCompute::Signed);
+}
+
+// Helper that parses the CLI output to find logging outputs based on the following:
+//
+// i) DEBUG runtime::election-provider: 🗳 from 934 assignments, truncating to 1501 for weight, removing 0
+// ii) DEBUG runtime::election-provider: 🗳 from 931 assignments, truncating to 755 for length, removing 176
+//
+// Thus, the only way to ensure that trimming actually works.
+async fn has_trimming_output(miner: &mut KillChildOnDrop) -> bool {
+	let trimming_re = Regex::new(
+		r#"from (\d+) assignments, truncating to (\d+) for (?P<target>weight|length), removing (?P<removed>\d+)"#,
+	)
+	.unwrap();
+
+	let mut got_truncate_len = false;
+	let mut got_truncate_weight = false;
+
 	let now = Instant::now();
+	let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
-	let key = Bytes(
-		runtime::storage()
-			.election_provider_multi_phase()
-			.queued_solution()
-			.to_root_bytes(),
-	);
+	spawn_cli_output_threads(miner.stdout.take().unwrap(), miner.stderr.take().unwrap(), tx);
 
-	let mut sub = api
-		.rpc()
-		.subscribe("state_subscribeStorage", rpc_params![vec![key]], "state_unsubscribeStorage")
-		.await
-		.unwrap();
+	while !got_truncate_weight || !got_truncate_len {
+		let line = rx.recv().await.unwrap();
+		println!("{line}");
+		log::info!("{line}");
 
-	let mut success = false;
+		if let Some(caps) = trimming_re.captures(&line) {
+			let trimmed_items: usize = caps.name("removed").unwrap().as_str().parse().unwrap();
 
-	while now.elapsed() < MAX_DURATION_FOR_SUBMIT_SOLUTION {
-		let x: StorageChangeSet<Hash> =
-			match timeout(MAX_DURATION_FOR_SUBMIT_SOLUTION, sub.next()).await {
-				Err(e) => panic!("Timeout exceeded: {:?}", e),
-				Ok(Some(Ok(storage))) => storage,
-				Ok(None) => panic!("Subscription closed"),
-				Ok(Some(Err(e))) => panic!("Failed to decode StorageChangeSet {:?}", e),
-			};
+			if caps.name("target").unwrap().as_str() == "weight" && trimmed_items > 0 {
+				got_truncate_weight = true;
+			}
 
-		if let Some(data) = x.changes[0].clone().1 {
-			let solution: ReadySolution = Decode::decode(&mut data.0.as_slice())
-				.expect("Failed to decode storage as QueuedSolution");
-			eprintln!("solution: {:?}", solution);
-			assert!(solution.compute == ElectionCompute::Signed);
-			success = true;
+			if caps.name("target").unwrap().as_str() == "length" && trimmed_items > 0 {
+				got_truncate_len = true;
+			}
+		}
+
+		if now.elapsed() > MAX_DURATION_FOR_SUBMIT_SOLUTION {
 			break
 		}
 	}
 
-	assert!(success);
+	assert!(got_truncate_weight, "Trimming weight logs were not found");
+	assert!(got_truncate_len, "Trimming length logs were not found");
+
+	got_truncate_len && got_truncate_weight
 }

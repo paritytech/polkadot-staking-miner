@@ -90,8 +90,8 @@ std = [
 	"sp-transaction-pool/std",
 	"sp-version/std",
 ]
-
 runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",
 ]
 try-runtime = []
+test-trimming = []

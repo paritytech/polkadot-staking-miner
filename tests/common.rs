@@ -1,11 +1,30 @@
-use staking_miner::opt::Chain;
+use assert_cmd::cargo::cargo_bin;
+use codec::Decode;
+use sp_storage::StorageChangeSet;
+use staking_miner::{
+	opt::Chain,
+	prelude::{
+		runtime::{self},
+		sp_core::Bytes,
+		Hash, SubxtClient,
+	},
+};
 use std::{
 	io::{BufRead, BufReader, Read},
 	net::SocketAddr,
 	ops::{Deref, DerefMut},
 	process::{self, Child, ChildStderr, ChildStdout},
+	time::{Duration, Instant},
 };
+use subxt::rpc::rpc_params;
+use tokio::time::timeout;
 use tracing_subscriber::EnvFilter;
+
+pub use runtime::runtime_types::pallet_election_provider_multi_phase::{
+	ElectionCompute, ReadySolution,
+};
+
+pub const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(60 * 15);
 
 pub fn init_logger() {
 	let _ = tracing_subscriber::fmt()
@@ -57,7 +76,7 @@ pub fn run_staking_miner_playground() -> (KillChildOnDrop, String) {
 		process::Command::new("staking-miner-playground")
 			.stdout(process::Stdio::piped())
 			.stderr(process::Stdio::piped())
-			.args(&["--dev"])
+			.args(&["--dev", "--offchain-worker=Never"])
 			.env("RUST_LOG", "runtime=debug")
 			.spawn()
 			.unwrap(),
@@ -139,4 +158,77 @@ pub fn spawn_cli_output_threads(
 			}
 		}
 	});
+}
+
+pub enum Target {
+	Node(Chain),
+	StakingMinerPlayground,
+}
+
+pub async fn test_submit_solution(target: Target) {
+	let (_drop, ws_url) = match target {
+		Target::Node(chain) => run_polkadot_node(chain),
+		Target::StakingMinerPlayground => run_staking_miner_playground(),
+	};
+
+	let mut miner = KillChildOnDrop(
+		process::Command::new(cargo_bin(env!("CARGO_PKG_NAME")))
+			.stdout(process::Stdio::piped())
+			.stderr(process::Stdio::piped())
+			.args(&["--uri", &ws_url, "monitor", "--seed-or-path", "//Alice", "seq-phragmen"])
+			.spawn()
+			.unwrap(),
+	);
+
+	let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+	spawn_cli_output_threads(miner.stdout.take().unwrap(), miner.stderr.take().unwrap(), tx);
+
+	tokio::spawn(async move {
+		let r = rx.recv().await.unwrap();
+		log::info!("{}", r);
+	});
+
+	let ready_solution = wait_for_mined_solution(&ws_url).await.unwrap();
+	assert!(ready_solution.compute == ElectionCompute::Signed);
+}
+
+/// Wait until a solution is ready on chain
+///
+/// Timeout's after 15 minutes which is regarded as an error.
+pub async fn wait_for_mined_solution(ws_url: &str) -> anyhow::Result<ReadySolution> {
+	let api = SubxtClient::from_url(&ws_url).await?;
+	let now = Instant::now();
+
+	let key = Bytes(
+		runtime::storage()
+			.election_provider_multi_phase()
+			.queued_solution()
+			.to_root_bytes(),
+	);
+
+	let mut sub = api
+		.rpc()
+		.subscribe("state_subscribeStorage", rpc_params![vec![key]], "state_unsubscribeStorage")
+		.await
+		.unwrap();
+
+	while now.elapsed() < MAX_DURATION_FOR_SUBMIT_SOLUTION {
+		let x: StorageChangeSet<Hash> =
+			match timeout(MAX_DURATION_FOR_SUBMIT_SOLUTION, sub.next()).await {
+				Err(e) => return Err(e.into()),
+				Ok(Some(Ok(storage))) => storage,
+				Ok(None) => return Err(anyhow::anyhow!("Subscription closed")),
+				Ok(Some(Err(e))) => return Err(e.into()),
+			};
+
+		if let Some(data) = x.changes[0].clone().1 {
+			let solution: ReadySolution = Decode::decode(&mut data.0.as_slice())?;
+			return Ok(solution)
+		}
+	}
+
+	Err(anyhow::anyhow!(
+		"ReadySolution not found in {}s regarded as error",
+		MAX_DURATION_FOR_SUBMIT_SOLUTION.as_secs()
+	))
 }

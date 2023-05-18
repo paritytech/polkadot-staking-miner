@@ -8,6 +8,17 @@ include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
 pub mod pallet_config_block;
 
+#[macro_export]
+macro_rules! prod_or_enforce_trimming {
+	($prod:expr, $test:expr) => {
+		if cfg!(feature = "test-trimming") {
+			$test
+		} else {
+			$prod
+		}
+	};
+}
+
 use election_multi_phase::SolutionAccuracyOf;
 use frame_election_provider_support::{onchain, ElectionDataProvider, SequentialPhragmen};
 use frame_support::{
@@ -57,7 +68,7 @@ pub use pallet_timestamp::Call as TimestampCall;
 use pallet_transaction_payment::CurrencyAdapter;
 #[cfg(any(feature = "std", test))]
 pub use sp_runtime::BuildStorage;
-pub use sp_runtime::{Perbill, Permill};
+pub use sp_runtime::{Perbill, Percent, Permill};
 
 /// An index to a block.
 pub type BlockNumber = u32;
@@ -247,6 +258,7 @@ impl pallet_transaction_payment::Config for Runtime {
 impl pallet_sudo::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type RuntimeCall = RuntimeCall;
+	type WeightInfo = ();
 }
 
 impl pallet_config_block::Config for Runtime {
@@ -450,15 +462,39 @@ parameter_types! {
 
 	// miner configs
 	pub const ElectionUnsignedPriority: TransactionPriority = StakingUnsignedPriority::get() - 1u64;
-	pub MinerMaxWeight: Weight = Perbill::from_rational(8u32, 10) *
-		<Runtime as frame_system::Config>::BlockWeights::get()
-		.get(DispatchClass::Normal)
-		.max_total
-		.unwrap();
-	pub MinerMaxLength: u32 = Perbill::from_rational(8u32, 10) *
-		*(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get())
-		.max
-		.get(DispatchClass::Normal);
+
+	// This is a hack to get the number of validators, candidates and nominators
+	// used by node which uses the same env flags as the chain spec builder in the node crate.
+	Validators: u32 = option_env!("V").unwrap_or("100").parse().expect("env variable `V` must be number");
+
+	BlockLength: u32 = Perbill::from_rational(8u32, 10) * *(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get()).max.get(DispatchClass::Normal);
+
+	// TODO: `trimming` will only work with the default values on `Nominators, Candidates and Validators`.
+	//
+	// The value was retrieved by something like:
+	//
+	// ```
+	// let voters = 1000;
+	// let targets = 500;
+	// let active_voters = 1000;
+	// let desired_targets = 100;
+	// let weight = MinerConfig::solution_weight(voters, targets, active_voters, desired_targets) * Perbill::from_percent(95)
+	// ```
+	WeightTrimming: Weight = Weight::from_parts(9226276000, 3905328);
+
+	pub MinerMaxLength: u32 = prod_or_enforce_trimming!(
+		BlockLength::get(),
+		Perbill::from_percent(90) * BlockLength::get()
+	);
+
+	pub MinerMaxWeight: Weight = prod_or_enforce_trimming!(
+		Perbill::from_rational(8u32, 10) * <Runtime as frame_system::Config>::BlockWeights::get().get(DispatchClass::Normal).max_total.unwrap(),
+		WeightTrimming::get()
+	);
+
+	// The maximum winners that can be elected by the Election pallet which is equivalent to the
+	// maximum active validators the staking pallet can have.
+	pub MaxActiveValidators: u32 = Validators::get();
 }
 
 mod solution_16 {
@@ -502,10 +538,6 @@ parameter_types! {
 	pub const MaxElectingVoters: u32 = 25_000;
 	pub MaxOnChainElectingVoters: u32 = 5000;
 	pub MaxOnChainElectableTargets: u16 = 1250;
-	// The maximum winners that can be elected by the Election pallet which is equivalent to the
-	// maximum active validators the staking pallet can have.
-	pub MaxActiveValidators: u32 = 1000;
-
 }
 
 /// The numbers configured here could always be more than the the maximum limits of staking pallet
@@ -600,7 +632,6 @@ impl pallet_election_provider_multi_phase::Config for Runtime {
 	type MaxElectableTargets = ConstU16<{ u16::MAX }>;
 	type MaxElectingVoters = MaxElectingVoters;
 	type MaxWinners = MaxActiveValidators;
-	// type MaxElectingVoters = IncPerRound<10_000, 1000>;
 	type BenchmarkingConfig = ElectionProviderBenchmarkConfig;
 }
 

@@ -313,14 +313,14 @@ where
 	.timed()
 	.await
 	{
-		(Ok(miner_solution), elapsed) => {
+		(Ok(mined_solution), elapsed) => {
 			// check that the solution looks valid:
-			miner_solution.feasibility_check()?;
+			mined_solution.feasibility_check()?;
 
 			// and then get the values we need from it:
-			let solution = miner_solution.solution();
-			let score = miner_solution.score();
-			let size = miner_solution.size();
+			let solution = mined_solution.solution();
+			let score = mined_solution.score();
+			let size = mined_solution.size();
 
 			let elapsed_ms = elapsed.as_millis();
 			let encoded_len = solution.encoded_size();
@@ -333,16 +333,16 @@ where
 			.await?;
 
 			log::info!(
-					target: LOG_TARGET,
-					"Mined solution with {:?} size: {:?} round: {:?} at: {}, took: {} ms, len: {:?}, weight = {:?}",
-					score,
-					size,
-					round,
-					at.number(),
-					elapsed_ms,
-					encoded_len,
-					final_weight,
-				);
+				target: LOG_TARGET,
+				"Mined solution with {:?} size: {:?} round: {:?} at: {}, took: {} ms, len: {:?}, weight = {:?}",
+				score,
+				size,
+				round,
+				at.number(),
+				elapsed_ms,
+				encoded_len,
+				final_weight,
+			);
 
 			prometheus::set_length(encoded_len);
 			prometheus::set_weight(final_weight);

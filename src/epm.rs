@@ -207,6 +207,14 @@ where
 	let voters = snapshot.voters.clone();
 	let targets = snapshot.targets.clone();
 
+	log::trace!(
+		target: LOG_TARGET,
+		"mine solution: desired_targets={}, voters={}, targets={}",
+		desired_targets,
+		voters.len(),
+		targets.len()
+	);
+
 	let blocking_task = tokio::task::spawn_blocking(move || match solver {
 		Solver::SeqPhragmen { iterations } => {
 			BalanceIterations::set(iterations);

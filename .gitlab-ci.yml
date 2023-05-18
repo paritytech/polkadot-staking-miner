@@ -130,7 +130,7 @@ nightly-test:
     - cd -
     - rm -rf polkadot
     - cd staking-miner-playground
-    - cargo build --release
+    - cargo build --release --features test-trimming
     - mv ./target/release/staking-miner-playground /usr/bin
     - staking-miner-playground --version
     - cd -
