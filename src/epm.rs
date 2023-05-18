@@ -209,7 +209,7 @@ where
 
 	log::trace!(
 		target: LOG_TARGET,
-		"mine solution: desired_target={}, voters={}, targets={}",
+		"mine solution: desired_targets={}, voters={}, targets={}",
 		desired_targets,
 		voters.len(),
 		targets.len()
