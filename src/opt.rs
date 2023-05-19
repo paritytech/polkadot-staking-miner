@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::error::Error;
+use crate::{error::Error, prelude::Hash};
 
 use clap::*;
 use sp_npos_elections::BalancingConfig;
@@ -87,5 +87,39 @@ impl TryFrom<subxt::rpc::types::RuntimeVersion> for Chain {
 			serde_json::from_value::<String>(json).expect("specName must be String; qed");
 		chain.make_ascii_lowercase();
 		Chain::from_str(&chain)
+	}
+}
+
+///...
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum Block {
+	Latest,
+	At(Hash),
+}
+
+impl FromStr for Block {
+	type Err = String;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		let block = Hash::from_str(s).map_err(|e| e.to_string())?;
+		Ok(Block::At(block))
+	}
+}
+
+impl fmt::Display for Block {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			Self::Latest => write!(f, "Block is latest"),
+			Self::At(h) => write!(f, "Block is 0x{}", h),
+		}
+	}
+}
+
+impl From<Block> for Option<Hash> {
+	fn from(b: Block) -> Option<Hash> {
+		match b {
+			Block::At(h) => Some(h),
+			Block::Latest => None,
+		}
 	}
 }

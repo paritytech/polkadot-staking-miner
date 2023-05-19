@@ -65,32 +65,35 @@ pub type Config = subxt::PolkadotConfig;
 pub type SignedSubmission<S> =
 	pallet_election_provider_multi_phase::SignedSubmission<AccountId, Balance, S>;
 
+/// Block.
+pub use crate::opt::Block;
+
 #[subxt::subxt(
 	runtime_metadata_path = "artifacts/metadata.scale",
 	derive_for_all_types = "Clone, Debug, Eq, PartialEq",
 	derive_for_type(
-		type = "pallet_election_provider_multi_phase::RoundSnapshot",
+		path = "pallet_election_provider_multi_phase::RoundSnapshot",
 		derive = "Default"
 	),
 	substitute_type(
-		type = "sp_arithmetic::per_things::PerU16",
-		with = "::subxt::ext::sp_runtime::PerU16"
+		path = "sp_arithmetic::per_things::PerU16",
+		with = "::subxt::utils::Static<::subxt::ext::sp_runtime::PerU16>"
 	),
 	substitute_type(
-		type = "pallet_election_provider_multi_phase::RawSolution",
-		with = "::pallet_election_provider_multi_phase::RawSolution"
+		path = "sp_npos_elections::ElectionScore",
+		with = "::subxt::utils::Static<::sp_npos_elections::ElectionScore>"
 	),
 	substitute_type(
-		type = "sp_npos_elections::ElectionScore",
-		with = "::sp_npos_elections::ElectionScore"
+		path = "pallet_election_provider_multi_phase::SolutionOrSnapshotSize",
+		with = "::subxt::utils::Static<::pallet_election_provider_multi_phase::SolutionOrSnapshotSize>"
 	),
 	substitute_type(
-		type = "pallet_election_provider_multi_phase::Phase",
-		with = "::pallet_election_provider_multi_phase::Phase"
+		path = "pallet_election_provider_multi_phase::Phase",
+		with = "::subxt::utils::Static<::pallet_election_provider_multi_phase::Phase<u32>>"
 	),
 	substitute_type(
-		type = "pallet_election_provider_multi_phase::SolutionOrSnapshotSize",
-		with = "::pallet_election_provider_multi_phase::SolutionOrSnapshotSize"
+		path = "pallet_election_provider_multi_phase::RawSolution<S>",
+		with = "::subxt::utils::Static<::pallet_election_provider_multi_phase::RawSolution<S>>"
 	)
 )]
 pub mod runtime {}

@@ -64,6 +64,6 @@ async fn read_storage<T: Decode + TypeInfo + 'static>(
 	params: Vec<Value>,
 ) -> T {
 	let addr = subxt::dynamic::storage(pallet, name, params);
-	let val = api.storage().at(None).await.unwrap().fetch(&addr).await.unwrap().unwrap();
+	let val = api.storage().at_latest().fetch(&addr).await.unwrap().unwrap();
 	Decode::decode(&mut val.encoded()).unwrap()
 }

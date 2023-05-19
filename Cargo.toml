@@ -20,7 +20,7 @@ pin-project-lite = "0.2"
 
 # subxt
 subxt = { git = "https://github.com/paritytech/subxt" }
-scale-value = "0.6.0"
+scale-value = "0.7.0"
 
 # substrate
 sp-io = { git = "https://github.com/paritytech/substrate" }

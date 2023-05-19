@@ -18,7 +18,7 @@
 
 use crate::{
 	error::Error,
-	helpers::RuntimeDispatchInfo,
+	helpers::{storage_at, RuntimeDispatchInfo},
 	opt::{BalanceIterations, Balancing, Solver},
 	prelude::*,
 	static_types,
@@ -31,7 +31,7 @@ use scale_info::{PortableRegistry, TypeInfo};
 use scale_value::scale::{decode_as_type, TypeId};
 use sp_core::Bytes;
 use sp_npos_elections::ElectionScore;
-use subxt::{dynamic::Value, rpc::rpc_params, tx::DynamicTxPayload};
+use subxt::{dynamic::Value, rpc::rpc_params, tx::DynamicPayload};
 
 const EPM_PALLET_NAME: &str = "ElectionProviderMultiPhase";
 
@@ -115,7 +115,7 @@ fn read_constant<'a, T: serde::Deserialize<'a>>(
 /// Helper to construct a signed solution transaction.
 pub fn signed_solution<S: NposSolution + Encode + TypeInfo + 'static>(
 	solution: RawSolution<S>,
-) -> Result<DynamicTxPayload<'static>, Error> {
+) -> Result<DynamicPayload, Error> {
 	let scale_solution = to_scale_value(solution).map_err(|e| {
 		Error::DynamicTransaction(format!("Failed to decode `RawSolution`: {:?}", e))
 	})?;
@@ -127,7 +127,7 @@ pub fn signed_solution<S: NposSolution + Encode + TypeInfo + 'static>(
 pub fn unsigned_solution<S: NposSolution + Encode + TypeInfo + 'static>(
 	solution: RawSolution<S>,
 	witness: SolutionOrSnapshotSize,
-) -> Result<DynamicTxPayload<'static>, Error> {
+) -> Result<DynamicPayload, Error> {
 	let scale_solution = to_scale_value(solution)?;
 	let scale_witness = to_scale_value(witness)?;
 
@@ -137,13 +137,15 @@ pub fn unsigned_solution<S: NposSolution + Encode + TypeInfo + 'static>(
 /// Helper to the signed submissions at the current block.
 pub async fn signed_submission_at<S: NposSolution + Decode + TypeInfo + 'static>(
 	idx: u32,
-	at: Hash,
+	block_hash: Block,
 	api: &SubxtClient,
 ) -> Result<Option<SignedSubmission<S>>, Error> {
 	let scale_idx = Value::u128(idx as u128);
 	let addr = subxt::dynamic::storage(EPM_PALLET_NAME, "SignedSubmissionsMap", vec![scale_idx]);
 
-	match api.storage().at(Some(at)).await?.fetch(&addr).await {
+	let storage = storage_at(block_hash, api).await?;
+
+	match storage.fetch(&addr).await {
 		Ok(Some(val)) => {
 			let submissions = Decode::decode(&mut val.encoded())?;
 			Ok(Some(submissions))
@@ -154,11 +156,13 @@ pub async fn signed_submission_at<S: NposSolution + Decode + TypeInfo + 'static>
 }
 
 /// Helper to the signed submissions at the block `at`.
-pub async fn snapshot_at(at: Option<Hash>, api: &SubxtClient) -> Result<RoundSnapshot, Error> {
+pub async fn snapshot_at(b: Block, api: &SubxtClient) -> Result<RoundSnapshot, Error> {
 	let empty = Vec::<Value>::new();
 	let addr = subxt::dynamic::storage(EPM_PALLET_NAME, "Snapshot", empty);
 
-	match api.storage().at(at).await?.fetch(&addr).await {
+	let storage = storage_at(b, api).await?;
+
+	match storage.fetch(&addr).await {
 		Ok(Some(val)) => {
 			let snapshot = Decode::decode(&mut val.encoded())?;
 			Ok(snapshot)
@@ -172,7 +176,7 @@ pub async fn snapshot_at(at: Option<Hash>, api: &SubxtClient) -> Result<RoundSna
 /// and compute an NPos solution via [`pallet_election_provider_multi_phase`].
 pub async fn fetch_snapshot_and_mine_solution<T>(
 	api: &SubxtClient,
-	hash: Option<Hash>,
+	block: Block,
 	solver: Solver,
 	round: u32,
 	forced_desired_targets: Option<u32>,
@@ -184,25 +188,21 @@ where
 		+ 'static,
 	T::Solution: Send,
 {
-	let snapshot = snapshot_at(hash, &api).await?;
+	let snapshot = snapshot_at(block, &api).await?;
+	let storage = storage_at(block, &api).await?;
 
 	let desired_targets = match forced_desired_targets {
 		Some(x) => x,
-		None => api
-			.storage()
-			.at(hash)
-			.await?
+		None => storage
 			.fetch(&runtime::storage().election_provider_multi_phase().desired_targets())
 			.await?
 			.expect("Snapshot is non-empty; `desired_target` should exist; qed"),
 	};
 
-	let minimum_untrusted_score = api
-		.storage()
-		.at(hash)
-		.await?
+	let minimum_untrusted_score = storage
 		.fetch(&runtime::storage().election_provider_multi_phase().minimum_untrusted_score())
-		.await?;
+		.await?
+		.map(|score| score.0);
 
 	let voters = snapshot.voters.clone();
 	let targets = snapshot.targets.clone();
@@ -304,7 +304,7 @@ fn make_type<T: scale_info::TypeInfo + 'static>() -> (TypeId, PortableRegistry) 
 	let id = types.register_type(&m);
 	let portable_registry: PortableRegistry = types.into();
 
-	(id.into(), portable_registry)
+	(id.id, portable_registry)
 }
 
 fn to_scale_value<T: scale_info::TypeInfo + 'static + Encode>(val: T) -> Result<Value, Error> {
