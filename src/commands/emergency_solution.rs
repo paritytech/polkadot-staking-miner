@@ -20,6 +20,7 @@ use crate::{epm, error::Error, opt::Solver, prelude::*, static_types};
 use clap::Parser;
 use codec::Encode;
 use std::io::Write;
+use subxt::tx::TxPayload;
 
 #[derive(Debug, Clone, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -47,6 +48,10 @@ where
 		+ 'static,
 	T::Solution: Send,
 {
+	if let Some(max_winners) = config.force_winner_count {
+		static_types::MaxWinners::set(max_winners);
+	}
+
 	let round = api
 		.storage()
 		.at(config.at)
@@ -81,17 +86,19 @@ where
 		supports.truncate(force_winner_count as usize);
 	}
 
-	// write to file and stdout.
+	let call = epm::set_emergency_result(supports.clone())?;
+	let encoded_call = call.encode_call_data(&api.metadata())?;
+
 	let encoded_supports = supports.encode();
+
+	// write results to files.
 	let mut supports_file = std::fs::File::create("solution.supports.bin")?;
+	let mut encoded_call_file = std::fs::File::create("encoded.call")?;
 	supports_file.write_all(&encoded_supports)?;
+	encoded_call_file.write_all(&encoded_call)?;
 
 	log::info!(target: LOG_TARGET, "ReadySolution: size {:?} / score = {:?}", encoded_size, score);
-	log::trace!(
-		target: LOG_TARGET,
-		"Supports: {:?}",
-		sp_core::hexdisplay::HexDisplay::from(&encoded_supports)
-	);
+	log::info!(target: LOG_TARGET, "`set_emergency_result` encoded call written to ./encoded.call");
 
 	Ok(())
 }

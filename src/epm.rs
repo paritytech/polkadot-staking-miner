@@ -67,7 +67,7 @@ pub(crate) async fn update_metadata_constants(api: &SubxtClient) -> Result<(), E
 	const SIGNED_MAX_WEIGHT: EpmConstant = EpmConstant::new("SignedMaxWeight");
 	const MAX_LENGTH: EpmConstant = EpmConstant::new("MinerMaxLength");
 	const MAX_VOTES_PER_VOTER: EpmConstant = EpmConstant::new("MinerMaxVotesPerVoter");
-	const MAX_WINNERS: EpmConstant = EpmConstant::new("MinerMaxWinners");
+	const MAX_WINNERS: EpmConstant = EpmConstant::new("MaxWinners");
 
 	fn log_metadata(metadata: EpmConstant, val: impl std::fmt::Display) {
 		log::trace!(target: LOG_TARGET, "updating metadata constant `{metadata}`: {val}",);
@@ -113,13 +113,13 @@ fn read_constant<'a, T: serde::Deserialize<'a>>(
 }
 
 /// Helper to construct a set emergency solution transaction.
-pub fn set_emergency_result<A: Encode + TypeInfo + 'static>(
+pub(crate) fn set_emergency_result<A: Encode + TypeInfo + 'static>(
 	supports: frame_election_provider_support::Supports<A>,
 ) -> Result<DynamicTxPayload<'static>, Error> {
 	let scale_result = to_scale_value(supports)
 		.map_err(|e| Error::DynamicTransaction(format!("Failed to decode `Supports`: {:?}", e)))?;
 
-	Ok(subxt::dynamic::tx(EPM_PALLET_NAME, "set_emergency_result", vec![scale_result]))
+	Ok(subxt::dynamic::tx(EPM_PALLET_NAME, "set_emergency_election_result", vec![scale_result]))
 }
 
 /// Helper to construct a signed solution transaction.
@@ -179,6 +179,7 @@ pub async fn snapshot_at(at: Option<Hash>, api: &SubxtClient) -> Result<RoundSna
 }
 
 /// Helper to fetch snapshot data via RPC
+
 /// and compute an NPos solution via [`pallet_election_provider_multi_phase`].
 pub async fn fetch_snapshot_and_mine_solution<T>(
 	api: &SubxtClient,
