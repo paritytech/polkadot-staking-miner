@@ -19,6 +19,7 @@
 use crate::{epm, error::Error, opt::Solver, prelude::*, static_types};
 use clap::Parser;
 use codec::Encode;
+use sp_core::hexdisplay::HexDisplay;
 use std::io::Write;
 use subxt::tx::TxPayload;
 
@@ -88,7 +89,6 @@ where
 
 	let call = epm::set_emergency_result(supports.clone())?;
 	let encoded_call = call.encode_call_data(&api.metadata())?;
-
 	let encoded_supports = supports.encode();
 
 	// write results to files.
@@ -97,6 +97,10 @@ where
 	supports_file.write_all(&encoded_supports)?;
 	encoded_call_file.write_all(&encoded_call)?;
 
+	let hex = HexDisplay::from(&encoded_call);
+	log::info!(target: LOG_TARGET, "Hex call:\n {:?}", hex);
+
+	log::info!(target: LOG_TARGET, "Use the hex encoded call above to construct the governance proposal or the extrinsic to submit.");
 	log::info!(target: LOG_TARGET, "ReadySolution: size {:?} / score = {:?}", encoded_size, score);
 	log::info!(target: LOG_TARGET, "`set_emergency_result` encoded call written to ./encoded.call");
 
