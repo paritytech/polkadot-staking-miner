@@ -76,24 +76,12 @@ pub use crate::opt::Block;
 		derive = "Default"
 	),
 	substitute_type(
-		path = "sp_arithmetic::per_things::PerU16",
-		with = "::subxt::utils::Static<::subxt::ext::sp_runtime::PerU16>"
-	),
-	substitute_type(
 		path = "sp_npos_elections::ElectionScore",
 		with = "::subxt::utils::Static<::sp_npos_elections::ElectionScore>"
 	),
 	substitute_type(
-		path = "pallet_election_provider_multi_phase::SolutionOrSnapshotSize",
-		with = "::subxt::utils::Static<::pallet_election_provider_multi_phase::SolutionOrSnapshotSize>"
-	),
-	substitute_type(
-		path = "pallet_election_provider_multi_phase::Phase",
-		with = "::subxt::utils::Static<::pallet_election_provider_multi_phase::Phase<u32>>"
-	),
-	substitute_type(
-		path = "pallet_election_provider_multi_phase::RawSolution<S>",
-		with = "::subxt::utils::Static<::pallet_election_provider_multi_phase::RawSolution<S>>"
+		path = "pallet_election_provider_multi_phase::Phase<Bn>",
+		with = "::subxt::utils::Static<::pallet_election_provider_multi_phase::Phase<Bn>>"
 	)
 )]
 pub mod runtime {}
