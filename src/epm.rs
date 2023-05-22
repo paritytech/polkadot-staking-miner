@@ -188,8 +188,8 @@ where
 		+ 'static,
 	T::Solution: Send,
 {
-	let snapshot = snapshot_at(block, &api).await?;
-	let storage = storage_at(block, &api).await?;
+	let snapshot = snapshot_at(block, api).await?;
+	let storage = storage_at(block, api).await?;
 
 	let desired_targets = match forced_desired_targets {
 		Some(x) => x,

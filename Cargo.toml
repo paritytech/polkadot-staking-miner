@@ -23,13 +23,10 @@ subxt = { git = "https://github.com/paritytech/subxt" }
 scale-value = "0.7.0"
 
 # substrate
-sp-io = { git = "https://github.com/paritytech/substrate" }
-frame-system = { git = "https://github.com/paritytech/substrate" }
 frame-election-provider-support = { git = "https://github.com/paritytech/substrate" }
 pallet-election-provider-multi-phase = { git = "https://github.com/paritytech/substrate" }
 sp-npos-elections = { git = "https://github.com/paritytech/substrate" }
 frame-support = { git = "https://github.com/paritytech/substrate" }
-sp-version = { git = "https://github.com/paritytech/substrate" }
 sp-runtime = { git = "https://github.com/paritytech/substrate" }
 
 # prometheus
