@@ -308,7 +308,7 @@ where
 
 	let (solution, score) = match epm::fetch_snapshot_and_mine_solution::<T>(
 		&api,
-		Block::At(block_hash),
+		BlockHash::At(block_hash),
 		config.solver,
 		round,
 		None,
@@ -459,7 +459,8 @@ where
 	let indices = api.storage().at(block_hash).fetch_or_default(&addr).await?;
 
 	for (_score, _, idx) in indices.0 {
-		let submission = epm::signed_submission_at::<T>(idx, Block::At(block_hash), api).await?;
+		let submission =
+			epm::signed_submission_at::<T>(idx, BlockHash::At(block_hash), api).await?;
 
 		if let Some(submission) = submission {
 			if &submission.who == us {

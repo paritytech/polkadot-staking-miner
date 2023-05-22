@@ -137,7 +137,7 @@ pub fn unsigned_solution<S: NposSolution + Encode + TypeInfo + 'static>(
 /// Helper to the signed submissions at the current block.
 pub async fn signed_submission_at<S: NposSolution + Decode + TypeInfo + 'static>(
 	idx: u32,
-	block_hash: Block,
+	block_hash: BlockHash,
 	api: &SubxtClient,
 ) -> Result<Option<SignedSubmission<S>>, Error> {
 	let scale_idx = Value::u128(idx as u128);
@@ -156,7 +156,7 @@ pub async fn signed_submission_at<S: NposSolution + Decode + TypeInfo + 'static>
 }
 
 /// Helper to the signed submissions at the block `at`.
-pub async fn snapshot_at(b: Block, api: &SubxtClient) -> Result<RoundSnapshot, Error> {
+pub async fn snapshot_at(b: BlockHash, api: &SubxtClient) -> Result<RoundSnapshot, Error> {
 	let empty = Vec::<Value>::new();
 	let addr = subxt::dynamic::storage(EPM_PALLET_NAME, "Snapshot", empty);
 
@@ -176,7 +176,7 @@ pub async fn snapshot_at(b: Block, api: &SubxtClient) -> Result<RoundSnapshot, E
 /// and compute an NPos solution via [`pallet_election_provider_multi_phase`].
 pub async fn fetch_snapshot_and_mine_solution<T>(
 	api: &SubxtClient,
-	block: Block,
+	block: BlockHash,
 	solver: Solver,
 	round: u32,
 	forced_desired_targets: Option<u32>,

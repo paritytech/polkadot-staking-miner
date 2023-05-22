@@ -66,7 +66,7 @@ pub type SignedSubmission<S> =
 	pallet_election_provider_multi_phase::SignedSubmission<AccountId, Balance, S>;
 
 /// Block.
-pub use crate::opt::Block;
+pub use crate::opt::BlockHash;
 
 #[subxt::subxt(
 	runtime_metadata_path = "artifacts/metadata.scale",

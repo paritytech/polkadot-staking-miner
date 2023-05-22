@@ -28,8 +28,8 @@ use codec::Encode;
 #[cfg_attr(test, derive(PartialEq))]
 pub struct DryRunConfig {
 	/// The block hash at which scraping happens. If none is provided, the latest head is used.
-	#[clap(long, default_value_t = Block::Latest)]
-	pub at: Block,
+	#[clap(long, default_value_t = BlockHash::Latest)]
+	pub at: BlockHash,
 
 	/// The solver algorithm to use.
 	#[clap(subcommand)]
@@ -78,11 +78,6 @@ where
 	)
 	.await?;
 
-	let round = storage
-		.fetch(&runtime::storage().election_provider_multi_phase().round())
-		.await?
-		.unwrap_or(1);
-
 	let solution = miner_solution.solution();
 	let score = miner_solution.score();
 	let raw_solution = RawSolution { solution, score, round };
@@ -121,8 +116,6 @@ where
 		let dry_run_result = dry_run_bytes.into_dry_run_result(&api.metadata())?;
 
 		log::info!(target: LOG_TARGET, "dry-run outcome is {:?}", dry_run_result);
-
-		//dry_run_bytes.map_err(|e| Error::Other(format!("{e:?}")))?;
 	}
 
 	Ok(())

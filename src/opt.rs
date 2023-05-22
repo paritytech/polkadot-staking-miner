@@ -90,36 +90,38 @@ impl TryFrom<subxt::rpc::types::RuntimeVersion> for Chain {
 	}
 }
 
-///...
+/// Represents a block hash which may be used to query chain at given state.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub enum Block {
+pub enum BlockHash {
+	/// Use the latest block.
 	Latest,
+	/// Query the chain at the specified `block_hash`.
 	At(Hash),
 }
 
-impl FromStr for Block {
+impl FromStr for BlockHash {
 	type Err = String;
 
 	fn from_str(s: &str) -> Result<Self, Self::Err> {
 		let block = Hash::from_str(s).map_err(|e| e.to_string())?;
-		Ok(Block::At(block))
+		Ok(Self::At(block))
 	}
 }
 
-impl fmt::Display for Block {
+impl fmt::Display for BlockHash {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
-			Self::Latest => write!(f, "Block is latest"),
-			Self::At(h) => write!(f, "Block is 0x{}", h),
+			Self::Latest => write!(f, "Block hash is latest"),
+			Self::At(h) => write!(f, "Block hash is `0x{}`", h),
 		}
 	}
 }
 
-impl From<Block> for Option<Hash> {
-	fn from(b: Block) -> Option<Hash> {
+impl From<BlockHash> for Option<Hash> {
+	fn from(b: BlockHash) -> Option<Hash> {
 		match b {
-			Block::At(h) => Some(h),
-			Block::Latest => None,
+			BlockHash::At(h) => Some(h),
+			BlockHash::Latest => None,
 		}
 	}
 }

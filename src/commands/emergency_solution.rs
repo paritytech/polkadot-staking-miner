@@ -23,8 +23,8 @@ use clap::Parser;
 #[cfg_attr(test, derive(PartialEq))]
 pub struct EmergencySolutionConfig {
 	/// The block hash at which scraping happens. If none is provided, the latest head is used.
-	#[clap(long, default_value_t = Block::Latest)]
-	pub at: Block,
+	#[clap(long, default_value_t = BlockHash::Latest)]
+	pub at: BlockHash,
 
 	/// The solver algorithm to use.
 	#[clap(subcommand)]
