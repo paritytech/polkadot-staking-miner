@@ -117,7 +117,7 @@ pub(crate) fn set_emergency_result<A: Encode + TypeInfo + 'static>(
 	supports: frame_election_provider_support::Supports<A>,
 ) -> Result<DynamicTxPayload<'static>, Error> {
 	let scale_result = to_scale_value(supports)
-		.map_err(|e| Error::DynamicTransaction(format!("Failed to decode `Supports`: {:?}", e)))?;
+		.map_err(|e| Error::DynamicTransaction(format!("Failed to encode `Supports`: {:?}", e)))?;
 
 	Ok(subxt::dynamic::tx(EPM_PALLET_NAME, "set_emergency_election_result", vec![scale_result]))
 }
