@@ -67,7 +67,7 @@ pub(crate) async fn update_metadata_constants(api: &SubxtClient) -> Result<(), E
 	const SIGNED_MAX_WEIGHT: EpmConstant = EpmConstant::new("SignedMaxWeight");
 	const MAX_LENGTH: EpmConstant = EpmConstant::new("MinerMaxLength");
 	const MAX_VOTES_PER_VOTER: EpmConstant = EpmConstant::new("MinerMaxVotesPerVoter");
-    // NOTE: `MaxWinners`  is used instead of `MinerMaxWinners` to work with older metadata
+    // NOTE: `MaxWinners` is used instead of `MinerMaxWinners` to work with older metadata
   	const MAX_WINNERS: EpmConstant = EpmConstant::new("MaxWinners");
 
 	fn log_metadata(metadata: EpmConstant, val: impl std::fmt::Display) {
