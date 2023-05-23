@@ -292,7 +292,7 @@ where
 		.inspect_err(|e| log::error!(target: LOG_TARGET, "Mining solution failed: {:?}", e))
 		.await?;
 
-	ensure_no_previous_solution::<T::Solution>(&api, block_hash, signer.account_id())
+	ensure_no_previous_solution::<T::Solution>(&api, block_hash, &signer.account_id().0.into())
 		.inspect_err(|e| {
 			log::debug!(
 				target: LOG_TARGET,
@@ -308,7 +308,7 @@ where
 
 	let (solution, score) = match epm::fetch_snapshot_and_mine_solution::<T>(
 		&api,
-		BlockHash::At(block_hash),
+		Some(block_hash),
 		config.solver,
 		round,
 		None,
@@ -370,7 +370,7 @@ where
 		})
 		.await?;
 
-	ensure_no_previous_solution::<T::Solution>(&api, best_head, signer.account_id())
+	ensure_no_previous_solution::<T::Solution>(&api, best_head, &signer.account_id().0.into())
 		.inspect_err(|e| {
 			log::debug!(
 				target: LOG_TARGET,
@@ -459,8 +459,7 @@ where
 	let indices = api.storage().at(block_hash).fetch_or_default(&addr).await?;
 
 	for (_score, _, idx) in indices.0 {
-		let submission =
-			epm::signed_submission_at::<T>(idx, BlockHash::At(block_hash), api).await?;
+		let submission = epm::signed_submission_at::<T>(idx, Some(block_hash), api).await?;
 
 		if let Some(submission) = submission {
 			if &submission.who == us {

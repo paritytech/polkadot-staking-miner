@@ -28,8 +28,8 @@ use codec::Encode;
 #[cfg_attr(test, derive(PartialEq))]
 pub struct DryRunConfig {
 	/// The block hash at which scraping happens. If none is provided, the latest head is used.
-	#[clap(long, default_value_t = BlockHash::Latest)]
-	pub at: BlockHash,
+	#[clap(long)]
+	pub at: Option<Hash>,
 
 	/// The solver algorithm to use.
 	#[clap(subcommand)]

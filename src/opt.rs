@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::{error::Error, prelude::Hash};
+use crate::error::Error;
 
 use clap::*;
 use sp_npos_elections::BalancingConfig;
@@ -87,41 +87,5 @@ impl TryFrom<subxt::rpc::types::RuntimeVersion> for Chain {
 			serde_json::from_value::<String>(json).expect("specName must be String; qed");
 		chain.make_ascii_lowercase();
 		Chain::from_str(&chain)
-	}
-}
-
-/// Represents a block hash which may be used to query chain at given state.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum BlockHash {
-	/// Use the latest block.
-	Latest,
-	/// Query the chain at the specified `block_hash`.
-	At(Hash),
-}
-
-impl FromStr for BlockHash {
-	type Err = String;
-
-	fn from_str(s: &str) -> Result<Self, Self::Err> {
-		let block = Hash::from_str(s).map_err(|e| e.to_string())?;
-		Ok(Self::At(block))
-	}
-}
-
-impl fmt::Display for BlockHash {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		match self {
-			Self::Latest => write!(f, "Block hash is latest"),
-			Self::At(h) => write!(f, "Block hash is `0x{}`", h),
-		}
-	}
-}
-
-impl From<BlockHash> for Option<Hash> {
-	fn from(b: BlockHash) -> Option<Hash> {
-		match b {
-			BlockHash::At(h) => Some(h),
-			BlockHash::Latest => None,
-		}
 	}
 }

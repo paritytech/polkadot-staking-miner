@@ -26,7 +26,7 @@ pub use pallet_election_provider_multi_phase::{Miner, MinerConfig};
 pub use subxt::ext::sp_core;
 
 /// The account id type.
-pub type AccountId = subxt::utils::AccountId32;
+pub type AccountId = sp_runtime::AccountId32;
 /// The header type. We re-export it here, but we can easily get it from block as well.
 pub type Header =
 	subxt::config::substrate::SubstrateHeader<u32, subxt::config::substrate::BlakeTwo256>;
@@ -64,9 +64,6 @@ pub type Config = subxt::PolkadotConfig;
 /// Submission type used by the staking miner.
 pub type SignedSubmission<S> =
 	pallet_election_provider_multi_phase::SignedSubmission<AccountId, Balance, S>;
-
-/// Block.
-pub use crate::opt::BlockHash;
 
 #[subxt::subxt(
 	runtime_metadata_path = "artifacts/metadata.scale",

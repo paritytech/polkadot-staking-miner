@@ -314,7 +314,7 @@ mod tests {
 				prometheus_port: None,
 				log: "info".to_string(),
 				command: Command::DryRun(commands::DryRunConfig {
-					at: BlockHash::Latest,
+					at: None,
 					solver: opt::Solver::PhragMMS { iterations: 10 },
 					force_snapshot: false,
 					force_winner_count: None,
@@ -345,8 +345,8 @@ mod tests {
 				prometheus_port: None,
 				log: "info".to_string(),
 				command: Command::EmergencySolution(commands::EmergencySolutionConfig {
-					take: Some(99),
-					at: BlockHash::Latest,
+					at: None,
+					force_winner_count: Some(99),
 					solver: opt::Solver::PhragMMS { iterations: 1337 },
 				}),
 			}
