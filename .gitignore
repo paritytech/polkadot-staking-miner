@@ -15,3 +15,7 @@ Cargo.lock
 
 # all the key files
 *.key
+
+# output files from cmds
+encoded.call
+solution.supports.bin

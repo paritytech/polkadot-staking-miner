@@ -289,7 +289,7 @@ where
 		.inspect_err(|e| log::error!(target: LOG_TARGET, "Mining solution failed: {:?}", e))
 		.await?;
 
-	ensure_no_previous_solution::<T::Solution>(&api, hash, signer.account_id())
+	ensure_no_previous_solution::<T::Solution>(&api, hash, &signer.account_id().0.into())
 		.inspect_err(|e| {
 			log::debug!(
 				target: LOG_TARGET,
@@ -367,7 +367,7 @@ where
 		})
 		.await?;
 
-	ensure_no_previous_solution::<T::Solution>(&api, best_head, signer.account_id())
+	ensure_no_previous_solution::<T::Solution>(&api, best_head, &signer.account_id().0.into())
 		.inspect_err(|e| {
 			log::debug!(
 				target: LOG_TARGET,

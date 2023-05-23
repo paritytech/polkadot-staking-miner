@@ -26,7 +26,7 @@ use crate::{
 use codec::{Decode, Encode};
 use frame_election_provider_support::{NposSolution, PhragMMS, SequentialPhragmen};
 use frame_support::weights::Weight;
-use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
+use pallet_election_provider_multi_phase::{RawSolution, ReadySolution, SolutionOrSnapshotSize};
 use scale_info::{PortableRegistry, TypeInfo};
 use scale_value::scale::{decode_as_type, TypeId};
 use sp_core::Bytes;
@@ -67,7 +67,8 @@ pub(crate) async fn update_metadata_constants(api: &SubxtClient) -> Result<(), E
 	const SIGNED_MAX_WEIGHT: EpmConstant = EpmConstant::new("SignedMaxWeight");
 	const MAX_LENGTH: EpmConstant = EpmConstant::new("MinerMaxLength");
 	const MAX_VOTES_PER_VOTER: EpmConstant = EpmConstant::new("MinerMaxVotesPerVoter");
-	const MAX_WINNERS: EpmConstant = EpmConstant::new("MinerMaxWinners");
+	// NOTE: `MaxWinners` is used instead of `MinerMaxWinners` to work with older metadata.
+	const MAX_WINNERS: EpmConstant = EpmConstant::new("MaxWinners");
 
 	fn log_metadata(metadata: EpmConstant, val: impl std::fmt::Display) {
 		log::trace!(target: LOG_TARGET, "updating metadata constant `{metadata}`: {val}",);
@@ -110,6 +111,16 @@ fn read_constant<'a, T: serde::Deserialize<'a>>(
 	scale_value::serde::from_value::<_, T>(val).map_err(|e| {
 		Error::InvalidMetadata(format!("Decoding `{}` failed {}", std::any::type_name::<T>(), e))
 	})
+}
+
+/// Helper to construct a set emergency solution transaction.
+pub(crate) fn set_emergency_result<A: Encode + TypeInfo + 'static>(
+	supports: frame_election_provider_support::Supports<A>,
+) -> Result<DynamicTxPayload<'static>, Error> {
+	let scale_result = to_scale_value(supports)
+		.map_err(|e| Error::DynamicTransaction(format!("Failed to encode `Supports`: {:?}", e)))?;
+
+	Ok(subxt::dynamic::tx(EPM_PALLET_NAME, "set_emergency_election_result", vec![scale_result]))
 }
 
 /// Helper to construct a signed solution transaction.
@@ -169,6 +180,7 @@ pub async fn snapshot_at(at: Option<Hash>, api: &SubxtClient) -> Result<RoundSna
 }
 
 /// Helper to fetch snapshot data via RPC
+
 /// and compute an NPos solution via [`pallet_election_provider_multi_phase`].
 pub async fn fetch_snapshot_and_mine_solution<T>(
 	api: &SubxtClient,
@@ -280,7 +292,9 @@ where
 	}
 
 	/// Check that this solution is feasible
-	pub fn feasibility_check(&self) -> Result<(), Error> {
+	///
+	/// Returns a [`pallet_election_provider_multi_phase::ReadySolution`] if the check passes.
+	pub fn feasibility_check(&self) -> Result<ReadySolution<AccountId, T::MaxWinners>, Error> {
 		match Miner::<T>::feasibility_check(
 			RawSolution { solution: self.solution.clone(), score: self.score, round: self.round },
 			pallet_election_provider_multi_phase::ElectionCompute::Signed,
@@ -289,7 +303,7 @@ where
 			self.round,
 			self.minimum_untrusted_score,
 		) {
-			Ok(_) => Ok(()),
+			Ok(ready_solution) => Ok(ready_solution),
 			Err(e) => {
 				log::error!(target: LOG_TARGET, "Solution feasibility error {:?}", e);
 				Err(Error::Feasibility(format!("{:?}", e)))

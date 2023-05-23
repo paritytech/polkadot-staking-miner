@@ -345,7 +345,7 @@ mod tests {
 				prometheus_port: None,
 				log: "info".to_string(),
 				command: Command::EmergencySolution(commands::EmergencySolutionConfig {
-					take: Some(99),
+					force_winner_count: Some(99),
 					at: None,
 					solver: opt::Solver::PhragMMS { iterations: 1337 },
 				}),
