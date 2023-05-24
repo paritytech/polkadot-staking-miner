@@ -26,7 +26,7 @@ use subxt::tx::TxPayload;
 #[derive(Debug, Clone, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct EmergencySolutionConfig {
-	/// The block hash at which scraping happens
+	/// The block hash at which scraping happens. If none is provided, the latest head is used.
 	#[clap(long)]
 	pub at: Option<Hash>,
 
