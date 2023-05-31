@@ -2768,6 +2768,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "scale-decode"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "716db7b24ccd361634c56ec44537789deb2a7b4d81a7bfdf0b59970c5203cb80"
+dependencies = [
+ "parity-scale-codec",
+ "scale-bits",
+ "scale-info",
+ "thiserror",
+]
+
+[[package]]
+name = "scale-encode"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9334800277da691d9db60167215370a7f590771a6a5ae2d2c8da5f93a9b869f4"
+dependencies = [
+ "parity-scale-codec",
+ "scale-bits",
+ "scale-info",
+ "thiserror",
+]
+
+[[package]]
 name = "scale-info"
 version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2803,11 +2827,31 @@ dependencies = [
  "frame-metadata",
  "parity-scale-codec",
  "scale-bits",
- "scale-decode",
+ "scale-decode 0.4.0",
  "scale-info",
  "serde",
  "thiserror",
- "yap",
+ "yap 0.7.2",
+]
+
+[[package]]
+name = "scale-value"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb1ca6961c4fbe4ea7851ed5d68229d911da1428927ff0db2805da102b4f2211"
+dependencies = [
+ "base58",
+ "blake2",
+ "either",
+ "frame-metadata",
+ "parity-scale-codec",
+ "scale-bits",
+ "scale-decode 0.6.0",
+ "scale-encode",
+ "scale-info",
+ "serde",
+ "thiserror",
+ "yap 0.10.0",
 ]
 
 [[package]]
@@ -3943,7 +3987,7 @@ dependencies = [
  "prometheus",
  "regex",
  "scale-info",
- "scale-value",
+ "scale-value 0.9.0",
  "serde",
  "serde_json",
  "sp-npos-elections",
@@ -4026,9 +4070,9 @@ dependencies = [
  "parking_lot",
  "primitive-types",
  "scale-bits",
- "scale-decode",
+ "scale-decode 0.4.0",
  "scale-info",
- "scale-value",
+ "scale-value 0.6.0",
  "serde",
  "serde_json",
  "sp-core 18.0.0",
@@ -5030,6 +5074,12 @@ name = "yap"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5fc77f52dc9e9b10d55d3f4462c3b7fc393c4f17975d641542833ab2d3bc26ef"
+
+[[package]]
+name = "yap"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2a7eb6d82a11e4d0b8e6bda8347169aff4ccd8235d039bba7c47482d977dcf7"
 
 [[package]]
 name = "zeroize"
