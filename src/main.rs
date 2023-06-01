@@ -246,7 +246,7 @@ async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
 				log::info!(target: LOG_TARGET, "upgrade to version: {} successful", version);
 			},
 			Err(e) => {
-				log::warn!(target: LOG_TARGET, "upgrade to version: {} failed: {:?}", version, e);
+				log::debug!(target: LOG_TARGET, "upgrade to version: {} failed: {:?}", version, e);
 			},
 		}
 	}
