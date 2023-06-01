@@ -41,9 +41,6 @@ sp-storage = { git = "https://github.com/paritytech/substrate" }
 regex = "1"
 
 [features]
-default = ["polkadot", "kusama", "westend"]
+default = []
 slow-tests = []
 staking-miner-playground-tests = []
-westend = []
-polkadot = []
-kusama = []
