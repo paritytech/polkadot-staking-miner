@@ -473,7 +473,7 @@ where
 
 async fn ensure_solution_passes_strategy(
 	api: &SubxtClient,
-	block: Hash,
+	block_hash: Hash,
 	score: sp_npos_elections::ElectionScore,
 	strategy: SubmissionStrategy,
 ) -> Result<(), Error> {
@@ -483,7 +483,7 @@ async fn ensure_solution_passes_strategy(
 	}
 
 	let addr = runtime::storage().election_provider_multi_phase().signed_submission_indices();
-	let indices = api.storage().at(block).fetch_or_default(&addr).await?;
+	let indices = api.storage().at(block_hash).fetch_or_default(&addr).await?;
 
 	log::debug!(target: LOG_TARGET, "submitted solutions: {:?}", indices.0);
 

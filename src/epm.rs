@@ -166,12 +166,15 @@ pub async fn signed_submission_at<S: NposSolution + Decode + TypeInfo + 'static>
 	}
 }
 
-/// Helper to the signed submissions at the block `at`.
-pub async fn snapshot_at(b: Option<Hash>, api: &SubxtClient) -> Result<RoundSnapshot, Error> {
+/// Helper to get the signed submissions at the current state.
+pub async fn snapshot_at(
+	block_hash: Option<Hash>,
+	api: &SubxtClient,
+) -> Result<RoundSnapshot, Error> {
 	let empty = Vec::<Value>::new();
 	let addr = subxt::dynamic::storage(EPM_PALLET_NAME, "Snapshot", empty);
 
-	let storage = storage_at(b, api).await?;
+	let storage = storage_at(block_hash, api).await?;
 
 	match storage.fetch(&addr).await {
 		Ok(Some(val)) => {
@@ -188,7 +191,7 @@ pub async fn snapshot_at(b: Option<Hash>, api: &SubxtClient) -> Result<RoundSnap
 /// and compute an NPos solution via [`pallet_election_provider_multi_phase`].
 pub async fn fetch_snapshot_and_mine_solution<T>(
 	api: &SubxtClient,
-	block: Option<Hash>,
+	block_hash: Option<Hash>,
 	solver: Solver,
 	round: u32,
 	forced_desired_targets: Option<u32>,
@@ -200,8 +203,8 @@ where
 		+ 'static,
 	T::Solution: Send,
 {
-	let snapshot = snapshot_at(block, api).await?;
-	let storage = storage_at(block, api).await?;
+	let snapshot = snapshot_at(block_hash, api).await?;
+	let storage = storage_at(block_hash, api).await?;
 
 	let desired_targets = match forced_desired_targets {
 		Some(x) => x,
