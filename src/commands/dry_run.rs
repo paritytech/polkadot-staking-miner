@@ -18,7 +18,9 @@
 
 use pallet_election_provider_multi_phase::RawSolution;
 
-use crate::{epm, error::Error, opt::Solver, prelude::*, signer::Signer, static_types};
+use crate::{
+	epm, error::Error, helpers::storage_at, opt::Solver, prelude::*, signer::Signer, static_types,
+};
 use clap::Parser;
 use codec::Encode;
 
@@ -62,10 +64,8 @@ where
 		+ 'static,
 	T::Solution: Send,
 {
-	let round = api
-		.storage()
-		.at(config.at)
-		.await?
+	let storage = storage_at(config.at, &api).await?;
+	let round = storage
 		.fetch_or_default(&runtime::storage().election_provider_multi_phase().round())
 		.await?;
 
@@ -77,14 +77,6 @@ where
 		config.force_winner_count,
 	)
 	.await?;
-
-	let round = api
-		.storage()
-		.at(config.at)
-		.await?
-		.fetch(&runtime::storage().election_provider_multi_phase().round())
-		.await?
-		.unwrap_or(1);
 
 	let solution = miner_solution.solution();
 	let score = miner_solution.score();
@@ -107,10 +99,7 @@ where
 	// we've logged the solution above and we do nothing else.
 	if let Some(seed_or_path) = &config.seed_or_path {
 		let signer = Signer::new(seed_or_path)?;
-		let account_info = api
-			.storage()
-			.at(None)
-			.await?
+		let account_info = storage
 			.fetch(&runtime::storage().system().account(signer.account_id()))
 			.await?
 			.ok_or(Error::AccountDoesNotExists)?;
@@ -122,11 +111,11 @@ where
 		let xt =
 			api.tx()
 				.create_signed_with_nonce(&tx, &*signer, nonce, ExtrinsicParams::default())?;
-		let outcome = api.rpc().dry_run(xt.encoded(), config.at).await?;
+		let dry_run_bytes = api.rpc().dry_run(xt.encoded(), config.at.into()).await?;
 
-		log::info!(target: LOG_TARGET, "dry-run outcome is {:?}", outcome);
+		let dry_run_result = dry_run_bytes.into_dry_run_result(&api.metadata())?;
 
-		outcome.map_err(|e| Error::Other(format!("{e:?}")))?;
+		log::info!(target: LOG_TARGET, "dry-run outcome is {:?}", dry_run_result);
 	}
 
 	Ok(())

@@ -16,7 +16,7 @@
 
 //! The emergency-solution command.
 
-use crate::{epm, error::Error, opt::Solver, prelude::*, static_types};
+use crate::{epm, error::Error, helpers::storage_at, opt::Solver, prelude::*, static_types};
 use clap::Parser;
 use codec::Encode;
 use sp_core::hexdisplay::HexDisplay;
@@ -53,10 +53,9 @@ where
 		static_types::MaxWinners::set(max_winners);
 	}
 
-	let round = api
-		.storage()
-		.at(config.at)
-		.await?
+	let storage = storage_at(config.at, &api).await?;
+
+	let round = storage
 		.fetch_or_default(&runtime::storage().election_provider_multi_phase().round())
 		.await?;
 

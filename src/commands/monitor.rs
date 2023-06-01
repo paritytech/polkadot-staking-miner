@@ -33,7 +33,11 @@ use pallet_election_provider_multi_phase::{RawSolution, SolutionOf};
 use sp_runtime::Perbill;
 use std::{str::FromStr, sync::Arc};
 use subxt::{
-	config::Header as _, error::RpcError, rpc::Subscription, tx::TxStatus, Error as SubxtError,
+	config::Header as _,
+	error::RpcError,
+	rpc::{types::DryRunResult, Subscription},
+	tx::TxStatus,
+	Error as SubxtError,
 };
 use tokio::sync::Mutex;
 
@@ -171,7 +175,7 @@ where
 	let account_info = {
 		let addr = runtime::storage().system().account(signer.account_id());
 		api.storage()
-			.at(None)
+			.at_latest()
 			.await?
 			.fetch(&addr)
 			.await?
@@ -233,7 +237,7 @@ where
 
 		let account_info = api
 			.storage()
-			.at(None)
+			.at_latest()
 			.await?
 			.fetch(&runtime::storage().system().account(signer.account_id()))
 			.await?
@@ -258,15 +262,15 @@ where
 		+ 'static,
 	T::Solution: Send,
 {
-	let hash = at.hash();
-	log::trace!(target: LOG_TARGET, "new event at #{:?} ({:?})", at.number, hash);
+	let block_hash = at.hash();
+	log::trace!(target: LOG_TARGET, "new event at #{:?} ({:?})", at.number, block_hash);
 
 	// NOTE: as we try to send at each block then the nonce is used guard against
 	// submitting twice. Because once a solution has been accepted on chain
 	// the "next transaction" at a later block but with the same nonce will be rejected
 	let nonce = api.rpc().system_account_next_index(signer.account_id()).await?;
 
-	ensure_signed_phase(&api, hash)
+	ensure_signed_phase(&api, block_hash)
 		.inspect_err(|e| {
 			log::debug!(
 				target: LOG_TARGET,
@@ -279,8 +283,7 @@ where
 
 	let round_fut = async {
 		api.storage()
-			.at(Some(hash))
-			.await?
+			.at(block_hash)
 			.fetch_or_default(&runtime::storage().election_provider_multi_phase().round())
 			.await
 	};
@@ -289,7 +292,7 @@ where
 		.inspect_err(|e| log::error!(target: LOG_TARGET, "Mining solution failed: {:?}", e))
 		.await?;
 
-	ensure_no_previous_solution::<T::Solution>(&api, hash, &signer.account_id().0.into())
+	ensure_no_previous_solution::<T::Solution>(&api, block_hash, &signer.account_id().0.into())
 		.inspect_err(|e| {
 			log::debug!(
 				target: LOG_TARGET,
@@ -305,7 +308,7 @@ where
 
 	let (solution, score) = match epm::fetch_snapshot_and_mine_solution::<T>(
 		&api,
-		Some(hash),
+		Some(block_hash),
 		config.solver,
 		round,
 		None,
@@ -405,7 +408,7 @@ where
 		&api,
 		signer,
 		(solution, score, round),
-		hash,
+		block_hash,
 		nonce,
 		config.listen,
 		config.dry_run,
@@ -430,13 +433,13 @@ where
 }
 
 /// Ensure that now is the signed phase.
-async fn ensure_signed_phase(api: &SubxtClient, hash: Hash) -> Result<(), Error> {
+async fn ensure_signed_phase(api: &SubxtClient, block_hash: Hash) -> Result<(), Error> {
 	use pallet_election_provider_multi_phase::Phase;
 
 	let addr = runtime::storage().election_provider_multi_phase().current_phase();
-	let phase = api.storage().at(Some(hash)).await?.fetch(&addr).await?;
+	let phase = api.storage().at(block_hash).fetch(&addr).await?;
 
-	if let Some(Phase::Signed) = phase {
+	if let Some(Phase::Signed) = phase.map(|p| p.0) {
 		Ok(())
 	} else {
 		Err(Error::IncorrectPhase)
@@ -446,17 +449,17 @@ async fn ensure_signed_phase(api: &SubxtClient, hash: Hash) -> Result<(), Error>
 /// Ensure that our current `us` have not submitted anything previously.
 async fn ensure_no_previous_solution<T>(
 	api: &SubxtClient,
-	at: Hash,
+	block_hash: Hash,
 	us: &AccountId,
 ) -> Result<(), Error>
 where
 	T: NposSolution + scale_info::TypeInfo + Decode + 'static,
 {
 	let addr = runtime::storage().election_provider_multi_phase().signed_submission_indices();
-	let indices = api.storage().at(Some(at)).await?.fetch_or_default(&addr).await?;
+	let indices = api.storage().at(block_hash).fetch_or_default(&addr).await?;
 
 	for (_score, _, idx) in indices.0 {
-		let submission = epm::signed_submission_at::<T>(idx, at, api).await?;
+		let submission = epm::signed_submission_at::<T>(idx, Some(block_hash), api).await?;
 
 		if let Some(submission) = submission {
 			if &submission.who == us {
@@ -470,7 +473,7 @@ where
 
 async fn ensure_solution_passes_strategy(
 	api: &SubxtClient,
-	at: Hash,
+	block_hash: Hash,
 	score: sp_npos_elections::ElectionScore,
 	strategy: SubmissionStrategy,
 ) -> Result<(), Error> {
@@ -480,14 +483,14 @@ async fn ensure_solution_passes_strategy(
 	}
 
 	let addr = runtime::storage().election_provider_multi_phase().signed_submission_indices();
-	let indices = api.storage().at(Some(at)).await?.fetch_or_default(&addr).await?;
+	let indices = api.storage().at(block_hash).fetch_or_default(&addr).await?;
 
 	log::debug!(target: LOG_TARGET, "submitted solutions: {:?}", indices.0);
 
 	if indices
 		.0
 		.last()
-		.map_or(true, |(best_score, _, _)| score_passes_strategy(score, *best_score, strategy))
+		.map_or(true, |(best_score, _, _)| score_passes_strategy(score, best_score.0, strategy))
 	{
 		Ok(())
 	} else {
@@ -499,7 +502,7 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 	api: &SubxtClient,
 	signer: Signer,
 	(solution, score, round): (SolutionOf<T>, sp_npos_elections::ElectionScore, u32),
-	hash: Hash,
+	block_hash: Hash,
 	nonce: u32,
 	listen: Listen,
 	dry_run: bool,
@@ -511,10 +514,14 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 		.create_signed_with_nonce(&tx, &*signer, nonce, ExtrinsicParams::default())?;
 
 	if dry_run {
-		match api.rpc().dry_run(xt.encoded(), None).await? {
-			Ok(()) => (),
-			Err(e) => return Err(Error::TransactionRejected(format!("{e:?}"))),
-		};
+		let dry_run_bytes = api.rpc().dry_run(xt.encoded(), Some(block_hash)).await?;
+
+		match dry_run_bytes.into_dry_run_result(&api.metadata())? {
+			DryRunResult::Success => (),
+			DryRunResult::DispatchError(e) => return Err(Error::TransactionRejected(e.to_string())),
+			DryRunResult::TransactionValidityError =>
+				return Err(Error::TransactionRejected("TransactionValidityError".into())),
+		}
 	}
 
 	let mut status_sub = xt.submit_and_watch().await.map_err(|e| {
@@ -529,7 +536,7 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 				log::error!(
 					target: LOG_TARGET,
 					"watch submit extrinsic at {:?} failed: {:?}",
-					hash,
+					block_hash,
 					err
 				);
 				return Err(err.into())

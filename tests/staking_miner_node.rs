@@ -54,7 +54,7 @@ async fn submit_tx(
 	signer: &PairSigner,
 ) {
 	let tx = subxt::dynamic::tx(pallet, name, params);
-	_ = api.tx().sign_and_submit_then_watch_default(&tx, signer).await.unwrap();
+	api.tx().sign_and_submit_then_watch_default(&tx, signer).await.unwrap();
 }
 
 async fn read_storage<T: Decode + TypeInfo + 'static>(
@@ -64,6 +64,14 @@ async fn read_storage<T: Decode + TypeInfo + 'static>(
 	params: Vec<Value>,
 ) -> T {
 	let addr = subxt::dynamic::storage(pallet, name, params);
-	let val = api.storage().at(None).await.unwrap().fetch(&addr).await.unwrap().unwrap();
-	Decode::decode(&mut val.encoded()).unwrap()
+	let val = api
+		.storage()
+		.at_latest()
+		.await
+		.expect("Get storage should work")
+		.fetch(&addr)
+		.await
+		.expect("Fetch storage should work")
+		.expect("Storage should exist");
+	Decode::decode(&mut val.encoded()).expect("Storage should be decodable")
 }

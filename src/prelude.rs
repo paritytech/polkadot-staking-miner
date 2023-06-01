@@ -69,28 +69,16 @@ pub type SignedSubmission<S> =
 	runtime_metadata_path = "artifacts/metadata.scale",
 	derive_for_all_types = "Clone, Debug, Eq, PartialEq",
 	derive_for_type(
-		type = "pallet_election_provider_multi_phase::RoundSnapshot",
+		path = "pallet_election_provider_multi_phase::RoundSnapshot",
 		derive = "Default"
 	),
 	substitute_type(
-		type = "sp_arithmetic::per_things::PerU16",
-		with = "::subxt::ext::sp_runtime::PerU16"
+		path = "sp_npos_elections::ElectionScore",
+		with = "::subxt::utils::Static<::sp_npos_elections::ElectionScore>"
 	),
 	substitute_type(
-		type = "pallet_election_provider_multi_phase::RawSolution",
-		with = "::pallet_election_provider_multi_phase::RawSolution"
-	),
-	substitute_type(
-		type = "sp_npos_elections::ElectionScore",
-		with = "::sp_npos_elections::ElectionScore"
-	),
-	substitute_type(
-		type = "pallet_election_provider_multi_phase::Phase",
-		with = "::pallet_election_provider_multi_phase::Phase"
-	),
-	substitute_type(
-		type = "pallet_election_provider_multi_phase::SolutionOrSnapshotSize",
-		with = "::pallet_election_provider_multi_phase::SolutionOrSnapshotSize"
+		path = "pallet_election_provider_multi_phase::Phase<Bn>",
+		with = "::subxt::utils::Static<::pallet_election_provider_multi_phase::Phase<Bn>>"
 	)
 )]
 pub mod runtime {}
