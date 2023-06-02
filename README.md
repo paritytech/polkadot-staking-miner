@@ -4,16 +4,24 @@
 
 This is a re-write of the [polkadot staking miner](https://github.com/paritytech/polkadot/tree/master/utils/staking-miner) using [subxt](https://github.com/paritytech/subxt) to avoid hard dependency to each runtime version.
 
-The binary itself embeds [static metadata](./artifacts/metadata.scale) to generate a rust codegen at compile-time that [subxt provides](https://github.com/paritytech/subxt).
+The binary itself embeds [static metadata](./artifacts/metadata.scale) to
+generate a rust codegen at compile-time that
+[subxt provides](https://github.com/paritytech/subxt).
 
-Runtime upgrades are handled by staking-miner-v2 by upgrading storage constants and that will work unless there is a breaking change in any of pallets used by the staking-miner (mainly pallet-election-provider and pallet-system are used).
+Runtime upgrades are handled by staking-miner-v2 by upgrading storage constants
+and that will work unless there is a breaking change in any of pallets used by
+the staking-miner (mainly pallet-election-provider and pallet-system are used).
 
-Because detecting breaking changes when connection to RPC node when using `staking-miner-v2` is hard, this repo performs daily integration tests against `polkadot master` and in most cases updating the metadata [see update metadata](#update-metadata)) and fixing the compile errors are sufficient.
+Because detecting breaking changes when connection to RPC node when using
+`staking-miner-v2` is hard, this repo performs daily integration tests
+against `polkadot master` and in most cases [update the metadata](#update-metadata)
+and fixing the compile errors are sufficient.
 
 Each release will specify which runtime version it was tested against but
 it's not possible to know in advance which runtimes it will work with.
 
-Thus, it's important to subscribe to releases to this repo or add some logic that triggers an alert once the staking-miner-v2 crashes.
+Thus, it's important to subscribe to releases to this repo or
+add some logic that triggers an alert once the staking-miner-v2 crashes.
 
 ## Usage
 
@@ -25,12 +33,13 @@ staking-miner --help
 
 ### Monitor
 
-To "mine solutions" and earn rewards, please try this on a dev-chain before using real funds because it's possible to lose money.
+To "mine solutions" and earn rewards, please try this on a dev-chain before
+using real funds because it's possible to lose money.
 
 `$ cargo run --release -- --uri ws://localhost:9944 monitor --seed-or-path //Alice --dry-run seq-phragmen`
 
-This is a starting point that will try compute new solutions to the validator set that also validates that
-transaction before submitting.
+This is a starting point that will try compute new solutions to the
+validator set that also validates that transaction before submitting.
 
 For further information regarding the different options run:
 
@@ -38,8 +47,9 @@ For further information regarding the different options run:
 
 ### Dry run
 
-It's possible to mine a solution locally without submitting anything to the chain but
-it works only on blocks with a snapshot (when the event Phase::Signed → Phase::Off is emitted).
+It's possible to mine a solution locally without submitting anything to the
+chain but it works only on blocks with a snapshot
+(when the event Phase::Signed → Phase::Off is emitted).
 
 `$ cargo run --release -- --uri ws://localhost:9944 dry-run --at 0xba86a0ba663df496743eeb077d004ef86bd767716e0d8cb935ab90d3ae174e85 seq-phragmen`
 
@@ -59,7 +69,8 @@ You can set it manually using:
  SEED=0x1234...
 ```
 
-Alternatively, for development, you may store your seed in a `.env` file that can be loaded to make your seed available:
+Alternatively, for development, you may store your seed in a `.env` file that
+can be loaded to make your seed available:
 
 `.env`:
 ```
@@ -71,7 +82,8 @@ You can load it using `source .env`.
 ### Docker
 
 A Docker container, especially one holding one of your `SEED` should be kept as secure as possible.
-While it won't prevent a malicious actor to read your `SEED` if they gain access to your container, it is nonetheless recommended running this container in `read-only` mode:
+While it won't prevent a malicious actor to read your `SEED` if they gain access to your container,
+it is nonetheless recommended running this container in `read-only` mode:
 
 ```
 docker run --rm -it \
@@ -107,7 +119,8 @@ $ subxt codegen --file artifacts/metadata.scale | rustfmt +nightly > code.rs
 
 ## Prometheus metrics
 
-The staking-miner starts a prometheus server on port 9999 and that metrics can be fetched by:
+The staking-miner starts a prometheus server on port 9999 and that metrics can
+be fetched by:
 
 `curl localhost:9999/metrics`
 
@@ -143,5 +156,9 @@ staking_miner_submissions_success 2
 # HELP staking_miner_submit_and_watch_duration_ms The time in milliseconds it took to submit the solution to chain and to be included in block
 # TYPE staking_miner_submit_and_watch_duration_ms gauge
 staking_miner_submit_and_watch_duration_ms 17283
-
 ```
+
+## Related projects
+
+- [polkadot staking miner](https://github.com/paritytech/polkadot/tree/master/utils/staking-miner) - provides similar functionality but each release is hard-coded to a specific runtime version
+- [substrate-etl](https://github.com/gpestana/substrate-etl) - a tool fetch state from substrate-based chains.
