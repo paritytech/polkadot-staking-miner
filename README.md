@@ -87,7 +87,7 @@ docker run --rm -it \
 
 The static metadata file is stored at [artifacts/metadata.scale](artifacts/metadata.scale)
 
-To update the metadata you need to connect to a polkadot, kusama or westend node
+To update the metadata you need to connect to a polkadot, kusama or westend node.
 
 ```bash
 # Install subxt-cli
