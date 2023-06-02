@@ -26,10 +26,12 @@ adds support to construct `emergency solutions`.
 - chore(deps): bump serde from 1.0.162 to 1.0.163  ([#565](https://github.com/paritytech/staking-miner-v2/pull/565))
 - chore(deps): bump tokio from 1.28.0 to 1.28.1  ([#560](https://github.com/paritytech/staking-miner-v2/pull/560))
 - chore(deps): bump serde from 1.0.160 to 1.0.162  ([#554](https://github.com/paritytech/staking-miner-v2/pull/554))
+- improve README  ([#587](https://github.com/paritytech/staking-miner-v2/pull/587))
 
 ## Fixed
 - tests: read at most 1024 lines of logs before rpc server output  ([#556](https://github.com/paritytech/staking-miner-v2/pull/556))
 - helpers: parse rpc server addr  ([#552](https://github.com/paritytech/staking-miner-v2/pull/552))
+- change `submission strategy == if leading` to not submit equal score ([#589](https://github.com/paritytech/staking-miner-v2/pull/589))
 
 ### Compatibility
 

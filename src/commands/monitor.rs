@@ -36,7 +36,6 @@ use subxt::{
 	config::Header as _,
 	error::RpcError,
 	rpc::{types::DryRunResult, Subscription},
-	tx::TxStatus,
 	Error as SubxtError,
 };
 use tokio::sync::Mutex;
@@ -408,7 +407,6 @@ where
 		&api,
 		signer,
 		(solution, score, round),
-		block_hash,
 		nonce,
 		config.listen,
 		config.dry_run,
@@ -502,7 +500,6 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 	api: &SubxtClient,
 	signer: Signer,
 	(solution, score, round): (SolutionOf<T>, sp_npos_elections::ElectionScore, u32),
-	block_hash: Hash,
 	nonce: u32,
 	listen: Listen,
 	dry_run: bool,
@@ -514,7 +511,7 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 		.create_signed_with_nonce(&tx, &*signer, nonce, ExtrinsicParams::default())?;
 
 	if dry_run {
-		let dry_run_bytes = api.rpc().dry_run(xt.encoded(), Some(block_hash)).await?;
+		let dry_run_bytes = api.rpc().dry_run(xt.encoded(), None).await?;
 
 		match dry_run_bytes.into_dry_run_result(&api.metadata())? {
 			DryRunResult::Success => (),
@@ -524,58 +521,48 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 		}
 	}
 
-	let mut status_sub = xt.submit_and_watch().await.map_err(|e| {
+	let tx_progress = xt.submit_and_watch().await.map_err(|e| {
 		log::warn!(target: LOG_TARGET, "submit solution failed: {:?}", e);
 		e
 	})?;
 
-	loop {
-		let status = match status_sub.next_item().await {
-			Some(Ok(status)) => status,
-			Some(Err(err)) => {
-				log::error!(
-					target: LOG_TARGET,
-					"watch submit extrinsic at {:?} failed: {:?}",
-					block_hash,
-					err
-				);
-				return Err(err.into())
-			},
-			None => return Err(Error::SubscriptionClosed),
-		};
+	match listen {
+		Listen::Head => {
+			let in_block = tx_progress.wait_for_in_block().await?;
+			let events = in_block.fetch_events().await.expect("events should exist");
 
-		match status {
-			TxStatus::Ready | TxStatus::Broadcast(_) | TxStatus::Future => (),
-			TxStatus::InBlock(details) => {
-				let events = details.fetch_events().await.expect("events should exist");
+			let solution_stored = events
+				.find_first::<runtime::election_provider_multi_phase::events::SolutionStored>(
+			);
 
-				let solution_stored =
-					events
-						.find_first::<runtime::election_provider_multi_phase::events::SolutionStored>(
-						);
+			if let Ok(Some(_)) = solution_stored {
+				log::info!("Included at {:?}", in_block.block_hash());
+			} else {
+				return Err(Error::Other(format!(
+					"No SolutionStored event found at {:?}",
+					in_block.block_hash()
+				)))
+			}
+		},
+		Listen::Finalized => {
+			let finalized = tx_progress.wait_for_finalized_success().await?;
 
-				if let Ok(Some(_)) = solution_stored {
-					log::info!(target: LOG_TARGET, "Included at {:?}", details.block_hash());
-					if let Listen::Head = listen {
-						return Ok(())
-					}
-				} else {
-					return Err(Error::Other(format!(
-						"No SolutionStored event found at {:?}",
-						details.block_hash()
-					)))
-				}
-			},
-			TxStatus::Retracted(hash) => {
-				log::info!(target: LOG_TARGET, "Retracted at {:?}", hash);
-			},
-			TxStatus::Finalized(details) => {
-				log::info!(target: LOG_TARGET, "Finalized at {:?}", details.block_hash());
-				return Ok(())
-			},
-			_ => return Err(Error::TransactionRejected(format!("{:?}", status))),
-		}
-	}
+			let solution_stored = finalized
+				.find_first::<runtime::election_provider_multi_phase::events::SolutionStored>(
+			);
+
+			if let Ok(Some(_)) = solution_stored {
+				log::info!("Finalized at {:?}", finalized.block_hash());
+			} else {
+				return Err(Error::Other(format!(
+					"No SolutionStored event found at {:?}",
+					finalized.block_hash()
+				)))
+			}
+		},
+	};
+
+	Ok(())
 }
 
 async fn heads_subscription(

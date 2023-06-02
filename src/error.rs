@@ -46,8 +46,6 @@ pub enum Error {
 	InvalidMetadata(String),
 	#[error("Transaction rejected: {0}")]
 	TransactionRejected(String),
-	#[error("Subscription closed")]
-	SubscriptionClosed,
 	#[error("Dynamic transaction error: {0}")]
 	DynamicTransaction(String),
 	#[error("Feasibility error: {0}")]

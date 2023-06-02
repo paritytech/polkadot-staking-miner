@@ -88,8 +88,7 @@ pub fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Er
 		Error::TransactionRejected(_) |
 		Error::JoinError(_) |
 		Error::Feasibility(_) |
-		Error::EmptySnapshot |
-		Error::SubscriptionClosed => {},
+		Error::EmptySnapshot => {},
 		Error::Subxt(SubxtError::Rpc(rpc_err)) => {
 			log::debug!(target: LOG_TARGET, "rpc error: {:?}", rpc_err);
 
