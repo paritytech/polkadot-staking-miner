@@ -33,7 +33,7 @@ staking-miner --help
 
 ### Monitor
 
-To "mine solutions" and earn rewards, please try this on a dev-chain before
+To "mine solutions" and earn rewards, use a command like the following. Please try this on a dev-chain before
 using real funds because it's possible to lose money.
 
 `$ cargo run --release -- --uri ws://localhost:9944 monitor --seed-or-path //Alice --dry-run seq-phragmen`
