@@ -121,11 +121,14 @@ $ subxt codegen --file artifacts/metadata.scale | rustfmt > code.rs
 
 ## Test locally
 
+Because elections occurs quite rarely and if you want to test it locally
+it's possible build the polkadot binary with `feature --fast-runtime`
+to ensure that elections occurs more often (in order of minutes rather hours/days).
+
 ```bash
-$ `cargo build --package polkadot --features fast-runtime`
-$ `polkadot --chain polkadot-dev --tmp --alice --execution Native -lruntime=debug --offchain-worker=Never --ws-port 9999`
+$ cargo run --release --package polkadot --features fast-runtime -- --chain polkadot-dev --tmp --alice --execution Native -lruntime=debug --offchain-worker=Never --ws-port 9999
 # open another terminal and run
-$ `cargo run --release -- --uri ws://localhost:9444 monitor --seed-or-path //Alice seq-phragmen`
+$ cargo run --release -- --uri ws://localhost:9444 monitor --seed-or-path //Alice seq-phragmen
 ```
 
 ## Prometheus metrics
@@ -134,7 +137,7 @@ The staking-miner starts a prometheus server on port 9999 and that metrics can
 be fetched by:
 
 ```bash
-curl localhost:9999/metrics
+$ curl localhost:9999/metrics
 ```
 
 
