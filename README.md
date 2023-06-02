@@ -5,8 +5,7 @@
 This is a re-write of the [polkadot staking miner](https://github.com/paritytech/polkadot/tree/master/utils/staking-miner) using [subxt](https://github.com/paritytech/subxt) to avoid hard dependency to each runtime version.
 
 The binary itself embeds [static metadata](./artifacts/metadata.scale) to
-generate a rust codegen at compile-time that
-[subxt provides](https://github.com/paritytech/subxt).
+generate a rust codegen at compile-time that [subxt provides](https://github.com/paritytech/subxt).
 
 Runtime upgrades are handled by staking-miner-v2 by upgrading storage constants
 and that will work unless there is a breaking change in any of pallets used by
@@ -27,23 +26,28 @@ add some logic that triggers an alert once the staking-miner-v2 crashes.
 
 You can check the help with:
 
-```
-staking-miner --help
+```bash
+$ staking-miner --help
 ```
 
 ### Monitor
 
-To "mine solutions" and earn rewards, use a command like the following. Please try this on a dev-chain before
-using real funds because it's possible to lose money.
+To "mine solutions" and earn rewards, use a command like the following.
+Please try this on a dev-chain before using real funds because it's
+possible to lose money.
 
-`$ cargo run --release -- --uri ws://localhost:9944 monitor --seed-or-path //Alice --dry-run seq-phragmen`
+```bash
+$ cargo run --release -- --uri ws://localhost:9944 monitor --seed-or-path //Alice --dry-run seq-phragmen
+```
 
 This is a starting point that will try compute new solutions to the
 validator set that also validates that transaction before submitting.
 
 For further information regarding the different options run:
 
-`cargo run --release -- monitor --help`
+```bash
+$ cargo run --release -- monitor --help
+```
 
 ### Dry run
 
@@ -51,20 +55,24 @@ It's possible to mine a solution locally without submitting anything to the
 chain but it works only on blocks with a snapshot
 (when the event Phase::Signed → Phase::Off is emitted).
 
-`$ cargo run --release -- --uri ws://localhost:9944 dry-run --at 0xba86a0ba663df496743eeb077d004ef86bd767716e0d8cb935ab90d3ae174e85 seq-phragmen`
+```bash
+$ cargo run --release -- --uri ws://localhost:9944 dry-run --at 0xba86a0ba663df496743eeb077d004ef86bd767716e0d8cb935ab90d3ae174e85 seq-phragmen
+```
 
 ### Emergency solution
 
 Mine a solution that can be submitted as an emergency solution.
 
-`$ cargo run --release -- --uri ws://localhost:9944 emergency-solution --at 0xba86a0ba663df496743eeb077d004ef86bd767716e0d8cb935ab90d3ae174e85 seq-phragmen`
+```bash
+$ cargo run --release -- --uri ws://localhost:9944 emergency-solution --at 0xba86a0ba663df496743eeb077d004ef86bd767716e0d8cb935ab90d3ae174e85 seq-phragmen
+```
 
 ### Prepare your SEED
 
 While you could pass your seed directly to the cli or Docker, this is highly **NOT** recommended. Instead, you should use an ENV variable.
 
 You can set it manually using:
-```
+```bash
 # The following line starts with an extra space on purpose, make sure to include it:
  SEED=0x1234...
 ```
@@ -73,7 +81,7 @@ Alternatively, for development, you may store your seed in a `.env` file that
 can be loaded to make your seed available:
 
 `.env`:
-```
+```bash
 SEED=0x1234...
 RUST_LOG=staking-miner=debug
 ```
@@ -85,7 +93,7 @@ A Docker container, especially one holding one of your `SEED` should be kept as 
 While it won't prevent a malicious actor to read your `SEED` if they gain access to your container,
 it is nonetheless recommended running this container in `read-only` mode:
 
-```
+```bash
 docker run --rm -it \
     --name staking-miner \
     --read-only \
@@ -113,16 +121,21 @@ $ subxt codegen --file artifacts/metadata.scale | rustfmt > code.rs
 
 ## Test locally
 
-1. $ `cargo build --package polkadot --features fast-runtime`
-2. $ `polkadot --chain polkadot-dev --tmp --alice --execution Native -lruntime=debug --offchain-worker=Never --ws-port 9999`
-3. `cargo run --release -- --uri ws://localhost:9444 monitor --seed-or-path //Alice seq-phragmen`
+```bash
+$ `cargo build --package polkadot --features fast-runtime`
+$ `polkadot --chain polkadot-dev --tmp --alice --execution Native -lruntime=debug --offchain-worker=Never --ws-port 9999`
+# open another terminal and run
+$ `cargo run --release -- --uri ws://localhost:9444 monitor --seed-or-path //Alice seq-phragmen`
+```
 
 ## Prometheus metrics
 
 The staking-miner starts a prometheus server on port 9999 and that metrics can
 be fetched by:
 
-`curl localhost:9999/metrics`
+```bash
+curl localhost:9999/metrics
+```
 
 
 ```bash
