@@ -108,7 +108,7 @@ $ cargo install --locked subxt-cli
 # See `https://github.com/paritytech/subxt/tree/master/cli` for further documentation of the `subxt-cli` tool.
 $ subxt metadata -f bytes > artifacts/metadata.scale
 # Inspect the generated code
-$ subxt codegen --file artifacts/metadata.scale | rustfmt +nightly > code.rs
+$ subxt codegen --file artifacts/metadata.scale | rustfmt > code.rs
 ```
 
 ## Test locally
