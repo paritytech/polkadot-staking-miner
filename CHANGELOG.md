@@ -4,6 +4,46 @@ The format is based on [Keep a Changelog].
 
 [Keep a Changelog]: http://keepachangelog.com/en/1.0.0/
 
+## [v1.0.0] - 2023-06-02
+
+This is the first release staking-miner-v2 which makes it production ready
+and the most noteable changes are:
+
+ - Add support for `emergency solutions`
+ - Change `submission strategy if-leading` to only submit if the score is better.
+ - Listen to `finalized heads` by default.
+
+## Added
+- add trimming tests  ([#538](https://github.com/paritytech/staking-miner-v2/pull/538))
+- Implements emergency solution command  ([#557](https://github.com/paritytech/staking-miner-v2/pull/557))
+
+## Changed
+- update subxt  ([#571](https://github.com/paritytech/staking-miner-v2/pull/571))
+- chore(deps): bump once_cell from 1.17.1 to 1.17.2  ([#582](https://github.com/paritytech/staking-miner-v2/pull/582))
+- chore(deps): bump log from 0.4.17 to 0.4.18  ([#580](https://github.com/paritytech/staking-miner-v2/pull/580))
+- chore(deps): bump tokio from 1.28.1 to 1.28.2  ([#581](https://github.com/paritytech/staking-miner-v2/pull/581))
+- chore(deps): bump regex from 1.8.2 to 1.8.3  ([#577](https://github.com/paritytech/staking-miner-v2/pull/577))
+- chore: remove unused deps and features  ([#575](https://github.com/paritytech/staking-miner-v2/pull/575))
+- chore(deps): bump regex from 1.8.1 to 1.8.2  ([#574](https://github.com/paritytech/staking-miner-v2/pull/574))
+- chore(deps): bump anyhow from 1.0.69 to 1.0.71  ([#570](https://github.com/paritytech/staking-miner-v2/pull/570))
+- chore(deps): bump scale-info from 2.6.0 to 2.7.0  ([#569](https://github.com/paritytech/staking-miner-v2/pull/569))
+- chore(deps): bump serde from 1.0.162 to 1.0.163  ([#565](https://github.com/paritytech/staking-miner-v2/pull/565))
+- chore(deps): bump tokio from 1.28.0 to 1.28.1  ([#560](https://github.com/paritytech/staking-miner-v2/pull/560))
+- chore(deps): bump serde from 1.0.160 to 1.0.162  ([#554](https://github.com/paritytech/staking-miner-v2/pull/554))
+- improve README  ([#587](https://github.com/paritytech/staking-miner-v2/pull/587))
+
+## Fixed
+- tests: read at most 1024 lines of logs before rpc server output  ([#556](https://github.com/paritytech/staking-miner-v2/pull/556))
+- helpers: parse rpc server addr  ([#552](https://github.com/paritytech/staking-miner-v2/pull/552))
+- change `submission strategy == if leading` to not submit equal score ([#589](https://github.com/paritytech/staking-miner-v2/pull/589))
+
+### Compatibility
+
+Tested against:
+- Polkadot v9420
+- Kusama v9420
+- Westend v9420
+
 ## [v0.1.4] - 2023-05-04
 
 This is a release to support new runtime changes in polkadot v0.9.42.
