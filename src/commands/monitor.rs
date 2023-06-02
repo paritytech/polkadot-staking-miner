@@ -48,7 +48,7 @@ pub struct MonitorConfig {
 	/// Typically, finalized is safer and there is no chance of anything going wrong, but it can be
 	/// slower. It is recommended to use finalized, if the duration of the signed phase is longer
 	/// than the the finality delay.
-	#[clap(long, value_enum, default_value_t = Listen::Head)]
+	#[clap(long, value_enum, default_value_t = Listen::Finalized)]
 	pub listen: Listen,
 
 	/// The solver algorithm to use.
