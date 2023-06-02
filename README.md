@@ -39,7 +39,7 @@ For further information regarding the different options run:
 ### Dry run
 
 It's possible to mine a solution locally without submitting anything to the chain but
-it works only on blocks with a snapshot (when the event Phase::Signed → Phase::Off is emitted)
+it works only on blocks with a snapshot (when the event Phase::Signed → Phase::Off is emitted).
 
 `$ cargo run --release -- --uri ws://localhost:9944 dry-run --at 0xba86a0ba663df496743eeb077d004ef86bd767716e0d8cb935ab90d3ae174e85 seq-phragmen`
 
