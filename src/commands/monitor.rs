@@ -609,8 +609,7 @@ pub(crate) fn score_passes_strategy(
 	match strategy {
 		SubmissionStrategy::Always => true,
 		SubmissionStrategy::IfLeading =>
-			our_score == best_score ||
-				our_score.strict_threshold_better(best_score, Perbill::zero()),
+			our_score.strict_threshold_better(best_score, Perbill::zero()),
 		SubmissionStrategy::ClaimBetterThan(epsilon) =>
 			our_score.strict_threshold_better(best_score, epsilon),
 		SubmissionStrategy::ClaimNoWorseThan(epsilon) =>
@@ -656,12 +655,12 @@ mod tests {
 		assert!(score_passes_strategy(s(5), s(10), SubmissionStrategy::Always));
 
 		// if leading
-		assert!(score_passes_strategy(s(0), s(0), SubmissionStrategy::IfLeading));
+		assert!(!score_passes_strategy(s(0), s(0), SubmissionStrategy::IfLeading));
 		assert!(score_passes_strategy(s(1), s(0), SubmissionStrategy::IfLeading));
 		assert!(score_passes_strategy(s(2), s(0), SubmissionStrategy::IfLeading));
 		assert!(!score_passes_strategy(s(5), s(10), SubmissionStrategy::IfLeading));
 		assert!(!score_passes_strategy(s(9), s(10), SubmissionStrategy::IfLeading));
-		assert!(score_passes_strategy(s(10), s(10), SubmissionStrategy::IfLeading));
+		assert!(!score_passes_strategy(s(10), s(10), SubmissionStrategy::IfLeading));
 
 		// if better by 2%
 		assert!(!score_passes_strategy(s(50), s(100), SubmissionStrategy::ClaimBetterThan(two)));
