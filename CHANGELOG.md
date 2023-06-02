@@ -6,8 +6,12 @@ The format is based on [Keep a Changelog].
 
 ## [v1.0.0] - 2023-06-02
 
-This is the first release staking-miner-v2 which makes it production ready and it also 
-adds support to construct `emergency solutions`.
+This is the first release staking-miner-v2 which makes it production ready
+and the most noteable changes are:
+
+ - Add support for `emergency solutions`
+ - Change `submission strategy if-leading` to only submit if the score is better.
+ - Listen to `finalized heads` by default.
 
 ## Added
 - add trimming tests  ([#538](https://github.com/paritytech/staking-miner-v2/pull/538))
