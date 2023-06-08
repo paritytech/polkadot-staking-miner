@@ -24,7 +24,7 @@ async fn constants_updated_on_the_fly() {
 			.stdout(process::Stdio::piped())
 			.stderr(process::Stdio::piped())
 			.env("RUST_LOG", "runtime=debug,staking-miner=debug")
-			.args(&["--uri", &ws_url, "monitor", "--seed-or-path", "//Alice", "seq-phragmen"])
+			.args(["--uri", &ws_url, "monitor", "--seed-or-path", "//Alice", "seq-phragmen"])
 			.spawn()
 			.unwrap(),
 	);

@@ -111,7 +111,7 @@ where
 		let xt =
 			api.tx()
 				.create_signed_with_nonce(&tx, &*signer, nonce, ExtrinsicParams::default())?;
-		let dry_run_bytes = api.rpc().dry_run(xt.encoded(), config.at.into()).await?;
+		let dry_run_bytes = api.rpc().dry_run(xt.encoded(), config.at).await?;
 
 		let dry_run_result = dry_run_bytes.into_dry_run_result(&api.metadata())?;
 
