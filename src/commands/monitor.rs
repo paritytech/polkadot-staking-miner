@@ -66,7 +66,7 @@ pub struct MonitorConfig {
 	/// `--submission-strategy "percent-better <percent>"`: submit if the submission is `n` percent better.
 	///
 	/// `--submission-strategy "no-worse-than  <percent>"`: submit if submission is no more than `n` percent worse.
-	#[clap(long, parse(try_from_str), default_value = "if-leading")]
+	#[clap(long, value_parser, default_value = "if-leading")]
 	pub submission_strategy: SubmissionStrategy,
 
 	/// The path to a file containing the seed of the account. If the file is not found, the seed is
