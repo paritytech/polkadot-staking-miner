@@ -57,7 +57,7 @@ pub fn find_ws_url_from_output(read: impl Read + Send) -> (String, String) {
 				.map(|(_, line)| line)?;
 
 			// get the socketaddr only.
-			let addr_str = line_end.split_once(",").unwrap().0;
+			let addr_str = line_end.split_once(',').unwrap().0;
 
 			// expect a valid sockaddr.
 			let addr: SocketAddr = addr_str
@@ -76,7 +76,7 @@ pub fn run_staking_miner_playground() -> (KillChildOnDrop, String) {
 		process::Command::new("staking-miner-playground")
 			.stdout(process::Stdio::piped())
 			.stderr(process::Stdio::piped())
-			.args(&["--dev", "--offchain-worker=Never"])
+			.args(["--dev", "--offchain-worker=Never"])
 			.env("RUST_LOG", "runtime=debug")
 			.spawn()
 			.unwrap(),
@@ -95,7 +95,7 @@ pub fn run_polkadot_node(chain: Chain) -> (KillChildOnDrop, String) {
 		process::Command::new("polkadot")
 			.stdout(process::Stdio::piped())
 			.stderr(process::Stdio::piped())
-			.args(&[
+			.args([
 				"--chain",
 				&chain_str,
 				"--tmp",
@@ -142,20 +142,16 @@ pub fn spawn_cli_output_threads(
 ) {
 	let tx2 = tx.clone();
 	std::thread::spawn(move || {
-		for line in BufReader::new(stdout).lines() {
-			if let Ok(line) = line {
-				println!("OK: {}", line);
-				let _ = tx2.send(line);
-			}
+		for line in BufReader::new(stdout).lines().flatten() {
+			println!("OK: {}", line);
+			let _ = tx2.send(line);
 		}
 	});
 
 	std::thread::spawn(move || {
-		for line in BufReader::new(stderr).lines() {
-			if let Ok(line) = line {
-				println!("ERR: {}", line);
-				let _ = tx.send(line);
-			}
+		for line in BufReader::new(stderr).lines().flatten() {
+			println!("ERR: {}", line);
+			let _ = tx.send(line);
 		}
 	});
 }
@@ -175,7 +171,7 @@ pub async fn test_submit_solution(target: Target) {
 		process::Command::new(cargo_bin(env!("CARGO_PKG_NAME")))
 			.stdout(process::Stdio::piped())
 			.stderr(process::Stdio::piped())
-			.args(&["--uri", &ws_url, "monitor", "--seed-or-path", "//Alice", "seq-phragmen"])
+			.args(["--uri", &ws_url, "monitor", "--seed-or-path", "//Alice", "seq-phragmen"])
 			.spawn()
 			.unwrap(),
 	);
