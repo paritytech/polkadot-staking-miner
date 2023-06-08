@@ -7,7 +7,7 @@ edition = "2021"
 [dependencies]
 codec = { package = "parity-scale-codec", version = "3.0.0" }
 scale-info = { package = "scale-info", version = "2.7.0" }
-clap = { version = "3.2", features = ["derive", "env"] }
+clap = { version = "4.3", features = ["derive", "env"] }
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 jsonrpsee = { version = "0.16", features = ["ws-client"] }
 log = "0.4"
@@ -32,7 +32,7 @@ sp-runtime = { git = "https://github.com/paritytech/substrate" }
 # prometheus
 prometheus = "0.13"
 hyper = { version = "0.14.25", features = ["server", "http1", "http2", "tcp"] }
-once_cell = "1.17"
+once_cell = "1.18"
 
 [dev-dependencies]
 anyhow = "1"
