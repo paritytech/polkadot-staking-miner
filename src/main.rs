@@ -43,9 +43,11 @@ use error::Error;
 use futures::future::{BoxFuture, FutureExt};
 use jsonrpsee::ws_client::WsClientBuilder;
 use prelude::*;
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 use tokio::sync::oneshot;
 use tracing_subscriber::EnvFilter;
+
+use crate::opt::RuntimeVersion;
 
 #[derive(Debug, Clone, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -59,8 +61,8 @@ pub struct Opt {
 	pub command: Command,
 
 	/// The prometheus endpoint TCP port.
-	#[clap(long, short, env = "PROMETHEUS_PORT")]
-	pub prometheus_port: Option<u16>,
+	#[clap(long, short, env = "PROMETHEUS_PORT", default_value_t = DEFAULT_PROMETHEUS_PORT)]
+	pub prometheus_port: u16,
 
 	/// Sets a custom logging filter. Syntax is `<target>=<level>`, e.g. -lstaking-miner=debug.
 	///
@@ -79,6 +81,8 @@ pub enum Command {
 	DryRun(commands::DryRunConfig),
 	/// Provide a solution that can be submitted to the chain as an emergency response.
 	EmergencySolution(commands::EmergencySolutionConfig),
+	/// Check if the staking-miner metadata is compatible to a remote node.
+	Info,
 }
 
 // A helper to use different MinerConfig depending on chain.
@@ -132,9 +136,9 @@ async fn main() -> Result<(), Error> {
 	};
 
 	let api = SubxtClient::from_rpc_client(Arc::new(rpc)).await?;
-	let runtime_version = api.rpc().runtime_version(None).await?;
-	let chain = opt::Chain::try_from(runtime_version)?;
-	let _prometheus_handle = prometheus::run(prometheus_port.unwrap_or(DEFAULT_PROMETHEUS_PORT))
+	let runtime_version: RuntimeVersion = api.rpc().runtime_version(None).await?.into();
+	let chain = opt::Chain::from_str(&runtime_version.spec_name)?;
+	let _prometheus_handle = prometheus::run(prometheus_port)
 		.map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
 	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
 	epm::update_metadata_constants(&api).await?;
@@ -152,6 +156,18 @@ async fn main() -> Result<(), Error> {
 			Command::DryRun(cfg) => commands::dry_run_cmd::<MinerConfig>(api, cfg).boxed(),
 			Command::EmergencySolution(cfg) =>
 				commands::emergency_solution_cmd::<MinerConfig>(api, cfg).boxed(),
+			Command::Info => async {
+				let is_compat = if runtime::validate_codegen(&api).is_ok() { "YES" } else { "NO" };
+
+				let remote_node = serde_json::to_string_pretty(&runtime_version)
+					.expect("Serialize is infallible; qed");
+
+				eprintln!("Remote_node:\n{remote_node}");
+				eprintln!("Compatible: {is_compat}");
+
+				Ok(())
+			}
+			.boxed(),
 		};
 
 		run_command(fut, rx_upgrade).await
@@ -280,7 +296,7 @@ mod tests {
 			opt,
 			Opt {
 				uri: "hi".to_string(),
-				prometheus_port: Some(9999),
+				prometheus_port: 9999,
 				log: "info".to_string(),
 				command: Command::Monitor(commands::MonitorConfig {
 					listen: monitor::Listen::Head,
@@ -311,7 +327,7 @@ mod tests {
 			opt,
 			Opt {
 				uri: "hi".to_string(),
-				prometheus_port: None,
+				prometheus_port: 9999,
 				log: "info".to_string(),
 				command: Command::DryRun(commands::DryRunConfig {
 					at: None,
@@ -342,7 +358,7 @@ mod tests {
 			opt,
 			Opt {
 				uri: "hi".to_string(),
-				prometheus_port: None,
+				prometheus_port: 9999,
 				log: "info".to_string(),
 				command: Command::EmergencySolution(commands::EmergencySolutionConfig {
 					at: None,
