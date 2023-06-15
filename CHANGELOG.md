@@ -4,6 +4,42 @@ The format is based on [Keep a Changelog].
 
 [Keep a Changelog]: http://keepachangelog.com/en/1.0.0/
 
+
+## [v1.1.0] - 2023-06-15
+
+This release adds a subcommand `info` to detect whether the metadata 
+of the staking-miner is compatible with a remote node.
+
+```bash
+$ staking-miner --uri wss://rpc.polkadot.io:443 info
+Remote_node:
+{
+  "spec_name": "polkadot",
+  "impl_name": "parity-polkadot",
+  "spec_version": 9370,
+  "impl_version": 0,
+  "authoring_version": 0,
+  "transaction_version": 20,
+  "state_version": 0
+}
+Compatible: NO
+```
+
+## Added
+- add `info command`  ([#596](https://github.com/paritytech/staking-miner-v2/pull/596))
+
+## Changed
+- strip metadata  ([#595](https://github.com/paritytech/staking-miner-v2/pull/595))
+- chore(deps): bump clap from 4.3.3 to 4.3.4  ([#602](https://github.com/paritytech/staking-miner-v2/pull/602))
+- chore(deps): bump clap from 4.3.2 to 4.3.3  ([#601](https://github.com/paritytech/staking-miner-v2/pull/601))
+- chore(deps): bump log from 0.4.18 to 0.4.19  ([#600](https://github.com/paritytech/staking-miner-v2/pull/600))
+- chore: fix clippy warnings  ([#599](https://github.com/paritytech/staking-miner-v2/pull/599))
+- chore(deps): clap v4  ([#598](https://github.com/paritytech/staking-miner-v2/pull/598))
+- chore(deps): bump serde from 1.0.163 to 1.0.164  ([#597](https://github.com/paritytech/staking-miner-v2/pull/597))
+- chore(deps): bump futures from 0.3.27 to 0.3.28  ([#590](https://github.com/paritytech/staking-miner-v2/pull/590))
+- chore(deps): bump once_cell from 1.17.2 to 1.18.0  ([#592](https://github.com/paritytech/staking-miner-v2/pull/592))
+- chore(deps): bump regex from 1.8.3 to 1.8.4  ([#593](https://github.com/paritytech/staking-miner-v2/pull/593))
+
 ## [v1.0.0] - 2023-06-02
 
 This is the first release staking-miner-v2 which makes it production ready
