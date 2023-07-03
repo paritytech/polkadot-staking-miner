@@ -119,7 +119,7 @@ pub mod westend {
 				active_voters,
 				desired_targets.try_into().expect("Desired targets < u16::MAX"),
 			) else {
-				return Weight::MAX;
+				return Weight::MAX
 			};
 
 			// Mock a RawSolution to get the correct weight without having to do the heavy work.
@@ -179,7 +179,7 @@ pub mod polkadot {
 				active_voters,
 				desired_targets.try_into().expect("Desired targets < u16::MAX"),
 			) else {
-				return Weight::MAX;
+				return Weight::MAX
 			};
 
 			// Mock a RawSolution to get the correct weight without having to do the heavy work.
@@ -237,7 +237,7 @@ pub mod kusama {
 				active_voters,
 				desired_targets.try_into().expect("Desired targets < u16::MAX"),
 			) else {
-				return Weight::MAX;
+				return Weight::MAX
 			};
 
 			// Mock a RawSolution to get the correct weight without having to do the heavy work.

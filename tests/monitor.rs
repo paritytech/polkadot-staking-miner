@@ -66,7 +66,10 @@ async fn has_trimming_output(miner: &mut KillChildOnDrop) -> bool {
 	spawn_cli_output_threads(miner.stdout.take().unwrap(), miner.stderr.take().unwrap(), tx);
 
 	while !got_truncate_weight || !got_truncate_len {
-		let line = rx.recv().await.unwrap();
+		let line = tokio::time::timeout(MAX_DURATION_FOR_SUBMIT_SOLUTION, rx.recv())
+			.await
+			.expect("Logger timeout; no items produced")
+			.expect("Logger channel dropped");
 		println!("{line}");
 		log::info!("{line}");
 
