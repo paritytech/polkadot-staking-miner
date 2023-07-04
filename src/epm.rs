@@ -23,14 +23,20 @@ use crate::{
 	prelude::*,
 	static_types,
 };
+
+use std::collections::BTreeMap;
+
 use codec::{Decode, Encode};
 use frame_election_provider_support::{NposSolution, PhragMMS, SequentialPhragmen};
 use frame_support::weights::Weight;
-use pallet_election_provider_multi_phase::{RawSolution, ReadySolution, SolutionOrSnapshotSize};
+use pallet_election_provider_multi_phase::{
+	RawSolution, ReadySolution, SolutionOrSnapshotSize,
+};
 use scale_info::{PortableRegistry, TypeInfo};
 use scale_value::scale::{decode_as_type, TypeId};
 use sp_core::Bytes;
 use sp_npos_elections::ElectionScore;
+use sp_runtime::Perbill;
 use subxt::{dynamic::Value, rpc::rpc_params, tx::DynamicPayload};
 
 const EPM_PALLET_NAME: &str = "ElectionProviderMultiPhase";
@@ -219,47 +225,97 @@ where
 		.await?
 		.map(|score| score.0);
 
-	let voters = snapshot.voters.clone();
-	let targets = snapshot.targets.clone();
+	let mut voters = snapshot.voters.clone();
+	// The voters can't be sorted and this BTreeMap is used to lookup
+	// each voter by stake instead of doing linear search in the `Vec`
+	let mut voters_by_stake = {
+		let mut map = BTreeMap::new();
 
-	log::trace!(
+		for (idx, (_voter, stake, _supports)) in voters.iter().enumerate() {
+			map.insert(stake.clone(), idx);
+		}
+
+		map
+	};
+
+	log::info!(
 		target: LOG_TARGET,
 		"mine solution: desired_targets={}, voters={}, targets={}",
 		desired_targets,
 		voters.len(),
-		targets.len()
+		snapshot.targets.len()
 	);
 
-	let blocking_task = tokio::task::spawn_blocking(move || match solver {
-		Solver::SeqPhragmen { iterations } => {
-			BalanceIterations::set(iterations);
-			Miner::<T>::mine_solution_with_snapshot::<
-				SequentialPhragmen<AccountId, Accuracy, Balancing>,
-			>(voters, targets, desired_targets)
-		},
-		Solver::PhragMMS { iterations } => {
-			BalanceIterations::set(iterations);
-			Miner::<T>::mine_solution_with_snapshot::<PhragMMS<AccountId, Accuracy, Balancing>>(
-				voters,
-				targets,
-				desired_targets,
-			)
-		},
-	})
-	.await;
+	let mut first_mined_score = None;
 
-	match blocking_task {
-		Ok(Ok((solution, score, solution_or_snapshot_size))) => Ok(MinedSolution {
-			round,
-			desired_targets,
-			snapshot,
-			minimum_untrusted_score,
-			solution,
-			score,
-			solution_or_snapshot_size,
-		}),
-		Ok(Err(err)) => Err(Error::Other(format!("{:?}", err))),
-		Err(err) => Err(err.into()),
+	loop {
+		let s = solver.clone();
+		let v = voters.clone();
+		let t = snapshot.targets.clone();
+
+		let blocking_task =
+			tokio::task::spawn_blocking(move || match s {
+				Solver::SeqPhragmen { iterations } => {
+					BalanceIterations::set(iterations);
+					Miner::<T>::mine_solution_with_snapshot::<
+						SequentialPhragmen<AccountId, Accuracy, Balancing>,
+					>(v, t, desired_targets)
+				},
+				Solver::PhragMMS { iterations } => {
+					BalanceIterations::set(iterations);
+					Miner::<T>::mine_solution_with_snapshot::<
+						PhragMMS<AccountId, Accuracy, Balancing>,
+					>(v, t, desired_targets)
+				},
+			})
+			.await;
+
+		match blocking_task {
+			Ok(Ok((solution, score, solution_or_snapshot_size, t))) if !t.is_trimmed() => {
+				if solution.unique_targets().len() != desired_targets as usize {
+					return Err(Error::Feasibility(format!("Invalid winner count {}, expected {desired_targets}", solution.unique_targets().len())));
+				}
+
+				// TODO: make this configurable
+				let trimmed_score_bad = first_mined_score.map_or(false, |s: ElectionScore| s.strict_threshold_better(score, Perbill::from_percent(10)));
+
+				if trimmed_score_bad {
+					return Err(Error::Feasibility("Pre-trimmed score is too bad".to_string()));
+				}
+
+				return Ok(MinedSolution {
+					round,
+					desired_targets,
+					snapshot,
+					minimum_untrusted_score,
+					solution,
+					score,
+					solution_or_snapshot_size,
+				})
+			},
+			Ok(Ok((solution, score, _, _))) => {
+				if solution.unique_targets().len() != desired_targets as usize {
+					return Err(Error::Feasibility(format!("Invalid winner count {}, expected {desired_targets}", solution.unique_targets().len())));
+				}
+
+				first_mined_score.get_or_insert(score);
+
+				let Some((_, idx)) = voters_by_stake.pop_first() else {
+					return Err(Error::Feasibility("Couldn't pre-trim votes to prevent trimming".to_string()));
+				};
+				let rm = voters[idx].0.clone();
+
+				// Remove votes for an account.
+				//
+				// Ideally, we would just remove the voter from the voters and targets here but
+				// it would modify the snapshot and the solution becomes invalid in the feasibility check.
+				for (_voter, _stake, supports) in &mut voters {
+					supports.retain(|a| a != &rm);
+				}
+			},
+			Ok(Err(err)) => return Err(Error::Other(format!("{:?}", err))),
+			Err(err) => return Err(err.into()),
+		};
 	}
 }
 
@@ -312,6 +368,16 @@ where
 				Err(Error::Feasibility(format!("{:?}", e)))
 			},
 		}
+	}
+}
+
+impl<T: MinerConfig> std::fmt::Debug for MinedSolution<T> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("MinedSolution")
+			.field("round", &self.round)
+			.field("desired_targets", &self.desired_targets)
+			.field("score", &self.score)
+			.finish()
 	}
 }
 

@@ -316,6 +316,8 @@ where
 	.await
 	{
 		(Ok(mined_solution), elapsed) => {
+			log::info!(target: LOG_TARGET, "mined_solution: {:?}", mined_solution);
+
 			// check that the solution looks valid:
 			mined_solution.feasibility_check()?;
 
@@ -353,7 +355,7 @@ where
 
 			(solution, score)
 		},
-		(Err(e), _) => return Err(e),
+		(Err(e), _) => return Err(Error::Other(e.to_string())),
 	};
 
 	let best_head = get_latest_head(&api, config.listen).await?;

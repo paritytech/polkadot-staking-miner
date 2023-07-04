@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use node_template_runtime::{
 	opaque::SessionKeys, AccountId, AuraConfig, Balance, BalancesConfig, GenesisConfig,
 	GrandpaConfig, MaxNominations, SessionConfig, Signature, StakingConfig, SudoConfig,
@@ -14,28 +12,9 @@ use sp_core::{sr25519, Pair, Public};
 use sp_runtime::traits::{IdentifyAccount, Verify};
 
 lazy_static::lazy_static! {
-	static ref NOMINATORS: u32 = std::env::var("N").unwrap_or("1000".to_string()).parse().unwrap();
-	static ref CANDIDATES: u32 = std::env::var("C").unwrap_or("500".to_string()).parse().unwrap();
-	static ref VALIDATORS: u32 = std::env::var("V").unwrap_or("100".to_string()).parse().unwrap();
-	static ref NOMINATION_DEGREE: NominationDegree = NominationDegree::from_str(std::env::var("ND").unwrap_or("full".to_string()).as_ref()).unwrap();
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum NominationDegree {
-	Partial,
-	Full,
-}
-
-impl FromStr for NominationDegree {
-	type Err = ();
-
-	fn from_str(s: &str) -> Result<Self, Self::Err> {
-		Ok(match &s[..] {
-			"partial" => Self::Partial,
-			"full" => Self::Full,
-			_ => panic!("wrong nomination-degree."),
-		})
-	}
+	static ref NOMINATORS: u32 = std::env::var("N").unwrap_or("700".to_string()).parse().unwrap();
+	static ref CANDIDATES: u32 = std::env::var("C").unwrap_or("200".to_string()).parse().unwrap();
+	static ref VALIDATORS: u32 = std::env::var("V").unwrap_or("20".to_string()).parse().unwrap();
 }
 
 /// Specialized `ChainSpec`. This is a specialization of the general Substrate ChainSpec type.
@@ -99,7 +78,6 @@ fn testnet_genesis(wasm_binary: &[u8], _enable_println: bool) -> GenesisConfig {
 	let nominators: u32 = *NOMINATORS;
 	let validators: u32 = *VALIDATORS;
 	let candidates: u32 = *CANDIDATES;
-	let nomination_degree: NominationDegree = *NOMINATION_DEGREE;
 
 	let min_balance = node_template_runtime::voter_bags::EXISTENTIAL_WEIGHT as Balance;
 	let stash_min: Balance = min_balance;
@@ -125,7 +103,7 @@ fn testnet_genesis(wasm_binary: &[u8], _enable_println: bool) -> GenesisConfig {
 		.map(|seed| get_account_id_from_seed::<sr25519::Public>(seed.as_str()))
 		.collect::<Vec<_>>();
 
-	let initial_authorities = vec![authority_keys_from_seed("Alice")]
+	let initial_authorities = [authority_keys_from_seed("Alice")]
 		.into_iter()
 		.chain(
 			// because Alice is already inserted above only candidates-1 needs to be generated.
@@ -157,14 +135,10 @@ fn testnet_genesis(wasm_binary: &[u8], _enable_println: bool) -> GenesisConfig {
 		})
 		.chain(initial_nominators.iter().map(|x| {
 			let limit = (MaxNominations::get() as usize).min(initial_authorities.len());
-			let count = match nomination_degree {
-				NominationDegree::Full => (rng2.gen::<usize>() % limit).max(1),
-				NominationDegree::Partial => limit,
-			};
 
 			let nominations = initial_authorities
 				.as_slice()
-				.choose_multiple(&mut rng2, count)
+				.choose_multiple(&mut rng2, limit)
 				.into_iter()
 				.map(|choice| choice.0.clone())
 				.collect::<Vec<_>>();
