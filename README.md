@@ -128,7 +128,7 @@ to ensure that elections occurs more often (in order of minutes rather hours/day
 ```bash
 $ cargo run --release --package polkadot --features fast-runtime -- --chain polkadot-dev --tmp --alice --execution Native -lruntime=debug --offchain-worker=Never --ws-port 9999
 # open another terminal and run
-$ cargo run --release -- --uri ws://localhost:9444 monitor --seed-or-path //Alice seq-phragmen
+$ cargo run --release -- --uri ws://localhost:9999 monitor --seed-or-path //Alice seq-phragmen
 ```
 
 ## Prometheus metrics
