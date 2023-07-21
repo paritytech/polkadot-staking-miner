@@ -20,7 +20,7 @@ pin-project-lite = "0.2"
 
 # subxt
 subxt = "0.29"
-scale-value = "0.10.0"
+scale-value = "0.11.0"
 
 # substrate
 frame-election-provider-support = { git = "https://github.com/paritytech/substrate" }
