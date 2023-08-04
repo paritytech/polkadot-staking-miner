@@ -126,6 +126,8 @@ nightly-test:
     - cargo build --release --features fast-runtime
     - mkdir -p ~/.local/bin
     - mv ./target/release/polkadot /usr/bin
+    - mv ./target/release/polkadot-execute-worker /usr/bin
+    - mv ./target/release/polkadot-prepare-worker /usr/bin
     - polkadot --version
     - cd -
     - rm -rf polkadot
