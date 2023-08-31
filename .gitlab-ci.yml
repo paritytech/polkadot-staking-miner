@@ -121,9 +121,9 @@ nightly-test:
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
   script:
-    - git clone -b master --depth 1 https://github.com/paritytech/polkadot.git polkadot
-    - cd polkadot
-    - cargo build --release --features fast-runtime
+    - git clone -b master --depth 1 https://github.com/paritytech/polkadot-sdk.git polkadot-sdk
+    - cd polkadot-sdk
+    - cargo build -p polkadot --release --features fast-runtime
     - mkdir -p ~/.local/bin
     - mv ./target/release/polkadot /usr/bin
     - mv ./target/release/polkadot-execute-worker /usr/bin
