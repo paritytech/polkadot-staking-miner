@@ -16,7 +16,7 @@ default:
 
 variables:
   CI_IMAGE:                        "paritytech/ci-linux:production"
-  BUILDAH_IMAGE:                   "quay.io/buildah/stable:v1.29"
+  # BUILDAH_IMAGE is defined in group variables
   BUILDAH_COMMAND:                 "buildah --storage-driver overlay2"
 
 .common-refs:                      &common-refs
