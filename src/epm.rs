@@ -29,9 +29,7 @@ use std::collections::BTreeMap;
 use codec::{Decode, Encode};
 use frame_election_provider_support::{NposSolution, PhragMMS, SequentialPhragmen};
 use frame_support::weights::Weight;
-use pallet_election_provider_multi_phase::{
-	RawSolution, ReadySolution, SolutionOrSnapshotSize,
-};
+use pallet_election_provider_multi_phase::{RawSolution, ReadySolution, SolutionOrSnapshotSize};
 use scale_info::{PortableRegistry, TypeInfo};
 use scale_value::scale::{decode_as_type, TypeId};
 use sp_core::Bytes;
@@ -273,11 +271,16 @@ where
 		match blocking_task {
 			Ok(Ok((solution, score, solution_or_snapshot_size, t))) if !t.is_trimmed() => {
 				if solution.unique_targets().len() != desired_targets as usize {
-					return Err(Error::Feasibility(format!("Invalid winner count {}, expected {desired_targets}", solution.unique_targets().len())));
+					return Err(Error::Feasibility(format!(
+						"Invalid winner count {}, expected {desired_targets}",
+						solution.unique_targets().len()
+					)));
 				}
 
 				// TODO: make this configurable
-				let trimmed_score_bad = first_mined_score.map_or(false, |s: ElectionScore| s.strict_threshold_better(score, Perbill::from_percent(10)));
+				let trimmed_score_bad = first_mined_score.map_or(false, |s: ElectionScore| {
+					s.strict_threshold_better(score, Perbill::from_percent(10))
+				});
 
 				if trimmed_score_bad {
 					return Err(Error::Feasibility("Pre-trimmed score is too bad".to_string()));
@@ -291,17 +294,22 @@ where
 					solution,
 					score,
 					solution_or_snapshot_size,
-				})
+				});
 			},
 			Ok(Ok((solution, score, _, _))) => {
 				if solution.unique_targets().len() != desired_targets as usize {
-					return Err(Error::Feasibility(format!("Invalid winner count {}, expected {desired_targets}", solution.unique_targets().len())));
+					return Err(Error::Feasibility(format!(
+						"Invalid winner count {}, expected {desired_targets}",
+						solution.unique_targets().len()
+					)));
 				}
 
 				first_mined_score.get_or_insert(score);
 
 				let Some((_, idx)) = voters_by_stake.pop_first() else {
-					return Err(Error::Feasibility("Couldn't pre-trim votes to prevent trimming".to_string()));
+					return Err(Error::Feasibility(
+						"Couldn't pre-trim votes to prevent trimming".to_string(),
+					));
 				};
 				let rm = voters[idx].0.clone();
 

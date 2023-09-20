@@ -154,8 +154,9 @@ async fn main() -> Result<(), Error> {
 		let fut = match command {
 			Command::Monitor(cfg) => commands::monitor_cmd::<MinerConfig>(api, cfg).boxed(),
 			Command::DryRun(cfg) => commands::dry_run_cmd::<MinerConfig>(api, cfg).boxed(),
-			Command::EmergencySolution(cfg) =>
-				commands::emergency_solution_cmd::<MinerConfig>(api, cfg).boxed(),
+			Command::EmergencySolution(cfg) => {
+				commands::emergency_solution_cmd::<MinerConfig>(api, cfg).boxed()
+			},
 			Command::Info => async {
 				let is_compat = if runtime::validate_codegen(&api).is_ok() { "YES" } else { "NO" };
 
@@ -230,7 +231,7 @@ async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
 		Ok(u) => u,
 		Err(e) => {
 			let _ = tx.send(e.into());
-			return
+			return;
 		},
 	};
 
@@ -244,10 +245,10 @@ async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
 					Ok(u) => u,
 					Err(e) => {
 						let _ = tx.send(e.into());
-						return
+						return;
 					},
 				};
-				continue
+				continue;
 			},
 		};
 
@@ -256,7 +257,7 @@ async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
 			Ok(()) => {
 				if let Err(e) = epm::update_metadata_constants(&api).await {
 					let _ = tx.send(e);
-					return
+					return;
 				}
 				prometheus::on_runtime_upgrade();
 				log::info!(target: LOG_TARGET, "upgrade to version: {} successful", version);

@@ -155,7 +155,7 @@ impl FromStr for SubmissionStrategy {
 			let percent: u32 = percent.parse().map_err(|e| format!("{:?}", e))?;
 			Self::ClaimBetterThan(Perbill::from_percent(percent))
 		} else {
-			return Err(s.into())
+			return Err(s.into());
 		};
 		Ok(res)
 	}
@@ -400,7 +400,7 @@ where
 				e,
 				at.number
 			);
-			return Err(e)
+			return Err(e);
 		},
 	};
 
@@ -463,7 +463,7 @@ where
 
 		if let Some(submission) = submission {
 			if &submission.who == us {
-				return Err(Error::AlreadySubmitted)
+				return Err(Error::AlreadySubmitted);
 			}
 		}
 	}
@@ -479,7 +479,7 @@ async fn ensure_solution_passes_strategy(
 ) -> Result<(), Error> {
 	// don't care about current scores.
 	if matches!(strategy, SubmissionStrategy::Always) {
-		return Ok(())
+		return Ok(());
 	}
 
 	let addr = runtime::storage().election_provider_multi_phase().signed_submission_indices();
@@ -517,9 +517,12 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 
 		match dry_run_bytes.into_dry_run_result(&api.metadata())? {
 			DryRunResult::Success => (),
-			DryRunResult::DispatchError(e) => return Err(Error::TransactionRejected(e.to_string())),
-			DryRunResult::TransactionValidityError =>
-				return Err(Error::TransactionRejected("TransactionValidityError".into())),
+			DryRunResult::DispatchError(e) => {
+				return Err(Error::TransactionRejected(e.to_string()))
+			},
+			DryRunResult::TransactionValidityError => {
+				return Err(Error::TransactionRejected("TransactionValidityError".into()))
+			},
 		}
 	}
 
@@ -543,7 +546,7 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 				return Err(Error::Other(format!(
 					"No SolutionStored event found at {:?}",
 					in_block.block_hash()
-				)))
+				)));
 			}
 		},
 		Listen::Finalized => {
@@ -559,7 +562,7 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 				return Err(Error::Other(format!(
 					"No SolutionStored event found at {:?}",
 					finalized.block_hash()
-				)))
+				)));
 			}
 		},
 	};
@@ -597,12 +600,15 @@ pub(crate) fn score_passes_strategy(
 ) -> bool {
 	match strategy {
 		SubmissionStrategy::Always => true,
-		SubmissionStrategy::IfLeading =>
-			our_score.strict_threshold_better(best_score, Perbill::zero()),
-		SubmissionStrategy::ClaimBetterThan(epsilon) =>
-			our_score.strict_threshold_better(best_score, epsilon),
-		SubmissionStrategy::ClaimNoWorseThan(epsilon) =>
-			!best_score.strict_threshold_better(our_score, epsilon),
+		SubmissionStrategy::IfLeading => {
+			our_score.strict_threshold_better(best_score, Perbill::zero())
+		},
+		SubmissionStrategy::ClaimBetterThan(epsilon) => {
+			our_score.strict_threshold_better(best_score, epsilon)
+		},
+		SubmissionStrategy::ClaimNoWorseThan(epsilon) => {
+			!best_score.strict_threshold_better(our_score, epsilon)
+		},
 	}
 }
 
@@ -610,10 +616,11 @@ async fn dry_run_works(api: &SubxtClient) -> Result<(), Error> {
 	if let Err(SubxtError::Rpc(RpcError::ClientError(e))) = api.rpc().dry_run(&[], None).await {
 		let rpc_err = match e.downcast::<JsonRpseeError>() {
 			Ok(e) => *e,
-			Err(_) =>
+			Err(_) => {
 				return Err(Error::Other(
 					"Failed to downcast RPC error; this is a bug please file an issue".to_string(),
-				)),
+				))
+			},
 		};
 
 		if let JsonRpseeError::Call(CallError::Custom(e)) = rpc_err {
@@ -622,7 +629,7 @@ async fn dry_run_works(api: &SubxtClient) -> Result<(), Error> {
 					"dry-run requires a RPC endpoint with `--rpc-methods unsafe`; \
 						either connect to another RPC endpoint or disable dry-run"
 						.to_string(),
-				))
+				));
 			}
 		}
 	}

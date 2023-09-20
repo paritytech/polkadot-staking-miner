@@ -87,7 +87,7 @@ async fn has_trimming_output(miner: &mut KillChildOnDrop) -> bool {
 		}
 
 		if now.elapsed() > MAX_DURATION_FOR_SUBMIT_SOLUTION {
-			break
+			break;
 		}
 	}
 
