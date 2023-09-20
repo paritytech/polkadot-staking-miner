@@ -82,13 +82,13 @@ pub struct RuntimeDispatchInfo {
 
 pub fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>, err: Error) {
 	match err {
-		Error::AlreadySubmitted
-		| Error::BetterScoreExist
-		| Error::IncorrectPhase
-		| Error::TransactionRejected(_)
-		| Error::JoinError(_)
-		| Error::Feasibility(_)
-		| Error::EmptySnapshot => {},
+		Error::AlreadySubmitted |
+		Error::BetterScoreExist |
+		Error::IncorrectPhase |
+		Error::TransactionRejected(_) |
+		Error::JoinError(_) |
+		Error::Feasibility(_) |
+		Error::EmptySnapshot => {},
 		Error::Subxt(SubxtError::Rpc(rpc_err)) => {
 			log::debug!(target: LOG_TARGET, "rpc error: {:?}", rpc_err);
 
@@ -101,7 +101,7 @@ pub fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Er
 								"Failed to downcast RPC error; this is a bug please file an issue"
 									.to_string(),
 							));
-							return;
+							return
 						},
 					};
 
@@ -114,9 +114,9 @@ pub fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Er
 							// Check if the transaction gets fatal errors from the `author` RPC.
 							// It's possible to get other errors such as outdated nonce and similar
 							// but then it should be possible to try again in the next block or round.
-							if e.code() == BAD_EXTRINSIC_FORMAT
-								|| e.code() == VERIFICATION_ERROR
-								|| e.code() == ErrorCode::MethodNotFound.code()
+							if e.code() == BAD_EXTRINSIC_FORMAT ||
+								e.code() == VERIFICATION_ERROR || e.code() ==
+								ErrorCode::MethodNotFound.code()
 							{
 								let _ = tx.send(Error::Subxt(SubxtError::Rpc(
 									RpcError::ClientError(Box::new(CallError::Custom(e))),

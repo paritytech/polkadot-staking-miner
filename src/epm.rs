@@ -274,7 +274,7 @@ where
 					return Err(Error::Feasibility(format!(
 						"Invalid winner count {}, expected {desired_targets}",
 						solution.unique_targets().len()
-					)));
+					)))
 				}
 
 				// TODO: make this configurable
@@ -283,7 +283,7 @@ where
 				});
 
 				if trimmed_score_bad {
-					return Err(Error::Feasibility("Pre-trimmed score is too bad".to_string()));
+					return Err(Error::Feasibility("Pre-trimmed score is too bad".to_string()))
 				}
 
 				return Ok(MinedSolution {
@@ -294,14 +294,14 @@ where
 					solution,
 					score,
 					solution_or_snapshot_size,
-				});
+				})
 			},
 			Ok(Ok((solution, score, _, _))) => {
 				if solution.unique_targets().len() != desired_targets as usize {
 					return Err(Error::Feasibility(format!(
 						"Invalid winner count {}, expected {desired_targets}",
 						solution.unique_targets().len()
-					)));
+					)))
 				}
 
 				first_mined_score.get_or_insert(score);
@@ -309,7 +309,7 @@ where
 				let Some((_, idx)) = voters_by_stake.pop_first() else {
 					return Err(Error::Feasibility(
 						"Couldn't pre-trim votes to prevent trimming".to_string(),
-					));
+					))
 				};
 				let rm = voters[idx].0.clone();
 

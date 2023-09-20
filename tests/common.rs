@@ -219,7 +219,7 @@ pub async fn wait_for_mined_solution(ws_url: &str) -> anyhow::Result<ReadySoluti
 
 		if let Some(data) = x.changes[0].clone().1 {
 			let solution: ReadySolution = Decode::decode(&mut data.0.as_slice())?;
-			return Ok(solution);
+			return Ok(solution)
 		}
 	}
 
