@@ -28,12 +28,12 @@ use std::collections::BTreeMap;
 
 use codec::{Decode, Encode};
 use frame_election_provider_support::{NposSolution, PhragMMS, SequentialPhragmen};
-use frame_support::weights::Weight;
+use frame_support::{weights::Weight, BoundedVec};
 use pallet_election_provider_multi_phase::{RawSolution, ReadySolution, SolutionOrSnapshotSize};
 use scale_info::{PortableRegistry, TypeInfo};
 use scale_value::scale::{decode_as_type, TypeId};
 use sp_core::Bytes;
-use sp_npos_elections::ElectionScore;
+use sp_npos_elections::{ElectionScore, VoteWeight};
 use sp_runtime::Perbill;
 use subxt::{dynamic::Value, rpc::rpc_params, tx::DynamicPayload};
 
@@ -41,8 +41,9 @@ const EPM_PALLET_NAME: &str = "ElectionProviderMultiPhase";
 
 type MinerVoterOf =
 	frame_election_provider_support::Voter<AccountId, crate::static_types::MaxVotesPerVoter>;
-
 type RoundSnapshot = pallet_election_provider_multi_phase::RoundSnapshot<AccountId, MinerVoterOf>;
+type Voters =
+	Vec<(AccountId, VoteWeight, BoundedVec<AccountId, crate::static_types::MaxVotesPerVoter>)>;
 
 #[derive(Copy, Clone, Debug)]
 struct EpmConstant {
@@ -63,6 +64,54 @@ impl EpmConstant {
 impl std::fmt::Display for EpmConstant {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.write_fmt(format_args!("{}::{}", self.epm, self.constant))
+	}
+}
+
+/// Represent voters that may be trimmed
+///
+/// The trimming works by removing the voter which the least amount of stake
+///
+/// It's using an internal `BTreeMap` to determine which voter to remove next
+/// and the voters Vec can't be sorted because the EPM pallet will index into it
+/// when checking the solution.
+#[derive(Debug, Clone)]
+pub struct TrimmedVotes {
+	voters: Voters,
+	voters_by_stake: BTreeMap<VoteWeight, usize>,
+}
+
+impl TrimmedVotes {
+	/// Create a new `TrimmedVotes`.
+	pub fn new(voters: Voters) -> Self {
+		let mut voters_by_stake = BTreeMap::new();
+
+		for (idx, (_voter, stake, _supports)) in voters.iter().enumerate() {
+			voters_by_stake.insert(*stake, idx);
+		}
+
+		Self { voters, voters_by_stake }
+	}
+
+	/// Trim the next voter with the least amount of stake.
+	pub fn trim_next(&mut self) -> Result<(), Error> {
+		let Some((_, idx)) = self.voters_by_stake.pop_first() else {
+			return Err(Error::Feasibility(
+				"Couldn't pre-trim votes to prevent trimming".to_string(),
+			))
+		};
+		let rm = self.voters[idx].0.clone();
+
+		// Remove votes for an account.
+		for (_voter, _stake, supports) in &mut self.voters {
+			supports.retain(|a| a != &rm);
+		}
+
+		Ok(())
+	}
+
+	/// Get the voters.
+	pub fn get(&self) -> Voters {
+		self.voters.clone()
 	}
 }
 
@@ -223,32 +272,12 @@ where
 		.await?
 		.map(|score| score.0);
 
-	let mut voters = snapshot.voters.clone();
-	// The voters can't be sorted and this BTreeMap is used to lookup
-	// each voter by stake instead of doing linear search in the `Vec`
-	let mut voters_by_stake = {
-		let mut map = BTreeMap::new();
-
-		for (idx, (_voter, stake, _supports)) in voters.iter().enumerate() {
-			map.insert(stake.clone(), idx);
-		}
-
-		map
-	};
-
-	log::info!(
-		target: LOG_TARGET,
-		"mine solution: desired_targets={}, voters={}, targets={}",
-		desired_targets,
-		voters.len(),
-		snapshot.targets.len()
-	);
-
+	let mut trimmed_voters = TrimmedVotes::new(snapshot.voters.clone());
 	let mut first_mined_score = None;
 
 	loop {
 		let s = solver.clone();
-		let v = voters.clone();
+		let v = trimmed_voters.get();
 		let t = snapshot.targets.clone();
 
 		let blocking_task =
@@ -305,21 +334,7 @@ where
 				}
 
 				first_mined_score.get_or_insert(score);
-
-				let Some((_, idx)) = voters_by_stake.pop_first() else {
-					return Err(Error::Feasibility(
-						"Couldn't pre-trim votes to prevent trimming".to_string(),
-					))
-				};
-				let rm = voters[idx].0.clone();
-
-				// Remove votes for an account.
-				//
-				// Ideally, we would just remove the voter from the voters and targets here but
-				// it would modify the snapshot and the solution becomes invalid in the feasibility check.
-				for (_voter, _stake, supports) in &mut voters {
-					supports.retain(|a| a != &rm);
-				}
+				trimmed_voters.trim_next()?;
 			},
 			Ok(Err(err)) => return Err(Error::Other(format!("{:?}", err))),
 			Err(err) => return Err(err.into()),

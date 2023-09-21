@@ -423,8 +423,7 @@ where
 		(Err(e), _) => {
 			log::warn!(
 				target: LOG_TARGET,
-				"submit_and_watch_solution failed: {:?}; skipping block: {}",
-				e,
+				"submit_and_watch_solution failed: {e}; skipping block: {}",
 				at.number
 			);
 		},
