@@ -273,7 +273,6 @@ where
 		.map(|score| score.0);
 
 	let mut trimmed_voters = TrimmedVotes::new(snapshot.voters.clone());
-	let mut first_mined_score = None;
 
 	loop {
 		let s = solver.clone();
@@ -306,15 +305,6 @@ where
 					)))
 				}
 
-				// TODO: make this configurable
-				let trimmed_score_bad = first_mined_score.map_or(false, |s: ElectionScore| {
-					s.strict_threshold_better(score, Perbill::from_percent(10))
-				});
-
-				if trimmed_score_bad {
-					return Err(Error::Feasibility("Pre-trimmed score is too bad".to_string()))
-				}
-
 				return Ok(MinedSolution {
 					round,
 					desired_targets,
@@ -325,7 +315,7 @@ where
 					solution_or_snapshot_size,
 				})
 			},
-			Ok(Ok((solution, score, _, _))) => {
+			Ok(Ok((solution, _score, _, _))) => {
 				if solution.unique_targets().len() != desired_targets as usize {
 					return Err(Error::Feasibility(format!(
 						"Invalid winner count {}, expected {desired_targets}",
@@ -333,7 +323,6 @@ where
 					)))
 				}
 
-				first_mined_score.get_or_insert(score);
 				trimmed_voters.trim_next()?;
 			},
 			Ok(Err(err)) => return Err(Error::Other(format!("{:?}", err))),
