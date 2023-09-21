@@ -258,9 +258,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ark-scale"
+version = "0.0.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49b08346a3e38e2be792ef53ee168623c9244d968ff00cd70fb9932f6fe36393"
+dependencies = [
+ "ark-ec",
+ "ark-ff",
+ "ark-serialize",
+ "ark-std",
+ "parity-scale-codec",
+]
+
+[[package]]
 name = "ark-secret-scalar"
 version = "0.0.2"
-source = "git+https://github.com/w3f/ring-vrf?rev=c86ebd4#c86ebd4114d3165d05f9ce28c1d9e8d7a9a4e801"
+source = "git+https://github.com/w3f/ring-vrf?rev=f4fe253#f4fe2534ccc6d916cd10d9c16891e673728ec8b4"
 dependencies = [
  "ark-ec",
  "ark-ff",
@@ -308,7 +321,7 @@ dependencies = [
 [[package]]
 name = "ark-transcript"
 version = "0.0.2"
-source = "git+https://github.com/w3f/ring-vrf?rev=c86ebd4#c86ebd4114d3165d05f9ce28c1d9e8d7a9a4e801"
+source = "git+https://github.com/w3f/ring-vrf?rev=f4fe253#f4fe2534ccc6d916cd10d9c16891e673728ec8b4"
 dependencies = [
  "ark-ff",
  "ark-serialize",
@@ -408,7 +421,7 @@ dependencies = [
 [[package]]
 name = "bandersnatch_vrfs"
 version = "0.0.1"
-source = "git+https://github.com/w3f/ring-vrf?rev=c86ebd4#c86ebd4114d3165d05f9ce28c1d9e8d7a9a4e801"
+source = "git+https://github.com/w3f/ring-vrf?rev=f4fe253#f4fe2534ccc6d916cd10d9c16891e673728ec8b4"
 dependencies = [
  "ark-bls12-381",
  "ark-ec",
@@ -570,6 +583,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "771fe0050b883fcc3ea2359b1a96bcfbc090b7116eae7c3c512c7a083fdf23d3"
 
 [[package]]
+name = "bs58"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5353f36341f7451062466f0b755b96ac3a9547e4d7f6b70d603fc721a7d7896"
+dependencies = [
+ "tinyvec",
+]
+
+[[package]]
 name = "bstr"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -625,9 +647,9 @@ checksum = "50d30906286121d95be3d479533b458f87493b30a4b5f79a607db8f5d11aa91f"
 
 [[package]]
 name = "cfg-expr"
-version = "0.15.4"
+version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b40ccee03b5175c18cde8f37e7d2a33bcef6f8ec8f7cc0d81090d1bb380949c9"
+checksum = "03915af431787e6ffdcc74c645077518c6b6e01f80b761e0fbbfa288536311b3"
 dependencies = [
  "smallvec",
 ]
@@ -681,7 +703,7 @@ dependencies = [
  "heck",
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -709,7 +731,7 @@ checksum = "acbf1af155f9b9ef647e42cdc158db4b64a1b61f743629225fde6f3e0be2a7c7"
 [[package]]
 name = "common"
 version = "0.1.0"
-source = "git+https://github.com/w3f/ring-proof#0e948f3c28cbacecdd3020403c4841c0eb339213"
+source = "git+https://github.com/w3f/ring-proof?rev=8657210#86572101f4210647984ab4efedba6b3fcc890895"
 dependencies = [
  "ark-ec",
  "ark-ff",
@@ -718,6 +740,7 @@ dependencies = [
  "ark-std",
  "fflonk",
  "merlin 3.0.0",
+ "rand_chacha 0.3.1",
 ]
 
 [[package]]
@@ -910,7 +933,7 @@ checksum = "83fdaf97f4804dcebfa5862639bc9ce4121e82140bec2a987ac5140294865b5b"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -1002,7 +1025,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "strsim",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -1024,7 +1047,7 @@ checksum = "29a358ff9f12ec09c3e61fef9b5a9902623a695a46a917b07f269bff1445611a"
 dependencies = [
  "darling_core 0.20.1",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -1109,10 +1132,11 @@ dependencies = [
 [[package]]
 name = "dleq_vrf"
 version = "0.0.2"
-source = "git+https://github.com/w3f/ring-vrf?rev=c86ebd4#c86ebd4114d3165d05f9ce28c1d9e8d7a9a4e801"
+source = "git+https://github.com/w3f/ring-vrf?rev=f4fe253#f4fe2534ccc6d916cd10d9c16891e673728ec8b4"
 dependencies = [
  "ark-ec",
  "ark-ff",
+ "ark-scale",
  "ark-secret-scalar",
  "ark-serialize",
  "ark-std",
@@ -1130,18 +1154,18 @@ checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
 
 [[package]]
 name = "docify"
-version = "0.2.1"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "029de870d175d11969524d91a3fb2cbf6d488b853bff99d41cf65e533ac7d9d2"
+checksum = "76ee528c501ddd15d5181997e9518e59024844eac44fd1e40cb20ddb2a8562fa"
 dependencies = [
  "docify_macros",
 ]
 
 [[package]]
 name = "docify_macros"
-version = "0.2.1"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cac43324656a1b05eb0186deb51f27d2d891c704c37f34de281ef6297ba193e5"
+checksum = "0ca01728ab2679c464242eca99f94e2ce0514b52ac9ad950e2ed03fca991231c"
 dependencies = [
  "common-path",
  "derive-syn-parse",
@@ -1149,7 +1173,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "regex",
- "syn 2.0.29",
+ "syn 2.0.37",
  "termcolor",
  "toml",
  "walkdir",
@@ -1325,7 +1349,7 @@ dependencies = [
  "fs-err",
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -1408,7 +1432,7 @@ dependencies = [
 [[package]]
 name = "frame-benchmarking"
 version = "4.0.0-dev"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "frame-support",
  "frame-support-procedural",
@@ -1420,42 +1444,42 @@ dependencies = [
  "scale-info",
  "serde",
  "sp-api",
- "sp-application-crypto 23.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-core 21.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-io 23.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-runtime-interface 17.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-storage 13.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-application-crypto 23.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-io 23.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-runtime-interface 17.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-storage 13.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "static_assertions",
 ]
 
 [[package]]
 name = "frame-election-provider-solution-type"
 version = "4.0.0-dev"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
 name = "frame-election-provider-support"
 version = "4.0.0-dev"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "frame-election-provider-solution-type",
  "frame-support",
  "frame-system",
  "parity-scale-codec",
  "scale-info",
- "sp-arithmetic 16.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-core 21.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-arithmetic 16.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "sp-npos-elections",
- "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
 ]
 
 [[package]]
@@ -1485,7 +1509,7 @@ dependencies = [
 [[package]]
 name = "frame-support"
 version = "4.0.0-dev"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "aquamarine",
  "bitflags",
@@ -1504,26 +1528,28 @@ dependencies = [
  "serde_json",
  "smallvec",
  "sp-api",
- "sp-arithmetic 16.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-core 21.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-arithmetic 16.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "sp-core-hashing-proc-macro",
- "sp-debug-derive 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-debug-derive 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "sp-genesis-builder",
  "sp-inherents",
- "sp-io 23.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-io 23.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-metadata-ir",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "sp-staking",
- "sp-state-machine 0.28.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-tracing 10.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-weights 20.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-state-machine 0.28.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-tracing 10.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-weights 20.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "static_assertions",
  "tt-call",
 ]
 
 [[package]]
 name = "frame-support-procedural"
 version = "4.0.0-dev"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "Inflector",
  "cfg-expr",
@@ -1535,35 +1561,35 @@ dependencies = [
  "proc-macro-warning",
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
 name = "frame-support-procedural-tools"
 version = "4.0.0-dev"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "frame-support-procedural-tools-derive",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
 name = "frame-support-procedural-tools-derive"
 version = "3.0.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
 name = "frame-system"
 version = "4.0.0-dev"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "cfg-if",
  "frame-support",
@@ -1571,12 +1597,12 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "serde",
- "sp-core 21.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-io 23.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-io 23.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "sp-version",
- "sp-weights 20.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-weights 20.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
 ]
 
 [[package]]
@@ -1663,7 +1689,7 @@ checksum = "89ca545a94061b6365f2c7355b4b32bd20df3ff95f02da9329b34ccc3bd6ee72"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -2371,7 +2397,7 @@ dependencies = [
  "macro_magic_core",
  "macro_magic_macros",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -2385,7 +2411,7 @@ dependencies = [
  "macro_magic_core_macros",
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -2396,7 +2422,7 @@ checksum = "c12469fc165526520dff2807c2975310ab47cf7190a45b99b49a7dc8befab17b"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -2407,7 +2433,7 @@ checksum = "b8fb85ec1620619edf2984a7693497d4ec88a9665d8b87e942856884c92dbf2a"
 dependencies = [
  "macro_magic_core",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -2673,7 +2699,7 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "pallet-election-provider-multi-phase"
 version = "4.0.0-dev"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "frame-benchmarking",
  "frame-election-provider-support",
@@ -2684,26 +2710,27 @@ dependencies = [
  "parity-scale-codec",
  "rand 0.8.5",
  "scale-info",
- "sp-arithmetic 16.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-core 21.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-io 23.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-arithmetic 16.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-io 23.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "sp-npos-elections",
- "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "strum",
 ]
 
 [[package]]
 name = "pallet-election-provider-support-benchmarking"
 version = "4.0.0-dev"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "frame-benchmarking",
  "frame-election-provider-support",
  "frame-system",
  "parity-scale-codec",
  "sp-npos-elections",
- "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
 ]
 
 [[package]]
@@ -2935,20 +2962,20 @@ checksum = "dc375e1527247fe1a97d8b7156678dfe7c1af2fc075c9a4db3690ecd2a148068"
 
 [[package]]
 name = "proc-macro-warning"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70550716265d1ec349c41f70dd4f964b4fd88394efe4405f0c1da679c4799a07"
+checksum = "3d1eaa7fa0aa1929ffdf7eeb6eac234dde6268914a14ad44d23521ab6a9b258e"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.66"
+version = "1.0.67"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18fb31db3f9bddb2ea821cde30a9f70117e3f119938b5ee630b7403aa6e2ead9"
+checksum = "3d433d9f1a3e8c1263d9456598b16fec66f4acc9a74dacffd35c7bb09b3a1328"
 dependencies = [
  "unicode-ident",
 ]
@@ -3161,13 +3188,14 @@ dependencies = [
 [[package]]
 name = "ring"
 version = "0.1.0"
-source = "git+https://github.com/w3f/ring-proof#0e948f3c28cbacecdd3020403c4841c0eb339213"
+source = "git+https://github.com/w3f/ring-proof?rev=8657210#86572101f4210647984ab4efedba6b3fcc890895"
 dependencies = [
  "ark-ec",
  "ark-ff",
  "ark-poly",
  "ark-serialize",
  "ark-std",
+ "blake2",
  "common",
  "fflonk",
  "merlin 3.0.0",
@@ -3537,22 +3565,22 @@ checksum = "b0293b4b29daaf487284529cc2f5675b8e57c61f70167ba415a463651fd6a918"
 
 [[package]]
 name = "serde"
-version = "1.0.185"
+version = "1.0.188"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be9b6f69f1dfd54c3b568ffa45c310d6973a5e5148fd40cf515acaf38cf5bc31"
+checksum = "cf9e0fcba69a370eed61bcf2b728575f726b50b55cba78064753d708ddc7549e"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.185"
+version = "1.0.188"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc59dfdcbad1437773485e0367fea4b090a2e0a16d9ffc46af47764536a298ec"
+checksum = "4eca7ac642d82aa35b60049a6eccb4be6be75e599bd2e9adb5f875a737654af2"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -3734,20 +3762,20 @@ dependencies = [
 [[package]]
 name = "sp-api"
 version = "4.0.0-dev"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "hash-db",
  "log",
  "parity-scale-codec",
  "scale-info",
  "sp-api-proc-macro",
- "sp-core 21.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-externalities 0.19.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-externalities 0.19.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "sp-metadata-ir",
- "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-state-machine 0.28.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-trie 22.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-state-machine 0.28.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-trie 22.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "sp-version",
  "thiserror",
 ]
@@ -3755,7 +3783,7 @@ dependencies = [
 [[package]]
 name = "sp-api-proc-macro"
 version = "4.0.0-dev"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "Inflector",
  "blake2",
@@ -3763,7 +3791,7 @@ dependencies = [
  "proc-macro-crate",
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -3783,14 +3811,14 @@ dependencies = [
 [[package]]
 name = "sp-application-crypto"
 version = "23.0.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "parity-scale-codec",
  "scale-info",
  "serde",
- "sp-core 21.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-io 23.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-io 23.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
 ]
 
 [[package]]
@@ -3811,14 +3839,14 @@ dependencies = [
 [[package]]
 name = "sp-arithmetic"
 version = "16.0.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "integer-sqrt",
  "num-traits",
  "parity-scale-codec",
  "scale-info",
  "serde",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "static_assertions",
 ]
 
@@ -3832,7 +3860,7 @@ dependencies = [
  "bitflags",
  "blake2",
  "bounded-collections",
- "bs58",
+ "bs58 0.4.0",
  "dyn-clonable",
  "ed25519-zebra",
  "futures",
@@ -3870,15 +3898,14 @@ dependencies = [
 [[package]]
 name = "sp-core"
 version = "21.0.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "array-bytes 6.1.0",
- "arrayvec 0.7.2",
  "bandersnatch_vrfs",
  "bitflags",
  "blake2",
  "bounded-collections",
- "bs58",
+ "bs58 0.5.0",
  "dyn-clonable",
  "ed25519-zebra",
  "futures",
@@ -3900,12 +3927,12 @@ dependencies = [
  "secp256k1",
  "secrecy",
  "serde",
- "sp-core-hashing 9.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-debug-derive 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-externalities 0.19.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-runtime-interface 17.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-storage 13.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-core-hashing 9.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-debug-derive 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-externalities 0.19.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-runtime-interface 17.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-storage 13.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "ss58-registry",
  "substrate-bip39",
  "thiserror",
@@ -3932,7 +3959,7 @@ dependencies = [
 [[package]]
 name = "sp-core-hashing"
 version = "9.0.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -3945,11 +3972,11 @@ dependencies = [
 [[package]]
 name = "sp-core-hashing-proc-macro"
 version = "9.0.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "quote",
- "sp-core-hashing 9.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "syn 2.0.29",
+ "sp-core-hashing 9.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -3960,17 +3987,17 @@ checksum = "c7f531814d2f16995144c74428830ccf7d94ff4a7749632b83ad8199b181140c"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
 name = "sp-debug-derive"
 version = "8.0.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -3988,36 +4015,36 @@ dependencies = [
 [[package]]
 name = "sp-externalities"
 version = "0.19.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "environmental",
  "parity-scale-codec",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-storage 13.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-storage 13.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
 ]
 
 [[package]]
 name = "sp-genesis-builder"
 version = "0.1.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "serde_json",
  "sp-api",
- "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
 ]
 
 [[package]]
 name = "sp-inherents"
 version = "4.0.0-dev"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "async-trait",
  "impl-trait-for-tuples",
  "parity-scale-codec",
  "scale-info",
- "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "thiserror",
 ]
 
@@ -4051,7 +4078,7 @@ dependencies = [
 [[package]]
 name = "sp-io"
 version = "23.0.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "bytes",
  "ed25519-dalek 2.0.0",
@@ -4060,14 +4087,14 @@ dependencies = [
  "parity-scale-codec",
  "rustversion",
  "secp256k1",
- "sp-core 21.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-externalities 0.19.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-keystore 0.27.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-runtime-interface 17.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-state-machine 0.28.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-tracing 10.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-trie 22.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-externalities 0.19.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-keystore 0.27.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-runtime-interface 17.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-state-machine 0.28.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-tracing 10.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-trie 22.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "tracing",
  "tracing-core",
 ]
@@ -4089,38 +4116,38 @@ dependencies = [
 [[package]]
 name = "sp-keystore"
 version = "0.27.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "parity-scale-codec",
  "parking_lot",
- "sp-core 21.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-externalities 0.19.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-externalities 0.19.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "thiserror",
 ]
 
 [[package]]
 name = "sp-metadata-ir"
 version = "0.1.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "frame-metadata 16.0.0",
  "parity-scale-codec",
  "scale-info",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
 ]
 
 [[package]]
 name = "sp-npos-elections"
 version = "4.0.0-dev"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "parity-scale-codec",
  "scale-info",
  "serde",
- "sp-arithmetic 16.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-core 21.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-arithmetic 16.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
 ]
 
 [[package]]
@@ -4137,7 +4164,7 @@ dependencies = [
 [[package]]
 name = "sp-panic-handler"
 version = "8.0.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "backtrace",
  "lazy_static",
@@ -4170,7 +4197,7 @@ dependencies = [
 [[package]]
 name = "sp-runtime"
 version = "24.0.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "either",
  "hash256-std-hasher",
@@ -4181,12 +4208,12 @@ dependencies = [
  "rand 0.8.5",
  "scale-info",
  "serde",
- "sp-application-crypto 23.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-arithmetic 16.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-core 21.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-io 23.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-weights 20.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-application-crypto 23.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-arithmetic 16.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-io 23.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-weights 20.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
 ]
 
 [[package]]
@@ -4211,18 +4238,18 @@ dependencies = [
 [[package]]
 name = "sp-runtime-interface"
 version = "17.0.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "bytes",
  "impl-trait-for-tuples",
  "parity-scale-codec",
  "primitive-types",
- "sp-externalities 0.19.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-runtime-interface-proc-macro 11.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-storage 13.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-tracing 10.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-wasm-interface 14.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-externalities 0.19.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-runtime-interface-proc-macro 11.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-storage 13.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-tracing 10.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-wasm-interface 14.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "static_assertions",
 ]
 
@@ -4236,33 +4263,33 @@ dependencies = [
  "proc-macro-crate",
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
 name = "sp-runtime-interface-proc-macro"
 version = "11.0.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "Inflector",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
 name = "sp-staking"
 version = "4.0.0-dev"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "impl-trait-for-tuples",
  "parity-scale-codec",
  "scale-info",
  "serde",
- "sp-core 21.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
 ]
 
 [[package]]
@@ -4289,7 +4316,7 @@ dependencies = [
 [[package]]
 name = "sp-state-machine"
 version = "0.28.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "hash-db",
  "log",
@@ -4297,14 +4324,14 @@ dependencies = [
  "parking_lot",
  "rand 0.8.5",
  "smallvec",
- "sp-core 21.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-externalities 0.19.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-panic-handler 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-trie 22.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-externalities 0.19.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-panic-handler 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-trie 22.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "thiserror",
  "tracing",
- "trie-db",
+ "trie-db 0.28.0",
 ]
 
 [[package]]
@@ -4316,7 +4343,7 @@ checksum = "53458e3c57df53698b3401ec0934bea8e8cfce034816873c0b0abbd83d7bac0d"
 [[package]]
 name = "sp-std"
 version = "8.0.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 
 [[package]]
 name = "sp-storage"
@@ -4335,14 +4362,14 @@ dependencies = [
 [[package]]
 name = "sp-storage"
 version = "13.0.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "impl-serde",
  "parity-scale-codec",
  "ref-cast",
  "serde",
- "sp-debug-derive 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-debug-derive 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
 ]
 
 [[package]]
@@ -4361,10 +4388,10 @@ dependencies = [
 [[package]]
 name = "sp-tracing"
 version = "10.0.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "parity-scale-codec",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "tracing",
  "tracing-core",
  "tracing-subscriber 0.2.25",
@@ -4390,14 +4417,14 @@ dependencies = [
  "sp-std 8.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "thiserror",
  "tracing",
- "trie-db",
+ "trie-db 0.27.1",
  "trie-root",
 ]
 
 [[package]]
 name = "sp-trie"
 version = "22.0.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "ahash 0.8.3",
  "hash-db",
@@ -4409,18 +4436,18 @@ dependencies = [
  "parking_lot",
  "scale-info",
  "schnellru",
- "sp-core 21.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "thiserror",
  "tracing",
- "trie-db",
+ "trie-db 0.28.0",
  "trie-root",
 ]
 
 [[package]]
 name = "sp-version"
 version = "22.0.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "impl-serde",
  "parity-scale-codec",
@@ -4428,8 +4455,8 @@ dependencies = [
  "scale-info",
  "serde",
  "sp-core-hashing-proc-macro",
- "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "sp-version-proc-macro",
  "thiserror",
 ]
@@ -4437,12 +4464,12 @@ dependencies = [
 [[package]]
 name = "sp-version-proc-macro"
 version = "8.0.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "parity-scale-codec",
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -4462,13 +4489,13 @@ dependencies = [
 [[package]]
 name = "sp-wasm-interface"
 version = "14.0.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "anyhow",
  "impl-trait-for-tuples",
  "log",
  "parity-scale-codec",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "wasmtime",
 ]
 
@@ -4491,16 +4518,16 @@ dependencies = [
 [[package]]
 name = "sp-weights"
 version = "20.0.0"
-source = "git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api#9eb61e60f625471d0bf33643b4d662c1a31b8cf1"
+source = "git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api#8ac0450f1bb493b6066b49fb5b8171f81a92697f"
 dependencies = [
  "parity-scale-codec",
  "scale-info",
  "serde",
  "smallvec",
- "sp-arithmetic 16.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-core 21.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-debug-derive 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-std 8.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-arithmetic 16.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-debug-derive 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-std 8.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
 ]
 
 [[package]]
@@ -4564,8 +4591,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sp-npos-elections",
- "sp-runtime 24.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
- "sp-storage 13.0.0 (git+https://github.com/paritytech/substrate?branch=na-epm-trimming-api)",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
+ "sp-storage 13.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=na-epm-trimming-api)",
  "subxt",
  "thiserror",
  "tokio",
@@ -4674,7 +4701,7 @@ dependencies = [
  "quote",
  "scale-info",
  "subxt-metadata",
- "syn 2.0.29",
+ "syn 2.0.37",
  "thiserror",
  "tokio",
 ]
@@ -4688,7 +4715,7 @@ dependencies = [
  "darling 0.20.1",
  "proc-macro-error",
  "subxt-codegen",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -4717,9 +4744,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.29"
+version = "2.0.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c324c494eba9d92503e6f1ef2e6df781e78f6a7705a0202d9801b198807d518a"
+checksum = "7303ef2c05cd654186cb250d29049a24840ca25d2747c25c0381c8d9e2f582e8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4782,7 +4809,7 @@ checksum = "49922ecae66cc8a249b77e68d1d0623c1b2c514f0060c27cdc68bd62a1219d35"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -4864,7 +4891,7 @@ checksum = "630bdcf245f78637c13ec01ffae6187cca34625e8c63150d424b59e55af2675e"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -5032,6 +5059,19 @@ name = "trie-db"
 version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "767abe6ffed88a1889671a102c2861ae742726f52e0a5a425b92c9fbfa7e9c85"
+dependencies = [
+ "hash-db",
+ "hashbrown 0.13.2",
+ "log",
+ "rustc-hex",
+ "smallvec",
+]
+
+[[package]]
+name = "trie-db"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff28e0f815c2fea41ebddf148e008b077d2faddb026c9555b29696114d602642"
 dependencies = [
  "hash-db",
  "hashbrown 0.13.2",
@@ -5227,7 +5267,7 @@ dependencies = [
  "once_cell",
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
  "wasm-bindgen-shared",
 ]
 
@@ -5249,7 +5289,7 @@ checksum = "4783ce29f09b9d93134d41297aded3a712b7b979e9c6f28c32cb88c973a94869"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.29",
+ "syn 2.0.37",
  "wasm-bindgen-backend",
  "wasm-bindgen-shared",
 ]
