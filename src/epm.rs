@@ -34,7 +34,6 @@ use scale_info::{PortableRegistry, TypeInfo};
 use scale_value::scale::{decode_as_type, TypeId};
 use sp_core::Bytes;
 use sp_npos_elections::{ElectionScore, VoteWeight};
-use sp_runtime::Perbill;
 use subxt::{dynamic::Value, rpc::rpc_params, tx::DynamicPayload};
 
 const EPM_PALLET_NAME: &str = "ElectionProviderMultiPhase";
