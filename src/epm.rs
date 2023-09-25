@@ -68,18 +68,18 @@ impl std::fmt::Display for EpmConstant {
 
 /// Represent voters that may be trimmed
 ///
-/// The trimming works by removing the voter which the least amount of stake
+/// The trimming works by removing the voter with the least amount of stake
 ///
 /// It's using an internal `BTreeMap` to determine which voter to remove next
 /// and the voters Vec can't be sorted because the EPM pallet will index into it
 /// when checking the solution.
 #[derive(Debug, Clone)]
-pub struct TrimmedVotes {
+pub struct TrimmedVoters {
 	voters: Voters,
 	voters_by_stake: BTreeMap<VoteWeight, usize>,
 }
 
-impl TrimmedVotes {
+impl TrimmedVoters {
 	/// Create a new `TrimmedVotes`.
 	pub fn new(voters: Voters) -> Self {
 		let mut voters_by_stake = BTreeMap::new();
@@ -271,11 +271,11 @@ where
 		.await?
 		.map(|score| score.0);
 
-	let mut trimmed_voters = TrimmedVotes::new(snapshot.voters.clone());
+	let mut voters = TrimmedVoters::new(snapshot.voters.clone());
 
 	loop {
 		let s = solver.clone();
-		let v = trimmed_voters.get();
+		let v = voters.get();
 		let t = snapshot.targets.clone();
 
 		let blocking_task =
@@ -322,7 +322,7 @@ where
 					)))
 				}
 
-				trimmed_voters.trim_next()?;
+				voters.trim_next()?;
 			},
 			Ok(Err(err)) => return Err(Error::Other(format!("{:?}", err))),
 			Err(err) => return Err(err.into()),
