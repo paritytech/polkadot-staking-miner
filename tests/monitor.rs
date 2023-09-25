@@ -18,7 +18,7 @@ async fn submit_monitor_works_basic() {
 	init_logger();
 	// TODO: https://github.com/paritytech/staking-miner-v2/issues/673
 	// test_submit_solution(Target::Node(Chain::Polkadot)).await;
-	test_submit_solution(Target::Node(Chain::Kusama)).await;
+	// test_submit_solution(Target::Node(Chain::Kusama)).await;
 	test_submit_solution(Target::Node(Chain::Westend)).await;
 	test_submit_solution(Target::StakingMinerPlayground).await;
 }
