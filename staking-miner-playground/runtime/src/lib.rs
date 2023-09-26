@@ -8,6 +8,17 @@ include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
 pub mod pallet_config_block;
 
+#[macro_export]
+macro_rules! prod_or_enforce_trimming {
+	($prod:expr, $test:expr) => {
+		if cfg!(feature = "test-trimming") {
+			$test
+		} else {
+			$prod
+		}
+	};
+}
+
 use election_multi_phase::SolutionAccuracyOf;
 use frame_election_provider_support::{onchain, ElectionDataProvider, SequentialPhragmen};
 use frame_support::{
@@ -332,7 +343,7 @@ impl<const PERIOD: BlockNumber> ShouldEndSession<BlockNumber>
 	}
 }
 
-const SESSION: BlockNumber = 3 * MINUTES;
+const SESSION: BlockNumber = 6 * MINUTES;
 
 impl<const PERIOD: BlockNumber> frame_support::traits::EstimateNextSessionRotation<BlockNumber>
 	for PeriodicSessionUntilSolutionQueued<PERIOD>
@@ -458,8 +469,16 @@ parameter_types! {
 	// NOTE: This value must be the same as `V` in `node/src/chainspec.rs`.
 	Validators: u32 = option_env!("V").unwrap_or("20").parse().expect("env variable `V` must be number");
 
-	pub MinerMaxLength: u32 = Perbill::from_percent(60) * *(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get()).max.get(DispatchClass::Normal);
-	pub MinerMaxWeight: Weight = Perbill::from_percent(80) * <Runtime as frame_system::Config>::BlockWeights::get().get(DispatchClass::Normal).max_total.unwrap();
+	pub MinerMaxLength: u32 = prod_or_enforce_trimming!(
+		*(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get()).max.get(DispatchClass::Normal),
+		Perbill::from_percent(58) * *(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get()).max.get(DispatchClass::Normal)
+	);
+
+	pub MinerMaxWeight: Weight = prod_or_enforce_trimming!(
+		<Runtime as frame_system::Config>::BlockWeights::get().get(DispatchClass::Normal).max_total.unwrap(),
+		Perbill::from_rational(8u32, 10) * <Runtime as frame_system::Config>::BlockWeights::get().get(DispatchClass::Normal).max_total.unwrap()
+	);
+
 
 	// The maximum winners that can be elected by the Election pallet which is equivalent to the
 	// maximum active validators the staking pallet can have.

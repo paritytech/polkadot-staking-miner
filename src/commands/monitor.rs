@@ -316,8 +316,6 @@ where
 	.await
 	{
 		(Ok(mined_solution), elapsed) => {
-			log::info!(target: LOG_TARGET, "mined_solution: {:?}", mined_solution);
-
 			// check that the solution looks valid:
 			mined_solution.feasibility_check()?;
 
