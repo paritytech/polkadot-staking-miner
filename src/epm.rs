@@ -68,7 +68,7 @@ impl std::fmt::Display for EpmConstant {
 
 /// Represent voters that may be trimmed
 ///
-/// The trimming works by removing the voter with the least amount of stake
+/// The trimming works by removing the voter with the least amount of stake.
 ///
 /// It's using an internal `BTreeMap` to determine which voter to remove next
 /// and the voters Vec can't be sorted because the EPM pallet will index into it
