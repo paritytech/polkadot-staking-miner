@@ -89,6 +89,23 @@ mod hidden {
 	use once_cell::sync::Lazy;
 	use prometheus::{opts, register_counter, register_gauge, Counter, Gauge};
 
+	static TRIMMED_SOLUTION_STARTED: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_trim_started",
+			"Number of started trimmed solutions",
+		))
+		.unwrap()
+	});
+
+
+	static TRIMMED_SOLUTION_SUCCESS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_trim_success",
+			"Number of successful trimmed solutions",
+		))
+		.unwrap()
+	});
+
 	static SUBMISSIONS_STARTED: Lazy<Counter> = Lazy::new(|| {
 		register_counter!(opts!(
 			"staking_miner_submissions_started",
@@ -172,6 +189,14 @@ mod hidden {
 
 	pub fn on_submission_success() {
 		SUBMISSIONS_SUCCESS.inc();
+	}
+
+	pub fn on_trim_attempt() {
+		TRIMMED_SOLUTION_STARTED.inc();
+	}
+
+	pub fn on_trim_success() {
+		TRIMMED_SOLUTION_SUCCESS.inc();
 	}
 
 	pub fn set_balance(balance: f64) {

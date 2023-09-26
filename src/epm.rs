@@ -21,6 +21,7 @@ use crate::{
 	helpers::{storage_at, RuntimeDispatchInfo},
 	opt::{BalanceIterations, Balancing, Solver},
 	prelude::*,
+	prometheus,
 	static_types,
 };
 
@@ -322,7 +323,9 @@ where
 					)))
 				}
 
+				prometheus::on_trim_attempt();
 				voters.trim_next()?;
+				prometheus::on_trim_success();
 			},
 			Ok(Err(err)) => return Err(Error::Other(format!("{:?}", err))),
 			Err(err) => return Err(err.into()),
