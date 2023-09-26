@@ -21,8 +21,7 @@ use crate::{
 	helpers::{storage_at, RuntimeDispatchInfo},
 	opt::{BalanceIterations, Balancing, Solver},
 	prelude::*,
-	prometheus,
-	static_types,
+	prometheus, static_types,
 };
 
 use std::collections::BTreeMap;

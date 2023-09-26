@@ -97,7 +97,6 @@ mod hidden {
 		.unwrap()
 	});
 
-
 	static TRIMMED_SOLUTION_SUCCESS: Lazy<Counter> = Lazy::new(|| {
 		register_counter!(opts!(
 			"staking_miner_trim_success",
