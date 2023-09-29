@@ -112,39 +112,42 @@ where
 	/// Create a new `TrimmedVotes`.
 	pub async fn new(mut voters: Voters, desired_targets: u32) -> Result<Self, Error> {
 		let mut voters_by_stake = BTreeMap::new();
+		let mut targets = BTreeSet::new();
 
-		for (idx, (_voter, stake, _supports)) in voters.iter().enumerate() {
+		for (idx, (_voter, stake, supports)) in voters.iter().enumerate() {
 			voters_by_stake.insert(*stake, idx);
+			targets.extend(supports.iter().cloned());
 		}
 
-		while let Some((_, idx)) = voters_by_stake.pop_first() {
-			let rm = voters[idx].0.clone();
-
-			let mut targets = BTreeSet::new();
-			let active_voters =
-				voters_by_stake.len().try_into().expect("Voters must be < u32::MAX");
-
-			// Remove votes for an account.
-			for (_voter, _stake, supports) in &mut voters {
-				supports.retain(|a| a != &rm);
-				targets.extend(supports);
-			}
-
-			let desired_targets = desired_targets;
-			let targets = targets.len() as u32;
+		loop {
+			let targets_len = targets.len() as u32;
+			let active_voters = voters_by_stake.len() as u32;
 
 			let est_weight: Weight = tokio::task::spawn_blocking(move || {
-				T::solution_weight(active_voters, targets, active_voters, desired_targets)
+				T::solution_weight(active_voters, targets_len, active_voters, desired_targets)
 			})
 			.await?;
+
 			let max_weight: Weight = T::MaxWeight::get();
+			log::trace!(target: "staking-miner", "trimming weight: est_weight={est_weight} / max_weight={max_weight}");
 
 			if est_weight.all_lt(max_weight) {
 				return Ok(Self { state: State { voters, voters_by_stake }, _marker: PhantomData })
 			}
+
+			let Some((_, idx)) = voters_by_stake.pop_first() else { break };
+
+			let rm = voters[idx].0.clone();
+
+			// Remove votes for an account.
+			for (_voter, _stake, supports) in &mut voters {
+				supports.retain(|a| a != &rm);
+			}
+
+			targets.remove(&rm);
 		}
 
-		return Err(Error::Feasibility("Couldn't pre-trim votes to prevent trimming".to_string()))
+		return Err(Error::Feasibility("Failed to pre-trim weight < T::MaxLength".to_string()))
 	}
 
 	/// Clone the state and trim it, so it get can be reverted.
@@ -154,9 +157,7 @@ where
 
 		for _ in 0..n {
 			let Some((_, idx)) = voters_by_stake.pop_first() else {
-				return Err(Error::Feasibility(
-					"Couldn't pre-trim votes to prevent trimming".to_string(),
-				))
+				return Err(Error::Feasibility("Failed to pre-trim len".to_string()))
 			};
 			let rm = voters[idx].0.clone();
 
@@ -433,7 +434,7 @@ where
 			solution_or_snapshot_size,
 		})
 	} else {
-		Err(Error::Feasibility("Couldn't pre-trim votes to prevent trimming".to_string()))
+		Err(Error::Feasibility("Failed pre-trim length".to_string()))
 	}
 }
 
