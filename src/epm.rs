@@ -21,15 +21,21 @@ use crate::{
 	helpers::{storage_at, RuntimeDispatchInfo},
 	opt::{BalanceIterations, Balancing, Solver},
 	prelude::*,
-	prometheus, static_types,
+	prometheus,
+	static_types::{self},
 };
 
-use std::collections::BTreeMap;
+use std::{
+	collections::{BTreeMap, BTreeSet},
+	marker::PhantomData,
+};
 
 use codec::{Decode, Encode};
-use frame_election_provider_support::{NposSolution, PhragMMS, SequentialPhragmen};
+use frame_election_provider_support::{Get, NposSolution, PhragMMS, SequentialPhragmen};
 use frame_support::{weights::Weight, BoundedVec};
-use pallet_election_provider_multi_phase::{RawSolution, ReadySolution, SolutionOrSnapshotSize};
+use pallet_election_provider_multi_phase::{
+	unsigned::TrimmingStatus, RawSolution, ReadySolution, SolutionOf, SolutionOrSnapshotSize,
+};
 use scale_info::{PortableRegistry, TypeInfo};
 use scale_value::scale::{decode_as_type, TypeId};
 use sp_core::Bytes;
@@ -66,6 +72,22 @@ impl std::fmt::Display for EpmConstant {
 	}
 }
 
+#[derive(Debug)]
+pub struct State {
+	voters: Voters,
+	voters_by_stake: BTreeMap<VoteWeight, usize>,
+}
+
+impl State {
+	fn len(&self) -> usize {
+		self.voters_by_stake.len()
+	}
+
+	fn to_voters(&self) -> Voters {
+		self.voters.clone()
+	}
+}
+
 /// Represent voters that may be trimmed
 ///
 /// The trimming works by removing the voter with the least amount of stake.
@@ -73,44 +95,86 @@ impl std::fmt::Display for EpmConstant {
 /// It's using an internal `BTreeMap` to determine which voter to remove next
 /// and the voters Vec can't be sorted because the EPM pallet will index into it
 /// when checking the solution.
-#[derive(Debug, Clone)]
-pub struct TrimmedVoters {
-	voters: Voters,
-	voters_by_stake: BTreeMap<VoteWeight, usize>,
+#[derive(Debug)]
+pub struct TrimmedVoters<T> {
+	state: State,
+	_marker: PhantomData<T>,
 }
 
-impl TrimmedVoters {
+impl<T> TrimmedVoters<T>
+where
+	T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
+		+ Send
+		+ Sync
+		+ 'static,
+	T::Solution: Send,
+{
 	/// Create a new `TrimmedVotes`.
-	pub fn new(voters: Voters) -> Self {
+	pub async fn new(mut voters: Voters, desired_targets: u32) -> Result<Self, Error> {
 		let mut voters_by_stake = BTreeMap::new();
 
 		for (idx, (_voter, stake, _supports)) in voters.iter().enumerate() {
 			voters_by_stake.insert(*stake, idx);
 		}
 
-		Self { voters, voters_by_stake }
-	}
+		while let Some((_, idx)) = voters_by_stake.pop_first() {
+			let rm = voters[idx].0.clone();
 
-	/// Trim the next voter with the least amount of stake.
-	pub fn trim_next(&mut self) -> Result<(), Error> {
-		let Some((_, idx)) = self.voters_by_stake.pop_first() else {
-			return Err(Error::Feasibility(
-				"Couldn't pre-trim votes to prevent trimming".to_string(),
-			))
-		};
-		let rm = self.voters[idx].0.clone();
+			let mut targets = BTreeSet::new();
+			let active_voters =
+				voters_by_stake.len().try_into().expect("Voters must be < u32::MAX");
 
-		// Remove votes for an account.
-		for (_voter, _stake, supports) in &mut self.voters {
-			supports.retain(|a| a != &rm);
+			// Remove votes for an account.
+			for (_voter, _stake, supports) in &mut voters {
+				supports.retain(|a| a != &rm);
+				targets.extend(supports);
+			}
+
+			let desired_targets = desired_targets;
+			let targets = targets.len() as u32;
+
+			let est_weight: Weight = tokio::task::spawn_blocking(move || {
+				T::solution_weight(active_voters, targets, active_voters, desired_targets)
+			})
+			.await?;
+			let max_weight: Weight = T::MaxWeight::get();
+
+			if est_weight.all_lt(max_weight) {
+				return Ok(Self { state: State { voters, voters_by_stake }, _marker: PhantomData })
+			}
 		}
 
-		Ok(())
+		return Err(Error::Feasibility("Couldn't pre-trim votes to prevent trimming".to_string()))
 	}
 
-	/// Get the voters.
-	pub fn get(&self) -> Voters {
-		self.voters.clone()
+	/// Clone the state and trim it, so it get can be reverted.
+	pub fn trim(&mut self, n: usize) -> Result<State, Error> {
+		let mut voters = self.state.voters.clone();
+		let mut voters_by_stake = self.state.voters_by_stake.clone();
+
+		for _ in 0..n {
+			let Some((_, idx)) = voters_by_stake.pop_first() else {
+				return Err(Error::Feasibility(
+					"Couldn't pre-trim votes to prevent trimming".to_string(),
+				))
+			};
+			let rm = voters[idx].0.clone();
+
+			// Remove votes for an account.
+			for (_voter, _stake, supports) in &mut voters {
+				supports.retain(|a| a != &rm);
+			}
+		}
+
+		Ok(State { voters, voters_by_stake })
+	}
+
+	pub fn to_voters(&self) -> Voters {
+		self.state.voters.clone()
+	}
+
+	pub fn len(&self) -> usize {
+		self.state.len()
 	}
 }
 
@@ -238,8 +302,44 @@ pub async fn snapshot_at(
 	}
 }
 
-/// Helper to fetch snapshot data via RPC
+pub async fn mine_solution<T>(
+	solver: Solver,
+	targets: Vec<AccountId>,
+	voters: Voters,
+	desired_targets: u32,
+) -> Result<(SolutionOf<T>, ElectionScore, SolutionOrSnapshotSize, TrimmingStatus), Error>
+where
+	T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
+		+ Send
+		+ Sync
+		+ 'static,
+	T::Solution: Send,
+{
+	match tokio::task::spawn_blocking(move || match solver {
+		Solver::SeqPhragmen { iterations } => {
+			BalanceIterations::set(iterations);
+			Miner::<T>::mine_solution_with_snapshot::<
+				SequentialPhragmen<AccountId, Accuracy, Balancing>,
+			>(voters, targets, desired_targets)
+		},
+		Solver::PhragMMS { iterations } => {
+			BalanceIterations::set(iterations);
+			Miner::<T>::mine_solution_with_snapshot::<PhragMMS<AccountId, Accuracy, Balancing>>(
+				voters,
+				targets,
+				desired_targets,
+			)
+		},
+	})
+	.await
+	{
+		Ok(Ok(s)) => Ok(s),
+		Err(e) => Err(e.into()),
+		Ok(Err(e)) => Err(Error::Other(format!("{:?}", e))),
+	}
+}
 
+/// Helper to fetch snapshot data via RPC
 /// and compute an NPos solution via [`pallet_election_provider_multi_phase`].
 pub async fn fetch_snapshot_and_mine_solution<T>(
 	api: &SubxtClient,
@@ -271,64 +371,69 @@ where
 		.await?
 		.map(|score| score.0);
 
-	let mut voters = TrimmedVoters::new(snapshot.voters.clone());
+	let mut voters = TrimmedVoters::<T>::new(snapshot.voters.clone(), desired_targets).await?;
 
-	loop {
-		let s = solver.clone();
-		let v = voters.get();
-		let t = snapshot.targets.clone();
+	let (solution, score, solution_or_snapshot_size, trim_status) = mine_solution::<T>(
+		solver.clone(),
+		snapshot.targets.clone(),
+		voters.to_voters(),
+		desired_targets,
+	)
+	.await?;
 
-		let blocking_task =
-			tokio::task::spawn_blocking(move || match s {
-				Solver::SeqPhragmen { iterations } => {
-					BalanceIterations::set(iterations);
-					Miner::<T>::mine_solution_with_snapshot::<
-						SequentialPhragmen<AccountId, Accuracy, Balancing>,
-					>(v, t, desired_targets)
-				},
-				Solver::PhragMMS { iterations } => {
-					BalanceIterations::set(iterations);
-					Miner::<T>::mine_solution_with_snapshot::<
-						PhragMMS<AccountId, Accuracy, Balancing>,
-					>(v, t, desired_targets)
-				},
-			})
-			.await;
+	if !trim_status.is_trimmed() {
+		return Ok(MinedSolution {
+			round,
+			desired_targets,
+			snapshot,
+			minimum_untrusted_score,
+			solution,
+			score,
+			solution_or_snapshot_size,
+		})
+	}
 
-		match blocking_task {
-			Ok(Ok((solution, score, solution_or_snapshot_size, t))) if !t.is_trimmed() => {
-				if solution.unique_targets().len() != desired_targets as usize {
-					return Err(Error::Feasibility(format!(
-						"Invalid winner count {}, expected {desired_targets}",
-						solution.unique_targets().len()
-					)))
-				}
+	prometheus::on_trim_attempt();
 
-				return Ok(MinedSolution {
-					round,
-					desired_targets,
-					snapshot,
-					minimum_untrusted_score,
-					solution,
-					score,
-					solution_or_snapshot_size,
-				})
-			},
-			Ok(Ok((solution, _score, _, _))) => {
-				if solution.unique_targets().len() != desired_targets as usize {
-					return Err(Error::Feasibility(format!(
-						"Invalid winner count {}, expected {desired_targets}",
-						solution.unique_targets().len()
-					)))
-				}
+	let mut l = 1;
+	let mut h = voters.len();
+	let mut best_solution = None;
 
-				prometheus::on_trim_attempt();
-				voters.trim_next()?;
-				prometheus::on_trim_success();
-			},
-			Ok(Err(err)) => return Err(Error::Other(format!("{:?}", err))),
-			Err(err) => return Err(err.into()),
-		};
+	while l <= h {
+		let mid = ((h - l) / 2) + l;
+
+		let next_state = voters.trim(mid)?;
+
+		let (solution, score, solution_or_snapshot_size, trim_status) = mine_solution::<T>(
+			solver.clone(),
+			snapshot.targets.clone(),
+			next_state.to_voters(),
+			desired_targets,
+		)
+		.await?;
+
+		if !trim_status.is_trimmed() {
+			best_solution = Some((solution, score, solution_or_snapshot_size));
+			h = mid - 1;
+		} else {
+			l = mid + 1;
+		}
+	}
+
+	if let Some((solution, score, solution_or_snapshot_size)) = best_solution {
+		prometheus::on_trim_success();
+
+		Ok(MinedSolution {
+			round,
+			desired_targets,
+			snapshot,
+			minimum_untrusted_score,
+			solution,
+			score,
+			solution_or_snapshot_size,
+		})
+	} else {
+		Err(Error::Feasibility("Couldn't pre-trim votes to prevent trimming".to_string()))
 	}
 }
 
