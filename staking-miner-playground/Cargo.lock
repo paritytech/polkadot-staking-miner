@@ -2343,7 +2343,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ea55201cc351fdb478217c0fb641b59813da9b4efe4c414a9d8f989a657d149"
 dependencies = [
  "libc",
- "rustix 0.35.13",
+ "rustix 0.35.15",
  "winapi",
 ]
 
@@ -5887,9 +5887,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.35.13"
+version = "0.35.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "727a1a6d65f786ec22df8a81ca3121107f235970dc1705ed681d3e6e8b9cd5f9"
+checksum = "413c4d41e2f1b0814c63567d11618483de0bd64f451b452f2ca43896579486ba"
 dependencies = [
  "bitflags",
  "errno 0.2.8",
