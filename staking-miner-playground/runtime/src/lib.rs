@@ -343,7 +343,7 @@ impl<const PERIOD: BlockNumber> ShouldEndSession<BlockNumber>
 	}
 }
 
-const SESSION: BlockNumber = 1 * MINUTES;
+const SESSION: BlockNumber = 6 * MINUTES;
 
 impl<const PERIOD: BlockNumber> frame_support::traits::EstimateNextSessionRotation<BlockNumber>
 	for PeriodicSessionUntilSolutionQueued<PERIOD>
@@ -465,32 +465,20 @@ parameter_types! {
 
 	// This is a hack to get the number of validators, candidates and nominators
 	// used by node which uses the same env flags as the chain spec builder in the node crate.
-	Validators: u32 = option_env!("V").unwrap_or("100").parse().expect("env variable `V` must be number");
-
-	BlockLength: u32 = Perbill::from_rational(8u32, 10) * *(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get()).max.get(DispatchClass::Normal);
-
-	// TODO: `trimming` will only work with the default values on `Nominators, Candidates and Validators`.
 	//
-	// The value was retrieved by something like:
-	//
-	// ```
-	// let voters = 1000;
-	// let targets = 500;
-	// let active_voters = 1000;
-	// let desired_targets = 100;
-	// let weight = MinerConfig::solution_weight(voters, targets, active_voters, desired_targets) * Perbill::from_percent(95)
-	// ```
-	WeightTrimming: Weight = Weight::from_parts(9226276000, 3905328);
+	// NOTE: This value must be the same as `V` in `node/src/chainspec.rs`.
+	Validators: u32 = option_env!("V").unwrap_or("20").parse().expect("env variable `V` must be number");
 
 	pub MinerMaxLength: u32 = prod_or_enforce_trimming!(
-		BlockLength::get(),
-		Perbill::from_percent(90) * BlockLength::get()
+		*(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get()).max.get(DispatchClass::Normal),
+		Perbill::from_percent(58) * *(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get()).max.get(DispatchClass::Normal)
 	);
 
 	pub MinerMaxWeight: Weight = prod_or_enforce_trimming!(
-		Perbill::from_rational(8u32, 10) * <Runtime as frame_system::Config>::BlockWeights::get().get(DispatchClass::Normal).max_total.unwrap(),
-		WeightTrimming::get()
+		<Runtime as frame_system::Config>::BlockWeights::get().get(DispatchClass::Normal).max_total.unwrap(),
+		Perbill::from_rational(8u32, 10) * <Runtime as frame_system::Config>::BlockWeights::get().get(DispatchClass::Normal).max_total.unwrap()
 	);
+
 
 	// The maximum winners that can be elected by the Election pallet which is equivalent to the
 	// maximum active validators the staking pallet can have.

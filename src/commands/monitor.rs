@@ -353,7 +353,7 @@ where
 
 			(solution, score)
 		},
-		(Err(e), _) => return Err(e),
+		(Err(e), _) => return Err(Error::Other(e.to_string())),
 	};
 
 	let best_head = get_latest_head(&api, config.listen).await?;
@@ -421,8 +421,7 @@ where
 		(Err(e), _) => {
 			log::warn!(
 				target: LOG_TARGET,
-				"submit_and_watch_solution failed: {:?}; skipping block: {}",
-				e,
+				"submit_and_watch_solution failed: {e}; skipping block: {}",
 				at.number
 			);
 		},

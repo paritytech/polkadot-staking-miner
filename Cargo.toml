@@ -22,12 +22,12 @@ pin-project-lite = "0.2"
 subxt = "0.29"
 scale-value = "0.10.0"
 
-# substrate
-frame-election-provider-support = { git = "https://github.com/paritytech/substrate" }
-pallet-election-provider-multi-phase = { git = "https://github.com/paritytech/substrate" }
-sp-npos-elections = { git = "https://github.com/paritytech/substrate" }
-frame-support = { git = "https://github.com/paritytech/substrate" }
-sp-runtime = { git = "https://github.com/paritytech/substrate" }
+# polkadot-sdk
+frame-election-provider-support = { git = "https://github.com/paritytech/polkadot-sdk" }
+pallet-election-provider-multi-phase = { git = "https://github.com/paritytech/polkadot-sdk" }
+sp-npos-elections = { git = "https://github.com/paritytech/polkadot-sdk/" }
+frame-support = { git = "https://github.com/paritytech/polkadot-sdk" }
+sp-runtime = { git = "https://github.com/paritytech/polkadot-sdk" }
 
 # prometheus
 prometheus = "0.13"
@@ -37,7 +37,7 @@ once_cell = "1.18"
 [dev-dependencies]
 anyhow = "1"
 assert_cmd = "2.0"
-sp-storage = { git = "https://github.com/paritytech/substrate" }
+sp-storage = { git = "https://github.com/paritytech/polkadot-sdk" }
 regex = "1"
 
 [features]

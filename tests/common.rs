@@ -1,12 +1,10 @@
 use assert_cmd::cargo::cargo_bin;
-use codec::Decode;
-use sp_storage::StorageChangeSet;
+use futures::StreamExt;
 use staking_miner::{
 	opt::Chain,
 	prelude::{
 		runtime::{self},
-		sp_core::Bytes,
-		Hash, SubxtClient,
+		SubxtClient,
 	},
 };
 use std::{
@@ -16,12 +14,11 @@ use std::{
 	process::{self, Child, ChildStderr, ChildStdout},
 	time::{Duration, Instant},
 };
-use subxt::rpc::rpc_params;
-use tokio::time::timeout;
 use tracing_subscriber::EnvFilter;
 
-pub use runtime::runtime_types::pallet_election_provider_multi_phase::{
-	ElectionCompute, ReadySolution,
+pub use runtime::{
+	election_provider_multi_phase::events::SolutionStored,
+	runtime_types::pallet_election_provider_multi_phase::{ElectionCompute, ReadySolution},
 };
 
 pub const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(60 * 15);
@@ -191,35 +188,26 @@ pub async fn test_submit_solution(target: Target) {
 /// Wait until a solution is ready on chain
 ///
 /// Timeout's after 15 minutes which is regarded as an error.
-pub async fn wait_for_mined_solution(ws_url: &str) -> anyhow::Result<ReadySolution> {
+pub async fn wait_for_mined_solution(ws_url: &str) -> anyhow::Result<SolutionStored> {
 	let api = SubxtClient::from_url(&ws_url).await?;
 	let now = Instant::now();
 
-	let key = Bytes(
-		runtime::storage()
-			.election_provider_multi_phase()
-			.queued_solution()
-			.to_root_bytes(),
-	);
+	let mut blocks_sub = api.blocks().subscribe_finalized().await?;
 
-	let mut sub = api
-		.rpc()
-		.subscribe("state_subscribeStorage", rpc_params![vec![key]], "state_unsubscribeStorage")
-		.await
-		.unwrap();
+	while let Some(block) = blocks_sub.next().await {
+		if now.elapsed() > MAX_DURATION_FOR_SUBMIT_SOLUTION {
+			break
+		}
 
-	while now.elapsed() < MAX_DURATION_FOR_SUBMIT_SOLUTION {
-		let x: StorageChangeSet<Hash> =
-			match timeout(MAX_DURATION_FOR_SUBMIT_SOLUTION, sub.next()).await {
-				Err(e) => return Err(e.into()),
-				Ok(Some(Ok(storage))) => storage,
-				Ok(None) => return Err(anyhow::anyhow!("Subscription closed")),
-				Ok(Some(Err(e))) => return Err(e.into()),
-			};
+		let block = block?;
+		let events = block.events().await?;
 
-		if let Some(data) = x.changes[0].clone().1 {
-			let solution: ReadySolution = Decode::decode(&mut data.0.as_slice())?;
-			return Ok(solution)
+		for ev in events.iter() {
+			let ev = ev?;
+
+			if let Some(solution_ev) = ev.as_event::<SolutionStored>()? {
+				return Ok(solution_ev)
+			}
 		}
 	}
 

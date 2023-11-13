@@ -21,24 +21,34 @@ use crate::{
 	helpers::{storage_at, RuntimeDispatchInfo},
 	opt::{BalanceIterations, Balancing, Solver},
 	prelude::*,
-	static_types,
+	prometheus,
+	static_types::{self},
 };
+
+use std::{
+	collections::{BTreeMap, BTreeSet},
+	marker::PhantomData,
+};
+
 use codec::{Decode, Encode};
-use frame_election_provider_support::{NposSolution, PhragMMS, SequentialPhragmen};
-use frame_support::weights::Weight;
-use pallet_election_provider_multi_phase::{RawSolution, ReadySolution, SolutionOrSnapshotSize};
+use frame_election_provider_support::{Get, NposSolution, PhragMMS, SequentialPhragmen};
+use frame_support::{weights::Weight, BoundedVec};
+use pallet_election_provider_multi_phase::{
+	unsigned::TrimmingStatus, RawSolution, ReadySolution, SolutionOf, SolutionOrSnapshotSize,
+};
 use scale_info::{PortableRegistry, TypeInfo};
 use scale_value::scale::{decode_as_type, TypeId};
 use sp_core::Bytes;
-use sp_npos_elections::ElectionScore;
+use sp_npos_elections::{ElectionScore, VoteWeight};
 use subxt::{dynamic::Value, rpc::rpc_params, tx::DynamicPayload};
 
 const EPM_PALLET_NAME: &str = "ElectionProviderMultiPhase";
 
 type MinerVoterOf =
 	frame_election_provider_support::Voter<AccountId, crate::static_types::MaxVotesPerVoter>;
-
 type RoundSnapshot = pallet_election_provider_multi_phase::RoundSnapshot<AccountId, MinerVoterOf>;
+type Voters =
+	Vec<(AccountId, VoteWeight, BoundedVec<AccountId, crate::static_types::MaxVotesPerVoter>)>;
 
 #[derive(Copy, Clone, Debug)]
 struct EpmConstant {
@@ -59,6 +69,113 @@ impl EpmConstant {
 impl std::fmt::Display for EpmConstant {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.write_fmt(format_args!("{}::{}", self.epm, self.constant))
+	}
+}
+
+#[derive(Debug)]
+pub struct State {
+	voters: Voters,
+	voters_by_stake: BTreeMap<VoteWeight, usize>,
+}
+
+impl State {
+	fn len(&self) -> usize {
+		self.voters_by_stake.len()
+	}
+
+	fn to_voters(&self) -> Voters {
+		self.voters.clone()
+	}
+}
+
+/// Represent voters that may be trimmed
+///
+/// The trimming works by removing the voter with the least amount of stake.
+///
+/// It's using an internal `BTreeMap` to determine which voter to remove next
+/// and the voters Vec can't be sorted because the EPM pallet will index into it
+/// when checking the solution.
+#[derive(Debug)]
+pub struct TrimmedVoters<T> {
+	state: State,
+	_marker: PhantomData<T>,
+}
+
+impl<T> TrimmedVoters<T>
+where
+	T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
+		+ Send
+		+ Sync
+		+ 'static,
+	T::Solution: Send,
+{
+	/// Create a new `TrimmedVotes`.
+	pub async fn new(mut voters: Voters, desired_targets: u32) -> Result<Self, Error> {
+		let mut voters_by_stake = BTreeMap::new();
+		let mut targets = BTreeSet::new();
+
+		for (idx, (_voter, stake, supports)) in voters.iter().enumerate() {
+			voters_by_stake.insert(*stake, idx);
+			targets.extend(supports.iter().cloned());
+		}
+
+		loop {
+			let targets_len = targets.len() as u32;
+			let active_voters = voters_by_stake.len() as u32;
+
+			let est_weight: Weight = tokio::task::spawn_blocking(move || {
+				T::solution_weight(active_voters, targets_len, active_voters, desired_targets)
+			})
+			.await?;
+
+			let max_weight: Weight = T::MaxWeight::get();
+			log::trace!(target: "staking-miner", "trimming weight: est_weight={est_weight} / max_weight={max_weight}");
+
+			if est_weight.all_lt(max_weight) {
+				return Ok(Self { state: State { voters, voters_by_stake }, _marker: PhantomData })
+			}
+
+			let Some((_, idx)) = voters_by_stake.pop_first() else { break };
+
+			let rm = voters[idx].0.clone();
+
+			// Remove votes for an account.
+			for (_voter, _stake, supports) in &mut voters {
+				supports.retain(|a| a != &rm);
+			}
+
+			targets.remove(&rm);
+		}
+
+		return Err(Error::Feasibility("Failed to pre-trim weight < T::MaxLength".to_string()))
+	}
+
+	/// Clone the state and trim it, so it get can be reverted.
+	pub fn trim(&mut self, n: usize) -> Result<State, Error> {
+		let mut voters = self.state.voters.clone();
+		let mut voters_by_stake = self.state.voters_by_stake.clone();
+
+		for _ in 0..n {
+			let Some((_, idx)) = voters_by_stake.pop_first() else {
+				return Err(Error::Feasibility("Failed to pre-trim len".to_string()))
+			};
+			let rm = voters[idx].0.clone();
+
+			// Remove votes for an account.
+			for (_voter, _stake, supports) in &mut voters {
+				supports.retain(|a| a != &rm);
+			}
+		}
+
+		Ok(State { voters, voters_by_stake })
+	}
+
+	pub fn to_voters(&self) -> Voters {
+		self.state.voters.clone()
+	}
+
+	pub fn len(&self) -> usize {
+		self.state.len()
 	}
 }
 
@@ -186,8 +303,44 @@ pub async fn snapshot_at(
 	}
 }
 
-/// Helper to fetch snapshot data via RPC
+pub async fn mine_solution<T>(
+	solver: Solver,
+	targets: Vec<AccountId>,
+	voters: Voters,
+	desired_targets: u32,
+) -> Result<(SolutionOf<T>, ElectionScore, SolutionOrSnapshotSize, TrimmingStatus), Error>
+where
+	T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
+		+ Send
+		+ Sync
+		+ 'static,
+	T::Solution: Send,
+{
+	match tokio::task::spawn_blocking(move || match solver {
+		Solver::SeqPhragmen { iterations } => {
+			BalanceIterations::set(iterations);
+			Miner::<T>::mine_solution_with_snapshot::<
+				SequentialPhragmen<AccountId, Accuracy, Balancing>,
+			>(voters, targets, desired_targets)
+		},
+		Solver::PhragMMS { iterations } => {
+			BalanceIterations::set(iterations);
+			Miner::<T>::mine_solution_with_snapshot::<PhragMMS<AccountId, Accuracy, Balancing>>(
+				voters,
+				targets,
+				desired_targets,
+			)
+		},
+	})
+	.await
+	{
+		Ok(Ok(s)) => Ok(s),
+		Err(e) => Err(e.into()),
+		Ok(Err(e)) => Err(Error::Other(format!("{:?}", e))),
+	}
+}
 
+/// Helper to fetch snapshot data via RPC
 /// and compute an NPos solution via [`pallet_election_provider_multi_phase`].
 pub async fn fetch_snapshot_and_mine_solution<T>(
 	api: &SubxtClient,
@@ -219,37 +372,18 @@ where
 		.await?
 		.map(|score| score.0);
 
-	let voters = snapshot.voters.clone();
-	let targets = snapshot.targets.clone();
+	let mut voters = TrimmedVoters::<T>::new(snapshot.voters.clone(), desired_targets).await?;
 
-	log::trace!(
-		target: LOG_TARGET,
-		"mine solution: desired_targets={}, voters={}, targets={}",
+	let (solution, score, solution_or_snapshot_size, trim_status) = mine_solution::<T>(
+		solver.clone(),
+		snapshot.targets.clone(),
+		voters.to_voters(),
 		desired_targets,
-		voters.len(),
-		targets.len()
-	);
+	)
+	.await?;
 
-	let blocking_task = tokio::task::spawn_blocking(move || match solver {
-		Solver::SeqPhragmen { iterations } => {
-			BalanceIterations::set(iterations);
-			Miner::<T>::mine_solution_with_snapshot::<
-				SequentialPhragmen<AccountId, Accuracy, Balancing>,
-			>(voters, targets, desired_targets)
-		},
-		Solver::PhragMMS { iterations } => {
-			BalanceIterations::set(iterations);
-			Miner::<T>::mine_solution_with_snapshot::<PhragMMS<AccountId, Accuracy, Balancing>>(
-				voters,
-				targets,
-				desired_targets,
-			)
-		},
-	})
-	.await;
-
-	match blocking_task {
-		Ok(Ok((solution, score, solution_or_snapshot_size))) => Ok(MinedSolution {
+	if !trim_status.is_trimmed() {
+		return Ok(MinedSolution {
 			round,
 			desired_targets,
 			snapshot,
@@ -257,9 +391,50 @@ where
 			solution,
 			score,
 			solution_or_snapshot_size,
-		}),
-		Ok(Err(err)) => Err(Error::Other(format!("{:?}", err))),
-		Err(err) => Err(err.into()),
+		})
+	}
+
+	prometheus::on_trim_attempt();
+
+	let mut l = 1;
+	let mut h = voters.len();
+	let mut best_solution = None;
+
+	while l <= h {
+		let mid = ((h - l) / 2) + l;
+
+		let next_state = voters.trim(mid)?;
+
+		let (solution, score, solution_or_snapshot_size, trim_status) = mine_solution::<T>(
+			solver.clone(),
+			snapshot.targets.clone(),
+			next_state.to_voters(),
+			desired_targets,
+		)
+		.await?;
+
+		if !trim_status.is_trimmed() {
+			best_solution = Some((solution, score, solution_or_snapshot_size));
+			h = mid - 1;
+		} else {
+			l = mid + 1;
+		}
+	}
+
+	if let Some((solution, score, solution_or_snapshot_size)) = best_solution {
+		prometheus::on_trim_success();
+
+		Ok(MinedSolution {
+			round,
+			desired_targets,
+			snapshot,
+			minimum_untrusted_score,
+			solution,
+			score,
+			solution_or_snapshot_size,
+		})
+	} else {
+		Err(Error::Feasibility("Failed pre-trim length".to_string()))
 	}
 }
 
@@ -312,6 +487,16 @@ where
 				Err(Error::Feasibility(format!("{:?}", e)))
 			},
 		}
+	}
+}
+
+impl<T: MinerConfig> std::fmt::Debug for MinedSolution<T> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("MinedSolution")
+			.field("round", &self.round)
+			.field("desired_targets", &self.desired_targets)
+			.field("score", &self.score)
+			.finish()
 	}
 }
 
