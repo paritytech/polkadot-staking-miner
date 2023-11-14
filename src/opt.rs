@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use sp_npos_elections::BalancingConfig;
 use sp_runtime::DeserializeOwned;
 use std::{collections::HashMap, fmt, str::FromStr};
+use subxt::backend::legacy::rpc_methods as subxt_rpc;
 
 /// The type of solver to use.
 // A common option across multiple commands.
@@ -76,10 +77,10 @@ impl std::str::FromStr for Chain {
 	}
 }
 
-impl TryFrom<subxt::rpc::types::RuntimeVersion> for Chain {
+impl TryFrom<subxt_rpc::RuntimeVersion> for Chain {
 	type Error = Error;
 
-	fn try_from(rv: subxt::rpc::types::RuntimeVersion) -> Result<Self, Error> {
+	fn try_from(rv: subxt_rpc::RuntimeVersion) -> Result<Self, Error> {
 		let json = rv
 			.other
 			.get("specName")
@@ -94,8 +95,8 @@ impl TryFrom<subxt::rpc::types::RuntimeVersion> for Chain {
 
 // This is infallible because all these field must exist on substrate-based chains
 // and is based on <https://docs.rs/sp-version/latest/sp_version/struct.RuntimeVersion.html>
-impl From<subxt::rpc::types::RuntimeVersion> for RuntimeVersion {
-	fn from(rv: subxt::rpc::types::RuntimeVersion) -> Self {
+impl From<subxt_rpc::RuntimeVersion> for RuntimeVersion {
+	fn from(rv: subxt_rpc::RuntimeVersion) -> Self {
 		let mut spec_name: String = get_val_unchecked("specName", &rv.other);
 		let impl_name: String = get_val_unchecked("implName", &rv.other);
 		let impl_version: u32 = get_val_unchecked("implVersion", &rv.other);

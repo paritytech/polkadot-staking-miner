@@ -33,6 +33,7 @@ use std::{
 use codec::{Decode, Encode};
 use frame_election_provider_support::{Get, NposSolution, PhragMMS, SequentialPhragmen};
 use frame_support::{weights::Weight, BoundedVec};
+use jsonrpsee::rpc_params;
 use pallet_election_provider_multi_phase::{
 	unsigned::TrimmingStatus, RawSolution, ReadySolution, SolutionOf, SolutionOrSnapshotSize,
 };
@@ -40,7 +41,7 @@ use scale_info::{PortableRegistry, TypeInfo};
 use scale_value::scale::{decode_as_type, TypeId};
 use sp_core::Bytes;
 use sp_npos_elections::{ElectionScore, VoteWeight};
-use subxt::{dynamic::Value, rpc::rpc_params, tx::DynamicPayload};
+use subxt::{dynamic::Value, tx::DynamicPayload};
 
 const EPM_PALLET_NAME: &str = "ElectionProviderMultiPhase";
 

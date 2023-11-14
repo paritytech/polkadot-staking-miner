@@ -17,7 +17,7 @@
 use crate::{error::Error, prelude::*};
 use codec::Decode;
 use frame_support::weights::Weight;
-use jsonrpsee::{core::Error as JsonRpseeError, types::error::CallError};
+use jsonrpsee::core::Error as JsonRpseeError;
 use pin_project_lite::pin_project;
 use serde::Deserialize;
 use std::{
@@ -106,7 +106,7 @@ pub fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Er
 					};
 
 					match jsonrpsee_err {
-						JsonRpseeError::Call(CallError::Custom(e)) => {
+						JsonRpseeError::Call(e) => {
 							const BAD_EXTRINSIC_FORMAT: i32 = 1001;
 							const VERIFICATION_ERROR: i32 = 1002;
 							use jsonrpsee::types::error::ErrorCode;
@@ -119,11 +119,10 @@ pub fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Er
 								ErrorCode::MethodNotFound.code()
 							{
 								let _ = tx.send(Error::Subxt(SubxtError::Rpc(
-									RpcError::ClientError(Box::new(CallError::Custom(e))),
+									RpcError::ClientError(Box::new(JsonRpseeError::Call(e))),
 								)));
 							}
 						},
-						JsonRpseeError::Call(CallError::Failed(_)) => {},
 						JsonRpseeError::RequestTimeout => {},
 						err => {
 							let _ = tx.send(Error::Subxt(SubxtError::Rpc(RpcError::ClientError(

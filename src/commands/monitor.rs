@@ -28,14 +28,14 @@ use clap::Parser;
 use codec::{Decode, Encode};
 use frame_election_provider_support::NposSolution;
 use futures::future::TryFutureExt;
-use jsonrpsee::{core::Error as JsonRpseeError, types::error::CallError};
+use jsonrpsee::core::Error as JsonRpseeError;
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOf};
 use sp_runtime::Perbill;
 use std::{str::FromStr, sync::Arc};
 use subxt::{
+	backend::{legacy::rpc_methods::DryRunResult, rpc::RpcSubscription},
 	config::Header as _,
 	error::RpcError,
-	rpc::{types::DryRunResult, Subscription},
 	Error as SubxtError,
 };
 use tokio::sync::Mutex;
@@ -567,7 +567,7 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 async fn heads_subscription(
 	api: &SubxtClient,
 	listen: Listen,
-) -> Result<Subscription<Header>, Error> {
+) -> Result<RpcSubscription<Header>, Error> {
 	match listen {
 		Listen::Head => api.rpc().subscribe_best_block_headers().await,
 		Listen::Finalized => api.rpc().subscribe_finalized_block_headers().await,
@@ -613,7 +613,7 @@ async fn dry_run_works(api: &SubxtClient) -> Result<(), Error> {
 				)),
 		};
 
-		if let JsonRpseeError::Call(CallError::Custom(e)) = rpc_err {
+		if let JsonRpseeError::Call(e) = rpc_err {
 			if e.message() == "RPC call is unsafe to be called externally" {
 				return Err(Error::Other(
 					"dry-run requires a RPC endpoint with `--rpc-methods unsafe`; \

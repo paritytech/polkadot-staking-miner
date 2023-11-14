@@ -56,7 +56,7 @@ pub type Accuracy = sp_runtime::Perbill;
 pub use subxt::config::polkadot::PolkadotExtrinsicParamsBuilder as ExtrinsicParams;
 
 /// Subxt client used by the staking miner on all chains.
-pub type SubxtClient = subxt::OnlineClient<Config>;
+pub type SubxtClient = subxt::backend::legacy::LegacyRpcMethods<subxt::PolkadotConfig>;
 
 /// Config used by the staking-miner
 pub type Config = subxt::PolkadotConfig;

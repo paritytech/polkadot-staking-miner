@@ -136,6 +136,7 @@ async fn main() -> Result<(), Error> {
 	};
 
 	let api = SubxtClient::from_rpc_client(Arc::new(rpc)).await?;
+	let rpc = LegacyRpcMethods::<PolkadotConfig>::new(rpc_client);
 	let runtime_version: RuntimeVersion = api.rpc().runtime_version(None).await?.into();
 	let chain = opt::Chain::from_str(&runtime_version.spec_name)?;
 	let _prometheus_handle = prometheus::run(prometheus_port)
