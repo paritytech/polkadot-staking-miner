@@ -161,7 +161,7 @@ impl FromStr for SubmissionStrategy {
 	}
 }
 
-pub async fn monitor_cmd<T>(api: SubxtClient, config: MonitorConfig) -> Result<(), Error>
+pub async fn monitor_cmd<T>(client: Client, config: MonitorConfig) -> Result<(), Error>
 where
 	T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
 		+ Send
@@ -173,7 +173,9 @@ where
 
 	let account_info = {
 		let addr = runtime::storage().system().account(signer.account_id());
-		api.storage()
+		client
+			.chain_api()
+			.storage()
 			.at_latest()
 			.await?
 			.fetch(&addr)
@@ -185,10 +187,10 @@ where
 
 	if config.dry_run {
 		// if we want to try-run, ensure the node supports it.
-		dry_run_works(&api).await?;
+		dry_run_works(client.subxt_rpc()).await?;
 	}
 
-	let mut subscription = heads_subscription(&api, config.listen).await?;
+	let mut subscription = heads_subscription(client.subxt_rpc(), config.listen).await?;
 	let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
 	let submit_lock = Arc::new(Mutex::new(()));
 
@@ -206,7 +208,7 @@ where
 					//	- the subscription could not keep up with the server.
 					None => {
 						log::warn!(target: LOG_TARGET, "subscription to `{:?}` terminated. Retrying..", config.listen);
-						subscription = heads_subscription(&api, config.listen).await?;
+						subscription = heads_subscription(client.subxt_rpc(), config.listen).await?;
 						continue
 					}
 				}
@@ -222,19 +224,20 @@ where
 		// Spawn task and non-recoverable errors are sent back to the main task
 		// such as if the connection has been closed.
 		let tx2 = tx.clone();
-		let api2 = api.clone();
+		let client2 = client.clone();
 		let signer2 = signer.clone();
 		let config2 = config.clone();
 		let submit_lock2 = submit_lock.clone();
 		tokio::spawn(async move {
 			if let Err(err) =
-				mine_and_submit_solution::<T>(at, api2, signer2, config2, submit_lock2).await
+				mine_and_submit_solution::<T>(at, client2, signer2, config2, submit_lock2).await
 			{
 				kill_main_task_if_critical_err(&tx2, err)
 			}
 		});
 
-		let account_info = api
+		let account_info = client
+			.chain_api()
 			.storage()
 			.at_latest()
 			.await?
@@ -249,7 +252,7 @@ where
 /// Construct extrinsic at given block and watch it.
 async fn mine_and_submit_solution<T>(
 	at: Header,
-	api: SubxtClient,
+	client: Client,
 	signer: Signer,
 	config: MonitorConfig,
 	submit_lock: Arc<Mutex<()>>,
@@ -267,9 +270,9 @@ where
 	// NOTE: as we try to send at each block then the nonce is used guard against
 	// submitting twice. Because once a solution has been accepted on chain
 	// the "next transaction" at a later block but with the same nonce will be rejected
-	let nonce = api.rpc().system_account_next_index(signer.account_id()).await?;
+	let nonce = client.rpc_system_account_next_index(signer.account_id()).await?;
 
-	ensure_signed_phase(&api, block_hash)
+	ensure_signed_phase(client.chain_api(), block_hash)
 		.inspect_err(|e| {
 			log::debug!(
 				target: LOG_TARGET,
@@ -281,7 +284,9 @@ where
 		.await?;
 
 	let round_fut = async {
-		api.storage()
+		client
+			.chain_api()
+			.storage()
 			.at(block_hash)
 			.fetch_or_default(&runtime::storage().election_provider_multi_phase().round())
 			.await
@@ -291,22 +296,26 @@ where
 		.inspect_err(|e| log::error!(target: LOG_TARGET, "Mining solution failed: {:?}", e))
 		.await?;
 
-	ensure_no_previous_solution::<T::Solution>(&api, block_hash, &signer.account_id().0.into())
-		.inspect_err(|e| {
-			log::debug!(
-				target: LOG_TARGET,
-				"ensure_no_previous_solution failed: {:?}; skipping block: {}",
-				e,
-				at.number
-			)
-		})
-		.await?;
+	ensure_no_previous_solution::<T::Solution>(
+		client.chain_api(),
+		block_hash,
+		&signer.account_id().0.into(),
+	)
+	.inspect_err(|e| {
+		log::debug!(
+			target: LOG_TARGET,
+			"ensure_no_previous_solution failed: {:?}; skipping block: {}",
+			e,
+			at.number
+		)
+	})
+	.await?;
 
 	tokio::time::sleep(std::time::Duration::from_secs(config.delay as u64)).await;
 	let _lock = submit_lock.lock().await;
 
 	let (solution, score) = match epm::fetch_snapshot_and_mine_solution::<T>(
-		&api,
+		&client.chain_api(),
 		Some(block_hash),
 		config.solver,
 		round,
@@ -356,9 +365,9 @@ where
 		(Err(e), _) => return Err(Error::Other(e.to_string())),
 	};
 
-	let best_head = get_latest_head(&api, config.listen).await?;
+	let best_head = get_latest_head(client.subxt_rpc(), config.listen).await?;
 
-	ensure_signed_phase(&api, best_head)
+	ensure_signed_phase(client.chain_api(), best_head)
 		.inspect_err(|e| {
 			log::debug!(
 				target: LOG_TARGET,
@@ -369,20 +378,29 @@ where
 		})
 		.await?;
 
-	ensure_no_previous_solution::<T::Solution>(&api, best_head, &signer.account_id().0.into())
-		.inspect_err(|e| {
-			log::debug!(
-				target: LOG_TARGET,
-				"ensure_no_previous_solution failed: {:?}; skipping block: {:?}",
-				e,
-				best_head,
-			)
-		})
-		.await?;
+	ensure_no_previous_solution::<T::Solution>(
+		client.chain_api(),
+		best_head,
+		&signer.account_id().0.into(),
+	)
+	.inspect_err(|e| {
+		log::debug!(
+			target: LOG_TARGET,
+			"ensure_no_previous_solution failed: {:?}; skipping block: {:?}",
+			e,
+			best_head,
+		)
+	})
+	.await?;
 
-	match ensure_solution_passes_strategy(&api, best_head, score, config.submission_strategy)
-		.timed()
-		.await
+	match ensure_solution_passes_strategy(
+		client.chain_api(),
+		best_head,
+		score,
+		config.submission_strategy,
+	)
+	.timed()
+	.await
 	{
 		(Ok(_), now) => {
 			log::trace!(
@@ -404,7 +422,7 @@ where
 
 	prometheus::on_submission_attempt();
 	match submit_and_watch_solution::<T>(
-		&api,
+		&client,
 		signer,
 		(solution, score, round),
 		nonce,
@@ -430,7 +448,7 @@ where
 }
 
 /// Ensure that now is the signed phase.
-async fn ensure_signed_phase(api: &SubxtClient, block_hash: Hash) -> Result<(), Error> {
+async fn ensure_signed_phase(api: &ChainClient, block_hash: Hash) -> Result<(), Error> {
 	use pallet_election_provider_multi_phase::Phase;
 
 	let addr = runtime::storage().election_provider_multi_phase().current_phase();
@@ -445,7 +463,7 @@ async fn ensure_signed_phase(api: &SubxtClient, block_hash: Hash) -> Result<(), 
 
 /// Ensure that our current `us` have not submitted anything previously.
 async fn ensure_no_previous_solution<T>(
-	api: &SubxtClient,
+	api: &ChainClient,
 	block_hash: Hash,
 	us: &AccountId,
 ) -> Result<(), Error>
@@ -469,7 +487,7 @@ where
 }
 
 async fn ensure_solution_passes_strategy(
-	api: &SubxtClient,
+	api: &ChainClient,
 	block_hash: Hash,
 	score: sp_npos_elections::ElectionScore,
 	strategy: SubmissionStrategy,
@@ -496,23 +514,26 @@ async fn ensure_solution_passes_strategy(
 }
 
 async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
-	api: &SubxtClient,
+	client: &Client,
 	signer: Signer,
 	(solution, score, round): (SolutionOf<T>, sp_npos_elections::ElectionScore, u32),
-	nonce: u32,
+	nonce: u64,
 	listen: Listen,
 	dry_run: bool,
 ) -> Result<(), Error> {
 	let tx = epm::signed_solution(RawSolution { solution, score, round })?;
 
-	let xt = api
-		.tx()
-		.create_signed_with_nonce(&tx, &*signer, nonce, ExtrinsicParams::default())?;
+	let xt = client.chain_api().tx().create_signed_with_nonce(
+		&tx,
+		&*signer,
+		nonce as u64,
+		Default::default(),
+	)?;
 
 	if dry_run {
-		let dry_run_bytes = api.rpc().dry_run(xt.encoded(), None).await?;
+		let dry_run_bytes = client.subxt_rpc().dry_run(xt.encoded(), None).await?;
 
-		match dry_run_bytes.into_dry_run_result(&api.metadata())? {
+		match dry_run_bytes.into_dry_run_result(&client.chain_api().metadata())? {
 			DryRunResult::Success => (),
 			DryRunResult::DispatchError(e) => return Err(Error::TransactionRejected(e.to_string())),
 			DryRunResult::TransactionValidityError =>
@@ -565,24 +586,24 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 }
 
 async fn heads_subscription(
-	api: &SubxtClient,
+	api: &SubxtRpcClient,
 	listen: Listen,
 ) -> Result<RpcSubscription<Header>, Error> {
 	match listen {
-		Listen::Head => api.rpc().subscribe_best_block_headers().await,
-		Listen::Finalized => api.rpc().subscribe_finalized_block_headers().await,
+		Listen::Head => api.chain_subscribe_new_heads().await,
+		Listen::Finalized => api.chain_subscribe_finalized_heads().await,
 	}
 	.map_err(Into::into)
 }
 
-async fn get_latest_head(api: &SubxtClient, listen: Listen) -> Result<Hash, Error> {
+async fn get_latest_head(rpc: &SubxtRpcClient, listen: Listen) -> Result<Hash, Error> {
 	match listen {
-		Listen::Head => match api.rpc().block_hash(None).await {
+		Listen::Head => match rpc.chain_get_block_hash(None).await {
 			Ok(Some(hash)) => Ok(hash),
 			Ok(None) => Err(Error::Other("Latest block not found".into())),
 			Err(e) => Err(e.into()),
 		},
-		Listen::Finalized => api.rpc().finalized_head().await.map_err(Into::into),
+		Listen::Finalized => rpc.chain_get_finalized_head().await.map_err(Into::into),
 	}
 }
 
@@ -603,8 +624,8 @@ pub(crate) fn score_passes_strategy(
 	}
 }
 
-async fn dry_run_works(api: &SubxtClient) -> Result<(), Error> {
-	if let Err(SubxtError::Rpc(RpcError::ClientError(e))) = api.rpc().dry_run(&[], None).await {
+async fn dry_run_works(rpc: &SubxtRpcClient) -> Result<(), Error> {
+	if let Err(SubxtError::Rpc(RpcError::ClientError(e))) = rpc.dry_run(&[], None).await {
 		let rpc_err = match e.downcast::<JsonRpseeError>() {
 			Ok(e) => *e,
 			Err(_) =>

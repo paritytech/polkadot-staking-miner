@@ -144,8 +144,8 @@ pub fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Er
 /// Helper to get storage at block.
 pub async fn storage_at(
 	block: Option<Hash>,
-	api: &SubxtClient,
-) -> Result<Storage<Config, SubxtClient>, Error> {
+	api: &ChainClient,
+) -> Result<Storage<Config, ChainClient>, Error> {
 	if let Some(block_hash) = block {
 		Ok(api.storage().at(block_hash))
 	} else {

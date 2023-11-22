@@ -56,7 +56,7 @@ pub struct DryRunConfig {
 	pub seed_or_path: Option<String>,
 }
 
-pub async fn dry_run_cmd<T>(api: SubxtClient, config: DryRunConfig) -> Result<(), Error>
+pub async fn dry_run_cmd<T>(client: Client, config: DryRunConfig) -> Result<(), Error>
 where
 	T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
 		+ Send
@@ -64,13 +64,13 @@ where
 		+ 'static,
 	T::Solution: Send,
 {
-	let storage = storage_at(config.at, &api).await?;
+	let storage = storage_at(config.at, client.chain_api()).await?;
 	let round = storage
 		.fetch_or_default(&runtime::storage().election_provider_multi_phase().round())
 		.await?;
 
 	let miner_solution = epm::fetch_snapshot_and_mine_solution::<T>(
-		&api,
+		client.chain_api(),
 		config.at,
 		config.solver,
 		round,
@@ -106,14 +106,16 @@ where
 
 		log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer, account_info);
 
-		let nonce = api.rpc().system_account_next_index(signer.account_id()).await?;
+		let nonce = client.rpc_system_account_next_index(signer.account_id()).await?;
 		let tx = epm::signed_solution(raw_solution)?;
-		let xt =
-			api.tx()
-				.create_signed_with_nonce(&tx, &*signer, nonce, ExtrinsicParams::default())?;
-		let dry_run_bytes = api.rpc().dry_run(xt.encoded(), config.at).await?;
-
-		let dry_run_result = dry_run_bytes.into_dry_run_result(&api.metadata())?;
+		let xt = client.chain_api().tx().create_signed_with_nonce(
+			&tx,
+			&*signer,
+			nonce,
+			Default::default(),
+		)?;
+		let dry_run_bytes = client.subxt_rpc().dry_run(xt.encoded(), config.at).await?;
+		let dry_run_result = dry_run_bytes.into_dry_run_result(&client.chain_api().metadata())?;
 
 		log::info!(target: LOG_TARGET, "dry-run outcome is {:?}", dry_run_result);
 	}

@@ -33,15 +33,13 @@ use std::{
 use codec::{Decode, Encode};
 use frame_election_provider_support::{Get, NposSolution, PhragMMS, SequentialPhragmen};
 use frame_support::{weights::Weight, BoundedVec};
-use jsonrpsee::rpc_params;
 use pallet_election_provider_multi_phase::{
 	unsigned::TrimmingStatus, RawSolution, ReadySolution, SolutionOf, SolutionOrSnapshotSize,
 };
 use scale_info::{PortableRegistry, TypeInfo};
 use scale_value::scale::{decode_as_type, TypeId};
-use sp_core::Bytes;
 use sp_npos_elections::{ElectionScore, VoteWeight};
-use subxt::{dynamic::Value, tx::DynamicPayload};
+use subxt::{dynamic::Value, runtime_api::DynamicRuntimeApiPayload, tx::DynamicPayload};
 
 const EPM_PALLET_NAME: &str = "ElectionProviderMultiPhase";
 
@@ -181,7 +179,7 @@ where
 }
 
 /// Read the constants from the metadata and updates the static types.
-pub(crate) async fn update_metadata_constants(api: &SubxtClient) -> Result<(), Error> {
+pub(crate) async fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
 	const SIGNED_MAX_WEIGHT: EpmConstant = EpmConstant::new("SignedMaxWeight");
 	const MAX_LENGTH: EpmConstant = EpmConstant::new("MinerMaxLength");
 	const MAX_VOTES_PER_VOTER: EpmConstant = EpmConstant::new("MinerMaxVotesPerVoter");
@@ -215,7 +213,7 @@ fn invalid_metadata_error<E: std::error::Error>(item: String, err: E) -> Error {
 }
 
 fn read_constant<'a, T: serde::Deserialize<'a>>(
-	api: &SubxtClient,
+	api: &ChainClient,
 	constant: EpmConstant,
 ) -> Result<T, Error> {
 	let (epm_name, constant) = constant.to_parts();
@@ -253,21 +251,25 @@ pub fn signed_solution<S: NposSolution + Encode + TypeInfo + 'static>(
 }
 
 /// Helper to construct a unsigned solution transaction.
-pub fn unsigned_solution<S: NposSolution + Encode + TypeInfo + 'static>(
+pub fn runtime_api_unsigned_solution<S: NposSolution + Encode + TypeInfo + 'static>(
 	solution: RawSolution<S>,
 	witness: SolutionOrSnapshotSize,
-) -> Result<DynamicPayload, Error> {
+) -> Result<DynamicRuntimeApiPayload, Error> {
 	let scale_solution = to_scale_value(solution)?;
 	let scale_witness = to_scale_value(witness)?;
 
-	Ok(subxt::dynamic::tx(EPM_PALLET_NAME, "submit_unsigned", vec![scale_solution, scale_witness]))
+	Ok(subxt::runtime_api::dynamic(
+		EPM_PALLET_NAME,
+		"submit_unsigned",
+		vec![scale_solution, scale_witness],
+	))
 }
 
 /// Helper to the signed submissions at the current block.
 pub async fn signed_submission_at<S: NposSolution + Decode + TypeInfo + 'static>(
 	idx: u32,
 	block_hash: Option<Hash>,
-	api: &SubxtClient,
+	api: &ChainClient,
 ) -> Result<Option<SignedSubmission<S>>, Error> {
 	let scale_idx = Value::u128(idx as u128);
 	let addr = subxt::dynamic::storage(EPM_PALLET_NAME, "SignedSubmissionsMap", vec![scale_idx]);
@@ -287,7 +289,7 @@ pub async fn signed_submission_at<S: NposSolution + Decode + TypeInfo + 'static>
 /// Helper to get the signed submissions at the current state.
 pub async fn snapshot_at(
 	block_hash: Option<Hash>,
-	api: &SubxtClient,
+	api: &ChainClient,
 ) -> Result<RoundSnapshot, Error> {
 	let empty = Vec::<Value>::new();
 	let addr = subxt::dynamic::storage(EPM_PALLET_NAME, "Snapshot", empty);
@@ -344,7 +346,7 @@ where
 /// Helper to fetch snapshot data via RPC
 /// and compute an NPos solution via [`pallet_election_provider_multi_phase`].
 pub async fn fetch_snapshot_and_mine_solution<T>(
-	api: &SubxtClient,
+	api: &ChainClient,
 	block_hash: Option<Hash>,
 	solver: Solver,
 	round: u32,
@@ -531,28 +533,11 @@ pub async fn runtime_api_solution_weight<S: Encode + NposSolution + TypeInfo + '
 	raw_solution: RawSolution<S>,
 	witness: SolutionOrSnapshotSize,
 ) -> Result<Weight, Error> {
-	let tx = unsigned_solution(raw_solution, witness)?;
-
 	let client = SHARED_CLIENT.get().expect("shared client is configured as start; qed");
 
-	let call_data = {
-		let mut buffer = Vec::new();
-
-		let encoded_call = client.tx().call_data(&tx).unwrap();
-		let encoded_len = encoded_call.len() as u32;
-
-		buffer.extend(encoded_call);
-		encoded_len.encode_to(&mut buffer);
-
-		Bytes(buffer)
-	};
-
-	let bytes: Bytes = client
-		.rpc()
-		.request("state_call", rpc_params!["TransactionPaymentCallApi_query_call_info", call_data])
-		.await?;
-
-	let info: RuntimeDispatchInfo = Decode::decode(&mut bytes.0.as_ref())?;
+	let tx = runtime_api_unsigned_solution(raw_solution, witness)?;
+	let decoded_chunk = client.runtime_api().at_latest().await?.call(tx).await?;
+	let info: RuntimeDispatchInfo = Decode::decode(&mut decoded_chunk.encoded())?;
 
 	log::trace!(
 		target: LOG_TARGET,
