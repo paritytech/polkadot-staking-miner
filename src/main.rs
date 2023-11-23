@@ -123,9 +123,7 @@ async fn main() -> Result<(), Error> {
 	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
 	epm::update_metadata_constants(client.chain_api()).await?;
 
-	SHARED_CLIENT
-		.set(client.clone())
-		.expect("shared client only set once; qed");
+	SHARED_CLIENT.set(client.clone()).expect("shared client only set once; qed");
 
 	// Start a new tokio task to perform the runtime updates in the background.
 	// if this fails then the miner will be stopped and has to be re-started.
