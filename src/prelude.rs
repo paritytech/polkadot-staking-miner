@@ -82,4 +82,5 @@ pub type SignedSubmission<S> =
 )]
 pub mod runtime {}
 
-pub static SHARED_CLIENT: once_cell::sync::OnceCell<ChainClient> = once_cell::sync::OnceCell::new();
+pub static SHARED_CLIENT: once_cell::sync::OnceCell<crate::client::Client> =
+	once_cell::sync::OnceCell::new();

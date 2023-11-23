@@ -124,7 +124,7 @@ async fn main() -> Result<(), Error> {
 	epm::update_metadata_constants(client.chain_api()).await?;
 
 	SHARED_CLIENT
-		.set(client.chain_api().clone())
+		.set(client.clone())
 		.expect("shared client only set once; qed");
 
 	// Start a new tokio task to perform the runtime updates in the background.

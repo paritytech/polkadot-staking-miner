@@ -39,7 +39,7 @@ use pallet_election_provider_multi_phase::{
 use scale_info::{PortableRegistry, TypeInfo};
 use scale_value::scale::{decode_as_type, TypeId};
 use sp_npos_elections::{ElectionScore, VoteWeight};
-use subxt::{dynamic::Value, runtime_api::DynamicRuntimeApiPayload, tx::DynamicPayload};
+use subxt::{dynamic::Value, tx::DynamicPayload};
 
 const EPM_PALLET_NAME: &str = "ElectionProviderMultiPhase";
 
@@ -251,18 +251,14 @@ pub fn signed_solution<S: NposSolution + Encode + TypeInfo + 'static>(
 }
 
 /// Helper to construct a unsigned solution transaction.
-pub fn runtime_api_unsigned_solution<S: NposSolution + Encode + TypeInfo + 'static>(
+pub fn unsigned_solution<S: NposSolution + Encode + TypeInfo + 'static>(
 	solution: RawSolution<S>,
 	witness: SolutionOrSnapshotSize,
-) -> Result<DynamicRuntimeApiPayload, Error> {
+) -> Result<DynamicPayload, Error> {
 	let scale_solution = to_scale_value(solution)?;
 	let scale_witness = to_scale_value(witness)?;
 
-	Ok(subxt::runtime_api::dynamic(
-		EPM_PALLET_NAME,
-		"submit_unsigned",
-		vec![scale_solution, scale_witness],
-	))
+	Ok(subxt::dynamic::tx(EPM_PALLET_NAME, "submit_unsigned", vec![scale_solution, scale_witness]))
 }
 
 /// Helper to the signed submissions at the current block.
@@ -533,11 +529,28 @@ pub async fn runtime_api_solution_weight<S: Encode + NposSolution + TypeInfo + '
 	raw_solution: RawSolution<S>,
 	witness: SolutionOrSnapshotSize,
 ) -> Result<Weight, Error> {
+	let tx = unsigned_solution(raw_solution, witness)?;
+
 	let client = SHARED_CLIENT.get().expect("shared client is configured as start; qed");
 
-	let tx = runtime_api_unsigned_solution(raw_solution, witness)?;
-	let decoded_chunk = client.runtime_api().at_latest().await?.call(tx).await?;
-	let info: RuntimeDispatchInfo = Decode::decode(&mut decoded_chunk.encoded())?;
+	let call_data = {
+		let mut buffer = Vec::new();
+
+		let encoded_call = client.chain_api().tx().call_data(&tx).unwrap();
+		let encoded_len = encoded_call.len() as u32;
+
+		buffer.extend(encoded_call);
+		encoded_len.encode_to(&mut buffer);
+
+		buffer
+	};
+
+	let bytes = client
+		.rpc()
+		.state_call("TransactionPaymentCallApi_query_call_info", Some(&call_data), None)
+		.await?;
+
+	let info: RuntimeDispatchInfo = Decode::decode(&mut bytes.as_ref())?;
 
 	log::trace!(
 		target: LOG_TARGET,
