@@ -4,6 +4,17 @@ The format is based on [Keep a Changelog].
 
 [Keep a Changelog]: http://keepachangelog.com/en/1.0.0/
 
+## [v1.2.0] - 2023-11-23
+
+The major changes of this release:
+- Trimming has been reworked such that the staking-miner "pre-trims" the solution instead relying on the remote node to perform the trimming.
+- The default port number in the URI can now be omitted.
+- All dependencies are fetched from crates.io and the staking-miner can now be published on crates.io
+- New prometheus metrics "staking_miner_trim_started" and "staking_miner_trim_success" have been added to monitor the trimming status.
+
+### [Changed]
+- chore: update deps to publish on crates.io ([#715](https://github.com/paritytech/staking-miner-v2/pull/715))
+- refactor(trimming): implement pre-trimming ([#687](https://github.com/paritytech/staking-miner-v2/pull/687))
 
 ## [v1.1.0] - 2023-06-15
 
