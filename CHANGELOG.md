@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog].
 ## [v1.2.0] - 2023-11-23
 
 The major changes of this release:
-- Trimming has been reworked such that the staking-min "pre-trims" the solution instead relying on the remote node to perform the trimming.
+- Trimming has been reworked such that the staking-miner "pre-trims" the solution instead relying on the remote node to perform the trimming.
 - The default port number in the URI can now be omitted.
 - All dependencies are fetched from crates.io and the staking-miner can now be published on crates.io
 - New prometheus metrics "staking_miner_trim_started" and "staking_miner_trim_success" have been added to monitor the trimming status.
