@@ -8,7 +8,7 @@ use codec::Decode;
 use common::{init_logger, run_staking_miner_playground, KillChildOnDrop};
 use scale_info::TypeInfo;
 use staking_miner::{
-	prelude::SubxtClient,
+	prelude::ChainClient,
 	signer::{PairSigner, Signer},
 };
 use std::process;
@@ -29,7 +29,7 @@ async fn constants_updated_on_the_fly() {
 			.unwrap(),
 	);
 
-	let api = SubxtClient::from_url(&ws_url).await.unwrap();
+	let api = ChainClient::from_url(&ws_url).await.unwrap();
 	let signer = Signer::new("//Alice").unwrap();
 
 	let length: u32 = 1024;
@@ -49,7 +49,7 @@ async fn constants_updated_on_the_fly() {
 async fn submit_tx(
 	pallet: &str,
 	name: &str,
-	api: &SubxtClient,
+	api: &ChainClient,
 	params: Vec<Value>,
 	signer: &PairSigner,
 ) {
@@ -60,7 +60,7 @@ async fn submit_tx(
 async fn read_storage<T: Decode + TypeInfo + 'static>(
 	pallet: &str,
 	name: &str,
-	api: &SubxtClient,
+	api: &ChainClient,
 	params: Vec<Value>,
 ) -> T {
 	let addr = subxt::dynamic::storage(pallet, name, params);

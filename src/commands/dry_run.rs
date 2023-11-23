@@ -19,7 +19,8 @@
 use pallet_election_provider_multi_phase::RawSolution;
 
 use crate::{
-	epm, error::Error, helpers::storage_at, opt::Solver, prelude::*, signer::Signer, static_types,
+	client::Client, epm, error::Error, helpers::storage_at, opt::Solver, prelude::*,
+	signer::Signer, static_types,
 };
 use clap::Parser;
 use codec::Encode;
@@ -114,7 +115,7 @@ where
 			nonce,
 			Default::default(),
 		)?;
-		let dry_run_bytes = client.subxt_rpc().dry_run(xt.encoded(), config.at).await?;
+		let dry_run_bytes = client.rpc().dry_run(xt.encoded(), config.at).await?;
 		let dry_run_result = dry_run_bytes.into_dry_run_result(&client.chain_api().metadata())?;
 
 		log::info!(target: LOG_TARGET, "dry-run outcome is {:?}", dry_run_result);

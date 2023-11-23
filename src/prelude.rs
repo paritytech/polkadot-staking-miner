@@ -20,8 +20,6 @@
 //! It is actually easy to convert the rest as well, but it'll be a lot of noise in our codebase,
 //! needing to sprinkle `any_runtime` in a few extra places.
 
-use subxt::backend::rpc::RpcClient;
-
 // re-exports.
 pub use frame_election_provider_support::VoteWeight;
 pub use pallet_election_provider_multi_phase::{Miner, MinerConfig};
@@ -55,7 +53,7 @@ pub type Accuracy = sp_runtime::Perbill;
 /// Extrinsics params used on all chains.
 pub use subxt::config::polkadot::PolkadotExtrinsicParamsBuilder as ExtrinsicParams;
 
-pub type SubxtRpcClient = subxt::backend::legacy::LegacyRpcMethods<subxt::PolkadotConfig>;
+pub type RpcClient = subxt::backend::legacy::LegacyRpcMethods<subxt::PolkadotConfig>;
 /// Subxt client used by the staking miner on all chains.
 pub type ChainClient = subxt::OnlineClient<subxt::PolkadotConfig>;
 
@@ -85,42 +83,3 @@ pub type SignedSubmission<S> =
 pub mod runtime {}
 
 pub static SHARED_CLIENT: once_cell::sync::OnceCell<ChainClient> = once_cell::sync::OnceCell::new();
-
-#[derive(Clone)]
-pub struct Client {
-	/// Access to typed rpc calls from subxt.
-	subxt_rpc: SubxtRpcClient,
-	/// Access to chain APIs such as storage, events etc.
-	chain_api: ChainClient,
-	/// Raw RPC client.
-	raw_rpc: RpcClient,
-}
-
-impl Client {
-	pub async fn new(rpc: RpcClient) -> Self {
-		let subxt_rpc = SubxtRpcClient::new(rpc.clone());
-		let chain_api = ChainClient::from_rpc_client(rpc.clone()).await.unwrap();
-		Self { chain_api, subxt_rpc, raw_rpc: rpc }
-	}
-
-	pub fn subxt_rpc(&self) -> &SubxtRpcClient {
-		&self.subxt_rpc
-	}
-
-	pub fn chain_api(&self) -> &ChainClient {
-		&self.chain_api
-	}
-
-	// This is exposed until a new version of subxt is released.
-	pub async fn rpc_system_account_next_index<T>(
-		&self,
-		account_id: &T,
-	) -> Result<u64, subxt::Error>
-	where
-		T: serde::Serialize,
-	{
-		self.raw_rpc
-			.request("system_accountNextIndex", subxt::rpc_params![&account_id])
-			.await
-	}
-}

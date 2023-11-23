@@ -16,7 +16,9 @@
 
 //! The emergency-solution command.
 
-use crate::{epm, error::Error, helpers::storage_at, opt::Solver, prelude::*, static_types};
+use crate::{
+	client::Client, epm, error::Error, helpers::storage_at, opt::Solver, prelude::*, static_types,
+};
 use clap::Parser;
 use codec::Encode;
 use sp_core::hexdisplay::HexDisplay;

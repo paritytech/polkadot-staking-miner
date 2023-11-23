@@ -15,6 +15,7 @@
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
 use crate::{
+	client::Client,
 	epm,
 	error::Error,
 	helpers::{kill_main_task_if_critical_err, TimedFuture},
@@ -187,10 +188,10 @@ where
 
 	if config.dry_run {
 		// if we want to try-run, ensure the node supports it.
-		dry_run_works(client.subxt_rpc()).await?;
+		dry_run_works(client.rpc()).await?;
 	}
 
-	let mut subscription = heads_subscription(client.subxt_rpc(), config.listen).await?;
+	let mut subscription = heads_subscription(client.rpc(), config.listen).await?;
 	let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
 	let submit_lock = Arc::new(Mutex::new(()));
 
@@ -208,7 +209,7 @@ where
 					//	- the subscription could not keep up with the server.
 					None => {
 						log::warn!(target: LOG_TARGET, "subscription to `{:?}` terminated. Retrying..", config.listen);
-						subscription = heads_subscription(client.subxt_rpc(), config.listen).await?;
+						subscription = heads_subscription(client.rpc(), config.listen).await?;
 						continue
 					}
 				}
@@ -365,7 +366,7 @@ where
 		(Err(e), _) => return Err(Error::Other(e.to_string())),
 	};
 
-	let best_head = get_latest_head(client.subxt_rpc(), config.listen).await?;
+	let best_head = get_latest_head(client.rpc(), config.listen).await?;
 
 	ensure_signed_phase(client.chain_api(), best_head)
 		.inspect_err(|e| {
@@ -531,7 +532,7 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 	)?;
 
 	if dry_run {
-		let dry_run_bytes = client.subxt_rpc().dry_run(xt.encoded(), None).await?;
+		let dry_run_bytes = client.rpc().dry_run(xt.encoded(), None).await?;
 
 		match dry_run_bytes.into_dry_run_result(&client.chain_api().metadata())? {
 			DryRunResult::Success => (),
@@ -586,17 +587,17 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 }
 
 async fn heads_subscription(
-	api: &SubxtRpcClient,
+	rpc: &RpcClient,
 	listen: Listen,
 ) -> Result<RpcSubscription<Header>, Error> {
 	match listen {
-		Listen::Head => api.chain_subscribe_new_heads().await,
-		Listen::Finalized => api.chain_subscribe_finalized_heads().await,
+		Listen::Head => rpc.chain_subscribe_new_heads().await,
+		Listen::Finalized => rpc.chain_subscribe_finalized_heads().await,
 	}
 	.map_err(Into::into)
 }
 
-async fn get_latest_head(rpc: &SubxtRpcClient, listen: Listen) -> Result<Hash, Error> {
+async fn get_latest_head(rpc: &RpcClient, listen: Listen) -> Result<Hash, Error> {
 	match listen {
 		Listen::Head => match rpc.chain_get_block_hash(None).await {
 			Ok(Some(hash)) => Ok(hash),
@@ -624,7 +625,7 @@ pub(crate) fn score_passes_strategy(
 	}
 }
 
-async fn dry_run_works(rpc: &SubxtRpcClient) -> Result<(), Error> {
+async fn dry_run_works(rpc: &RpcClient) -> Result<(), Error> {
 	if let Err(SubxtError::Rpc(RpcError::ClientError(e))) = rpc.dry_run(&[], None).await {
 		let rpc_err = match e.downcast::<JsonRpseeError>() {
 			Ok(e) => *e,

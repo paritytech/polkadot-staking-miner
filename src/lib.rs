@@ -16,6 +16,7 @@
 
 #![allow(dead_code)]
 
+pub mod client;
 pub mod commands;
 pub mod epm;
 pub mod error;

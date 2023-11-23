@@ -28,6 +28,7 @@
 //!   development. It is intended to run this bot with a `restart = true` way, so that it reports it
 //!   crash, but resumes work thereafter.
 
+mod client;
 mod commands;
 mod epm;
 mod error;
@@ -41,14 +42,12 @@ mod static_types;
 use clap::Parser;
 use error::Error;
 use futures::future::{BoxFuture, FutureExt};
-use jsonrpsee::ws_client::WsClientBuilder;
 use prelude::*;
 use std::str::FromStr;
-use subxt::backend::rpc::RpcClient;
 use tokio::sync::oneshot;
 use tracing_subscriber::EnvFilter;
 
-use crate::opt::RuntimeVersion;
+use crate::{client::Client, opt::RuntimeVersion};
 
 #[derive(Debug, Clone, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -115,32 +114,9 @@ async fn main() -> Result<(), Error> {
 	let filter = EnvFilter::from_default_env().add_directive(log.parse()?);
 	tracing_subscriber::fmt().with_env_filter(filter).init();
 
-	log::debug!(target: LOG_TARGET, "attempting to connect to {:?}", uri);
-
-	let rpc = loop {
-		match WsClientBuilder::default()
-			.max_request_size(u32::MAX)
-			.max_response_size(u32::MAX)
-			.request_timeout(std::time::Duration::from_secs(600))
-			.build(&uri)
-			.await
-		{
-			Ok(rpc) => break RpcClient::new(rpc),
-			Err(e) => {
-				log::warn!(
-					target: LOG_TARGET,
-					"failed to connect to client due to {:?}, retrying soon..",
-					e,
-				);
-			},
-		};
-		tokio::time::sleep(std::time::Duration::from_millis(2_500)).await;
-	};
-
-	let client = Client::new(rpc).await;
-
+	let client = Client::new(&uri).await?;
 	let runtime_version: RuntimeVersion =
-		client.subxt_rpc().state_get_runtime_version(None).await?.into();
+		client.rpc().state_get_runtime_version(None).await?.into();
 	let chain = opt::Chain::from_str(&runtime_version.spec_name)?;
 	let _prometheus_handle = prometheus::run(prometheus_port)
 		.map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
@@ -163,17 +139,17 @@ async fn main() -> Result<(), Error> {
 			Command::EmergencySolution(cfg) =>
 				commands::emergency_solution_cmd::<MinerConfig>(client, cfg).boxed(),
 			Command::Info => async {
-				/*let is_compat = if runtime::validate_codegen(client.chain_api()).is_ok() {
+				let is_compat = if runtime::is_codegen_valid_for(&client.chain_api().metadata()) {
 					"YES"
 				} else {
 					"NO"
-				};*/
+				};
 
 				let remote_node = serde_json::to_string_pretty(&runtime_version)
 					.expect("Serialize is infallible; qed");
 
 				eprintln!("Remote_node:\n{remote_node}");
-				//eprintln!("Compatible: {is_compat}");
+				eprintln!("Compatible: {is_compat}");
 
 				Ok(())
 			}
