@@ -43,4 +43,3 @@ regex = "1"
 [features]
 default = []
 slow-tests = []
-staking-miner-playground-tests = []
