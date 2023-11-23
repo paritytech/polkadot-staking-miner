@@ -1,8 +1,12 @@
 [package]
-name = "staking-miner"
+name = "polkadot-staking-miner"
 version = "1.2.0"
 authors = ["Parity Technologies <admin@parity.io>"]
 edition = "2021"
+rust-version = "1.70.0"
+license = "GPL-3.0"
+repository = "https://github.com/paritytech/staking-miner-v2"
+homepage = "https://www.parity.io/"
 
 [dependencies]
 codec = { package = "parity-scale-codec", version = "3.0.0" }
