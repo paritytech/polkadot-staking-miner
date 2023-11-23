@@ -14,7 +14,7 @@ The major changes of this release:
 
 ### [Changed]
 - chore: update deps to publish on crates.io ([#715](https://github.com/paritytech/staking-miner-v2/pull/715))
-- refactor(trimming): implement pre-trimming  ([#687](https://github.com/paritytech/staking-miner-v2/pull/687))
+- refactor(trimming): implement pre-trimming ([#687](https://github.com/paritytech/staking-miner-v2/pull/687))
 
 ## [v1.1.0] - 2023-06-15
 
