@@ -21,7 +21,6 @@
 //! needing to sprinkle `any_runtime` in a few extra places.
 
 // re-exports.
-pub use frame_election_provider_support::VoteWeight;
 pub use pallet_election_provider_multi_phase::{Miner, MinerConfig};
 pub use subxt::ext::sp_core;
 /// The account id type.
@@ -49,9 +48,6 @@ pub type Pair = sp_core::sr25519::Pair;
 
 /// The accuracy that we use for election computation.
 pub type Accuracy = sp_runtime::Perbill;
-
-/// Extrinsics params used on all chains.
-pub use subxt::config::polkadot::PolkadotExtrinsicParamsBuilder as ExtrinsicParams;
 
 pub type RpcClient = subxt::backend::legacy::LegacyRpcMethods<subxt::PolkadotConfig>;
 /// Subxt client used by the staking miner on all chains.
