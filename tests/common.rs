@@ -96,6 +96,7 @@ pub fn run_polkadot_node(chain: Chain) -> (KillChildOnDrop, String) {
 				"--execution",
 				"Native",
 				"--offchain-worker=Never",
+				"--rpc-cors=all",
 			])
 			.spawn()
 			.unwrap(),
