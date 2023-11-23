@@ -38,9 +38,8 @@ use pallet_election_provider_multi_phase::{
 };
 use scale_info::{PortableRegistry, TypeInfo};
 use scale_value::scale::{decode_as_type, TypeId};
-use sp_core::Bytes;
 use sp_npos_elections::{ElectionScore, VoteWeight};
-use subxt::{dynamic::Value, rpc::rpc_params, tx::DynamicPayload};
+use subxt::{dynamic::Value, tx::DynamicPayload};
 
 const EPM_PALLET_NAME: &str = "ElectionProviderMultiPhase";
 
@@ -180,7 +179,7 @@ where
 }
 
 /// Read the constants from the metadata and updates the static types.
-pub(crate) async fn update_metadata_constants(api: &SubxtClient) -> Result<(), Error> {
+pub(crate) async fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
 	const SIGNED_MAX_WEIGHT: EpmConstant = EpmConstant::new("SignedMaxWeight");
 	const MAX_LENGTH: EpmConstant = EpmConstant::new("MinerMaxLength");
 	const MAX_VOTES_PER_VOTER: EpmConstant = EpmConstant::new("MinerMaxVotesPerVoter");
@@ -214,7 +213,7 @@ fn invalid_metadata_error<E: std::error::Error>(item: String, err: E) -> Error {
 }
 
 fn read_constant<'a, T: serde::Deserialize<'a>>(
-	api: &SubxtClient,
+	api: &ChainClient,
 	constant: EpmConstant,
 ) -> Result<T, Error> {
 	let (epm_name, constant) = constant.to_parts();
@@ -266,7 +265,7 @@ pub fn unsigned_solution<S: NposSolution + Encode + TypeInfo + 'static>(
 pub async fn signed_submission_at<S: NposSolution + Decode + TypeInfo + 'static>(
 	idx: u32,
 	block_hash: Option<Hash>,
-	api: &SubxtClient,
+	api: &ChainClient,
 ) -> Result<Option<SignedSubmission<S>>, Error> {
 	let scale_idx = Value::u128(idx as u128);
 	let addr = subxt::dynamic::storage(EPM_PALLET_NAME, "SignedSubmissionsMap", vec![scale_idx]);
@@ -286,7 +285,7 @@ pub async fn signed_submission_at<S: NposSolution + Decode + TypeInfo + 'static>
 /// Helper to get the signed submissions at the current state.
 pub async fn snapshot_at(
 	block_hash: Option<Hash>,
-	api: &SubxtClient,
+	api: &ChainClient,
 ) -> Result<RoundSnapshot, Error> {
 	let empty = Vec::<Value>::new();
 	let addr = subxt::dynamic::storage(EPM_PALLET_NAME, "Snapshot", empty);
@@ -343,7 +342,7 @@ where
 /// Helper to fetch snapshot data via RPC
 /// and compute an NPos solution via [`pallet_election_provider_multi_phase`].
 pub async fn fetch_snapshot_and_mine_solution<T>(
-	api: &SubxtClient,
+	api: &ChainClient,
 	block_hash: Option<Hash>,
 	solver: Solver,
 	round: u32,
@@ -537,21 +536,21 @@ pub async fn runtime_api_solution_weight<S: Encode + NposSolution + TypeInfo + '
 	let call_data = {
 		let mut buffer = Vec::new();
 
-		let encoded_call = client.tx().call_data(&tx).unwrap();
+		let encoded_call = client.chain_api().tx().call_data(&tx).unwrap();
 		let encoded_len = encoded_call.len() as u32;
 
 		buffer.extend(encoded_call);
 		encoded_len.encode_to(&mut buffer);
 
-		Bytes(buffer)
+		buffer
 	};
 
-	let bytes: Bytes = client
+	let bytes = client
 		.rpc()
-		.request("state_call", rpc_params!["TransactionPaymentCallApi_query_call_info", call_data])
+		.state_call("TransactionPaymentCallApi_query_call_info", Some(&call_data), None)
 		.await?;
 
-	let info: RuntimeDispatchInfo = Decode::decode(&mut bytes.0.as_ref())?;
+	let info: RuntimeDispatchInfo = Decode::decode(&mut bytes.as_ref())?;
 
 	log::trace!(
 		target: LOG_TARGET,

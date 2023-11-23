@@ -28,6 +28,7 @@
 //!   development. It is intended to run this bot with a `restart = true` way, so that it reports it
 //!   crash, but resumes work thereafter.
 
+mod client;
 mod commands;
 mod epm;
 mod error;
@@ -41,13 +42,12 @@ mod static_types;
 use clap::Parser;
 use error::Error;
 use futures::future::{BoxFuture, FutureExt};
-use jsonrpsee::ws_client::WsClientBuilder;
 use prelude::*;
-use std::{str::FromStr, sync::Arc};
+use std::str::FromStr;
 use tokio::sync::oneshot;
 use tracing_subscriber::EnvFilter;
 
-use crate::opt::RuntimeVersion;
+use crate::{client::Client, opt::RuntimeVersion};
 
 #[derive(Debug, Clone, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -114,50 +114,34 @@ async fn main() -> Result<(), Error> {
 	let filter = EnvFilter::from_default_env().add_directive(log.parse()?);
 	tracing_subscriber::fmt().with_env_filter(filter).init();
 
-	log::debug!(target: LOG_TARGET, "attempting to connect to {:?}", uri);
-
-	let rpc = loop {
-		match WsClientBuilder::default()
-			.max_request_body_size(u32::MAX)
-			.request_timeout(std::time::Duration::from_secs(600))
-			.build(&uri)
-			.await
-		{
-			Ok(rpc) => break rpc,
-			Err(e) => {
-				log::warn!(
-					target: LOG_TARGET,
-					"failed to connect to client due to {:?}, retrying soon..",
-					e,
-				);
-			},
-		};
-		tokio::time::sleep(std::time::Duration::from_millis(2_500)).await;
-	};
-
-	let api = SubxtClient::from_rpc_client(Arc::new(rpc)).await?;
-	let runtime_version: RuntimeVersion = api.rpc().runtime_version(None).await?.into();
+	let client = Client::new(&uri).await?;
+	let runtime_version: RuntimeVersion =
+		client.rpc().state_get_runtime_version(None).await?.into();
 	let chain = opt::Chain::from_str(&runtime_version.spec_name)?;
 	let _prometheus_handle = prometheus::run(prometheus_port)
 		.map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
 	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
-	epm::update_metadata_constants(&api).await?;
+	epm::update_metadata_constants(client.chain_api()).await?;
 
-	SHARED_CLIENT.set(api.clone()).expect("shared client only set once; qed");
+	SHARED_CLIENT.set(client.clone()).expect("shared client only set once; qed");
 
 	// Start a new tokio task to perform the runtime updates in the background.
 	// if this fails then the miner will be stopped and has to be re-started.
 	let (tx_upgrade, rx_upgrade) = oneshot::channel::<Error>();
-	tokio::spawn(runtime_upgrade_task(api.clone(), tx_upgrade));
+	tokio::spawn(runtime_upgrade_task(client.chain_api().clone(), tx_upgrade));
 
 	let res = any_runtime!(chain, {
 		let fut = match command {
-			Command::Monitor(cfg) => commands::monitor_cmd::<MinerConfig>(api, cfg).boxed(),
-			Command::DryRun(cfg) => commands::dry_run_cmd::<MinerConfig>(api, cfg).boxed(),
+			Command::Monitor(cfg) => commands::monitor_cmd::<MinerConfig>(client, cfg).boxed(),
+			Command::DryRun(cfg) => commands::dry_run_cmd::<MinerConfig>(client, cfg).boxed(),
 			Command::EmergencySolution(cfg) =>
-				commands::emergency_solution_cmd::<MinerConfig>(api, cfg).boxed(),
+				commands::emergency_solution_cmd::<MinerConfig>(client, cfg).boxed(),
 			Command::Info => async {
-				let is_compat = if runtime::validate_codegen(&api).is_ok() { "YES" } else { "NO" };
+				let is_compat = if runtime::is_codegen_valid_for(&client.chain_api().metadata()) {
+					"YES"
+				} else {
+					"NO"
+				};
 
 				let remote_node = serde_json::to_string_pretty(&runtime_version)
 					.expect("Serialize is infallible; qed");
@@ -223,7 +207,7 @@ async fn run_command(
 }
 
 /// Runs until the RPC connection fails or updating the metadata failed.
-async fn runtime_upgrade_task(api: SubxtClient, tx: oneshot::Sender<Error>) {
+async fn runtime_upgrade_task(api: ChainClient, tx: oneshot::Sender<Error>) {
 	let updater = api.updater();
 
 	let mut update_stream = match updater.runtime_updates().await {

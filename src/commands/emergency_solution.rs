@@ -16,7 +16,9 @@
 
 //! The emergency-solution command.
 
-use crate::{epm, error::Error, helpers::storage_at, opt::Solver, prelude::*, static_types};
+use crate::{
+	client::Client, epm, error::Error, helpers::storage_at, opt::Solver, prelude::*, static_types,
+};
 use clap::Parser;
 use codec::Encode;
 use sp_core::hexdisplay::HexDisplay;
@@ -39,7 +41,7 @@ pub struct EmergencySolutionConfig {
 }
 
 pub async fn emergency_solution_cmd<T>(
-	api: SubxtClient,
+	client: Client,
 	config: EmergencySolutionConfig,
 ) -> Result<(), Error>
 where
@@ -53,14 +55,14 @@ where
 		static_types::MaxWinners::set(max_winners);
 	}
 
-	let storage = storage_at(config.at, &api).await?;
+	let storage = storage_at(config.at, client.chain_api()).await?;
 
 	let round = storage
 		.fetch_or_default(&runtime::storage().election_provider_multi_phase().round())
 		.await?;
 
 	let miner_solution = epm::fetch_snapshot_and_mine_solution::<T>(
-		&api,
+		client.chain_api(),
 		config.at,
 		config.solver,
 		round,
@@ -87,7 +89,7 @@ where
 	}
 
 	let call = epm::set_emergency_result(supports.clone())?;
-	let encoded_call = call.encode_call_data(&api.metadata())?;
+	let encoded_call = call.encode_call_data(&client.chain_api().metadata())?;
 	let encoded_supports = supports.encode();
 
 	// write results to files.

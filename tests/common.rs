@@ -1,11 +1,7 @@
 use assert_cmd::cargo::cargo_bin;
-use futures::StreamExt;
 use staking_miner::{
 	opt::Chain,
-	prelude::{
-		runtime::{self},
-		SubxtClient,
-	},
+	prelude::{runtime, ChainClient},
 };
 use std::{
 	io::{BufRead, BufReader, Read},
@@ -190,7 +186,7 @@ pub async fn test_submit_solution(target: Target) {
 ///
 /// Timeout's after 15 minutes which is regarded as an error.
 pub async fn wait_for_mined_solution(ws_url: &str) -> anyhow::Result<SolutionStored> {
-	let api = SubxtClient::from_url(&ws_url).await?;
+	let api = ChainClient::from_url(&ws_url).await?;
 	let now = Instant::now();
 
 	let mut blocks_sub = api.blocks().subscribe_finalized().await?;

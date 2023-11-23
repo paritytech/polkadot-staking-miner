@@ -21,10 +21,8 @@
 //! needing to sprinkle `any_runtime` in a few extra places.
 
 // re-exports.
-pub use frame_election_provider_support::VoteWeight;
 pub use pallet_election_provider_multi_phase::{Miner, MinerConfig};
 pub use subxt::ext::sp_core;
-
 /// The account id type.
 pub type AccountId = sp_runtime::AccountId32;
 /// The header type. We re-export it here, but we can easily get it from block as well.
@@ -34,7 +32,6 @@ pub type Header =
 pub type Hash = sp_core::H256;
 /// Balance type
 pub type Balance = u128;
-
 pub use subxt::ext::sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 
 /// Default URI to connect to.
@@ -52,11 +49,9 @@ pub type Pair = sp_core::sr25519::Pair;
 /// The accuracy that we use for election computation.
 pub type Accuracy = sp_runtime::Perbill;
 
-/// Extrinsics params used on all chains.
-pub use subxt::config::polkadot::PolkadotExtrinsicParamsBuilder as ExtrinsicParams;
-
+pub type RpcClient = subxt::backend::legacy::LegacyRpcMethods<subxt::PolkadotConfig>;
 /// Subxt client used by the staking miner on all chains.
-pub type SubxtClient = subxt::OnlineClient<Config>;
+pub type ChainClient = subxt::OnlineClient<subxt::PolkadotConfig>;
 
 /// Config used by the staking-miner
 pub type Config = subxt::PolkadotConfig;
@@ -83,4 +78,5 @@ pub type SignedSubmission<S> =
 )]
 pub mod runtime {}
 
-pub static SHARED_CLIENT: once_cell::sync::OnceCell<SubxtClient> = once_cell::sync::OnceCell::new();
+pub static SHARED_CLIENT: once_cell::sync::OnceCell<crate::client::Client> =
+	once_cell::sync::OnceCell::new();
