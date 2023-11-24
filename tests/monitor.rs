@@ -9,8 +9,8 @@ use common::{
 	wait_for_mined_solution, ElectionCompute, KillChildOnDrop, Target,
 	MAX_DURATION_FOR_SUBMIT_SOLUTION,
 };
-use regex::Regex;
 use polkadot_staking_miner::opt::Chain;
+use regex::Regex;
 use std::{process, time::Instant};
 
 #[tokio::test]
