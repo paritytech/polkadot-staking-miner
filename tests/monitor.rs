@@ -10,7 +10,7 @@ use common::{
 	MAX_DURATION_FOR_SUBMIT_SOLUTION,
 };
 use regex::Regex;
-use staking_miner::opt::Chain;
+use polkadot_staking_miner::opt::Chain;
 use std::{process, time::Instant};
 
 #[tokio::test]
