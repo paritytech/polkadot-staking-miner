@@ -46,7 +46,7 @@ We also assume that ongoing work done is being merged directly to the `main` bra
     cargo test --features slow-tests -- --nocapture
     ```
 
-8. Now, we're ready to publish the release to crates.io. Run `cargo publish` to do that.
+8.  Now, we're ready to publish the release to crates.io. Run `cargo publish` to do that.
 
 9.  If the release was successful, tag the commit that we released in the `main` branch with the
     version that we just released, for example:
