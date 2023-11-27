@@ -128,7 +128,6 @@ where
 			.await?;
 
 			let max_weight: Weight = T::MaxWeight::get();
-			log::trace!(target: "staking-miner", "trimming weight: est_weight={est_weight} / max_weight={max_weight}");
 
 			if est_weight.all_lt(max_weight) {
 				return Ok(Self { state: State { voters, voters_by_stake }, _marker: PhantomData })

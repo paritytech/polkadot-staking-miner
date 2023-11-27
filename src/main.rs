@@ -64,7 +64,7 @@ pub struct Opt {
 	#[clap(long, short, env = "PROMETHEUS_PORT", default_value_t = DEFAULT_PROMETHEUS_PORT)]
 	pub prometheus_port: u16,
 
-	/// Sets a custom logging filter. Syntax is `<target>=<level>`, e.g. -lstaking-miner=debug.
+	/// Sets a custom logging filter. Syntax is `<target>=<level>`, e.g. -lpolkadot-staking-miner=debug.
 	///
 	/// Log levels (least to most verbose) are error, warn, info, debug, and trace.
 	/// By default, all targets log `info`. The global log level can be set with `-l<level>`.

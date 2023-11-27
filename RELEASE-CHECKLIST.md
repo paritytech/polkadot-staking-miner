@@ -46,7 +46,9 @@ We also assume that ongoing work done is being merged directly to the `main` bra
     cargo test --features slow-tests -- --nocapture
     ```
 
-8.  If the release was successful, tag the commit that we released in the `main` branch with the
+8. Now, we're ready to publish the release to crates.io. Run `cargo publish` to do that.
+
+9.  If the release was successful, tag the commit that we released in the `main` branch with the
     version that we just released, for example:
 
     ```
@@ -57,4 +59,3 @@ We also assume that ongoing work done is being merged directly to the `main` bra
     Once this is pushed, go along to [the releases page on GitHub](https://github.com/paritytech/staking-miner-v2/releases)
     and draft a new release which points to the tag you just pushed to `main` above. Copy the changelog comments
     for the current release into the release description.
-

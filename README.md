@@ -12,7 +12,7 @@ and that will work unless there is a breaking change in any of pallets used by
 the staking-miner (mainly pallet-election-provider and pallet-system are used).
 
 Because detecting breaking changes when connection to RPC node when using
-`staking-miner-v2` is hard, this repo performs daily integration tests
+`polkadot-staking-miner` is hard, this repo performs daily integration tests
 against `polkadot master` and in most cases [update the metadata](#update-metadata)
 and fixing the compile errors are sufficient.
 
@@ -83,7 +83,7 @@ can be loaded to make your seed available:
 `.env`:
 ```bash
 SEED=0x1234...
-RUST_LOG=staking-miner=debug
+RUST_LOG=polkadot-staking-miner=debug
 ```
 You can load it using `source .env`.
 
@@ -95,12 +95,12 @@ it is nonetheless recommended running this container in `read-only` mode:
 
 ```bash
 docker run --rm -it \
-    --name staking-miner \
+    --name polkadot-staking-miner \
     --read-only \
     -e RUST_LOG=info \
     -e SEED \
     -e URI=wss://your-node:9944 \
-    staking-miner dry-run
+    polkadot-staking-miner dry-run
 ```
 
 ## Update metadata
@@ -126,7 +126,7 @@ it's possible build the polkadot binary with `feature --fast-runtime`
 to ensure that elections occurs more often (in order of minutes rather hours/days).
 
 ```bash
-$ cargo run --release --package polkadot --features fast-runtime -- --chain polkadot-dev --tmp --alice --execution Native -lruntime=debug --offchain-worker=Never --ws-port 9999
+$ cargo run --release --package polkadot --features fast-runtime -- --chain westend-dev --tmp --alice --execution Native -lruntime=debug --offchain-worker=Never --ws-port 9999
 # open another terminal and run
 $ cargo run --release -- --uri ws://localhost:9999 monitor --seed-or-path //Alice seq-phragmen
 ```
@@ -176,5 +176,4 @@ staking_miner_submit_and_watch_duration_ms 17283
 
 ## Related projects
 
-- [polkadot staking miner](https://github.com/paritytech/polkadot/tree/master/utils/staking-miner) - provides similar functionality but each release is hard-coded to a specific runtime version
 - [substrate-etl](https://github.com/gpestana/substrate-etl) - a tool fetch state from substrate-based chains.
