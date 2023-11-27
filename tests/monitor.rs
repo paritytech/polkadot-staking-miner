@@ -9,8 +9,8 @@ use common::{
 	wait_for_mined_solution, ElectionCompute, KillChildOnDrop, Target,
 	MAX_DURATION_FOR_SUBMIT_SOLUTION,
 };
+use polkadot_staking_miner::opt::Chain;
 use regex::Regex;
-use staking_miner::opt::Chain;
 use std::{process, time::Instant};
 
 #[tokio::test]
@@ -31,7 +31,7 @@ async fn default_trimming_works() {
 		process::Command::new(cargo_bin(env!("CARGO_PKG_NAME")))
 			.stdout(process::Stdio::piped())
 			.stderr(process::Stdio::piped())
-			.env("RUST_LOG", "runtime=debug,staking-miner=debug")
+			.env("RUST_LOG", "runtime=debug,polkadot-staking-miner=debug")
 			.args(["--uri", &ws_url, "monitor", "--seed-or-path", "//Alice", "seq-phragmen"])
 			.spawn()
 			.unwrap(),

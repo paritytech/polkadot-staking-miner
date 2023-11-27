@@ -1,5 +1,5 @@
 use assert_cmd::cargo::cargo_bin;
-use staking_miner::{
+use polkadot_staking_miner::{
 	opt::Chain,
 	prelude::{runtime, ChainClient},
 };

@@ -41,7 +41,7 @@ pub const DEFAULT_URI: &str = "ws://127.0.0.1:9944";
 /// Default port to start the prometheus server on.
 pub const DEFAULT_PROMETHEUS_PORT: u16 = 9999;
 /// The logging target.
-pub const LOG_TARGET: &str = "staking-miner";
+pub const LOG_TARGET: &str = "polkadot-staking-miner";
 
 /// The key pair type being used. We "strongly" assume sr25519 for simplicity.
 pub type Pair = sp_core::sr25519::Pair;
