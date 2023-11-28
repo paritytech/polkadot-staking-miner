@@ -24,5 +24,4 @@ pub mod helpers;
 pub mod opt;
 pub mod prelude;
 pub mod prometheus;
-pub mod signer;
 pub mod static_types;
