@@ -7,7 +7,7 @@ This is a re-write of the [staking miner](https://github.com/paritytech/polkadot
 The binary itself embeds [static metadata](./artifacts/metadata.scale) to
 generate a rust codegen at compile-time that [subxt provides](https://github.com/paritytech/subxt).
 
-Runtime upgrades are handled by polkadot-staking-miner by upgrading storage constants
+Runtime upgrades are handled by the polkadot-staking-miner by upgrading storage constants
 and that will work unless there is a breaking change in the pallet `pallet-election-provider-multi-phase`
 or `frame_system`.
 
