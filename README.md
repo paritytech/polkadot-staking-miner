@@ -8,7 +8,7 @@ The binary itself embeds [static metadata](./artifacts/metadata.scale) to
 generate a rust codegen at compile-time that [subxt provides](https://github.com/paritytech/subxt).
 
 Runtime upgrades are handled by the polkadot-staking-miner by upgrading storage constants
-and that will work unless there is a breaking change in the pallet `pallet-election-provider-multi-phase`
+and that will work unless there is a breaking change in the pallets `pallet-election-provider-multi-phase`
 or `frame_system`.
 
 Because detecting breaking changes when connecting to a RPC node when using
