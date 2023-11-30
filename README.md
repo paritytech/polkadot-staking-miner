@@ -136,7 +136,7 @@ To update the metadata you need to connect to a polkadot, kusama or westend node
 $ cargo install --locked subxt-cli
 # Download the metadata from a local node and replace the current metadata
 # See `https://github.com/paritytech/subxt/tree/master/cli` for further documentation of the `subxt-cli` tool.
-$ subxt metadata --url wss://rpc.polkadot.io --pallets "ElectionProviderMultiPhase,System" -f bytes > artifacts/metadata.scale
+$ subxt metadata --pallets "ElectionProviderMultiPhase,System" -f bytes > artifacts/metadata.scale
 # Inspect the generated code
 $ subxt codegen --file artifacts/metadata.scale | rustfmt > code.rs
 ```
