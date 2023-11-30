@@ -155,8 +155,6 @@ pub async fn storage_at(
 }
 
 pub fn signer_from_seed_or_path(seed_or_path: &str) -> Result<Signer, Error> {
-	use subxt_signer::SecretUri;
-
 	let seed_or_path = seed_or_path.trim();
 
 	let unchecked_secret = match std::fs::read(seed_or_path) {
@@ -164,8 +162,7 @@ pub fn signer_from_seed_or_path(seed_or_path: &str) -> Result<Signer, Error> {
 		Err(_) => seed_or_path.to_string(),
 	};
 
-	// Check if the secret is an URI such as //Alice
-	let secret = SecretUri::from_str(&unchecked_secret)?;
+	let secret = subxt_signer::SecretUri::from_str(&unchecked_secret)?;
 	Signer::from_uri(&secret).map_err(Into::into)
 }
 

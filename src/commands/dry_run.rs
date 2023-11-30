@@ -109,7 +109,7 @@ where
 			.await?
 			.ok_or(Error::AccountDoesNotExists)?;
 
-		log::info!(target: LOG_TARGET, "Loaded account {:?}, {:?}", signer, account_info);
+		log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer.public_key().to_account_id(), account_info);
 
 		let nonce = client
 			.rpc_system_account_next_index(&signer.public_key().to_account_id())
