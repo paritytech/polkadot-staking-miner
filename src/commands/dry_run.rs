@@ -16,14 +16,18 @@
 
 //! The dry-run command.
 
-use pallet_election_provider_multi_phase::RawSolution;
-
 use crate::{
-	client::Client, epm, error::Error, helpers::storage_at, opt::Solver, prelude::*,
-	signer::Signer, static_types,
+	client::Client,
+	epm,
+	error::Error,
+	helpers::{signer_from_seed_or_path, storage_at},
+	opt::Solver,
+	prelude::*,
+	static_types,
 };
 use clap::Parser;
 use codec::Encode;
+use pallet_election_provider_multi_phase::RawSolution;
 
 #[derive(Debug, Clone, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -99,19 +103,21 @@ where
 	// If an account seed or path is provided, then do a dry run to the node. Otherwise,
 	// we've logged the solution above and we do nothing else.
 	if let Some(seed_or_path) = &config.seed_or_path {
-		let signer = Signer::new(seed_or_path)?;
+		let signer = signer_from_seed_or_path(seed_or_path)?;
 		let account_info = storage
-			.fetch(&runtime::storage().system().account(signer.account_id()))
+			.fetch(&runtime::storage().system().account(signer.public_key().to_account_id()))
 			.await?
 			.ok_or(Error::AccountDoesNotExists)?;
 
-		log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer, account_info);
+		log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer.public_key().to_account_id(), account_info);
 
-		let nonce = client.rpc_system_account_next_index(signer.account_id()).await?;
+		let nonce = client
+			.rpc_system_account_next_index(&signer.public_key().to_account_id())
+			.await?;
 		let tx = epm::signed_solution(raw_solution)?;
 		let xt = client.chain_api().tx().create_signed_with_nonce(
 			&tx,
-			&*signer,
+			&signer,
 			nonce,
 			Default::default(),
 		)?;

@@ -36,7 +36,6 @@ mod helpers;
 mod opt;
 mod prelude;
 mod prometheus;
-mod signer;
 mod static_types;
 
 use clap::Parser;

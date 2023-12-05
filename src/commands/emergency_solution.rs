@@ -22,6 +22,7 @@ use crate::{
 use clap::Parser;
 use codec::Encode;
 use sp_core::hexdisplay::HexDisplay;
+use sp_npos_elections::Support;
 use std::io::Write;
 use subxt::tx::TxPayload;
 
@@ -74,7 +75,21 @@ where
 	let encoded_size = ready_solution.encoded_size();
 	let score = ready_solution.score;
 
-	let mut supports = ready_solution.supports.into_inner();
+	// subxt doesn't implement `scale_info::TypeInfo` for AccountId32
+	// that's why all AccountId32's below are converted to the inner array.
+	let mut supports: Vec<_> = ready_solution
+		.supports
+		.into_inner()
+		.into_iter()
+		.map(|(a, s)| {
+			let supports = Support {
+				voters: s.voters.into_iter().map(|(a, w)| (a.0, w)).collect(),
+				total: s.total,
+			};
+
+			(a.0, supports)
+		})
+		.collect();
 
 	// maybe truncate.
 	if let Some(force_winner_count) = config.force_winner_count {
