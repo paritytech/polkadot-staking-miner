@@ -24,7 +24,7 @@ pin-project-lite = "0.2"
 
 # subxt
 scale-value = "0.12.0"
-subxt = "0.32.1"
+subxt = "0.33.0"
 subxt-signer = { version = "0.32.1", features = ["subxt"] }
 
 # polkadot-sdk
