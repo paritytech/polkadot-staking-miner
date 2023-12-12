@@ -35,6 +35,7 @@ use subxt::{
 	backend::{legacy::rpc_methods::DryRunResult, rpc::RpcSubscription},
 	config::Header as _,
 	error::RpcError,
+	tx::{TxInBlock, TxProgress},
 	Error as SubxtError,
 };
 use tokio::sync::Mutex;
@@ -270,7 +271,8 @@ where
 	// submitting twice. Because once a solution has been accepted on chain
 	// the "next transaction" at a later block but with the same nonce will be rejected
 	let nonce = client
-		.rpc_system_account_next_index(&signer.public_key().to_account_id())
+		.rpc()
+		.system_account_next_index(&signer.public_key().to_account_id())
 		.await?;
 
 	ensure_signed_phase(client.chain_api(), block_hash)
@@ -549,7 +551,7 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 
 	match listen {
 		Listen::Head => {
-			let in_block = tx_progress.wait_for_in_block().await?;
+			let in_block = wait_for_in_block(tx_progress).await?;
 			let events = in_block.fetch_events().await.expect("events should exist");
 
 			let solution_stored = events
@@ -646,6 +648,34 @@ async fn dry_run_works(rpc: &RpcClient) -> Result<(), Error> {
 		}
 	}
 	Ok(())
+}
+
+/// Wait for the transaction to be in a block.
+///
+/// **Note:** transaction statuses like `Invalid`/`Usurped`/`Dropped` indicate with some
+/// probability that the transaction will not make it into a block but there is no guarantee
+/// that this is true. In those cases the stream is closed however, so you currently have no way to find
+/// out if they finally made it into a block or not.
+async fn wait_for_in_block<T, C>(mut tx: TxProgress<T, C>) -> Result<TxInBlock<T, C>, subxt::Error>
+where
+	T: subxt::Config,
+	C: subxt::client::OnlineClientT<T>,
+{
+	use subxt::{error::TransactionError, tx::TxStatus};
+
+	while let Some(status) = tx.next().await {
+		match status? {
+			// Finalized or otherwise in a block! Return.
+			TxStatus::InBestBlock(s) | TxStatus::InFinalizedBlock(s) => return Ok(s),
+			// Error scenarios; return the error.
+			TxStatus::Error { message } => return Err(TransactionError::Error(message).into()),
+			TxStatus::Invalid { message } => return Err(TransactionError::Invalid(message).into()),
+			TxStatus::Dropped { message } => return Err(TransactionError::Dropped(message).into()),
+			// Ignore anything else and wait for next status event:
+			_ => continue,
+		}
+	}
+	Err(RpcError::SubscriptionDropped.into())
 }
 
 #[cfg(test)]
