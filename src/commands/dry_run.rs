@@ -112,7 +112,8 @@ where
 		log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer.public_key().to_account_id(), account_info);
 
 		let nonce = client
-			.rpc_system_account_next_index(&signer.public_key().to_account_id())
+			.rpc()
+			.system_account_next_index(&signer.public_key().to_account_id())
 			.await?;
 		let tx = epm::signed_solution(raw_solution)?;
 		let xt = client.chain_api().tx().create_signed_with_nonce(
