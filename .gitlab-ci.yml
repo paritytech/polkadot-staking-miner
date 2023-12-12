@@ -15,7 +15,7 @@ default:
       - api_failure
 
 variables:
-  CI_IMAGE:                        "paritytech/ci-unified:bullseye-1.74.0"
+  CI_IMAGE:                        "paritytech/ci-unified:bullseye-1.74.0-2023-11-01-v20231204"
   # BUILDAH_IMAGE is defined in group variables
   BUILDAH_COMMAND:                 "buildah --storage-driver overlay2"
 
