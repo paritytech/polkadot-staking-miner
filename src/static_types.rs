@@ -83,6 +83,7 @@ mod max_weight {
 impl_atomic_u32_parameter_types!(max_length, MaxLength);
 impl_atomic_u32_parameter_types!(max_votes, MaxVotesPerVoter);
 impl_atomic_u32_parameter_types!(max_winners, MaxWinners);
+impl_atomic_u32_parameter_types!(signed_phase, SignedPhase);
 pub use max_weight::MaxWeight;
 
 pub mod westend {

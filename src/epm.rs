@@ -178,12 +178,13 @@ where
 }
 
 /// Read the constants from the metadata and updates the static types.
-pub(crate) async fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
+pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
 	const SIGNED_MAX_WEIGHT: EpmConstant = EpmConstant::new("SignedMaxWeight");
 	const MAX_LENGTH: EpmConstant = EpmConstant::new("MinerMaxLength");
 	const MAX_VOTES_PER_VOTER: EpmConstant = EpmConstant::new("MinerMaxVotesPerVoter");
 	// NOTE: `MaxWinners` is used instead of `MinerMaxWinners` to work with older metadata.
 	const MAX_WINNERS: EpmConstant = EpmConstant::new("MaxWinners");
+	const SIGNED_PHASE: EpmConstant = EpmConstant::new("SignedPhase");
 
 	fn log_metadata(metadata: EpmConstant, val: impl std::fmt::Display) {
 		log::trace!(target: LOG_TARGET, "updating metadata constant `{metadata}`: {val}",);
@@ -193,16 +194,19 @@ pub(crate) async fn update_metadata_constants(api: &ChainClient) -> Result<(), E
 	let max_length: u32 = read_constant(api, MAX_LENGTH)?;
 	let max_votes_per_voter: u32 = read_constant(api, MAX_VOTES_PER_VOTER)?;
 	let max_winners: u32 = read_constant(api, MAX_WINNERS)?;
+	let sign_phase: u32 = read_constant(api, SIGNED_PHASE)?;
 
 	log_metadata(SIGNED_MAX_WEIGHT, max_weight);
 	log_metadata(MAX_LENGTH, max_length);
 	log_metadata(MAX_VOTES_PER_VOTER, max_votes_per_voter);
 	log_metadata(MAX_WINNERS, max_winners);
+	log_metadata(SIGNED_PHASE, sign_phase);
 
 	static_types::MaxWeight::set(max_weight);
 	static_types::MaxLength::set(max_length);
 	static_types::MaxVotesPerVoter::set(max_votes_per_voter);
 	static_types::MaxWinners::set(max_winners);
+	static_types::SignedPhase::set(sign_phase);
 
 	Ok(())
 }

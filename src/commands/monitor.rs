@@ -33,7 +33,7 @@ use sp_runtime::Perbill;
 use std::{str::FromStr, sync::Arc};
 use subxt::{
 	backend::{legacy::rpc_methods::DryRunResult, rpc::RpcSubscription},
-	config::Header as _,
+	config::{DefaultExtrinsicParamsBuilder, Header as _},
 	error::RpcError,
 	tx::{TxInBlock, TxProgress},
 	Error as SubxtError,
@@ -431,6 +431,7 @@ where
 		nonce,
 		config.listen,
 		config.dry_run,
+		&at,
 	)
 	.timed()
 	.await
@@ -523,15 +524,17 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 	nonce: u64,
 	listen: Listen,
 	dry_run: bool,
+	at: &Header,
 ) -> Result<(), Error> {
 	let tx = epm::signed_solution(RawSolution { solution, score, round })?;
+	let signed_phase_len = static_types::SignedPhase::get() as u64;
+	let ext_cfg = DefaultExtrinsicParamsBuilder::default().mortal(at, signed_phase_len).build();
 
-	let xt = client.chain_api().tx().create_signed_with_nonce(
-		&tx,
-		&signer,
-		nonce as u64,
-		Default::default(),
-	)?;
+	let xt =
+		client
+			.chain_api()
+			.tx()
+			.create_signed_with_nonce(&tx, &signer, nonce as u64, ext_cfg)?;
 
 	if dry_run {
 		let dry_run_bytes = client.rpc().dry_run(xt.encoded(), None).await?;

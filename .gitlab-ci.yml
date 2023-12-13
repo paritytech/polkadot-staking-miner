@@ -176,7 +176,7 @@ build:
   <<:                              *collect-artifacts
   script:
     - cargo build --release --locked
-    - mv target/release/staking-miner artifacts/
+    - mv target/release/polkadot-staking-miner artifacts/
     - mv Dockerfile artifacts/
 
 ### stage:                         publish
