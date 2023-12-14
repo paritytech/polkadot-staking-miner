@@ -1,34 +1,64 @@
-name: Daily compatibility check against latest polkadot
+name: Nightly test
 
 on:
+  schedule:
+    - cron: '0 0 * * *'
   workflow_dispatch:
-    inputs:
-      gitlab_pipeline:
-        description: 'Link to failed pipeline'
-        required: true
-      gitlab_test_job_status:
-        description: 'GitLab test job status'
-        required: true
 
 jobs:
-  announce-status:
+  nightly-test:
     runs-on: ubuntu-latest
-    steps:
-      - name: Announce a status
-        run: echo  ${{ inputs.gitlab_test_job_status }}
 
-  create-an-issue:
-    if: ${{ inputs.gitlab_test_job_status == 'failed' }}
-    runs-on: ubuntu-latest
     steps:
-      - name: Checkout staking-miner sources
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Create an issue
+      - name: Free space on the runner
+        run: |
+          df -h
+          sudo apt -y autoremove --purge
+          sudo apt -y autoclean
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "/usr/local/share/boost"
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          df -h
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          key: ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
+          cache-on-failure: true
+
+      - name: Run nightly tests
+        run: |
+          sudo apt install -y protobuf-compiler
+          rustup target add wasm32-unknown-unknown
+          rustup component add rust-src
+          git clone -b master --depth 1 https://github.com/paritytech/polkadot-sdk.git polkadot-sdk
+          cd polkadot-sdk
+          cargo build -p polkadot --release --features fast-runtime
+          mkdir -p ~/.local/bin
+          sudo mv ./target/release/polkadot /usr/bin
+          sudo mv ./target/release/polkadot-execute-worker /usr/bin
+          sudo mv ./target/release/polkadot-prepare-worker /usr/bin
+          polkadot --version
+          cd -
+          rm -rf polkadot
+          cd staking-miner-playground
+          cargo build --release --features test-trimming
+          sudo mv ./target/release/staking-miner-playground /usr/bin
+          staking-miner-playground --version
+          cd -
+          RUST_LOG=info cargo test --workspace --all-features -- --nocapture
+          cargo clean
+
+      - name: Create an issue on failure
+        if: failure()
         uses: JasonEtco/create-an-issue@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLAB_PIPELINE_URL: ${{ inputs.gitlab_pipeline }}
+          FAILED_WORKFLOW_RUN_URL: https://github.com/${{ github.repository }}/commit/${{ github.sha }}/checks/${{ github.run_id }}
         with:
           # Use this issue template:
           filename: .github/issue_templates/nightly_run_failed.md
@@ -38,6 +68,3 @@ jobs:
           # Look for new *open* issues in this search (we want to
           # create a new one if we only find closed versions):
           search_existing: open
-
-      - name: Fail workflow if tests failed
-        run: exit 1
