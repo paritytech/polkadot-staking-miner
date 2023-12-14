@@ -180,6 +180,7 @@ jobs:
             check-staking-miner-playground,
             test,
             build]
+    environment: main_and_tags
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
