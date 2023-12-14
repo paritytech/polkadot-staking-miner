@@ -18,7 +18,7 @@ Recently, we noticed that it may be possible that the runtime upgrades won't
 upgrade the metadata because the actual runtime upgrade is applied to the block 
 after 'state_subscribeRuntimeVersion' emits an event. 
 For that reason, runtime upgrades are temporarily disabled, 
-and polkadot-staking-miner is terminated.
+and the polkadot-staking-miner is terminated if a runtime upgrade occurs.
 
 To deal with runtime upgrades, it should be sufficient to restart the client and wait a 
 few seconds until another block is finalized to fetch the latest metadata or verify 
