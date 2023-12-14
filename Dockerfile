@@ -6,9 +6,9 @@ ARG BUILD_DATE
 
 LABEL io.parity.image.authors="devops-team@parity.io" \
     io.parity.image.vendor="Parity Technologies" \
-    io.parity.image.title="staking-miner-v2" \
-    io.parity.image.description="Staking Miner v2 for substrate based chains" \
-    io.parity.image.source="https://github.com/paritytech/staking-miner-v2/blob/${VCS_REF}/Dockerfile" \
+    io.parity.image.title="polkadot-staking-miner" \
+    io.parity.image.description="Polkadot staking miner for substrate based chains" \
+    io.parity.image.source="https://github.com/paritytech/polkadot-staking-miner/blob/${VCS_REF}/Dockerfile" \
     io.parity.image.revision="${VCS_REF}" \
     io.parity.image.created="${BUILD_DATE}" \
     io.parity.image.documentation="https://github.com/paritytech/polkadot/"
@@ -28,7 +28,7 @@ RUN apt-get update && \
     useradd -u 10000 -U -s /bin/sh miner
 
 # add binary to docker image
-COPY ./staking-miner /usr/local/bin
+COPY ./polkadot-staking-miner /usr/local/bin
 
 USER miner
 
@@ -37,6 +37,6 @@ ENV URI="wss://rpc.polkadot.io"
 ENV RUST_LOG="info"
 
 # check if the binary works in this container
-RUN /usr/local/bin/staking-miner --version
+RUN /usr/local/bin/polkadot-staking-miner --version
 
-ENTRYPOINT [ "/usr/local/bin/staking-miner" ]
+ENTRYPOINT [ "/usr/local/bin/polkadot-staking-miner" ]

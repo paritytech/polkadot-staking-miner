@@ -19,6 +19,6 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
-          repository: 'paritytech/staking-miner-v2'
+          repository: 'paritytech/polkadot-staking-miner'
           short-description: 'polkadot-staking-miner'
           readme-filepath: 'Dockerfile.README.md'
