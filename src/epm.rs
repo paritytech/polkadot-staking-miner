@@ -178,7 +178,7 @@ where
 }
 
 /// Read the constants from the metadata and updates the static types.
-pub(crate) async fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
+pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
 	const SIGNED_MAX_WEIGHT: EpmConstant = EpmConstant::new("SignedMaxWeight");
 	const MAX_LENGTH: EpmConstant = EpmConstant::new("MinerMaxLength");
 	const MAX_VOTES_PER_VOTER: EpmConstant = EpmConstant::new("MinerMaxVotesPerVoter");
