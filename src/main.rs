@@ -127,7 +127,11 @@ async fn main() -> Result<(), Error> {
 	// Start a new tokio task to perform the runtime updates in the background.
 	// if this fails then the miner will be stopped and has to be re-started.
 	let (tx_upgrade, rx_upgrade) = oneshot::channel::<Error>();
-	tokio::spawn(runtime_upgrade_task(client.chain_api().clone(), tx_upgrade));
+	tokio::spawn(runtime_upgrade_task(
+		client.chain_api().clone(),
+		tx_upgrade,
+		runtime_version.clone(),
+	));
 
 	let res = any_runtime!(chain, {
 		let fut = match command {
@@ -156,7 +160,7 @@ async fn main() -> Result<(), Error> {
 		run_command(fut, rx_upgrade).await
 	});
 
-	log::info!(target: LOG_TARGET, "round of execution finished. outcome = {:?}", res);
+	log::debug!(target: LOG_TARGET, "round of execution finished. outcome = {:?}", res);
 	res
 }
 
@@ -206,49 +210,31 @@ async fn run_command(
 }
 
 /// Runs until the RPC connection fails or updating the metadata failed.
-async fn runtime_upgrade_task(api: ChainClient, tx: oneshot::Sender<Error>) {
+async fn runtime_upgrade_task(api: ChainClient, tx: oneshot::Sender<Error>, curr: RuntimeVersion) {
+	const ERR: &str = "Runtime upgrades are not supported at the moment, \
+		see https://github.com/paritytech/polkadot-staking-miner/issues/731 how deal with that";
+
 	let updater = api.updater();
 
 	let mut update_stream = match updater.runtime_updates().await {
-		Ok(u) => u,
+		Ok(update_stream) => update_stream,
 		Err(e) => {
 			let _ = tx.send(e.into());
-			return
+			return;
 		},
 	};
 
-	loop {
-		// if the runtime upgrade subscription fails then try establish a new one and if it fails quit.
-		let update = match update_stream.next().await {
-			Some(Ok(update)) => update,
-			_ => {
-				log::warn!(target: LOG_TARGET, "Runtime upgrade subscription failed");
-				update_stream = match updater.runtime_updates().await {
-					Ok(u) => u,
-					Err(e) => {
-						let _ = tx.send(e.into());
-						return
-					},
-				};
-				continue
-			},
-		};
+	while let Some(Ok(update)) = update_stream.next().await {
+		let new_version = update.runtime_version();
 
-		let version = update.runtime_version().spec_version;
-		match updater.apply_update(update) {
-			Ok(()) => {
-				if let Err(e) = epm::update_metadata_constants(&api) {
-					let _ = tx.send(e);
-					return
-				}
-				prometheus::on_runtime_upgrade();
-				log::info!(target: LOG_TARGET, "upgrade to v{} successful", version);
-			},
-			Err(e) => {
-				log::debug!(target: LOG_TARGET, "upgrade to v{} failed: {:?}", version, e);
-			},
+		let is_new_version = new_version.spec_version > curr.spec_version ||
+			new_version.transaction_version > curr.transaction_version;
+		if is_new_version {
+			break;
 		}
 	}
+
+	let _ = tx.send(Error::Other(ERR.to_string()));
 }
 
 #[cfg(test)]

@@ -119,7 +119,7 @@ impl From<subxt_rpc::RuntimeVersion> for RuntimeVersion {
 	}
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct RuntimeVersion {
 	pub spec_name: String,
 	pub impl_name: String,

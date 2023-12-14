@@ -159,6 +159,7 @@ mod hidden {
 		))
 		.unwrap()
 	});
+	#[allow(unused)]
 	static RUNTIME_UPGRADES: Lazy<Counter> = Lazy::new(|| {
 		register_counter!(opts!(
 			"staking_miner_runtime_upgrades",
@@ -178,6 +179,7 @@ mod hidden {
 			.unwrap()
 	});
 
+	#[allow(unused)]
 	pub fn on_runtime_upgrade() {
 		RUNTIME_UPGRADES.inc();
 	}
