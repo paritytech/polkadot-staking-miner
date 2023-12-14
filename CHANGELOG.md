@@ -36,7 +36,6 @@ This is just a temporary fix and will be fixed in the next release.
 - chore(deps): bump clap from 4.4.8 to 4.4.10 ([#719](https://github.com/paritytech/staking-miner-v2/pull/719))
 - rename project to polkadot-staking-miner ([#717](https://github.com/paritytech/staking-miner-v2/pull/717))
 
-
 ## [v1.2.0] - 2023-11-23
 
 The major changes of this release:
