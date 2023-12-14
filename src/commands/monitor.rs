@@ -527,14 +527,19 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 	at: &Header,
 ) -> Result<(), Error> {
 	let tx = epm::signed_solution(RawSolution { solution, score, round })?;
-	let signed_phase_len = static_types::SignedPhase::get() as u64;
-	let ext_cfg = DefaultExtrinsicParamsBuilder::default().mortal(at, signed_phase_len).build();
+	let signed_phase_len = client
+		.chain_api()
+		.constants()
+		.at(&runtime::constants().election_provider_multi_phase().signed_phase())?;
+	let xt_cfg = DefaultExtrinsicParamsBuilder::default()
+		.mortal(at, signed_phase_len as u64)
+		.build();
 
 	let xt =
 		client
 			.chain_api()
 			.tx()
-			.create_signed_with_nonce(&tx, &signer, nonce as u64, ext_cfg)?;
+			.create_signed_with_nonce(&tx, &signer, nonce as u64, xt_cfg)?;
 
 	if dry_run {
 		let dry_run_bytes = client.rpc().dry_run(xt.encoded(), None).await?;

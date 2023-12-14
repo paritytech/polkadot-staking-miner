@@ -120,7 +120,7 @@ async fn main() -> Result<(), Error> {
 	let _prometheus_handle = prometheus::run(prometheus_port)
 		.map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
 	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
-	epm::update_metadata_constants(client.chain_api()).await?;
+	epm::update_metadata_constants(client.chain_api())?;
 
 	SHARED_CLIENT.set(client.clone()).expect("shared client only set once; qed");
 
