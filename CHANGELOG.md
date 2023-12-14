@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog].
 
 ## [v1.3.0] - 2023-12-14
 
-The main changes of this release are:
+The main changes of this release are as follows:
 - Change the binary name to `polkadot-staking-miner` to publish on crates.io.
 - Temporarly disable runtime upgrades more information below.
 - Bump rust MSRV to 1.74
