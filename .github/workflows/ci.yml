@@ -119,7 +119,7 @@ jobs:
       - name: Check staking-miner-playground
         run: |
           ${{ env.RUST_INFO }}
-          cargo +nightly check --manifest-path staking-miner-playground/Cargo.toml
+          cargo check --manifest-path staking-miner-playground/Cargo.toml
 
   test:
     name: Run tests
@@ -170,8 +170,9 @@ jobs:
             ./polkadot-staking-miner
             ./Dockerfile
 
-  publish:
-    name: Build/publish Docker image
+  build-docker-image:
+    name: Test Docker image build
+    if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     needs: [check-fmt,
             check-clippy,
@@ -180,7 +181,46 @@ jobs:
             check-staking-miner-playground,
             test,
             build]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: build-artifacts
+          path: ./artifacts
+
+      - name: Set permissions
+        run: chmod +x ./artifacts/polkadot-staking-miner
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          push: false
+          context: ./artifacts
+          file: ./artifacts/Dockerfile
+          build-args: |
+            VCS_REF="${{ github.sha }}"
+            BUILD_DATE="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          tags: |
+            ${{ env.IMAGE_NAME }}:test
+
+  publish-docker-image:
+    name: Build and publish Docker image
+    if: ${{ github.ref == 'refs/heads/main' ||  github.ref_type == 'tag' }}
+    runs-on: ubuntu-latest
     environment: main_and_tags
+    needs: [check-fmt,
+            check-clippy,
+            check-docs,
+            check-cargo-hack,
+            check-staking-miner-playground,
+            test,
+            build]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -193,15 +233,9 @@ jobs:
 
       - name: Prepare Docker environment
         run: |
-          if [[ ${{ github.ref }} == 'refs/heads/main' ]] || [[ ${{ github.ref_type }} == 'tag' ]]; then
-            echo IMAGE_TAG=$(if [ "$GITHUB_REF" == "refs/heads/main" ]; then echo "main-${GITHUB_SHA::7}"; else echo "$GITHUB_REF_NAME"; fi) >> $GITHUB_ENV
-            echo PUSH_IMAGE=true >> $GITHUB_ENV
-            echo "Docker image will be published with the tag: ${{ env.IMAGE_TAG }}!"
-          else
-            echo IMAGE_TAG=stub_tag >> $GITHUB_ENV
-            echo PUSH_IMAGE=false >> $GITHUB_ENV
-            echo "Docker image will not be published. Just testing if the build works."
-          fi
+          echo IMAGE_TAG=$(if [ "$GITHUB_REF" == "refs/heads/main" ]; then echo "main-${GITHUB_SHA::7}"; else echo "$GITHUB_REF_NAME"; fi) >> $GITHUB_ENV
+          echo PUSH_IMAGE=true >> $GITHUB_ENV
+          echo "Docker image will be published with the tag: ${{ env.IMAGE_TAG }}!"
           chmod +x ./artifacts/polkadot-staking-miner
 
       - name: Log in to Docker Hub
@@ -214,10 +248,10 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build/Push Docker image
+      - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          push: ${{ env.PUSH_IMAGE }}
+          push: true
           context: ./artifacts
           file: ./artifacts/Dockerfile
           build-args: |
