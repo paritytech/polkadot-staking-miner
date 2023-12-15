@@ -15,7 +15,7 @@ The main changes of this release are as follows:
 
 ### Runtime upgrade bug fixed.
 
-Recently, we noticed that it may be possible that the runtime upgrades won't 
+Recently, we noticed that it can be possible that the runtime upgrades won't 
 upgrade the metadata because the actual runtime upgrade is applied to the block 
 after 'state_subscribeRuntimeVersion' emits an event. 
 For that reason, the staking-miner now subscribes to `system().last_runtime_upgrade()` instead to fix that.
