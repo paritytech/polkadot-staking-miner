@@ -1,4 +1,4 @@
-name: Nightly test
+name: Daily compatibility check against latest polkadot
 
 on:
   schedule:
