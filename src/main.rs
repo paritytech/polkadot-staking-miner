@@ -39,10 +39,12 @@ mod prometheus;
 mod static_types;
 
 use clap::Parser;
+use codec::Decode;
 use error::Error;
 use futures::future::{BoxFuture, FutureExt};
 use prelude::*;
 use std::str::FromStr;
+use subxt::backend::rpc::RpcSubscription;
 use tokio::sync::oneshot;
 use tracing_subscriber::EnvFilter;
 
@@ -127,7 +129,7 @@ async fn main() -> Result<(), Error> {
 	// Start a new tokio task to perform the runtime updates in the background.
 	// if this fails then the miner will be stopped and has to be re-started.
 	let (tx_upgrade, rx_upgrade) = oneshot::channel::<Error>();
-	tokio::spawn(runtime_upgrade_task(client.chain_api().clone(), tx_upgrade));
+	tokio::spawn(runtime_upgrade_task(client.clone(), tx_upgrade, runtime_version.spec_version));
 
 	let res = any_runtime!(chain, {
 		let fut = match command {
@@ -156,7 +158,7 @@ async fn main() -> Result<(), Error> {
 		run_command(fut, rx_upgrade).await
 	});
 
-	log::info!(target: LOG_TARGET, "round of execution finished. outcome = {:?}", res);
+	log::debug!(target: LOG_TARGET, "round of execution finished. outcome = {:?}", res);
 	res
 }
 
@@ -206,49 +208,85 @@ async fn run_command(
 }
 
 /// Runs until the RPC connection fails or updating the metadata failed.
-async fn runtime_upgrade_task(api: ChainClient, tx: oneshot::Sender<Error>) {
-	let updater = api.updater();
+async fn runtime_upgrade_task(client: Client, tx: oneshot::Sender<Error>, mut spec_version: u32) {
+	use sp_core::storage::StorageChangeSet;
 
-	let mut update_stream = match updater.runtime_updates().await {
-		Ok(u) => u,
+	async fn new_update_stream(
+		client: &Client,
+	) -> Result<RpcSubscription<StorageChangeSet<Hash>>, subxt::Error> {
+		use sp_core::Bytes;
+		use subxt::rpc_params;
+
+		let storage_key = Bytes(runtime::storage().system().last_runtime_upgrade().to_root_bytes());
+
+		client
+			.raw_rpc()
+			.subscribe(
+				"state_subscribeStorage",
+				rpc_params![vec![storage_key]],
+				"state_unsubscribeStorage",
+			)
+			.await
+	}
+
+	let mut update_stream = match new_update_stream(&client).await {
+		Ok(s) => s,
 		Err(e) => {
-			let _ = tx.send(e.into());
-			return
+			_ = tx.send(e.into());
+			return;
 		},
 	};
 
-	loop {
-		// if the runtime upgrade subscription fails then try establish a new one and if it fails quit.
-		let update = match update_stream.next().await {
-			Some(Ok(update)) => update,
-			_ => {
-				log::warn!(target: LOG_TARGET, "Runtime upgrade subscription failed");
-				update_stream = match updater.runtime_updates().await {
-					Ok(u) => u,
-					Err(e) => {
-						let _ = tx.send(e.into());
-						return
-					},
+	let close_err = loop {
+		let change_set = match update_stream.next().await {
+			Some(Ok(changes)) => changes,
+			Some(Err(err)) => break err.into(),
+			None => {
+				update_stream = match new_update_stream(&client).await {
+					Ok(sub) => sub,
+					Err(err) => break err.into(),
 				};
-				continue
+				continue;
 			},
 		};
 
-		let version = update.runtime_version().spec_version;
-		match updater.apply_update(update) {
-			Ok(()) => {
-				if let Err(e) = epm::update_metadata_constants(&api) {
-					let _ = tx.send(e);
-					return
-				}
-				prometheus::on_runtime_upgrade();
-				log::info!(target: LOG_TARGET, "upgrade to v{} successful", version);
-			},
-			Err(e) => {
-				log::debug!(target: LOG_TARGET, "upgrade to v{} failed: {:?}", version, e);
-			},
+		let at = change_set.block;
+		assert!(change_set.changes.len() < 2, "Only one storage change per runtime upgrade");
+		let Some(bytes) = change_set.changes.get(0).and_then(|v| v.1.clone()) else { continue };
+		let next: runtime::runtime_types::frame_system::LastRuntimeUpgradeInfo =
+			match Decode::decode(&mut bytes.0.as_ref()) {
+				Ok(n) => n,
+				Err(e) => break e.into(),
+			};
+
+		if next.spec_version > spec_version {
+			let metadata = match client.rpc().state_get_metadata(Some(at)).await {
+				Ok(m) => m,
+				Err(err) => break err.into(),
+			};
+
+			let runtime_version = match client.rpc().state_get_runtime_version(Some(at)).await {
+				Ok(r) => r,
+				Err(err) => break err.into(),
+			};
+
+			client.chain_api().set_metadata(metadata);
+			client.chain_api().set_runtime_version(subxt::backend::RuntimeVersion {
+				spec_version: runtime_version.spec_version,
+				transaction_version: runtime_version.transaction_version,
+			});
+
+			spec_version = next.spec_version;
+			prometheus::on_runtime_upgrade();
+
+			log::info!(target: LOG_TARGET, "Runtime upgraded to v{spec_version}");
+			if let Err(e) = epm::update_metadata_constants(client.chain_api()) {
+				break e;
+			}
 		}
-	}
+	};
+
+	let _ = tx.send(close_err.into());
 }
 
 #[cfg(test)]
