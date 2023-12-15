@@ -8,16 +8,15 @@ The format is based on [Keep a Changelog].
 
 The main changes of this release are as follows:
 - Change the binary name to `polkadot-staking-miner` to publish on crates.io.
-- Temporarly disable runtime upgrades more information below.
 - Bump rust MSRV to 1.74
 - Change `submit_signed_solution` extrinsic to be mortal
 - A runtime upgrade bug was discovered and is fixed in this release.
 
-### Runtime upgrade bug fixed.
+### Runtime upgrade bug fixed
 
 Recently, we noticed that it can be possible that the runtime upgrades won't 
 upgrade the metadata because the actual runtime upgrade is applied to the block 
-after 'state_subscribeRuntimeVersion' emits an event. 
+after `state_subscribeRuntimeVersion` emits an event. 
 
 For that reason, the polkadot-staking-miner now subscribes to `system().last_runtime_upgrade()` instead to fix that.
 
