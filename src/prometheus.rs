@@ -178,7 +178,6 @@ mod hidden {
 			.unwrap()
 	});
 
-	#[allow(unused)]
 	pub fn on_runtime_upgrade() {
 		RUNTIME_UPGRADES.inc();
 	}
