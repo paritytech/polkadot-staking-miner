@@ -11,20 +11,7 @@ The main changes of this release are:
 - Temporarly disable runtime upgrades more information below.
 - Bump rust MSRV to 1.74
 - Change `submit_signed_solution` extrinsic to be mortal
-
-### Runtime upgrades are disabled
-
-Recently, we noticed that it may be possible that the runtime upgrades won't 
-upgrade the metadata because the actual runtime upgrade is applied to the block 
-after 'state_subscribeRuntimeVersion' emits an event. 
-For that reason, runtime upgrades are temporarily disabled, 
-and polkadot-staking-miner is terminated.
-
-To deal with runtime upgrades, it should be sufficient to restart the client and wait a 
-few seconds until another block is finalized to fetch the latest metadata or verify 
-that the runtime upgrade has been applied successfully.
-
-This is just a temporary fix and will be fixed in the next release.
+- A runtime upgrade bug was discovered and is fixed in this release.
 
 ### [Changed]
 - refactor: make solution extrinsic mortal ([#728](https://github.com/paritytech/staking-miner-v2/pull/728))
@@ -35,7 +22,6 @@ This is just a temporary fix and will be fixed in the next release.
 - refactor: use `subxt-signer` to reduce the number of deps ([#720](https://github.com/paritytech/staking-miner-v2/pull/720))
 - chore(deps): bump clap from 4.4.8 to 4.4.10 ([#719](https://github.com/paritytech/staking-miner-v2/pull/719))
 - rename project to polkadot-staking-miner ([#717](https://github.com/paritytech/staking-miner-v2/pull/717))
-
 
 ## [v1.2.0] - 2023-11-23
 
