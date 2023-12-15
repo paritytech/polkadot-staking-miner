@@ -4,7 +4,7 @@ The format is based on [Keep a Changelog].
 
 [Keep a Changelog]: http://keepachangelog.com/en/1.0.0/
 
-## [v1.3.0] - 2023-12-14
+## [v1.3.0] - 2023-12-15
 
 The main changes of this release are as follows:
 - Change the binary name to `polkadot-staking-miner` to publish on crates.io.
