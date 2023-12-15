@@ -7,6 +7,7 @@ rust-version = "1.74.0"
 license = "GPL-3.0"
 repository = "https://github.com/paritytech/polkadot-staking-miner"
 homepage = "https://www.parity.io/"
+description = "A tool to submit NPoS election solutions for substrate based chains"
 
 [dependencies]
 codec = { package = "parity-scale-codec", version = "3.0.0" }
