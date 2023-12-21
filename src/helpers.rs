@@ -23,7 +23,6 @@ use serde::Deserialize;
 use std::{
 	future::Future,
 	pin::Pin,
-	str::FromStr,
 	task::{Context, Poll},
 	time::{Duration, Instant},
 };
@@ -152,31 +151,4 @@ pub async fn storage_at(
 	} else {
 		api.storage().at_latest().await.map_err(Into::into)
 	}
-}
-
-pub fn signer_from_seed_or_path(seed_or_path: &str) -> Result<Signer, Error> {
-	let seed_or_path = seed_or_path.trim();
-
-	let unchecked_secret = match std::fs::read(seed_or_path) {
-		Ok(s) => String::from_utf8(s).map_err(|e| Error::Other(e.to_string()))?,
-		Err(_) => seed_or_path.to_string(),
-	};
-
-	let secret = subxt_signer::SecretUri::from_str(&unchecked_secret)?;
-	Signer::from_uri(&secret).map_err(Into::into)
-}
-
-#[cfg(test)]
-#[test]
-fn signer_parsing_works() {
-	assert!(signer_from_seed_or_path("//Alice").is_ok());
-	assert!(signer_from_seed_or_path(
-		"0x1122334455667788112233445566778811223344556677881122334455667788"
-	)
-	.is_ok());
-	assert!(signer_from_seed_or_path(
-		"1122334455667788112233445566778811223344556677881122334455667788"
-	)
-	.is_err());
-	assert!(signer_from_seed_or_path("0x0").is_err());
 }

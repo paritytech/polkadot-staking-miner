@@ -18,10 +18,12 @@ use crate::{
 	client::Client,
 	epm,
 	error::Error,
-	helpers::{kill_main_task_if_critical_err, signer_from_seed_or_path, TimedFuture},
+	helpers::{kill_main_task_if_critical_err, TimedFuture},
 	opt::Solver,
 	prelude::*,
-	prometheus, static_types,
+	prometheus,
+	signer::Signer,
+	static_types,
 };
 use clap::Parser;
 use codec::{Decode, Encode};
@@ -169,10 +171,10 @@ where
 		+ 'static,
 	T::Solution: Send,
 {
-	let signer = signer_from_seed_or_path(&config.seed_or_path)?;
+	let signer = Signer::new(&config.seed_or_path)?;
 
 	let account_info = {
-		let addr = runtime::storage().system().account(signer.public_key().to_account_id());
+		let addr = runtime::storage().system().account(signer.account_id());
 		client
 			.chain_api()
 			.storage()
@@ -183,7 +185,7 @@ where
 			.ok_or(Error::AccountDoesNotExists)?
 	};
 
-	log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer.public_key().to_account_id(), account_info);
+	log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer, account_info);
 
 	if config.dry_run {
 		// if we want to try-run, ensure the node supports it.
@@ -241,7 +243,7 @@ where
 			.storage()
 			.at_latest()
 			.await?
-			.fetch(&runtime::storage().system().account(signer.public_key().to_account_id()))
+			.fetch(&runtime::storage().system().account(signer.account_id()))
 			.await?
 			.ok_or(Error::AccountDoesNotExists)?;
 		// this is lossy but fine for now.
@@ -270,10 +272,7 @@ where
 	// NOTE: as we try to send at each block then the nonce is used guard against
 	// submitting twice. Because once a solution has been accepted on chain
 	// the "next transaction" at a later block but with the same nonce will be rejected
-	let nonce = client
-		.rpc()
-		.system_account_next_index(&signer.public_key().to_account_id())
-		.await?;
+	let nonce = client.rpc().system_account_next_index(signer.account_id()).await?;
 
 	ensure_signed_phase(client.chain_api(), block_hash)
 		.inspect_err(|e| {
@@ -302,7 +301,7 @@ where
 	ensure_no_previous_solution::<T::Solution>(
 		client.chain_api(),
 		block_hash,
-		&signer.public_key().0.into(),
+		&signer.account_id().0.into(),
 	)
 	.inspect_err(|e| {
 		log::debug!(
@@ -384,7 +383,7 @@ where
 	ensure_no_previous_solution::<T::Solution>(
 		client.chain_api(),
 		best_head,
-		&signer.public_key().0.into(),
+		&signer.account_id().0.into(),
 	)
 	.inspect_err(|e| {
 		log::debug!(
@@ -544,7 +543,7 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 		client
 			.chain_api()
 			.tx()
-			.create_signed_with_nonce(&tx, &signer, nonce as u64, xt_cfg)?;
+			.create_signed_with_nonce(&tx, &*signer, nonce as u64, xt_cfg)?;
 
 	if dry_run {
 		let dry_run_bytes = client.rpc().dry_run(xt.encoded(), None).await?;

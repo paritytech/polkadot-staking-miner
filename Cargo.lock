@@ -1979,7 +1979,6 @@ version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ea1015b5a70616b688dc230cfe50c8af89d972cb132d5a622814d29773b10b9"
 dependencies = [
- "rand 0.8.5",
  "rand_core 0.6.4",
 ]
 
@@ -3201,12 +3200,10 @@ dependencies = [
  "scale-value",
  "serde",
  "serde_json",
- "sp-core",
  "sp-npos-elections",
  "sp-runtime",
  "sp-storage",
  "subxt",
- "subxt-signer",
  "thiserror",
  "tokio",
  "tracing-subscriber 0.3.18",
@@ -3931,16 +3928,7 @@ version = "0.24.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b1629c9c557ef9b293568b338dddfc8208c98a18c59d722a9d53f859d9c9b62"
 dependencies = [
- "secp256k1-sys 0.6.1",
-]
-
-[[package]]
-name = "secp256k1"
-version = "0.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2acea373acb8c21ecb5a23741452acd2593ed44ee3d343e72baaa143bc89d0d5"
-dependencies = [
- "secp256k1-sys 0.9.1",
+ "secp256k1-sys",
 ]
 
 [[package]]
@@ -3948,15 +3936,6 @@ name = "secp256k1-sys"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83080e2c2fc1006e625be82e5d1eb6a43b7fd9578b617fcc55814daf286bba4b"
-dependencies = [
- "cc",
-]
-
-[[package]]
-name = "secp256k1-sys"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4dd97a086ec737e30053fd5c46f097465d25bb81dd3608825f65298c4c98be83"
 dependencies = [
  "cc",
 ]
@@ -4409,7 +4388,7 @@ dependencies = [
  "regex",
  "scale-info",
  "schnorrkel 0.9.1",
- "secp256k1 0.24.3",
+ "secp256k1",
  "secrecy",
  "serde",
  "sp-core-hashing",
@@ -4513,7 +4492,7 @@ dependencies = [
  "log",
  "parity-scale-codec",
  "rustversion",
- "secp256k1 0.24.3",
+ "secp256k1",
  "sp-core",
  "sp-externalities",
  "sp-keystore",
@@ -4902,7 +4881,9 @@ dependencies = [
  "scale-value",
  "serde",
  "serde_json",
+ "sp-core",
  "sp-core-hashing",
+ "sp-runtime",
  "subxt-lightclient",
  "subxt-macro",
  "subxt-metadata",
@@ -4971,28 +4952,6 @@ dependencies = [
  "scale-info",
  "sp-core-hashing",
  "thiserror",
-]
-
-[[package]]
-name = "subxt-signer"
-version = "0.33.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05cc81461f8262b62acf7bfe178a45f22a40336a6ace6a3093bd3e22d7012ba3"
-dependencies = [
- "bip39",
- "hex",
- "hmac 0.12.1",
- "parity-scale-codec",
- "pbkdf2 0.12.2",
- "regex",
- "schnorrkel 0.11.4",
- "secp256k1 0.28.0",
- "secrecy",
- "sha2 0.10.8",
- "sp-core-hashing",
- "subxt",
- "thiserror",
- "zeroize",
 ]
 
 [[package]]
