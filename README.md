@@ -1,36 +1,33 @@
-# Polkadot staking miner
+# Staking Miner v2
 
-[![Daily compatibility check against latest polkadot](https://github.com/paritytech/polkadot-staking-miner/actions/workflows/nightly.yml/badge.svg)](https://github.com/paritytech/polkadot-staking-miner/actions/workflows/nightly.yml)
+[![Daily compatibility check against latest polkadot](https://github.com/paritytech/staking-miner-v2/actions/workflows/nightly.yml/badge.svg)](https://github.com/paritytech/staking-miner-v2/actions/workflows/nightly.yml)
 
-This is a re-write of the [staking miner](https://github.com/paritytech/polkadot/tree/master/utils/staking-miner) using [subxt](https://github.com/paritytech/subxt) to avoid hard dependency to each runtime version.
+This is a re-write of the [polkadot staking miner](https://github.com/paritytech/polkadot/tree/master/utils/staking-miner) using [subxt](https://github.com/paritytech/subxt) to avoid hard dependency to each runtime version.
 
 The binary itself embeds [static metadata](./artifacts/metadata.scale) to
 generate a rust codegen at compile-time that [subxt provides](https://github.com/paritytech/subxt).
 
-Runtime upgrades are handled by the polkadot-staking-miner by upgrading storage constants
-and that will work unless there is a breaking change in the pallets `pallet-election-provider-multi-phase`
-or `frame_system`.
+Runtime upgrades are handled by staking-miner-v2 by upgrading storage constants
+and that will work unless there is a breaking change in any of pallets used by
+the staking-miner (mainly pallet-election-provider and pallet-system are used).
 
-Because detecting breaking changes when connecting to a RPC node when using
+Because detecting breaking changes when connection to RPC node when using
 `polkadot-staking-miner` is hard, this repo performs daily integration tests
-against `polkadot master` and in most cases [updating the metadata](#update-metadata)
+against `polkadot master` and in most cases [update the metadata](#update-metadata)
 and fixing the compile errors are sufficient.
-
-It's also possible to use the `info` command to check whether the metadata
-embedded in the binary is compatible with a remote node, [see the info the command for further information](#info-command)
 
 Each release will specify which runtime version it was tested against but
 it's not possible to know in advance which runtimes it will work with.
 
 Thus, it's important to subscribe to releases to this repo or
-add some logic that triggers an alert once the polkadot-staking-miner crashes.
+add some logic that triggers an alert once the staking-miner-v2 crashes.
 
 ## Usage
 
 You can check the help with:
 
 ```bash
-$ polkadot-staking-miner --help
+$ staking-miner --help
 ```
 
 ### Monitor
@@ -68,25 +65,6 @@ Mine a solution that can be submitted as an emergency solution.
 
 ```bash
 $ cargo run --release -- --uri ws://localhost:9944 emergency-solution --at 0xba86a0ba663df496743eeb077d004ef86bd767716e0d8cb935ab90d3ae174e85 seq-phragmen
-```
-
-### Info command
-
-Check if the polkadot-staking-miner's metadata is compatible with a remote node.
-
-```bash
-$ cargo run --release -- --uri wss://rpc.polkadot.io info
-Remote_node:
-{
-  "spec_name": "polkadot",
-  "impl_name": "parity-polkadot",
-  "spec_version": 9431,
-  "impl_version": 0,
-  "authoring_version": 0,
-  "transaction_version": 24,
-  "state_version": 0
-}
-Compatible: YES
 ```
 
 ### Prepare your SEED
@@ -136,7 +114,7 @@ To update the metadata you need to connect to a polkadot, kusama or westend node
 $ cargo install --locked subxt-cli
 # Download the metadata from a local node and replace the current metadata
 # See `https://github.com/paritytech/subxt/tree/master/cli` for further documentation of the `subxt-cli` tool.
-$ subxt metadata --pallets "ElectionProviderMultiPhase,System" -f bytes > artifacts/metadata.scale
+$ subxt metadata -f bytes > artifacts/metadata.scale
 # Inspect the generated code
 $ subxt codegen --file artifacts/metadata.scale | rustfmt > code.rs
 ```

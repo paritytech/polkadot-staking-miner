@@ -14,6 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
+use crate::prelude::*;
+
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
 	#[error("Failed to parse log directive: `{0}´")]
@@ -24,10 +26,8 @@ pub enum Error {
 	RpcError(#[from] jsonrpsee::core::Error),
 	#[error("subxt error: `{0}`")]
 	Subxt(#[from] subxt::Error),
-	#[error("SecretUri error: `{0}`")]
-	SecretUri(#[from] subxt_signer::SecretUriError),
-	#[error("Keypair error: `{0}`")]
-	Keypair(#[from] subxt_signer::sr25519::Error),
+	#[error("Crypto error: `{0:?}`")]
+	Crypto(sp_core::crypto::SecretStringError),
 	#[error("Codec error: `{0}`")]
 	Codec(#[from] codec::Error),
 	#[error("Incorrect phase")]

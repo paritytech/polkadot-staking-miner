@@ -25,19 +25,14 @@ pin-project-lite = "0.2"
 
 # subxt
 scale-value = "0.13"
-subxt = "0.33"
-subxt-signer = { version = "0.33", features = ["subxt"] }
+subxt = { version = "0.33", features = ["substrate-compat"] }
 
 # polkadot-sdk
 frame-election-provider-support = "26.0.0"
 pallet-election-provider-multi-phase = "25.0.0"
-frame-support = "26.0.0"
 sp-npos-elections = "24.0.0"
-# Both `sp-runtime` and `sp-core` has plenty of dependencies
-# and because `pallet-election-provider-multi-phase` is depending
-# on them it's not much we can do it about it.
+frame-support = "26.0.0"
 sp-runtime = "29.0.0"
-sp-core = "26.0.0"
 
 # prometheus
 prometheus = "0.13"
