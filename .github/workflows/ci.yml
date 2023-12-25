@@ -233,7 +233,7 @@ jobs:
 
       - name: Prepare Docker environment
         run: |
-          echo IMAGE_TAG=$(if [ "$GITHUB_REF" == "refs/heads/main" ]; then echo "main-${GITHUB_SHA::7}"; else echo "$GITHUB_REF_NAME"; fi) >> $GITHUB_ENV
+          echo IMAGE_TAG=$(if [ -n "$GITHUB_REF_NAME" ]; then echo "$GITHUB_REF_NAME"; else echo "main-${GITHUB_SHA::7}"; fi) >> $GITHUB_ENV
           echo PUSH_IMAGE=true >> $GITHUB_ENV
           echo "Docker image will be published with the tag: ${{ env.IMAGE_TAG }}!"
           chmod +x ./artifacts/polkadot-staking-miner
