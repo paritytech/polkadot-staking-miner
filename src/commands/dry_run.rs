@@ -105,7 +105,13 @@ where
 			.await?
 			.ok_or(Error::AccountDoesNotExists)?;
 
-		log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer, account_info);
+		log::info!(target: LOG_TARGET, "Loaded account {} {{ nonce: {}, free_balance: {}, reserved_balance: {}, frozen_balance: {} }}",
+			signer,
+			account_info.nonce,
+			account_info.data.free,
+			account_info.data.reserved,
+			account_info.data.frozen,
+		);
 
 		let nonce = client.rpc().system_account_next_index(signer.account_id()).await?;
 		let tx = epm::signed_solution(raw_solution)?;

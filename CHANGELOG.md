@@ -4,9 +4,29 @@ The format is based on [Keep a Changelog].
 
 [Keep a Changelog]: http://keepachangelog.com/en/1.0.0/
 
+## [v1.3.1] - 2023-12-27
+
+The main changes of this release are as follows:
+- Change the binary name to `polkadot-staking-miner` to publish on crates.io.
+- Bump rust MSRV to 1.74
+- Change `submit_signed_solution` extrinsic to be mortal
+- A runtime upgrade bug was fixed in this release.
+
+### Runtime upgrade bug fixed.
+
+Recently, we noticed that it can be possible that the runtime upgrades won't
+upgrade the metadata because the actual runtime upgrade is applied to the block
+after `state_subscribeRuntimeVersion`` emits an event.
+
+For that reason, the polkadot-staking-miner now subscribes to `system().last_runtime_upgrade()` instead to fix that.
+
+### [Changed]
+- refactor: make solution extrinsic mortal ([#728](https://github.com/paritytech/staking-miner-v2/pull/728))
+- rename project to polkadot-staking-miner ([#717](https://github.com/paritytech/staking-miner-v2/pull/717))
+
 ## [v1.3.0] - 2023-12-15 [YANKED]
 
-The change to subxt-signer was used incorrectly and the release was yanked.
+The change to subxt-signer broke previous behaviour.
 
 ## [v1.2.0] - 2023-11-23
 
