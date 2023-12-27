@@ -185,7 +185,13 @@ where
 			.ok_or(Error::AccountDoesNotExists)?
 	};
 
-	log::info!(target: LOG_TARGET, "Loaded account {}, {:?}", signer, account_info);
+	log::info!(target: LOG_TARGET, "Loaded account {} {{ nonce: {}, free_balance: {}, reserved_balance: {}, frozen_balance: {} }}",
+		signer,
+		account_info.nonce,
+		account_info.data.free,
+		account_info.data.reserved,
+		account_info.data.frozen,
+	);
 
 	if config.dry_run {
 		// if we want to try-run, ensure the node supports it.
@@ -571,7 +577,7 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 			);
 
 			if let Ok(Some(_)) = solution_stored {
-				log::info!("Included at {:?}", in_block.block_hash());
+				log::info!(target: LOG_TARGET, "Included at {:?}", in_block.block_hash());
 			} else {
 				return Err(Error::Other(format!(
 					"No SolutionStored event found at {:?}",
@@ -587,7 +593,7 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 			);
 
 			if let Ok(Some(_)) = solution_stored {
-				log::info!("Finalized at {:?}", finalized.block_hash());
+				log::info!(target: LOG_TARGET, "Finalized at {:?}", finalized.block_hash());
 			} else {
 				return Err(Error::Other(format!(
 					"No SolutionStored event found at {:?}",

@@ -18,7 +18,6 @@
 
 use crate::{error::Error, prelude::*};
 use sp_core::Pair as _;
-use subxt::tx::Signer as _;
 
 // A signer type, parameterized for using with `subxt`.
 pub type PairSigner = subxt::tx::PairSigner<subxt::PolkadotConfig, sp_core::sr25519::Pair>;
@@ -34,7 +33,7 @@ pub struct Signer {
 
 impl std::fmt::Display for Signer {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{:?}", self.signer.address())
+		write!(f, "{}", self.signer.account_id())
 	}
 }
 
