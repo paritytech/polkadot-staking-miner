@@ -8,8 +8,6 @@ on:
 jobs:
   nightly-test:
     runs-on: ubuntu-latest
-    # container: paritytech/ci-unified:bullseye-1.74.0
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -26,7 +24,6 @@ jobs:
       - name: Run nightly tests
         run: |
           RUST_LOG=info cargo test --workspace --all-features -- --nocapture
-          # cargo clean
 
       - name: Create an issue on failure
         if: failure()
