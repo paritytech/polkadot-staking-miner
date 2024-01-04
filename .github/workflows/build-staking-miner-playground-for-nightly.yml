@@ -11,7 +11,7 @@ on:
   workflow_dispatch: {}
   # Run at 22pm every week on Sunday's for nightly builds.
   schedule:
-    - cron: "0 22 * * 6"
+    - cron: "0 22 1 * *"
 
 jobs:
   tests:
@@ -40,5 +40,5 @@ jobs:
         with:
           name: staking-miner-playground-binary
           path: ./staking-miner-playground/target/release/staking-miner-playground
-          retention-days: 8
+          retention-days: 31
           if-no-files-found: error
