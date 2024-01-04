@@ -1,0 +1,28 @@
+name: Prepare polkadot and staking-miner-playground binaries
+description: Downloads and configures prebuilt Polkadot and Staking Miner Playground binaries
+runs:
+  using: composite
+  steps:
+    - name: Download polkadot binaries
+      uses: dawidd6/action-download-artifact@e7466d1a7587ed14867642c2ca74b5bcc1e19a2d # v3.0.0
+      with:
+        workflow: build-polkadot-for-nightly.yml
+        name: nightly-polkadot-binary
+        path: ./tmp
+
+    - name: Download staking-miner-playground binary
+      uses: dawidd6/action-download-artifact@e7466d1a7587ed14867642c2ca74b5bcc1e19a2d # v3.0.0
+      with:
+        workflow: build-staking-miner-playground-for-nightly.yml
+        name: staking-miner-playground-binary
+        path: ./tmp
+
+    - name: Setup permissions and move to path
+      shell: bash
+      run: |
+        chmod u+x ./tmp/polkadot* ./tmp/staking-miner-playground
+        ./tmp/polkadot --version
+        ./tmp/staking-miner-playground --version
+        mkdir -p ~/.local/bin
+        mv ./tmp/polkadot* ~/.local/bin
+        mv ./tmp/staking-miner-playground ~/.local/bin
