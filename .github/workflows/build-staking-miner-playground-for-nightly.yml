@@ -1,0 +1,49 @@
+name: Build staking miner playground binary for nightly tests
+
+on:
+  # Run when changes to staking miner playground is made
+  push:
+    branches:
+      - main
+    paths:
+      - 'staking-miner-playground/**'
+  # Allow it to be manually ran to rebuild binary when needed:
+  workflow_dispatch: {}
+  # Run at 22pm every week on Sunday's for nightly builds.
+  schedule:
+    - cron: "0 22 * * 6"
+
+jobs:
+  tests:
+    name: Build staking-miner-playground
+    runs-on: ubuntu-latest
+    container: paritytech/ci-unified:bullseye-1.74.0-2023-11-01-v20231204
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            staking-miner-playground
+          cache-on-failure: true
+
+      - name: build staking-miner-playground binary
+        run: |
+          cd staking-miner-playground
+          cargo build --release --features test-trimming
+          ./target/release/staking-miner-playground --version
+
+      - name: Debug
+        run: |
+          cd staking-miner-playground
+          ls -la ./target/release/staking-miner-playground
+
+      - name: upload staking-miner-playground binary
+        uses: actions/upload-artifact@v3
+        with:
+          name: staking-miner-playground-binary
+          path: ./staking-miner-playground/target/release/staking-miner-playground
+          retention-days: 7
+          if-no-files-found: error
