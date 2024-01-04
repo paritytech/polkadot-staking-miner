@@ -35,15 +35,10 @@ jobs:
           cargo build --release --features test-trimming
           ./target/release/staking-miner-playground --version
 
-      - name: Debug
-        run: |
-          cd staking-miner-playground
-          ls -la ./target/release/staking-miner-playground
-
       - name: upload staking-miner-playground binary
         uses: actions/upload-artifact@v3
         with:
           name: staking-miner-playground-binary
           path: ./staking-miner-playground/target/release/staking-miner-playground
-          retention-days: 7
+          retention-days: 8
           if-no-files-found: error

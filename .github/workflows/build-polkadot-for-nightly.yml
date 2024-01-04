@@ -28,8 +28,6 @@ jobs:
       - name: build polkadot binary
         run: |
           cargo build -p polkadot --release --features fast-runtime
-          ls -l
-          ls -l ./target/release
           ./target/release/polkadot --version
 
       - name: upload polkadot binary
