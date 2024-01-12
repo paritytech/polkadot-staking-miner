@@ -140,11 +140,8 @@ jobs:
 
       - name: Run tests on Ubuntu
         run: |
-          staking-miner-playground --version
-          polkadot --version
-          echo $PATH
           ${{ env.RUST_INFO }}
-          RUST_LOG=info cargo test --workspace -- --nocapture
+          RUST_LOG=info cargo +stable test --workspace -- --nocapture --release
 
   build:
     name: Build polkadot-staking-miner binary
