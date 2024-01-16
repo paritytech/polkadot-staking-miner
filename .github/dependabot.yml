@@ -13,9 +13,9 @@ updates:
       - dependency-name: "polkadot-*"
       - dependency-name: "node-template-*"
     schedule:
-      interval: "daily"
+      interval: "weekly"
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
