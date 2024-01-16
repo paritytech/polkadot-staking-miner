@@ -1,13 +1,11 @@
 [package]
-name = "node-template-runtime"
+name = "runtime"
 version = "4.0.0-dev"
-description = "A fresh FRAME-based Substrate runtime, ready for hacking."
+description = "staking-miner-playground runtime"
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
-homepage = "https://substrate.io/"
 edition = "2021"
 license = "Unlicense"
 publish = false
-repository = "https://github.com/substrate-developer-hub/substrate-node-template/"
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
@@ -15,46 +13,46 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 codec = { package = "parity-scale-codec", version = "3.0.0", default-features = false, features = ["derive"] }
 scale-info = { version = "2.0.1", default-features = false, features = ["derive"] }
+log = "0.4"
 
-pallet-balances = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-frame-support = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-pallet-grandpa = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-pallet-insecure-randomness-collective-flip = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-pallet-sudo = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-pallet-staking = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-pallet-session = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-pallet-bags-list = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-pallet-staking-reward-curve = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-frame-election-provider-support = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-pallet-election-provider-multi-phase = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-pallet-aura = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-frame-system = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-pallet-timestamp = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-pallet-transaction-payment = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-frame-executive = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-sp-api = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-sp-staking = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-sp-io = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-sp-npos-elections = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-sp-consensus-aura = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-sp-block-builder = {  default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-sp-core = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-sp-inherents = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-sp-offchain = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-sp-runtime = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-sp-session = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-sp-std = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-sp-transaction-pool = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-sp-version = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
+pallet-balances = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+frame-support = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+pallet-grandpa = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+pallet-insecure-randomness-collective-flip = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+pallet-sudo = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+pallet-staking = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+pallet-session = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+pallet-bags-list = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+pallet-staking-reward-curve = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+frame-election-provider-support = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+pallet-election-provider-multi-phase = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+pallet-aura = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+frame-system = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+pallet-timestamp = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+pallet-transaction-payment = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+frame-executive = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+sp-api = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+sp-staking = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+sp-consensus-aura = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+sp-block-builder = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+sp-core = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+sp-inherents = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+sp-offchain = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+sp-runtime = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+sp-session = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+sp-std = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+sp-transaction-pool = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+sp-version = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+sp-genesis-builder = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
 
 # Used for the node template's RPCs
-frame-system-rpc-runtime-api = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
-pallet-transaction-payment-rpc-runtime-api = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "master" }
+frame-system-rpc-runtime-api = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
+pallet-transaction-payment-rpc-runtime-api = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
 
-frame-benchmarking = { default-features = false, git = "https://github.com/paritytech/substrate.git", optional = true, branch = "master" }
+frame-benchmarking = { git = "https://github.com/paritytech/polkadot-sdk", default-features = false }
 
 [build-dependencies]
-substrate-wasm-builder = { git = "https://github.com/paritytech/substrate.git", branch = "master" }
+substrate-wasm-builder = { git = "https://github.com/paritytech/polkadot-sdk" }
 
 [features]
 default = ["std"]
@@ -81,7 +79,6 @@ std = [
 	"sp-consensus-aura/std",
 	"sp-core/std",
 	"sp-staking/std",
-	"sp-io/std",
 	"sp-inherents/std",
 	"sp-offchain/std",
 	"sp-runtime/std",
