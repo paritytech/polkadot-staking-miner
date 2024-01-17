@@ -55,24 +55,13 @@ sp-block-builder = "25"
 substrate-frame-rpc-system = "27"
 pallet-transaction-payment-rpc = "29"
 
-# These dependencies are used for runtime benchmarking
-frame-benchmarking = "27"
-frame-benchmarking-cli = "31"
-
 # Local Dependencies
 runtime = { version = "4.0.0-dev", path = "../runtime" }
 lazy_static = "1.4.0"
 rand = "0.8.5"
-
-# CLI-specific dependencies
-try-runtime-cli = { version = "0.37", optional = true }
 
 [build-dependencies]
 substrate-build-script-utils = { git = "https://github.com/paritytech/polkadot-sdk" }
 
 [features]
 default = []
-runtime-benchmarks = ["runtime/runtime-benchmarks"]
-# Enable features that allow the runtime to be tried and debugged. Name might be subject to change
-# in the near future.
-try-runtime = ["runtime/try-runtime", "try-runtime-cli"]

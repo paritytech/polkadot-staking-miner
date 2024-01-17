@@ -49,8 +49,6 @@ sp-genesis-builder = { version = "0.6", default-features = false }
 frame-system-rpc-runtime-api = { version = "25", default-features = false }
 pallet-transaction-payment-rpc-runtime-api = { version = "27", default-features = false }
 
-frame-benchmarking = { version = "27", default-features = false }
-
 [build-dependencies]
 substrate-wasm-builder = { git = "https://github.com/paritytech/polkadot-sdk" }
 
@@ -87,8 +85,4 @@ std = [
 	"sp-transaction-pool/std",
 	"sp-version/std",
 ]
-runtime-benchmarks = [
-	"frame-benchmarking/runtime-benchmarks",
-]
-try-runtime = []
 test-trimming = []

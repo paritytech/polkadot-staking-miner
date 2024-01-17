@@ -322,8 +322,8 @@ impl<const PERIOD: BlockNumber> ShouldEndSession<BlockNumber>
 		// can still be the normal periodic sessions.
 		let now = System::block_number();
 		let last_election = get_last_election();
-		let will_change = ElectionProviderMultiPhase::queued_solution().is_some()
-			|| (now - last_election) > PERIOD;
+		let will_change = ElectionProviderMultiPhase::queued_solution().is_some() ||
+			(now - last_election) > PERIOD;
 		if will_change {
 			set_last_election()
 		}
@@ -838,22 +838,6 @@ impl_runtime_apis! {
 		}
 		fn query_length_to_fee(length: u32) -> Balance {
 			TransactionPayment::length_to_fee(length)
-		}
-	}
-
-	#[cfg(feature = "runtime-benchmarks")]
-	impl frame_benchmarking::Benchmark<Block> for Runtime {
-		fn benchmark_metadata(extra: bool) -> (
-			Vec<frame_benchmarking::BenchmarkList>,
-			Vec<frame_support::traits::StorageInfo>,
-		) {
-			unimplemented!();
-		}
-
-		fn dispatch_benchmark(
-			config: frame_benchmarking::BenchmarkConfig
-		) -> Result<Vec<frame_benchmarking::BenchmarkBatch>, sp_runtime::RuntimeString> {
-			unimplemented!();
 		}
 	}
 
