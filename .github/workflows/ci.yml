@@ -130,6 +130,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Get Polkadot and Staking Miner Playground binaries
+        uses: ./.github/workflows/actions/prepare-binaries
+
       - name: Cache Rust dependencies
         uses: swatinem/rust-cache@v2
         with:
@@ -138,7 +141,7 @@ jobs:
       - name: Run tests on Ubuntu
         run: |
           ${{ env.RUST_INFO }}
-          RUST_LOG=info cargo test --workspace -- --nocapture
+          RUST_LOG=info cargo +stable test --workspace -- --nocapture
 
   build:
     name: Build polkadot-staking-miner binary

@@ -29,6 +29,9 @@ jobs:
         run: |
           cargo build -p polkadot --release --features fast-runtime
           ./target/release/polkadot --version
+          strip -s ./target/release/polkadot
+          strip -s ./target/release/polkadot-prepare-worker
+          strip -s ./target/release/polkadot-execute-worker
 
       - name: upload polkadot binary
         uses: actions/upload-artifact@v3

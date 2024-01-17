@@ -23,6 +23,6 @@ runs:
         chmod u+x ./tmp/polkadot* ./tmp/staking-miner-playground
         ./tmp/polkadot --version
         ./tmp/staking-miner-playground --version
-        mkdir -p ~/.local/bin
-        mv ./tmp/polkadot* ~/.local/bin
-        mv ./tmp/staking-miner-playground ~/.local/bin
+        mkdir -p /usr/local/bin
+        mv ./tmp/polkadot* /usr/local/bin
+        mv ./tmp/staking-miner-playground /usr/local/bin

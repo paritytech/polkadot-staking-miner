@@ -34,6 +34,7 @@ jobs:
           cd staking-miner-playground
           cargo build --release --features test-trimming
           ./target/release/staking-miner-playground --version
+          strip -s ./target/release/staking-miner-playground
 
       - name: upload staking-miner-playground binary
         uses: actions/upload-artifact@v3
