@@ -61,7 +61,7 @@ lazy_static = "1.4.0"
 rand = "0.8.5"
 
 [build-dependencies]
-substrate-build-script-utils = { git = "https://github.com/paritytech/polkadot-sdk" }
+substrate-build-script-utils = "10"
 
 [features]
 default = []

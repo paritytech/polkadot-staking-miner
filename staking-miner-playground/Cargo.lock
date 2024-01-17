@@ -1053,19 +1053,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "console"
-version = "0.15.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e1f83fc076bd6dd27517eacdf25fef6c4dfe5f1d7448bafaaf3a26f13b5e4eb"
-dependencies = [
- "encode_unicode",
- "lazy_static",
- "libc",
- "unicode-width",
- "windows-sys 0.52.0",
-]
-
-[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1776,12 +1763,6 @@ dependencies = [
  "subtle 2.5.0",
  "zeroize",
 ]
-
-[[package]]
-name = "encode_unicode"
-version = "0.3.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a357d28ed41a50f9c765dbfe56cbc04a64e53e5fc58ba79fbc34c10ef3df831f"
 
 [[package]]
 name = "enum-as-inner"
@@ -6082,7 +6063,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40d0fdbc88edc041b64891c7162e02f062baa699212395db0615bd9bdcda0dd7"
 dependencies = [
  "sc-allocator",
- "sp-maybe-compressed-blob 10.0.0",
+ "sp-maybe-compressed-blob",
  "sp-wasm-interface",
  "thiserror",
  "wasm-instrument",
@@ -7485,15 +7466,6 @@ dependencies = [
 
 [[package]]
 name = "sp-maybe-compressed-blob"
-version = "4.1.0-dev"
-source = "git+https://github.com/paritytech/polkadot-sdk#a42a47f81d91ccf2f885ff01749185cd4c793278"
-dependencies = [
- "thiserror",
- "zstd 0.12.4",
-]
-
-[[package]]
-name = "sp-maybe-compressed-blob"
 version = "10.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0950218edb5c5fb4867e28814d7b13c13a3c80ea37f356dc410437105a07cff8"
@@ -8033,8 +8005,9 @@ dependencies = [
 
 [[package]]
 name = "substrate-build-script-utils"
-version = "3.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk#a42a47f81d91ccf2f885ff01749185cd4c793278"
+version = "10.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d211fbdfa0ecd20577b61bfaaea72fbe6cdb34a689dc200337c4564761f37ceb"
 
 [[package]]
 name = "substrate-frame-rpc-system"
@@ -8071,18 +8044,19 @@ dependencies = [
 
 [[package]]
 name = "substrate-wasm-builder"
-version = "5.0.0-dev"
-source = "git+https://github.com/paritytech/polkadot-sdk#a42a47f81d91ccf2f885ff01749185cd4c793278"
+version = "16.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc8166be0b5e24dc91209ec92869bfa6e0fbe07e64ebc7e92242121c04a83e2d"
 dependencies = [
+ "ansi_term",
  "build-helper",
  "cargo_metadata",
- "console",
  "filetime",
  "parity-wasm",
- "sp-maybe-compressed-blob 4.1.0-dev",
+ "sp-maybe-compressed-blob",
  "strum",
  "tempfile",
- "toml 0.8.8",
+ "toml 0.7.8",
  "walkdir",
  "wasm-opt",
 ]
@@ -8384,6 +8358,18 @@ dependencies = [
 
 [[package]]
 name = "toml"
+version = "0.7.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd79e69d3b627db300ff956027cc6c3798cef26d22526befdfcd12feeb6d2257"
+dependencies = [
+ "serde",
+ "serde_spanned",
+ "toml_datetime",
+ "toml_edit 0.19.15",
+]
+
+[[package]]
+name = "toml"
 version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1a195ec8c9da26928f773888e0742ca3ca1040c6cd859c919c9f59c1954ab35"
@@ -8401,6 +8387,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3550f4e9685620ac18a50ed434eb3aec30db8ba93b0287467bca5826ea25baf1"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "toml_edit"
+version = "0.19.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b5bb770da30e5cbfde35a2d7b9b8a2c4b8ef89548a7a6aeab5c9a576e3e7421"
+dependencies = [
+ "indexmap 2.1.0",
+ "serde",
+ "serde_spanned",
+ "toml_datetime",
+ "winnow",
 ]
 
 [[package]]

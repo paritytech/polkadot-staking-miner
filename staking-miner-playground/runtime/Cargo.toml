@@ -50,7 +50,7 @@ frame-system-rpc-runtime-api = { version = "25", default-features = false }
 pallet-transaction-payment-rpc-runtime-api = { version = "27", default-features = false }
 
 [build-dependencies]
-substrate-wasm-builder = { git = "https://github.com/paritytech/polkadot-sdk" }
+substrate-wasm-builder = "16"
 
 [features]
 default = ["std"]
