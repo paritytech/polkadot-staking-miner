@@ -322,8 +322,8 @@ impl<const PERIOD: BlockNumber> ShouldEndSession<BlockNumber>
 		// can still be the normal periodic sessions.
 		let now = System::block_number();
 		let last_election = get_last_election();
-		let will_change = ElectionProviderMultiPhase::queued_solution().is_some() ||
-			(now - last_election) > PERIOD;
+		let will_change = ElectionProviderMultiPhase::queued_solution().is_some()
+			|| (now - last_election) > PERIOD;
 		if will_change {
 			set_last_election()
 		}
@@ -437,7 +437,6 @@ impl pallet_staking::Config for Runtime {
 	/// A super-majority of the council can cancel the slash.
 	type AdminOrigin = EnsureRoot<AccountId>;
 	type EventListeners = ();
-	type MaxControllersInDeprecationBatch = MaxControllersInDeprecationBatch;
 }
 
 parameter_types! {
@@ -596,6 +595,7 @@ impl pallet_election_provider_multi_phase::Config for Runtime {
 	type UnsignedPhase = ConstU32<{ SESSION / 2 }>;
 	type SignedPhase = ConstU32<{ SESSION / 2 }>;
 	type BetterSignedThreshold = ();
+	type BetterUnsignedThreshold = ();
 	type OffchainRepeat = ();
 	type MinerTxPriority = ElectionUnsignedPriority;
 	type SignedMaxSubmissions = ConstU32<10>;
