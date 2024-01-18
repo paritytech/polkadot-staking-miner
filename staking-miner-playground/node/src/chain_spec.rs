@@ -12,7 +12,9 @@ use sp_core::{sr25519, Pair, Public};
 use sp_runtime::traits::{IdentifyAccount, Verify};
 
 lazy_static::lazy_static! {
-	// Ideally, we should test with N=22500, C=1500, V=300 which is the limit on polkadot.
+	// Ideally, we should test with N=22500, C=1500, V=300 by default
+	//
+	// https://github.com/paritytech/polkadot-staking-miner/issues/774
 	static ref NOMINATORS: u32 = std::env::var("N").unwrap_or("700".to_string()).parse().unwrap();
 	static ref CANDIDATES: u32 = std::env::var("C").unwrap_or("200".to_string()).parse().unwrap();
 	static ref VALIDATORS: u32 = std::env::var("V").unwrap_or("20".to_string()).parse().unwrap();
