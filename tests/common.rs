@@ -17,7 +17,7 @@ pub use runtime::{
 	runtime_types::pallet_election_provider_multi_phase::{ElectionCompute, ReadySolution},
 };
 
-pub const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(60 * 15);
+pub const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(6 * 60);
 
 pub fn init_logger() {
 	let _ = tracing_subscriber::fmt()
