@@ -154,7 +154,7 @@ parameter_types! {
 	pub const SS58Prefix: u8 = 42;
 
 	pub BlockLength: limits::BlockLength = limits::BlockLength { max: PerDispatchClass::new(|_| 4 * 1024) };
-	pub BlockWeights: limits::BlockWeights = limits::BlockWeights::simple_max(Weight::from_parts(WEIGHT_REF_TIME_PER_SECOND, u64::MAX));
+	pub BlockWeights: limits::BlockWeights = limits::BlockWeights::simple_max(Weight::from_parts(WEIGHT_REF_TIME_PER_SECOND / 100, u64::MAX));
 }
 
 #[derive_impl(frame_system::config_preludes::RelayChainDefaultConfig as frame_system::DefaultConfig)]
@@ -322,8 +322,8 @@ impl<const PERIOD: BlockNumber> ShouldEndSession<BlockNumber>
 		// can still be the normal periodic sessions.
 		let now = System::block_number();
 		let last_election = get_last_election();
-		let will_change = ElectionProviderMultiPhase::queued_solution().is_some() ||
-			(now - last_election) > PERIOD;
+		let will_change = ElectionProviderMultiPhase::queued_solution().is_some()
+			|| (now - last_election) > PERIOD;
 		if will_change {
 			set_last_election()
 		}
@@ -385,11 +385,18 @@ parameter_types! {
 	pub const MaxControllersInDeprecationBatch: u32 = 751;
 	pub Lookahead: BlockNumber = 5u32.into();
 	pub HistoryDepth: u32 = 84;
+	pub const MaxExposurePageSize: u32 = 64;
+	// Note: this is not really correct as Max Nominators is (MaxExposurePageSize * page_count) but
+	// this is an unbounded number. We just set it to a reasonably high value, 1 full page
+	// of nominators.
+	pub const MaxNominators: u32 = 64;
+	pub const MaxNominations: u32 = <NposSolution16 as frame_election_provider_support::NposSolution>::LIMIT as u32;
+
 }
 pub struct StakingBenchmarkingConfig;
 impl pallet_staking::BenchmarkingConfig for StakingBenchmarkingConfig {
-	type MaxNominators = ConstU32<1000>;
-	type MaxValidators = ConstU32<1000>;
+	type MaxNominators = Nominators;
+	type MaxValidators = Validators;
 }
 
 impl SessionInterface<AccountId> for Runtime {
@@ -448,23 +455,28 @@ parameter_types! {
 	pub const SignedDepositByte: Balance = 1 * CENTS;
 	pub const SignedDepositIncreaseFactor: Percent = Percent::from_percent(10);
 
+	// max nominators.
+	// this is 22_500 on polkadot/westend
+	pub MaxElectingVoters: u32 = Nominators::get();
+
 	// miner configs
 	pub const ElectionUnsignedPriority: TransactionPriority = StakingUnsignedPriority::get() - 1u64;
 
 	// This is a hack to get the number of validators, candidates and nominators
 	// used by node which uses the same env flags as the chain spec builder in the node crate.
 	//
-	// NOTE: This value must be the same as `V` in `node/src/chainspec.rs`.
-	Validators: u32 = option_env!("V").unwrap_or("20").parse().expect("env variable `V` must be number");
+	// NOTE: The default values needs be equal to the values in `node/src/chainspec.rs`.
+	pub Validators: u32 = option_env!("V").unwrap_or("20").parse().expect("env variable `V` must be number");
+	pub Nominators: u32 = option_env!("N").unwrap_or("700").parse().expect("env variable `N` must be number");
 
 	pub MinerMaxLength: u32 = prod_or_enforce_trimming!(
 		*(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get()).max.get(DispatchClass::Normal),
-		Perbill::from_percent(58) * *(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get()).max.get(DispatchClass::Normal)
+		Perbill::from_percent(45) * *(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get()).max.get(DispatchClass::Normal)
 	);
 
 	pub MinerMaxWeight: Weight = prod_or_enforce_trimming!(
 		<Runtime as frame_system::Config>::BlockWeights::get().get(DispatchClass::Normal).max_total.unwrap(),
-		Perbill::from_rational(8u32, 10) * <Runtime as frame_system::Config>::BlockWeights::get().get(DispatchClass::Normal).max_total.unwrap()
+		Perbill::from_percent(85) * <Runtime as frame_system::Config>::BlockWeights::get().get(DispatchClass::Normal).max_total.unwrap()
 	);
 
 	// The maximum winners that can be elected by the Election pallet which is equivalent to the
@@ -505,24 +517,6 @@ mod solution_24 {
 use solution_16::NposSolution16;
 #[allow(unused)]
 use solution_24::NposSolution24;
-type FinalSolution = NposSolution16;
-
-parameter_types! {
-	pub const MaxNominations: u32 = <
-		FinalSolution
-		as
-		frame_election_provider_support::NposSolution
-	>::LIMIT as u32;
-	pub const MaxElectingVoters: u32 = 25_000;
-	pub MaxOnChainElectingVoters: u32 = 5000;
-	pub MaxOnChainElectableTargets: u16 = 1250;
-	// Note: this is not really correct as Max Nominators is (MaxExposurePageSize * page_count) but
-	// this is an unbounded number. We just set it to a reasonably high value, 1 full page
-	// of nominators.
-	pub const MaxNominators: u32 = 10_000;
-	pub const MaxExposurePageSize: u32 = 10_000;
-
-}
 
 /// The numbers configured here could always be more than the the maximum limits of staking pallet
 /// to ensure election snapshot will not run out of memory. For now, we set them to smaller values
