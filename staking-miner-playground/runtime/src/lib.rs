@@ -382,7 +382,6 @@ parameter_types! {
 	pub const RewardCurve: &'static PiecewiseLinear<'static> = &REWARD_CURVE;
 	pub const MaxNominatorRewardedPerValidator: u32 = 256;
 	pub const OffendingValidatorsThreshold: Perbill = Perbill::from_percent(17);
-	pub const MaxControllersInDeprecationBatch: u32 = 751;
 	pub Lookahead: BlockNumber = 5u32.into();
 	pub HistoryDepth: u32 = 84;
 	pub const MaxExposurePageSize: u32 = 64;
