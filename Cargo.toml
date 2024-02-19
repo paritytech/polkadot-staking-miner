@@ -25,7 +25,7 @@ pin-project-lite = "0.2"
 
 # subxt
 scale-value = "0.13"
-subxt = { version = "0.33", features = ["substrate-compat"] }
+subxt = { version = "0.34", features = ["substrate-compat"] }
 
 # polkadot-sdk
 frame-election-provider-support = "26.0.0"
