@@ -24,7 +24,7 @@ tokio = { version = "1.36", features = ["macros", "rt-multi-thread", "sync", "si
 pin-project-lite = "0.2"
 
 # subxt
-scale-value = "0.13"
+scale-value = "0.14"
 subxt = { version = "0.33", features = ["substrate-compat"] }
 
 # polkadot-sdk
