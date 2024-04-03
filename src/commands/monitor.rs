@@ -23,7 +23,7 @@ use crate::{
 	prelude::*,
 	prometheus,
 	signer::Signer,
-	static_types::{self},
+	static_types,
 };
 use clap::Parser;
 use codec::{Decode, Encode};
