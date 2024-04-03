@@ -23,7 +23,7 @@ use crate::{
 	prelude::*,
 	prometheus,
 	signer::Signer,
-	static_types,
+	static_types::{self},
 };
 use clap::Parser;
 use codec::{Decode, Encode};
@@ -163,7 +163,11 @@ impl FromStr for SubmissionStrategy {
 	}
 }
 
-pub async fn monitor_cmd<T>(client: Client, config: MonitorConfig) -> Result<(), Error>
+pub async fn monitor_cmd<T>(
+	client: Client,
+	config: MonitorConfig,
+	signed_phase_length: u64,
+) -> Result<(), Error>
 where
 	T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
 		+ Send
@@ -237,8 +241,15 @@ where
 		let config2 = config.clone();
 		let submit_lock2 = submit_lock.clone();
 		tokio::spawn(async move {
-			if let Err(err) =
-				mine_and_submit_solution::<T>(at, client2, signer2, config2, submit_lock2).await
+			if let Err(err) = mine_and_submit_solution::<T>(
+				at,
+				client2,
+				signer2,
+				config2,
+				submit_lock2,
+				signed_phase_length,
+			)
+			.await
 			{
 				kill_main_task_if_critical_err(&tx2, err)
 			}
@@ -264,6 +275,7 @@ async fn mine_and_submit_solution<T>(
 	signer: Signer,
 	config: MonitorConfig,
 	submit_lock: Arc<Mutex<()>>,
+	signed_phase_len: u64,
 ) -> Result<(), Error>
 where
 	T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
@@ -437,6 +449,7 @@ where
 		config.listen,
 		config.dry_run,
 		&at,
+		signed_phase_len,
 	)
 	.timed()
 	.await
@@ -530,20 +543,11 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 	listen: Listen,
 	dry_run: bool,
 	at: &Header,
+	signed_phase_length: u64,
 ) -> Result<(), Error> {
 	let tx = epm::signed_solution(RawSolution { solution, score, round })?;
 
-	// TODO: https://github.com/paritytech/polkadot-staking-miner/issues/730
-	//
-	// The extrinsic mortality length is static and doesn't know when the
-	// signed phase ends.
-	let signed_phase_len = client
-		.chain_api()
-		.constants()
-		.at(&runtime::constants().election_provider_multi_phase().signed_phase())?;
-	let xt_cfg = DefaultExtrinsicParamsBuilder::default()
-		.mortal(at, signed_phase_len as u64)
-		.build();
+	let xt_cfg = DefaultExtrinsicParamsBuilder::default().mortal(at, signed_phase_length).build();
 
 	let xt =
 		client

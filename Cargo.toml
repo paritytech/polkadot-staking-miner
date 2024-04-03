@@ -11,7 +11,7 @@ description = "A tool to submit NPoS election solutions for substrate based chai
 
 [dependencies]
 codec = { package = "parity-scale-codec", version = "3.0.0" }
-scale-info = { package = "scale-info", version = "2.10.0" }
+scale-info = { package = "scale-info", version = "2.11.1" }
 clap = { version = "4.5", features = ["derive", "env"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 jsonrpsee = { version = "0.20", features = ["ws-client"] }
@@ -28,11 +28,11 @@ scale-value = "0.13"
 subxt = { version = "0.33", features = ["substrate-compat"] }
 
 # polkadot-sdk
-frame-election-provider-support = "26.0.0"
-pallet-election-provider-multi-phase = "25.0.0"
-sp-npos-elections = "24.0.0"
-frame-support = "26.0.0"
-sp-runtime = "29.0.0"
+frame-election-provider-support = "31.0.0"
+pallet-election-provider-multi-phase = "30.0.0"
+sp-npos-elections = "29.0.0"
+frame-support = "31.0.0"
+sp-runtime = "34.0.0"
 
 # prometheus
 prometheus = "0.13"
