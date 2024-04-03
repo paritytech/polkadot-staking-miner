@@ -17,7 +17,7 @@
 use crate::{error::Error, prelude::*};
 use codec::Decode;
 use frame_support::weights::Weight;
-use jsonrpsee::core::Error as JsonRpseeError;
+use jsonrpsee::core::ClientError as JsonRpseeError;
 use pin_project_lite::pin_project;
 use serde::Deserialize;
 use std::{

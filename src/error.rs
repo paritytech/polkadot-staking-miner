@@ -23,7 +23,7 @@ pub enum Error {
 	#[error("I/O error: `{0}`")]
 	Io(#[from] std::io::Error),
 	#[error("RPC error: `{0}`")]
-	RpcError(#[from] jsonrpsee::core::Error),
+	RpcError(#[from] jsonrpsee::core::ClientError),
 	#[error("subxt error: `{0}`")]
 	Subxt(#[from] subxt::Error),
 	#[error("Crypto error: `{0:?}`")]

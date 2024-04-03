@@ -37,12 +37,13 @@ use pallet_election_provider_multi_phase::{
 	unsigned::TrimmingStatus, RawSolution, ReadySolution, SolutionOf, SolutionOrSnapshotSize,
 };
 use scale_info::{PortableRegistry, TypeInfo};
-use scale_value::scale::{decode_as_type, TypeId};
+use scale_value::scale::decode_as_type;
 use sp_npos_elections::{ElectionScore, VoteWeight};
 use subxt::{dynamic::Value, tx::DynamicPayload};
 
 const EPM_PALLET_NAME: &str = "ElectionProviderMultiPhase";
 
+type TypeId = u32;
 type MinerVoterOf =
 	frame_election_provider_support::Voter<AccountId, crate::static_types::MaxVotesPerVoter>;
 type RoundSnapshot = pallet_election_provider_multi_phase::RoundSnapshot<AccountId, MinerVoterOf>;
@@ -512,7 +513,7 @@ fn to_scale_value<T: scale_info::TypeInfo + 'static + Encode>(val: T) -> Result<
 
 	let bytes = val.encode();
 
-	decode_as_type(&mut bytes.as_ref(), ty_id, &types)
+	decode_as_type(&mut bytes.as_ref(), &ty_id, &types)
 		.map(|v| v.remove_context())
 		.map_err(|e| {
 			Error::DynamicTransaction(format!(
