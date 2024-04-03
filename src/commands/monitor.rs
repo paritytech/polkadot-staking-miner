@@ -547,6 +547,9 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 ) -> Result<(), Error> {
 	let tx = epm::signed_solution(RawSolution { solution, score, round })?;
 
+	// TODO: https://github.com/paritytech/polkadot-staking-miner/issues/730
+	//
+	// The extrinsic mortality length is static and it doesn't know when the signed phase ends.
 	let xt_cfg = DefaultExtrinsicParamsBuilder::default().mortal(at, signed_phase_length).build();
 
 	let xt =
