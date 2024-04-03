@@ -29,7 +29,7 @@ use clap::Parser;
 use codec::{Decode, Encode};
 use frame_election_provider_support::NposSolution;
 use futures::future::TryFutureExt;
-use jsonrpsee::core::Error as JsonRpseeError;
+use jsonrpsee::core::ClientError as JsonRpseeError;
 use pallet_election_provider_multi_phase::{RawSolution, SolutionOf};
 use sp_runtime::Perbill;
 use std::{str::FromStr, sync::Arc};
@@ -550,13 +550,12 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 	// TODO: https://github.com/paritytech/polkadot-staking-miner/issues/730
 	//
 	// The extrinsic mortality length is static and it doesn't know when the signed phase ends.
-	let xt_cfg = DefaultExtrinsicParamsBuilder::default().mortal(at, signed_phase_length).build();
+	let xt_cfg = DefaultExtrinsicParamsBuilder::default()
+		.nonce(nonce)
+		.mortal(at, signed_phase_length)
+		.build();
 
-	let xt =
-		client
-			.chain_api()
-			.tx()
-			.create_signed_with_nonce(&tx, &*signer, nonce as u64, xt_cfg)?;
+	let xt = client.chain_api().tx().create_signed(&tx, &*signer, xt_cfg).await?;
 
 	if dry_run {
 		let dry_run_bytes = client.rpc().dry_run(xt.encoded(), None).await?;
