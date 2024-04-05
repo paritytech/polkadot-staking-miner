@@ -11,28 +11,28 @@ description = "A tool to submit NPoS election solutions for substrate based chai
 
 [dependencies]
 codec = { package = "parity-scale-codec", version = "3.0.0" }
-scale-info = { package = "scale-info", version = "2.10.0" }
-clap = { version = "4.4", features = ["derive", "env"] }
+scale-info = { package = "scale-info", version = "2.11.1" }
+clap = { version = "4.5", features = ["derive", "env"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-jsonrpsee = { version = "0.20", features = ["ws-client"] }
+jsonrpsee = { version = "0.22.3", features = ["ws-client"] }
 log = "0.4"
 serde = "1.0"
 serde_json = "1.0"
 futures = "0.3"
 thiserror = "1.0"
-tokio = { version = "1.35", features = ["macros", "rt-multi-thread", "sync", "signal"] }
+tokio = { version = "1.36", features = ["macros", "rt-multi-thread", "sync", "signal"] }
 pin-project-lite = "0.2"
 
 # subxt
-scale-value = "0.13"
-subxt = { version = "0.33", features = ["substrate-compat"] }
+scale-value = "0.14.1"
+subxt = { version = "0.35.1", features = ["substrate-compat"] }
 
 # polkadot-sdk
-frame-election-provider-support = "26.0.0"
-pallet-election-provider-multi-phase = "25.0.0"
-sp-npos-elections = "24.0.0"
-frame-support = "26.0.0"
-sp-runtime = "29.0.0"
+frame-election-provider-support = "31.0.0"
+pallet-election-provider-multi-phase = "30.0.0"
+sp-npos-elections = "29.0.0"
+frame-support = "31.0.0"
+sp-runtime = "34.0.0"
 
 # prometheus
 prometheus = "0.13"
@@ -42,5 +42,5 @@ once_cell = "1.19"
 [dev-dependencies]
 anyhow = "1"
 assert_cmd = "2.0"
-sp-storage = "17.0.0"
+sp-storage = "20.0.0"
 regex = "1"
