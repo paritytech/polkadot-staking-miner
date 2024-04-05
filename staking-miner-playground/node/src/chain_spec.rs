@@ -1,10 +1,10 @@
-use node_template_runtime::{
-	opaque::SessionKeys, AccountId, AuraConfig, Balance, BalancesConfig, GenesisConfig,
-	GrandpaConfig, MaxNominations, SessionConfig, Signature, StakingConfig, SudoConfig,
-	SystemConfig, WASM_BINARY,
-};
 use pallet_staking::StakerStatus;
 use rand::{distributions::Alphanumeric, rngs::OsRng, seq::SliceRandom, Rng};
+use runtime::{
+	opaque::SessionKeys, AccountId, AuraConfig, Balance, BalancesConfig, GrandpaConfig,
+	MaxNominations, RuntimeGenesisConfig, SessionConfig, Signature, StakingConfig, SudoConfig,
+	SystemConfig, WASM_BINARY,
+};
 use sc_service::ChainType;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
@@ -12,13 +12,16 @@ use sp_core::{sr25519, Pair, Public};
 use sp_runtime::traits::{IdentifyAccount, Verify};
 
 lazy_static::lazy_static! {
+	// Ideally, we should test with N=22500, C=1500, V=300 by default
+	//
+	// https://github.com/paritytech/polkadot-staking-miner/issues/774
 	static ref NOMINATORS: u32 = std::env::var("N").unwrap_or("700".to_string()).parse().unwrap();
 	static ref CANDIDATES: u32 = std::env::var("C").unwrap_or("200".to_string()).parse().unwrap();
 	static ref VALIDATORS: u32 = std::env::var("V").unwrap_or("20".to_string()).parse().unwrap();
 }
 
 /// Specialized `ChainSpec`. This is a specialization of the general Substrate ChainSpec type.
-pub type ChainSpec = sc_service::GenericChainSpec<GenesisConfig>;
+pub type ChainSpec = sc_service::GenericChainSpec<RuntimeGenesisConfig>;
 
 /// Generate a crypto pair from seed.
 pub fn get_from_seed<TPublic: Public>(seed: &str) -> <TPublic::Pair as Pair>::Public {
@@ -50,20 +53,12 @@ pub fn authority_keys_from_seed(s: &str) -> (AccountId, AuraId, GrandpaId) {
 pub fn development_config() -> Result<ChainSpec, String> {
 	let wasm_binary = WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?;
 
-	Ok(ChainSpec::from_genesis(
-		// Name
-		"Development",
-		// ID
-		"dev",
-		ChainType::Development,
-		move || testnet_genesis(wasm_binary, true),
-		vec![],
-		None,
-		None,
-		None,
-		None,
-		None,
-	))
+	let chain_spec = ChainSpec::builder(wasm_binary, Default::default())
+		.with_genesis_config_patch(testnet_genesis())
+		.with_chain_type(ChainType::Development)
+		.build();
+
+	Ok(chain_spec)
 }
 
 fn session_keys(aura: AuraId, grandpa: GrandpaId) -> SessionKeys {
@@ -71,7 +66,7 @@ fn session_keys(aura: AuraId, grandpa: GrandpaId) -> SessionKeys {
 }
 
 /// Configure initial storage state for FRAME modules.
-fn testnet_genesis(wasm_binary: &[u8], _enable_println: bool) -> GenesisConfig {
+fn testnet_genesis() -> serde_json::Value {
 	let rand_str =
 		|| -> String { OsRng.sample_iter(&Alphanumeric).take(32).map(char::from).collect() };
 
@@ -79,9 +74,9 @@ fn testnet_genesis(wasm_binary: &[u8], _enable_println: bool) -> GenesisConfig {
 	let validators: u32 = *VALIDATORS;
 	let candidates: u32 = *CANDIDATES;
 
-	let min_balance = node_template_runtime::voter_bags::EXISTENTIAL_WEIGHT as Balance;
+	let min_balance = runtime::voter_bags::EXISTENTIAL_WEIGHT as Balance;
 	let stash_min: Balance = min_balance;
-	let stash_max: Balance = **node_template_runtime::voter_bags::THRESHOLDS
+	let stash_max: Balance = **runtime::voter_bags::THRESHOLDS
 		.iter()
 		.skip(100)
 		.take(1)
@@ -151,8 +146,8 @@ fn testnet_genesis(wasm_binary: &[u8], _enable_println: bool) -> GenesisConfig {
 		}))
 		.collect::<Vec<_>>();
 
-	GenesisConfig {
-		system: SystemConfig { code: wasm_binary.to_vec() },
+	let genesis = RuntimeGenesisConfig {
+		system: SystemConfig::default(),
 		balances: BalancesConfig {
 			balances: endowed_accounts.iter().cloned().map(|k| (k, endowment)).collect(),
 		},
@@ -169,9 +164,10 @@ fn testnet_genesis(wasm_binary: &[u8], _enable_println: bool) -> GenesisConfig {
 			..Default::default()
 		},
 		aura: AuraConfig { authorities: vec![] },
-		grandpa: GrandpaConfig { authorities: vec![] },
+		grandpa: GrandpaConfig::default(),
 		sudo: SudoConfig { key: Some(root_key) },
 		transaction_payment: Default::default(),
-		config_block: Default::default(),
-	}
+	};
+
+	serde_json::to_value(&genesis).expect("Valid ChainSpec; qed")
 }
