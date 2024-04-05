@@ -17,6 +17,7 @@
 //! The dry-run command.
 
 use pallet_election_provider_multi_phase::RawSolution;
+use subxt::config::DefaultExtrinsicParamsBuilder;
 
 use crate::{
 	client::Client, epm, error::Error, helpers::storage_at, opt::Solver, prelude::*,
@@ -115,12 +116,8 @@ where
 
 		let nonce = client.rpc().system_account_next_index(signer.account_id()).await?;
 		let tx = epm::signed_solution(raw_solution)?;
-		let xt = client.chain_api().tx().create_signed_with_nonce(
-			&tx,
-			&*signer,
-			nonce,
-			Default::default(),
-		)?;
+		let params = DefaultExtrinsicParamsBuilder::new().nonce(nonce).build();
+		let xt = client.chain_api().tx().create_signed(&tx, &*signer, params).await?;
 		let dry_run_bytes = client.rpc().dry_run(xt.encoded(), config.at).await?;
 		let dry_run_result = dry_run_bytes.into_dry_run_result(&client.chain_api().metadata())?;
 

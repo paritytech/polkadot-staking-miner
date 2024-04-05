@@ -9,8 +9,6 @@ pub struct Client {
 	rpc: RpcClient,
 	/// Access to chain APIs such as storage, events etc.
 	chain_api: ChainClient,
-	/// Raw RPC client.
-	raw_rpc: RawRpcClient,
 }
 
 impl Client {
@@ -38,7 +36,7 @@ impl Client {
 		};
 
 		let chain_api = ChainClient::from_rpc_client(rpc.clone()).await?;
-		Ok(Self { rpc: RpcClient::new(rpc.clone()), raw_rpc: rpc, chain_api })
+		Ok(Self { rpc: RpcClient::new(rpc), chain_api })
 	}
 
 	/// Get a reference to the RPC interface exposed by subxt.
@@ -49,10 +47,5 @@ impl Client {
 	/// Get a reference to the chain API.
 	pub fn chain_api(&self) -> &ChainClient {
 		&self.chain_api
-	}
-
-	/// Get a reference to the raw rpc client API.
-	pub fn raw_rpc(&self) -> &RawRpcClient {
-		&self.raw_rpc
 	}
 }

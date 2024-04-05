@@ -145,8 +145,6 @@ pub mod westend {
 
 pub mod polkadot {
 	use super::*;
-	use frame_support::traits::ConstU32;
-	use pallet_election_provider_multi_phase::{RawSolution, SolutionOrSnapshotSize};
 
 	// SYNC
 	frame_election_provider_support::generate_solution_type!(
