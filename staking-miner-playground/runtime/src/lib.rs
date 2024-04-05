@@ -322,8 +322,8 @@ impl<const PERIOD: BlockNumber> ShouldEndSession<BlockNumber>
 		// can still be the normal periodic sessions.
 		let now = System::block_number();
 		let last_election = get_last_election();
-		let will_change = ElectionProviderMultiPhase::queued_solution().is_some()
-			|| (now - last_election) > PERIOD;
+		let will_change = ElectionProviderMultiPhase::queued_solution().is_some() ||
+			(now - last_election) > PERIOD;
 		if will_change {
 			set_last_election()
 		}
