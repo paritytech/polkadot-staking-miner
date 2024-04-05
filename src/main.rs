@@ -91,17 +91,17 @@ macro_rules! any_runtime {
 		match $chain {
 			$crate::opt::Chain::Polkadot => {
 				#[allow(unused)]
-				use $crate::static_types::polkadot::{MinerConfig, SIGNED_PHASE_LENGTH};
+				use $crate::static_types::polkadot::MinerConfig;
 				$($code)*
 			},
 			$crate::opt::Chain::Kusama => {
 				#[allow(unused)]
-				use $crate::static_types::kusama::{MinerConfig, SIGNED_PHASE_LENGTH};
+				use $crate::static_types::kusama::MinerConfig;
 				$($code)*
 			},
 			$crate::opt::Chain::Westend => {
 				#[allow(unused)]
-				use $crate::static_types::westend::{MinerConfig, SIGNED_PHASE_LENGTH};
+				use $crate::static_types::westend::MinerConfig;
 				$($code)*
 			},
 		}
@@ -132,8 +132,7 @@ async fn main() -> Result<(), Error> {
 
 	let res = any_runtime!(chain, {
 		let fut = match command {
-			Command::Monitor(cfg) =>
-				commands::monitor_cmd::<MinerConfig>(client, cfg, SIGNED_PHASE_LENGTH).boxed(),
+			Command::Monitor(cfg) => commands::monitor_cmd::<MinerConfig>(client, cfg).boxed(),
 			Command::DryRun(cfg) => commands::dry_run_cmd::<MinerConfig>(client, cfg).boxed(),
 			Command::EmergencySolution(cfg) =>
 				commands::emergency_solution_cmd::<MinerConfig>(client, cfg).boxed(),

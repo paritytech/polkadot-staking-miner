@@ -163,11 +163,7 @@ impl FromStr for SubmissionStrategy {
 	}
 }
 
-pub async fn monitor_cmd<T>(
-	client: Client,
-	config: MonitorConfig,
-	signed_phase_length: u64,
-) -> Result<(), Error>
+pub async fn monitor_cmd<T>(client: Client, config: MonitorConfig) -> Result<(), Error>
 where
 	T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
 		+ Send
@@ -241,15 +237,8 @@ where
 		let config2 = config.clone();
 		let submit_lock2 = submit_lock.clone();
 		tokio::spawn(async move {
-			if let Err(err) = mine_and_submit_solution::<T>(
-				at,
-				client2,
-				signer2,
-				config2,
-				submit_lock2,
-				signed_phase_length,
-			)
-			.await
+			if let Err(err) =
+				mine_and_submit_solution::<T>(at, client2, signer2, config2, submit_lock2).await
 			{
 				kill_main_task_if_critical_err(&tx2, err)
 			}
@@ -275,7 +264,6 @@ async fn mine_and_submit_solution<T>(
 	signer: Signer,
 	config: MonitorConfig,
 	submit_lock: Arc<Mutex<()>>,
-	signed_phase_len: u64,
 ) -> Result<(), Error>
 where
 	T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
@@ -449,7 +437,6 @@ where
 		config.listen,
 		config.dry_run,
 		&at,
-		signed_phase_len,
 	)
 	.timed()
 	.await
@@ -543,16 +530,21 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 	listen: Listen,
 	dry_run: bool,
 	at: &Header,
-	signed_phase_length: u64,
 ) -> Result<(), Error> {
 	let tx = epm::signed_solution(RawSolution { solution, score, round })?;
+
+	// session == epoch
+	let session_len = client
+		.chain_api()
+		.constants()
+		.at(&runtime::constants().babe().epoch_duration())?;
 
 	// TODO: https://github.com/paritytech/polkadot-staking-miner/issues/730
 	//
 	// The extrinsic mortality length is static and it doesn't know when the signed phase ends.
 	let xt_cfg = DefaultExtrinsicParamsBuilder::default()
 		.nonce(nonce)
-		.mortal(at, signed_phase_length)
+		.mortal(at, session_len)
 		.build();
 
 	let xt = client.chain_api().tx().create_signed(&tx, &*signer, xt_cfg).await?;

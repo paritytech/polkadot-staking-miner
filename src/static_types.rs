@@ -99,9 +99,6 @@ pub mod westend {
 		>(16)
 	);
 
-	// SYNC https://github.com/paritytech/polkadot-sdk/blob/master/polkadot/runtime/westend/src/lib.rs#L451-#L453.
-	pub const SIGNED_PHASE_LENGTH: u64 = 150;
-
 	#[derive(Debug)]
 	pub struct MinerConfig;
 	impl pallet_election_provider_multi_phase::unsigned::MinerConfig for MinerConfig {
@@ -160,9 +157,6 @@ pub mod polkadot {
 		>(16)
 	);
 
-	// SYNC https://github.com/polkadot-fellows/runtimes/blob/main/relay/polkadot/src/lib.rs#L518-#L522
-	pub const SIGNED_PHASE_LENGTH: u64 = 600;
-
 	#[derive(Debug)]
 	pub struct MinerConfig;
 	impl pallet_election_provider_multi_phase::unsigned::MinerConfig for MinerConfig {
@@ -220,9 +214,6 @@ pub mod kusama {
 			MaxVoters = ConstU32::<12500>
 		>(24)
 	);
-
-	// SYNC https://github.com/polkadot-fellows/runtimes/blob/main/relay/kusama/src/lib.rs#L541-#L545.
-	pub const SIGNED_PHASE_LENGTH: u64 = 150;
 
 	#[derive(Debug)]
 	pub struct MinerConfig;
