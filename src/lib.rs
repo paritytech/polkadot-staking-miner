@@ -17,12 +17,16 @@
 #![allow(dead_code)]
 
 pub mod client;
-pub mod commands;
 pub mod epm;
 pub mod error;
+pub mod prelude;
+
+/*pub mod commands;
+;
+
 pub mod helpers;
 pub mod opt;
-pub mod prelude;
+
 pub mod prometheus;
 pub mod signer;
-pub mod static_types;
+*/

@@ -15,35 +15,37 @@ codec = { package = "parity-scale-codec", version = "3.0.0", default-features = 
 scale-info = { version = "2.0.1", default-features = false, features = ["derive"] }
 log = "0.4"
 
-pallet-balances = { version = "27", default-features = false }
+frame-election-provider-support = { version = "27", default-features = false }
+frame-executive = { version = "27", default-features = false }
 frame-support = { version = "27", default-features = false }
+frame-system = { version = "27", default-features = false }
+pallet-aura = { version = "26", default-features = false }
+pallet-babe = { version = "27", default-features = false }
+pallet-bags-list = { version = "26", default-features = false }
+pallet-balances = { version = "27", default-features = false }
+pallet-election-provider-multi-phase = { version = "26", default-features = false }
 pallet-grandpa = { version = "27", default-features = false }
 pallet-insecure-randomness-collective-flip = { version = "15", default-features = false }
-pallet-sudo = { version = "27", default-features = false }
-pallet-staking = { version = "27", default-features = false }
 pallet-session = { version = "27", default-features = false }
-pallet-bags-list = { version = "26", default-features = false }
+pallet-staking = { version = "27", default-features = false }
 pallet-staking-reward-curve = { version = "10", default-features = false }
-frame-election-provider-support = { version = "27", default-features = false }
-pallet-election-provider-multi-phase = { version = "26", default-features = false }
-pallet-aura = { version = "26", default-features = false }
-frame-system = { version = "27", default-features = false }
+pallet-sudo = { version = "27", default-features = false }
 pallet-timestamp = { version = "26", default-features = false }
 pallet-transaction-payment = { version = "27", default-features = false }
-frame-executive = { version = "27", default-features = false }
 sp-api = { version = "25", default-features = false }
-sp-staking = { version = "25", default-features = false }
-sp-consensus-aura = { version = "0.31", default-features = false }
 sp-block-builder = { version = "25", default-features = false }
+sp-consensus-aura = { version = "0.31", default-features = false }
+sp-consensus-babe = { version = "0.31", default-features = false }
 sp-core = { version = "27", default-features = false }
+sp-genesis-builder = { version = "0.6", default-features = false }
 sp-inherents = { version = "25", default-features = false }
 sp-offchain = { version = "25", default-features = false }
 sp-runtime = { version = "30", default-features = false }
 sp-session = { version = "26", default-features = false }
+sp-staking = { version = "25", default-features = false }
 sp-std = { version = "13", default-features = false }
 sp-transaction-pool = { version = "25", default-features = false }
 sp-version = { version = "28", default-features = false }
-sp-genesis-builder = { version = "0.6", default-features = false }
 
 # Used for the node template's RPCs
 frame-system-rpc-runtime-api = { version = "25", default-features = false }
@@ -56,31 +58,32 @@ substrate-wasm-builder = "16"
 default = ["std"]
 std = [
 	"codec/std",
-	"scale-info/std",
+	"frame-election-provider-support/std",
 	"frame-executive/std",
 	"frame-support/std",
 	"frame-system-rpc-runtime-api/std",
 	"frame-system/std",
-	"pallet-balances/std",
-	"pallet-grandpa/std",
-	"pallet-staking/std",
 	"pallet-aura/std",
-	"frame-election-provider-support/std",
+  "pallet-babe/std",
+	"pallet-balances/std",
 	"pallet-election-provider-multi-phase/std",
+	"pallet-grandpa/std",
 	"pallet-insecure-randomness-collective-flip/std",
+	"pallet-staking/std",
 	"pallet-sudo/std",
 	"pallet-timestamp/std",
 	"pallet-transaction-payment-rpc-runtime-api/std",
 	"pallet-transaction-payment/std",
+	"scale-info/std",
 	"sp-api/std",
 	"sp-block-builder/std",
 	"sp-consensus-aura/std",
 	"sp-core/std",
-	"sp-staking/std",
 	"sp-inherents/std",
 	"sp-offchain/std",
 	"sp-runtime/std",
 	"sp-session/std",
+	"sp-staking/std",
 	"sp-std/std",
 	"sp-transaction-pool/std",
 	"sp-version/std",

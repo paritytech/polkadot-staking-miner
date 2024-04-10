@@ -1188,6 +1188,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "derive-where"
+version = "1.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62d671cc41a825ebabc75757b62d3d168c577f9149b2d49ece1dad1f72119d25"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.58",
+]
+
+[[package]]
 name = "derive_more"
 version = "0.99.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3801,13 +3812,14 @@ dependencies = [
 
 [[package]]
 name = "scale-typegen"
-version = "0.2.1"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d470fa75e71b12b3244a4113adc4bc49891f3daba2054703cacd06256066397e"
+checksum = "ed57b2c642c1e8c905e904c866d16614a3b5621dad323e9b6a6bc902f1380aa9"
 dependencies = [
  "proc-macro2",
  "quote",
  "scale-info",
+ "smallvec",
  "syn 2.0.58",
  "thiserror",
 ]
@@ -4844,14 +4856,11 @@ checksum = "81cdd64d312baedb58e21336b31bc043b77e01cc99033ce76ef539f78e965ebc"
 
 [[package]]
 name = "subxt"
-version = "0.35.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5c287b336efcb9bab54020329c48d8cc6427e1c13dcc3b4ec20c793ff8a6926"
+version = "0.35.0"
+source = "git+https://github.com/paritytech/subxt?branch=jsdw-binaryheap-keyedvec#fe2ef892900fb477be94e0043f40de3de7e42205"
 dependencies = [
  "async-trait",
- "base58",
- "blake2",
- "derivative",
+ "derive-where",
  "either",
  "frame-metadata 16.0.0",
  "futures",
@@ -4868,9 +4877,8 @@ dependencies = [
  "scale-value",
  "serde",
  "serde_json",
- "sp-core",
  "sp-crypto-hashing",
- "sp-runtime",
+ "subxt-core",
  "subxt-lightclient",
  "subxt-macro",
  "subxt-metadata",
@@ -4882,9 +4890,8 @@ dependencies = [
 
 [[package]]
 name = "subxt-codegen"
-version = "0.35.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31528ba082daea68850852ecb49e463022b47c14f8031874c73d04ce04d36d05"
+version = "0.35.0"
+source = "git+https://github.com/paritytech/subxt?branch=jsdw-binaryheap-keyedvec#fe2ef892900fb477be94e0043f40de3de7e42205"
 dependencies = [
  "frame-metadata 16.0.0",
  "heck 0.4.1",
@@ -4902,10 +4909,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "subxt-core"
+version = "0.35.0"
+source = "git+https://github.com/paritytech/subxt?branch=jsdw-binaryheap-keyedvec#fe2ef892900fb477be94e0043f40de3de7e42205"
+dependencies = [
+ "base58",
+ "blake2",
+ "derive-where",
+ "derive_more",
+ "frame-metadata 16.0.0",
+ "hashbrown 0.14.3",
+ "hex",
+ "impl-serde",
+ "parity-scale-codec",
+ "primitive-types",
+ "scale-bits",
+ "scale-decode",
+ "scale-encode",
+ "scale-info",
+ "scale-value",
+ "serde",
+ "serde_json",
+ "sp-core",
+ "sp-crypto-hashing",
+ "sp-runtime",
+ "subxt-metadata",
+ "tracing",
+]
+
+[[package]]
 name = "subxt-lightclient"
-version = "0.35.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04e4dc4cf724926d89dadeb26ecba7b8c92a3cabd04f1385ea46a927ef1508b0"
+version = "0.35.0"
+source = "git+https://github.com/paritytech/subxt?branch=jsdw-binaryheap-keyedvec#fe2ef892900fb477be94e0043f40de3de7e42205"
 dependencies = [
  "futures",
  "futures-util",
@@ -4920,9 +4955,8 @@ dependencies = [
 
 [[package]]
 name = "subxt-macro"
-version = "0.35.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af4de9eebf532a2d28dea87e04974180842c892ca74b710cc929f3df7d3560e8"
+version = "0.35.0"
+source = "git+https://github.com/paritytech/subxt?branch=jsdw-binaryheap-keyedvec#fe2ef892900fb477be94e0043f40de3de7e42205"
 dependencies = [
  "darling 0.20.8",
  "parity-scale-codec",
@@ -4935,9 +4969,8 @@ dependencies = [
 
 [[package]]
 name = "subxt-metadata"
-version = "0.35.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e2ed94dbebe8a093c8990bfced142ac5377a1be8e5e2c8cfa5e0d7dce851289"
+version = "0.35.0"
+source = "git+https://github.com/paritytech/subxt?branch=jsdw-binaryheap-keyedvec#fe2ef892900fb477be94e0043f40de3de7e42205"
 dependencies = [
  "derive_more",
  "frame-metadata 16.0.0",

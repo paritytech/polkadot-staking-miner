@@ -137,10 +137,24 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 
 pub const MILLISECS_PER_BLOCK: u64 = 6000;
 pub const SLOT_DURATION: u64 = MILLISECS_PER_BLOCK;
+pub const EPOCH_DURATION_IN_SLOTS: u64 = 1 * MINUTES as u64;
 
 pub const MINUTES: BlockNumber = 60_000 / (MILLISECS_PER_BLOCK as BlockNumber);
 pub const HOURS: BlockNumber = MINUTES * 60;
 pub const DAYS: BlockNumber = HOURS * 24;
+
+// 1 in 4 blocks (on average, not counting collisions) will be primary babe blocks.
+// The choice of is done in accordance to the slot duration and expected target
+// block time, for safely resisting network delays of maximum two seconds.
+// <https://research.web3.foundation/en/latest/polkadot/BABE/Babe/#6-practical-results>
+pub const PRIMARY_PROBABILITY: (u64, u64) = (1, 4);
+
+/// The BABE epoch configuration at genesis.
+pub const BABE_GENESIS_EPOCH_CONFIG: sp_consensus_babe::BabeEpochConfiguration =
+	sp_consensus_babe::BabeEpochConfiguration {
+		c: PRIMARY_PROBABILITY,
+		allowed_slots: sp_consensus_babe::AllowedSlots::PrimaryAndSecondaryVRFSlots,
+	};
 
 /// The version information used to identify this runtime when compiled natively.
 #[cfg(feature = "std")]
@@ -624,22 +638,49 @@ impl pallet_bags_list::Config for Runtime {
 	type BagThresholds = BagThresholds;
 }
 
+parameter_types! {
+       pub const EpochDuration: u64 = EPOCH_DURATION_IN_SLOTS;
+       pub const ExpectedBlockTime: Moment = MILLISECS_PER_BLOCK;
+       pub const ReportLongevity: u64 =
+               BondingDuration::get() as u64 * SessionsPerEra::get() as u64 * EpochDuration::get();
+}
+
+impl pallet_babe::Config for Runtime {
+       type EpochDuration = EpochDuration;
+       type ExpectedBlockTime = ExpectedBlockTime;
+
+       // session module is the trigger
+       type EpochChangeTrigger = pallet_babe::ExternalTrigger;
+
+       type DisabledValidators = Session;
+
+       type WeightInfo = ();
+
+       type MaxAuthorities = ConstU32<1000>; 
+       type MaxNominators = MaxNominators;
+
+       type KeyOwnerProof = sp_session::MembershipProof;
+
+       type EquivocationReportSystem = ();
+}
+
 // Create the runtime by composing the FRAME pallets that were previously configured.
 construct_runtime!(
 	pub enum Runtime
 	{
-		System: frame_system,
-		RandomnessCollectiveFlip: pallet_insecure_randomness_collective_flip,
-		Timestamp: pallet_timestamp,
-		Sudo: pallet_sudo,
 		Aura: pallet_aura,
-		Grandpa: pallet_grandpa,
-		Balances: pallet_balances,
-		Staking: pallet_staking,
+    Babe: pallet_babe,
 		BagsList: pallet_bags_list,
-		Session: pallet_session,
-		TransactionPayment: pallet_transaction_payment,
+		Balances: pallet_balances,
 		ElectionProviderMultiPhase: election_multi_phase,
+		Grandpa: pallet_grandpa,
+		RandomnessCollectiveFlip: pallet_insecure_randomness_collective_flip,
+		Session: pallet_session,
+		Staking: pallet_staking,
+		Sudo: pallet_sudo,
+		System: frame_system,
+		Timestamp: pallet_timestamp,
+		TransactionPayment: pallet_transaction_payment,
 	}
 );
 

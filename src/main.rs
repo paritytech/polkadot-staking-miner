@@ -29,136 +29,32 @@
 //!   crash, but resumes work thereafter.
 
 mod client;
-mod commands;
 mod epm;
 mod error;
-mod helpers;
-mod opt;
 mod prelude;
-mod prometheus;
-mod signer;
-mod static_types;
 
 use clap::Parser;
 use error::Error;
 use futures::future::{BoxFuture, FutureExt};
 use prelude::*;
 use std::str::FromStr;
+use subxt::client::RuntimeVersion;
 use tokio::sync::oneshot;
 use tracing_subscriber::EnvFilter;
 
-use crate::{client::Client, opt::RuntimeVersion};
-
-#[derive(Debug, Clone, Parser)]
-#[cfg_attr(test, derive(PartialEq))]
-#[clap(author, version, about)]
-pub struct Opt {
-	/// The `ws` node to connect to.
-	#[clap(long, short, default_value = DEFAULT_URI, env = "URI")]
-	pub uri: String,
-
-	#[clap(subcommand)]
-	pub command: Command,
-
-	/// The prometheus endpoint TCP port.
-	#[clap(long, short, env = "PROMETHEUS_PORT", default_value_t = DEFAULT_PROMETHEUS_PORT)]
-	pub prometheus_port: u16,
-
-	/// Sets a custom logging filter. Syntax is `<target>=<level>`, e.g. -lpolkadot-staking-miner=debug.
-	///
-	/// Log levels (least to most verbose) are error, warn, info, debug, and trace.
-	/// By default, all targets log `info`. The global log level can be set with `-l<level>`.
-	#[clap(long, short, default_value = "info")]
-	pub log: String,
-}
-
-#[derive(Debug, Clone, Parser)]
-#[cfg_attr(test, derive(PartialEq))]
-pub enum Command {
-	/// Monitor for the phase being signed, then compute.
-	Monitor(commands::MonitorConfig),
-	/// Just compute a solution now, and don't submit it.
-	DryRun(commands::DryRunConfig),
-	/// Provide a solution that can be submitted to the chain as an emergency response.
-	EmergencySolution(commands::EmergencySolutionConfig),
-	/// Check if the staking-miner metadata is compatible to a remote node.
-	Info,
-}
-
-// A helper to use different MinerConfig depending on chain.
-macro_rules! any_runtime {
-	($chain:tt, $($code:tt)*) => {
-		match $chain {
-			$crate::opt::Chain::Polkadot => {
-				#[allow(unused)]
-				use $crate::static_types::polkadot::MinerConfig;
-				$($code)*
-			},
-			$crate::opt::Chain::Kusama => {
-				#[allow(unused)]
-				use $crate::static_types::kusama::MinerConfig;
-				$($code)*
-			},
-			$crate::opt::Chain::Westend => {
-				#[allow(unused)]
-				use $crate::static_types::westend::MinerConfig;
-				$($code)*
-			},
-		}
-	};
-}
+use crate::client::Client;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-	let Opt { uri, command, prometheus_port, log } = Opt::parse();
-	let filter = EnvFilter::from_default_env().add_directive(log.parse()?);
-	tracing_subscriber::fmt().with_env_filter(filter).init();
+	tracing_subscriber::fmt().init();
 
-	let client = Client::new(&uri).await?;
-	let runtime_version: RuntimeVersion =
-		client.rpc().state_get_runtime_version(None).await?.into();
-	let chain = opt::Chain::from_str(&runtime_version.spec_name)?;
-	let _prometheus_handle = prometheus::run(prometheus_port)
-		.map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
-	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
-	epm::update_metadata_constants(client.chain_api())?;
+	let client = Client::new("ws://127.0.0.1:9944").await?;
 
-	SHARED_CLIENT.set(client.clone()).expect("shared client only set once; qed");
+	client.chain_api().storage().on_demand_assignment_provider();
 
-	// Start a new tokio task to perform the runtime updates in the background.
-	// if this fails then the miner will be stopped and has to be re-started.
-	let (tx_upgrade, rx_upgrade) = oneshot::channel::<Error>();
-	tokio::spawn(runtime_upgrade_task(client.chain_api().clone(), tx_upgrade));
+	//let x = client.chain_api().storage().on_demand_assignment_provider().free_entries();
 
-	let res = any_runtime!(chain, {
-		let fut = match command {
-			Command::Monitor(cfg) => commands::monitor_cmd::<MinerConfig>(client, cfg).boxed(),
-			Command::DryRun(cfg) => commands::dry_run_cmd::<MinerConfig>(client, cfg).boxed(),
-			Command::EmergencySolution(cfg) =>
-				commands::emergency_solution_cmd::<MinerConfig>(client, cfg).boxed(),
-			Command::Info => async {
-				let is_compat = if runtime::is_codegen_valid_for(&client.chain_api().metadata()) {
-					"YES"
-				} else {
-					"NO"
-				};
-
-				let remote_node = serde_json::to_string_pretty(&runtime_version)
-					.expect("Serialize is infallible; qed");
-
-				eprintln!("Remote_node:\n{remote_node}");
-				eprintln!("Compatible: {is_compat}");
-
-				Ok(())
-			}
-			.boxed(),
-		};
-
-		run_command(fut, rx_upgrade).await
-	});
-
-	log::debug!(target: LOG_TARGET, "round of execution finished. outcome = {:?}", res);
-	res
+	Ok(())
 }
 
 #[cfg(target_family = "unix")]
@@ -206,7 +102,7 @@ async fn run_command(
 	}
 }
 
-/// Runs until the RPC connection fails or updating the metadata failed.
+/*/// Runs until the RPC connection fails or updating the metadata failed.
 async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 	let updater = client.updater();
 
@@ -250,7 +146,7 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 			},
 		}
 	}
-}
+}*/
 
 #[cfg(test)]
 mod tests {

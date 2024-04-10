@@ -4351,6 +4351,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-babe"
+version = "27.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b3ef6815dbc5ceb3f036e7b4037a6a37876df8817cec07637f269f79879430d2"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "log",
+ "pallet-authorship",
+ "pallet-session",
+ "pallet-timestamp",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-application-crypto",
+ "sp-consensus-babe",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "sp-session",
+ "sp-staking",
+ "sp-std",
+]
+
+[[package]]
 name = "pallet-bags-list"
 version = "26.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5517,6 +5542,7 @@ dependencies = [
  "frame-system-rpc-runtime-api",
  "log",
  "pallet-aura",
+ "pallet-babe",
  "pallet-bags-list",
  "pallet-balances",
  "pallet-election-provider-multi-phase",
@@ -5534,6 +5560,7 @@ dependencies = [
  "sp-api",
  "sp-block-builder",
  "sp-consensus-aura",
+ "sp-consensus-babe",
  "sp-core",
  "sp-genesis-builder",
  "sp-inherents",
@@ -7245,6 +7272,26 @@ dependencies = [
  "sp-api",
  "sp-application-crypto",
  "sp-consensus-slots",
+ "sp-inherents",
+ "sp-runtime",
+ "sp-std",
+ "sp-timestamp",
+]
+
+[[package]]
+name = "sp-consensus-babe"
+version = "0.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d248658f288676d2c814bcf79577a5bd0b9f386bfae5c4860bfed6ca71ab973b"
+dependencies = [
+ "async-trait",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-api",
+ "sp-application-crypto",
+ "sp-consensus-slots",
+ "sp-core",
  "sp-inherents",
  "sp-runtime",
  "sp-std",

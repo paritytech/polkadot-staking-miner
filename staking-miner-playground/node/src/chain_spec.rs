@@ -1,7 +1,7 @@
 use pallet_staking::StakerStatus;
 use rand::{distributions::Alphanumeric, rngs::OsRng, seq::SliceRandom, Rng};
 use runtime::{
-	opaque::SessionKeys, AccountId, AuraConfig, Balance, BalancesConfig, GrandpaConfig,
+	opaque::SessionKeys, AccountId, AuraConfig, BabeConfig, Balance, BalancesConfig, GrandpaConfig,
 	MaxNominations, RuntimeGenesisConfig, SessionConfig, Signature, StakingConfig, SudoConfig,
 	SystemConfig, WASM_BINARY,
 };
@@ -167,6 +167,11 @@ fn testnet_genesis() -> serde_json::Value {
 		grandpa: GrandpaConfig::default(),
 		sudo: SudoConfig { key: Some(root_key) },
 		transaction_payment: Default::default(),
+    babe: runtime::BabeConfig {
+			authorities: Default::default(),
+			epoch_config: Some(runtime::BABE_GENESIS_EPOCH_CONFIG),
+			..Default::default()
+		}, 
 	};
 
 	serde_json::to_value(&genesis).expect("Valid ChainSpec; qed")
