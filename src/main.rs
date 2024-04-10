@@ -50,9 +50,10 @@ async fn main() -> Result<(), Error> {
 
 	let client = Client::new("ws://127.0.0.1:9944").await?;
 
-	client.chain_api().storage().on_demand_assignment_provider();
+	let addr = runtime::storage().on_demand_assignment_provider().free_entries();
+	let x = client.chain_api().storage().at_latest().await?.fetch(&addr).await?;
 
-	//let x = client.chain_api().storage().on_demand_assignment_provider().free_entries();
+	println!("{:?}", x);
 
 	Ok(())
 }
