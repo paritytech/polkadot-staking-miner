@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog].
 ## [v1.4.0]
 
 This is release to support that the SignedPhase and UnsignedPhase has been removed from the
-metadata. See for further information ([#803](https://github.com/paritytech/staking-miner-v2/pull/803)).
+metadata. See ([#803](https://github.com/paritytech/staking-miner-v2/pull/803)) for further information.
 
 ### Compatibility
 
