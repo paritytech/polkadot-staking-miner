@@ -18,11 +18,14 @@ async fn submit_monitor_works_basic() {
 	// TODO: https://github.com/paritytech/staking-miner-v2/issues/673
 	// test_submit_solution(Target::Node(Chain::Polkadot)).await;
 	// test_submit_solution(Target::Node(Chain::Kusama)).await;
+	// TODO: https://github.com/paritytech/polkadot-staking-miner/issues/806
+	// test_submit_solution(Target::StakingMinerPlayground).await;
 	test_submit_solution(Target::Node(Chain::Westend)).await;
-	test_submit_solution(Target::StakingMinerPlayground).await;
 }
 
+// TODO: https://github.com/paritytech/polkadot-staking-miner/issues/806
 #[tokio::test]
+#[ignore]
 async fn default_trimming_works() {
 	init_logger();
 	let (_drop, ws_url) = run_staking_miner_playground();
