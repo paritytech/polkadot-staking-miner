@@ -4,6 +4,16 @@ The format is based on [Keep a Changelog].
 
 [Keep a Changelog]: http://keepachangelog.com/en/1.0.0/
 
+## [v1.4.0]
+
+This is release to support that the SignedPhase and UnsignedPhase has been removed from the
+metadata. See for further information ([#803](https://github.com/paritytech/staking-miner-v2/pull/803)).
+
+### Compatibility
+
+Tested against:
+- Westend v1010
+
 ## [v1.3.1] - 2023-12-27
 
 The main changes of this release are as follows:
@@ -42,7 +52,7 @@ The major changes of this release:
 
 ## [v1.1.0] - 2023-06-15
 
-This release adds a subcommand `info` to detect whether the metadata 
+This release adds a subcommand `info` to detect whether the metadata
 of the staking-miner is compatible with a remote node.
 
 ```bash
