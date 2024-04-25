@@ -1548,7 +1548,7 @@ dependencies = [
  "sp-runtime",
  "sp-runtime-interface",
  "sp-std",
- "sp-storage",
+ "sp-storage 20.0.0",
  "static_assertions",
 ]
 
@@ -3084,7 +3084,7 @@ dependencies = [
  "serde_json",
  "sp-npos-elections",
  "sp-runtime",
- "sp-storage",
+ "sp-storage 21.0.0",
  "subxt",
  "thiserror",
  "tokio",
@@ -4371,7 +4371,7 @@ dependencies = [
  "sp-externalities",
  "sp-runtime-interface",
  "sp-std",
- "sp-storage",
+ "sp-storage 20.0.0",
  "ss58-registry",
  "substrate-bip39",
  "thiserror",
@@ -4425,7 +4425,7 @@ dependencies = [
  "environmental",
  "parity-scale-codec",
  "sp-std",
- "sp-storage",
+ "sp-storage 20.0.0",
 ]
 
 [[package]]
@@ -4571,7 +4571,7 @@ dependencies = [
  "sp-externalities",
  "sp-runtime-interface-proc-macro",
  "sp-std",
- "sp-storage",
+ "sp-storage 20.0.0",
  "sp-tracing",
  "sp-wasm-interface",
  "static_assertions",
@@ -4646,6 +4646,19 @@ dependencies = [
  "serde",
  "sp-debug-derive",
  "sp-std",
+]
+
+[[package]]
+name = "sp-storage"
+version = "21.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99c82989b3a4979a7e1ad848aad9f5d0b4388f1f454cc131766526601ab9e8f8"
+dependencies = [
+ "impl-serde",
+ "parity-scale-codec",
+ "ref-cast",
+ "serde",
+ "sp-debug-derive",
 ]
 
 [[package]]
