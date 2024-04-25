@@ -17,7 +17,7 @@ pub use runtime::{
 	runtime_types::pallet_election_provider_multi_phase::{ElectionCompute, ReadySolution},
 };
 
-pub const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(60 * 15);
+pub const MAX_DURATION_FOR_SUBMIT_SOLUTION: Duration = Duration::from_secs(6 * 60);
 
 pub fn init_logger() {
 	let _ = tracing_subscriber::fmt()
@@ -93,6 +93,7 @@ pub fn run_polkadot_node(chain: Chain) -> (KillChildOnDrop, String) {
 				&chain_str,
 				"--tmp",
 				"--alice",
+				"--unsafe-force-node-key-generation",
 				"--execution",
 				"Native",
 				"--offchain-worker=Never",
@@ -184,7 +185,7 @@ pub async fn test_submit_solution(target: Target) {
 
 /// Wait until a solution is ready on chain
 ///
-/// Timeout's after 15 minutes which is regarded as an error.
+/// Timeout's after 6 minutes then it's regarded as an error.
 pub async fn wait_for_mined_solution(ws_url: &str) -> anyhow::Result<SolutionStored> {
 	let api = ChainClient::from_url(&ws_url).await?;
 	let now = Instant::now();

@@ -1,6 +1,6 @@
 [package]
 name = "polkadot-staking-miner"
-version = "1.3.1"
+version = "1.4.0"
 authors = ["Parity Technologies <admin@parity.io>"]
 edition = "2021"
 rust-version = "1.74.0"
@@ -11,7 +11,7 @@ description = "A tool to submit NPoS election solutions for substrate based chai
 
 [dependencies]
 codec = { package = "parity-scale-codec", version = "3.0.0" }
-scale-info = { package = "scale-info", version = "2.11.1" }
+scale-info = { package = "scale-info", version = "2.11.2" }
 clap = { version = "4.5", features = ["derive", "env"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 jsonrpsee = { version = "0.22.3", features = ["ws-client"] }
