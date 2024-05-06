@@ -28,7 +28,7 @@ scale-value = "0.14.1"
 subxt = { version = "0.35.1", features = ["substrate-compat"] }
 
 # polkadot-sdk
-frame-election-provider-support = "31.0.0"
+frame-election-provider-support = "33.0.0"
 pallet-election-provider-multi-phase = "30.0.0"
 sp-npos-elections = "29.0.0"
 frame-support = "31.0.0"
