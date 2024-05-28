@@ -194,7 +194,7 @@ pub async fn wait_for_mined_solution(ws_url: &str) -> anyhow::Result<SolutionSto
 
 	while let Some(block) = blocks_sub.next().await {
 		if now.elapsed() > MAX_DURATION_FOR_SUBMIT_SOLUTION {
-			break
+			break;
 		}
 
 		let block = block?;
@@ -204,7 +204,7 @@ pub async fn wait_for_mined_solution(ws_url: &str) -> anyhow::Result<SolutionSto
 			let ev = ev?;
 
 			if let Some(solution_ev) = ev.as_event::<SolutionStored>()? {
-				return Ok(solution_ev)
+				return Ok(solution_ev);
 			}
 		}
 	}

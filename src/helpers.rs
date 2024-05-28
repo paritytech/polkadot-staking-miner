@@ -101,7 +101,7 @@ pub fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Er
 								"Failed to downcast RPC error; this is a bug please file an issue"
 									.to_string(),
 							));
-							return
+							return;
 						},
 					};
 

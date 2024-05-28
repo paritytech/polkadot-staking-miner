@@ -23,7 +23,6 @@ async fn submit_monitor_works_basic() {
 	test_submit_solution(Target::Node(Chain::Westend)).await;
 }
 
-// TODO: https://github.com/paritytech/polkadot-staking-miner/issues/806
 #[tokio::test]
 #[ignore]
 async fn default_trimming_works() {
@@ -89,7 +88,7 @@ async fn has_trimming_output(miner: &mut KillChildOnDrop) -> bool {
 		}
 
 		if now.elapsed() > MAX_DURATION_FOR_SUBMIT_SOLUTION {
-			break
+			break;
 		}
 	}
 

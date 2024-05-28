@@ -157,7 +157,7 @@ impl FromStr for SubmissionStrategy {
 			let percent: u32 = percent.parse().map_err(|e| format!("{:?}", e))?;
 			Self::ClaimBetterThan(Perbill::from_percent(percent))
 		} else {
-			return Err(s.into())
+			return Err(s.into());
 		};
 		Ok(res)
 	}
@@ -424,7 +424,7 @@ where
 				e,
 				at.number
 			);
-			return Err(e)
+			return Err(e);
 		},
 	};
 
@@ -487,7 +487,7 @@ where
 
 		if let Some(submission) = submission {
 			if &submission.who == us {
-				return Err(Error::AlreadySubmitted)
+				return Err(Error::AlreadySubmitted);
 			}
 		}
 	}
@@ -503,7 +503,7 @@ async fn ensure_solution_passes_strategy(
 ) -> Result<(), Error> {
 	// don't care about current scores.
 	if matches!(strategy, SubmissionStrategy::Always) {
-		return Ok(())
+		return Ok(());
 	}
 
 	let addr = runtime::storage().election_provider_multi_phase().signed_submission_indices();
@@ -533,19 +533,19 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 ) -> Result<(), Error> {
 	let tx = epm::signed_solution(RawSolution { solution, score, round })?;
 
-	// session == epoch
-	let session_len = client
-		.chain_api()
-		.constants()
-		.at(&runtime::constants().babe().epoch_duration())?;
-
+	// By default we are using the epoch length as the mortality length.
+	// If that doesn't is available then we just use the default mortality provided by subxt.
+	//
 	// TODO: https://github.com/paritytech/polkadot-staking-miner/issues/730
 	//
 	// The extrinsic mortality length is static and it doesn't know when the signed phase ends.
-	let xt_cfg = DefaultExtrinsicParamsBuilder::default()
-		.nonce(nonce)
-		.mortal(at, session_len)
-		.build();
+	let xt_cfg = if let Ok(len) =
+		client.chain_api().constants().at(&runtime::constants().babe().epoch_duration())
+	{
+		DefaultExtrinsicParamsBuilder::default().nonce(nonce).mortal(at, len).build()
+	} else {
+		DefaultExtrinsicParamsBuilder::default().nonce(nonce).build()
+	};
 
 	let xt = client.chain_api().tx().create_signed(&tx, &*signer, xt_cfg).await?;
 
@@ -580,23 +580,25 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 				return Err(Error::Other(format!(
 					"No SolutionStored event found at {:?}",
 					in_block.block_hash()
-				)))
+				)));
 			}
 		},
 		Listen::Finalized => {
-			let finalized = tx_progress.wait_for_finalized_success().await?;
+			let finalized_block = tx_progress.wait_for_finalized().await?;
+			let block_hash = finalized_block.block_hash();
+			let finalized_success = finalized_block.wait_for_success().await?;
 
-			let solution_stored = finalized
+			let solution_stored = finalized_success
 				.find_first::<runtime::election_provider_multi_phase::events::SolutionStored>(
 			);
 
 			if let Ok(Some(_)) = solution_stored {
-				log::info!(target: LOG_TARGET, "Finalized at {:?}", finalized.block_hash());
+				log::info!(target: LOG_TARGET, "Finalized at {:?}", block_hash);
 			} else {
 				return Err(Error::Other(format!(
 					"No SolutionStored event found at {:?}",
-					finalized.block_hash()
-				)))
+					block_hash,
+				)));
 			}
 		},
 	};
@@ -659,7 +661,7 @@ async fn dry_run_works(rpc: &RpcClient) -> Result<(), Error> {
 					"dry-run requires a RPC endpoint with `--rpc-methods unsafe`; \
 						either connect to another RPC endpoint or disable dry-run"
 						.to_string(),
-				))
+				));
 			}
 		}
 	}
