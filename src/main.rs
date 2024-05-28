@@ -214,7 +214,7 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 		Ok(u) => u,
 		Err(e) => {
 			let _ = tx.send(e.into());
-			return
+			return;
 		},
 	};
 
@@ -228,10 +228,10 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 					Ok(u) => u,
 					Err(e) => {
 						let _ = tx.send(e.into());
-						return
+						return;
 					},
 				};
-				continue
+				continue;
 			},
 		};
 
@@ -240,7 +240,7 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 			Ok(()) => {
 				if let Err(e) = epm::update_metadata_constants(&client) {
 					let _ = tx.send(e);
-					return
+					return;
 				}
 				prometheus::on_runtime_upgrade();
 				log::info!(target: LOG_TARGET, "upgrade to version: {} successful", version);

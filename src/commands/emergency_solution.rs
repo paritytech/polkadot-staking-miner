@@ -23,7 +23,7 @@ use clap::Parser;
 use codec::Encode;
 use sp_core::hexdisplay::HexDisplay;
 use std::io::Write;
-use subxt::tx::TxPayload;
+use subxt::tx::Payload;
 
 #[derive(Debug, Clone, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -88,7 +88,9 @@ where
 	}
 
 	let call = epm::set_emergency_result(supports.clone())?;
-	let encoded_call = call.encode_call_data(&client.chain_api().metadata())?;
+	let encoded_call = call
+		.encode_call_data(&client.chain_api().metadata())
+		.map_err(|e| Error::Subxt(e.into()))?;
 	let encoded_supports = supports.encode();
 
 	// write results to files.

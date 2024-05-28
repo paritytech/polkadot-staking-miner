@@ -119,7 +119,7 @@ pub mod westend {
 				active_voters,
 				desired_targets.try_into().expect("Desired targets < u16::MAX"),
 			) else {
-				return Weight::MAX
+				return Weight::MAX;
 			};
 
 			// Mock a RawSolution to get the correct weight without having to do the heavy work.
@@ -131,7 +131,7 @@ pub mod westend {
 			if raw.solution.voter_count() != active_voters as usize ||
 				raw.solution.unique_targets().len() != desired_targets as usize
 			{
-				return Weight::MAX
+				return Weight::MAX;
 			}
 
 			futures::executor::block_on(epm::runtime_api_solution_weight(
@@ -177,7 +177,7 @@ pub mod polkadot {
 				active_voters,
 				desired_targets.try_into().expect("Desired targets < u16::MAX"),
 			) else {
-				return Weight::MAX
+				return Weight::MAX;
 			};
 
 			// Mock a RawSolution to get the correct weight without having to do the heavy work.
@@ -189,7 +189,7 @@ pub mod polkadot {
 			if raw.solution.voter_count() != active_voters as usize ||
 				raw.solution.unique_targets().len() != desired_targets as usize
 			{
-				return Weight::MAX
+				return Weight::MAX;
 			}
 
 			futures::executor::block_on(epm::runtime_api_solution_weight(
@@ -235,7 +235,7 @@ pub mod kusama {
 				active_voters,
 				desired_targets.try_into().expect("Desired targets < u16::MAX"),
 			) else {
-				return Weight::MAX
+				return Weight::MAX;
 			};
 
 			// Mock a RawSolution to get the correct weight without having to do the heavy work.
@@ -247,7 +247,7 @@ pub mod kusama {
 			if raw.solution.voter_count() != active_voters as usize ||
 				raw.solution.unique_targets().len() != desired_targets as usize
 			{
-				return Weight::MAX
+				return Weight::MAX;
 			}
 
 			futures::executor::block_on(epm::runtime_api_solution_weight(

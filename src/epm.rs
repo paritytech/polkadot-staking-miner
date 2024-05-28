@@ -131,7 +131,7 @@ where
 			let max_weight: Weight = T::MaxWeight::get();
 
 			if est_weight.all_lt(max_weight) {
-				return Ok(Self { state: State { voters, voters_by_stake }, _marker: PhantomData })
+				return Ok(Self { state: State { voters, voters_by_stake }, _marker: PhantomData });
 			}
 
 			let Some((_, idx)) = voters_by_stake.pop_first() else { break };
@@ -146,7 +146,7 @@ where
 			targets.remove(&rm);
 		}
 
-		return Err(Error::Feasibility("Failed to pre-trim weight < T::MaxLength".to_string()))
+		return Err(Error::Feasibility("Failed to pre-trim weight < T::MaxLength".to_string()));
 	}
 
 	/// Clone the state and trim it, so it get can be reverted.
@@ -156,7 +156,7 @@ where
 
 		for _ in 0..n {
 			let Some((_, idx)) = voters_by_stake.pop_first() else {
-				return Err(Error::Feasibility("Failed to pre-trim len".to_string()))
+				return Err(Error::Feasibility("Failed to pre-trim len".to_string()));
 			};
 			let rm = voters[idx].0.clone();
 
@@ -222,7 +222,8 @@ fn read_constant<'a, T: serde::Deserialize<'a>>(
 		.constants()
 		.at(&subxt::dynamic::constant(epm_name, constant))
 		.map_err(|e| invalid_metadata_error(constant.to_string(), e))?
-		.to_value()?;
+		.to_value()
+		.map_err(|e| Error::Subxt(e.into()))?;
 
 	scale_value::serde::from_value::<_, T>(val).map_err(|e| {
 		Error::InvalidMetadata(format!("Decoding `{}` failed {}", std::any::type_name::<T>(), e))
@@ -390,7 +391,7 @@ where
 			solution,
 			score,
 			solution_or_snapshot_size,
-		})
+		});
 	}
 
 	prometheus::on_trim_attempt();
@@ -513,7 +514,7 @@ fn to_scale_value<T: scale_info::TypeInfo + 'static + Encode>(val: T) -> Result<
 
 	let bytes = val.encode();
 
-	decode_as_type(&mut bytes.as_ref(), &ty_id, &types)
+	decode_as_type(&mut bytes.as_ref(), ty_id, &types)
 		.map(|v| v.remove_context())
 		.map_err(|e| {
 			Error::DynamicTransaction(format!(
