@@ -4,21 +4,21 @@ The format is based on [Keep a Changelog].
 
 [Keep a Changelog]: http://keepachangelog.com/en/1.0.0/
 
-## [v1.5.0]
+## [v1.5.0] - 2024-06-07
 
 This release updates subxt to support the signed extension [CheckMetadataHash](https://github.com/paritytech/polkadot-sdk/pull/4274)
 
 ### [Changed]
-- chore(deps): update polkadot-sdk dependencies  ([#840](https://github.com/paritytech/staking-miner-v2/pull/840))
-- chore(deps): bump subxt to v0.37.0  ([#836](https://github.com/paritytech/staking-miner-v2/pull/836))
-- chore(deps): bump prometheus from 0.13.3 to 0.13.4  ([#825](https://github.com/paritytech/staking-miner-v2/pull/825))
-- chore(deps): bump thiserror from 1.0.58 to 1.0.59  ([#822](https://github.com/paritytech/staking-miner-v2/pull/822))
-- chore(deps): bump h2 from 0.3.24 to 0.3.26 in /staking-miner-playground  ([#804](https://github.com/paritytech/staking-miner-v2/pull/804))
-- chore(deps): bump sp-storage from 20.0.0 to 21.0.0  ([#812](https://github.com/paritytech/staking-miner-v2/pull/812))
-- chore(deps): bump scale-info from 2.11.1 to 2.11.2  ([#814](https://github.com/paritytech/staking-miner-v2/pull/814))
-- chore(deps): bump serde from 1.0.197 to 1.0.198  ([#818](https://github.com/paritytech/staking-miner-v2/pull/818))
-- chore(deps): bump rustls from 0.21.10 to 0.21.11  ([#817](https://github.com/paritytech/staking-miner-v2/pull/817))
-- chore(deps): bump anyhow from 1.0.81 to 1.0.82  ([#811](https://github.com/paritytech/staking-miner-v2/pull/811))
+- chore(deps): update polkadot-sdk dependencies ([#840](https://github.com/paritytech/staking-miner-v2/pull/840))
+- chore(deps): bump subxt to v0.37.0 ([#836](https://github.com/paritytech/staking-miner-v2/pull/836))
+- chore(deps): bump prometheus from 0.13.3 to 0.13.4 ([#825](https://github.com/paritytech/staking-miner-v2/pull/825))
+- chore(deps): bump thiserror from 1.0.58 to 1.0.59 ([#822](https://github.com/paritytech/staking-miner-v2/pull/822))
+- chore(deps): bump h2 from 0.3.24 to 0.3.26 in /staking-miner-playground ([#804](https://github.com/paritytech/staking-miner-v2/pull/804))
+- chore(deps): bump sp-storage from 20.0.0 to 21.0.0 ([#812](https://github.com/paritytech/staking-miner-v2/pull/812))
+- chore(deps): bump scale-info from 2.11.1 to 2.11.2 ([#814](https://github.com/paritytech/staking-miner-v2/pull/814))
+- chore(deps): bump serde from 1.0.197 to 1.0.198 ([#818](https://github.com/paritytech/staking-miner-v2/pull/818))
+- chore(deps): bump rustls from 0.21.10 to 0.21.11 ([#817](https://github.com/paritytech/staking-miner-v2/pull/817))
+- chore(deps): bump anyhow from 1.0.81 to 1.0.82 ([#811](https://github.com/paritytech/staking-miner-v2/pull/811))
 
 ### Compatibility
 
