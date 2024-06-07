@@ -1,0 +1,44 @@
+name: Polkadot Staking Miner Playground CI
+
+on:
+  push:
+    paths:
+      - 'staking-miner-playground/**'
+    branches:
+      - main
+    tags:
+      - v*
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'staking-miner-playground/**'
+
+env:
+  IMAGE: paritytech/ci-unified:bullseye-1.77.0-2024-04-10-v20240408
+  IMAGE_NAME: paritytech/polkadot-staking-miner
+  RUST_INFO: rustup show && cargo --version && rustup +nightly show && cargo +nightly --version
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check staking-miner-playground
+    runs-on: ubuntu-latest
+    needs: [set-image]
+    container: ${{ needs.set-image.outputs.IMAGE }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          key: ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Check staking-miner-playground
+        run: |
+          ${{ env.RUST_INFO }}
+          cargo check --manifest-path staking-miner-playground/Cargo.toml
