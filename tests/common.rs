@@ -82,7 +82,11 @@ pub fn run_staking_miner_playground() -> (KillChildOnDrop, String) {
 
 /// Start a polkadot node on chain polkadot-dev, kusama-dev or westend-dev.
 pub fn run_polkadot_node(chain: Chain) -> (KillChildOnDrop, String) {
-	let chain_str = format!("{}-dev", chain.to_string());
+	let chain_str = match chain {
+		Chain::Polkadot => "chainspecs/polkadot-dev.json",
+		Chain::Kusama => "chainspecs/kusama-dev.json",
+		Chain::Westend => "westend-dev",
+	};
 
 	let mut node_cmd = KillChildOnDrop(
 		process::Command::new("polkadot")
