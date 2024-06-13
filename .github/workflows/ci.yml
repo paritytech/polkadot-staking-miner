@@ -162,7 +162,6 @@ jobs:
             check-clippy,
             check-docs,
             check-cargo-hack,
-            check-staking-miner-playground,
             test,
             build]
     steps:
@@ -202,7 +201,6 @@ jobs:
             check-clippy,
             check-docs,
             check-cargo-hack,
-            check-staking-miner-playground,
             test,
             build]
     steps:
