@@ -3187,7 +3187,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sp-npos-elections",
- "sp-runtime 37.0.0",
+ "sp-runtime 38.0.0",
  "sp-storage 21.0.0",
  "subxt",
  "thiserror",
