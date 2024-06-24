@@ -29,7 +29,7 @@ subxt = { version = "0.37.0", features = ["substrate-compat"] }
 
 # polkadot-sdk
 frame-election-provider-support = "34.0.0"
-pallet-election-provider-multi-phase = "33.0.0"
+pallet-election-provider-multi-phase = "34.0.0"
 sp-npos-elections = "32.0.0"
 frame-support = "35.0.0"
 sp-runtime = "38.0.0"
