@@ -1604,7 +1604,7 @@ dependencies = [
  "scale-info",
  "sp-arithmetic 26.0.0",
  "sp-core 33.0.1",
- "sp-npos-elections",
+ "sp-npos-elections 32.0.0",
  "sp-runtime 37.0.0",
  "sp-std",
 ]
@@ -2975,7 +2975,7 @@ dependencies = [
  "sp-arithmetic 26.0.0",
  "sp-core 33.0.1",
  "sp-io 36.0.0",
- "sp-npos-elections",
+ "sp-npos-elections 32.0.0",
  "sp-runtime 37.0.0",
  "sp-std",
  "strum",
@@ -2991,7 +2991,7 @@ dependencies = [
  "frame-election-provider-support",
  "frame-system",
  "parity-scale-codec",
- "sp-npos-elections",
+ "sp-npos-elections 32.0.0",
  "sp-runtime 37.0.0",
  "sp-std",
 ]
@@ -3186,7 +3186,7 @@ dependencies = [
  "scale-value",
  "serde",
  "serde_json",
- "sp-npos-elections",
+ "sp-npos-elections 33.0.0",
  "sp-runtime 38.0.0",
  "sp-storage 21.0.0",
  "subxt",
@@ -4931,6 +4931,20 @@ dependencies = [
  "sp-arithmetic 26.0.0",
  "sp-core 33.0.1",
  "sp-runtime 37.0.0",
+]
+
+[[package]]
+name = "sp-npos-elections"
+version = "33.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b0c51a7b60cd663f2661e6949069eb316b092f22c239691d5272a4d0cfca0fb"
+dependencies = [
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-arithmetic 26.0.0",
+ "sp-core 34.0.0",
+ "sp-runtime 38.0.0",
 ]
 
 [[package]]
