@@ -26,7 +26,8 @@ use crate::{
 };
 
 use std::{
-	collections::{BTreeMap, BTreeSet},
+	cmp::Reverse,
+	collections::{BTreeSet, BinaryHeap},
 	marker::PhantomData,
 };
 
@@ -75,7 +76,9 @@ impl std::fmt::Display for EpmConstant {
 #[derive(Debug)]
 pub struct State {
 	voters: Voters,
-	voters_by_stake: BTreeMap<VoteWeight, usize>,
+	/// `BinaryHeap` is max-heap, so sorting is descending (pop pops the largest weight).
+	/// We want to drop voters with less VoteWeight, so we're making this heap a min-heap (pop pops the smallest weight).
+	voters_by_stake: BinaryHeap<Reverse<(VoteWeight, usize)>>,
 }
 
 impl State {
@@ -111,11 +114,11 @@ where
 {
 	/// Create a new `TrimmedVotes`.
 	pub async fn new(mut voters: Voters, desired_targets: u32) -> Result<Self, Error> {
-		let mut voters_by_stake = BTreeMap::new();
+		let mut voters_by_stake = BinaryHeap::new();
 		let mut targets = BTreeSet::new();
 
 		for (idx, (_voter, stake, supports)) in voters.iter().enumerate() {
-			voters_by_stake.insert(*stake, idx);
+			voters_by_stake.push(Reverse((*stake, idx)));
 			targets.extend(supports.iter().cloned());
 		}
 
@@ -134,7 +137,7 @@ where
 				return Ok(Self { state: State { voters, voters_by_stake }, _marker: PhantomData });
 			}
 
-			let Some((_, idx)) = voters_by_stake.pop_first() else { break };
+			let Some(Reverse((_, idx))) = voters_by_stake.pop() else { break };
 
 			let rm = voters[idx].0.clone();
 
@@ -155,7 +158,7 @@ where
 		let mut voters_by_stake = self.state.voters_by_stake.clone();
 
 		for _ in 0..n {
-			let Some((_, idx)) = voters_by_stake.pop_first() else {
+			let Some(Reverse((_, idx))) = voters_by_stake.pop() else {
 				return Err(Error::Feasibility("Failed to pre-trim len".to_string()));
 			};
 			let rm = voters[idx].0.clone();
