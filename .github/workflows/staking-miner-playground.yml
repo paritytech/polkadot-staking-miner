@@ -44,4 +44,4 @@ jobs:
       - name: Check staking-miner-playground
         run: |
           ${{ env.RUST_INFO }}
-          cargo check --manifest-path staking-miner-playground/Cargo.toml
+          SKIP_WASM_BUILD=1 cargo check --manifest-path staking-miner-playground/Cargo.toml
