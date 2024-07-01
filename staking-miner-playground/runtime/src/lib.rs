@@ -475,7 +475,7 @@ parameter_types! {
 
 	pub MinerMaxWeight: Weight = prod_or_enforce_trimming!(
 		<Runtime as frame_system::Config>::BlockWeights::get().get(DispatchClass::Normal).max_total.unwrap(),
-		Perbill::from_percent(85) * <Runtime as frame_system::Config>::BlockWeights::get().get(DispatchClass::Normal).max_total.unwrap()
+		Perbill::from_percent(86) * <Runtime as frame_system::Config>::BlockWeights::get().get(DispatchClass::Normal).max_total.unwrap()
 	);
 
 	// The maximum winners that can be elected by the Election pallet which is equivalent to the
