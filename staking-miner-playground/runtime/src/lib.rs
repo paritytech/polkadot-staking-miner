@@ -461,12 +461,10 @@ parameter_types! {
 	// miner configs
 	pub const ElectionUnsignedPriority: TransactionPriority = StakingUnsignedPriority::get() - 1u64;
 
-	// This is a hack to get the number of validators, candidates and nominators
-	// used by node which uses the same env flags as the chain spec builder in the node crate.
-	//
-	// NOTE: The default values needs be equal to the values in `node/src/chainspec.rs`.
-	pub Validators: u32 = option_env!("V").unwrap_or("20").parse().expect("env variable `V` must be number");
-	pub Nominators: u32 = option_env!("N").unwrap_or("700").parse().expect("env variable `N` must be number");
+	// The maximum of active validators.
+	pub Validators: u32 = 20;
+	// The number of nominators.
+	pub Nominators: u32 = 700;
 
 	pub MinerMaxLength: u32 = prod_or_enforce_trimming!(
 		*(<<Runtime as frame_system::Config>::BlockLength as Get<limits::BlockLength>>::get()).max.get(DispatchClass::Normal),
