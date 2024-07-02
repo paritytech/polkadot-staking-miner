@@ -94,7 +94,7 @@ pub fn run_polkadot_node(chain: Chain) -> (KillChildOnDrop, String) {
 			.stderr(process::Stdio::piped())
 			.args([
 				"--chain",
-				&chain_str,
+				chain_str,
 				"--tmp",
 				"--alice",
 				"--unsafe-force-node-key-generation",
@@ -141,14 +141,16 @@ pub fn spawn_cli_output_threads(
 ) {
 	let tx2 = tx.clone();
 	std::thread::spawn(move || {
-		for line in BufReader::new(stdout).lines().flatten() {
+		for line in BufReader::new(stdout).lines() {
+			let line = line.expect("Failed to read line from stdout");
 			println!("OK: {}", line);
 			let _ = tx2.send(line);
 		}
 	});
 
 	std::thread::spawn(move || {
-		for line in BufReader::new(stderr).lines().flatten() {
+		for line in BufReader::new(stderr).lines() {
+			let line = line.expect("Failed to read line from stdout");
 			println!("ERR: {}", line);
 			let _ = tx.send(line);
 		}

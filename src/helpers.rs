@@ -86,7 +86,7 @@ pub fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Er
 		Error::BetterScoreExist |
 		Error::IncorrectPhase |
 		Error::TransactionRejected(_) |
-		Error::JoinError(_) |
+		Error::Join(_) |
 		Error::Feasibility(_) |
 		Error::EmptySnapshot => {},
 		Error::Subxt(SubxtError::Rpc(rpc_err)) => {

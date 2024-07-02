@@ -23,7 +23,7 @@ pub enum Error {
 	#[error("I/O error: `{0}`")]
 	Io(#[from] std::io::Error),
 	#[error("RPC error: `{0}`")]
-	RpcError(#[from] jsonrpsee::core::ClientError),
+	Rpc(#[from] jsonrpsee::core::ClientError),
 	#[error("subxt error: `{0}`")]
 	Subxt(#[from] subxt::Error),
 	#[error("Crypto error: `{0:?}`")]
@@ -51,7 +51,7 @@ pub enum Error {
 	#[error("Feasibility error: {0}")]
 	Feasibility(String),
 	#[error("{0}")]
-	JoinError(#[from] tokio::task::JoinError),
+	Join(#[from] tokio::task::JoinError),
 	#[error("Empty snapshot")]
 	EmptySnapshot,
 }
