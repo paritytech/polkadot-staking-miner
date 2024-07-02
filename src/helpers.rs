@@ -86,7 +86,7 @@ pub fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Er
 		Error::BetterScoreExist |
 		Error::IncorrectPhase |
 		Error::TransactionRejected(_) |
-		Error::JoinError(_) |
+		Error::Join(_) |
 		Error::Feasibility(_) |
 		Error::EmptySnapshot => {},
 		Error::Subxt(SubxtError::Rpc(rpc_err)) => {
@@ -115,8 +115,8 @@ pub fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Er
 							// It's possible to get other errors such as outdated nonce and similar
 							// but then it should be possible to try again in the next block or round.
 							if e.code() == BAD_EXTRINSIC_FORMAT ||
-								e.code() == VERIFICATION_ERROR || e.code() ==
-								ErrorCode::MethodNotFound.code()
+								e.code() == VERIFICATION_ERROR ||
+								e.code() == ErrorCode::MethodNotFound.code()
 							{
 								let _ = tx.send(Error::Subxt(SubxtError::Rpc(
 									RpcError::ClientError(Box::new(JsonRpseeError::Call(e))),

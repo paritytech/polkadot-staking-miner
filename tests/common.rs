@@ -141,14 +141,16 @@ pub fn spawn_cli_output_threads(
 ) {
 	let tx2 = tx.clone();
 	std::thread::spawn(move || {
-		for line in BufReader::new(stdout).lines().flatten() {
+		for line in BufReader::new(stdout).lines() {
+			let line = line.expect("Failed to read line from stdout");
 			println!("OK: {}", line);
 			let _ = tx2.send(line);
 		}
 	});
 
 	std::thread::spawn(move || {
-		for line in BufReader::new(stderr).lines().flatten() {
+		for line in BufReader::new(stderr).lines() {
+			let line = line.expect("Failed to read line from stdout");
 			println!("ERR: {}", line);
 			let _ = tx.send(line);
 		}
