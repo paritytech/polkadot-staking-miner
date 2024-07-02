@@ -323,7 +323,7 @@ where
 	let _lock = submit_lock.lock().await;
 
 	let (solution, score) = match epm::fetch_snapshot_and_mine_solution::<T>(
-		&client.chain_api(),
+		client.chain_api(),
 		Some(block_hash),
 		config.solver,
 		round,

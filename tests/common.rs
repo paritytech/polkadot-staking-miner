@@ -94,7 +94,7 @@ pub fn run_polkadot_node(chain: Chain) -> (KillChildOnDrop, String) {
 			.stderr(process::Stdio::piped())
 			.args([
 				"--chain",
-				&chain_str,
+				chain_str,
 				"--tmp",
 				"--alice",
 				"--unsafe-force-node-key-generation",

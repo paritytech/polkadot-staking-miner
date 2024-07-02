@@ -149,7 +149,7 @@ where
 			targets.remove(&rm);
 		}
 
-		return Err(Error::Feasibility("Failed to pre-trim weight < T::MaxLength".to_string()));
+		Err(Error::Feasibility("Failed to pre-trim weight < T::MaxLength".to_string()))
 	}
 
 	/// Clone the state and trim it, so it get can be reverted.
