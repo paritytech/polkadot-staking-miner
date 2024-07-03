@@ -4,6 +4,32 @@ The format is based on [Keep a Changelog].
 
 [Keep a Changelog]: http://keepachangelog.com/en/1.0.0/
 
+## [v1.5.1] - 2024-07-03
+
+This is a bug-fix release that changes internal trimming data structure from 
+BTreeMap to MinHeap to support voters with the same weight.
+
+### [Fixed]
+- fix: feasibility check when voters have the same staked amount ([#856](https://github.com/paritytech/staking-miner-v2/pull/856))
+
+### [Changed]
+- chore(deps): bump tokio from 1.37.0 to 1.38.0 ([#845](https://github.com/paritytech/staking-miner-v2/pull/845))
+- chore(deps): bump regex from 1.10.4 to 1.10.5 ([#844](https://github.com/paritytech/staking-miner-v2/pull/844))
+- chore(deps): bump anyhow from 1.0.82 to 1.0.86 ([#842](https://github.com/paritytech/staking-miner-v2/pull/842))
+- chore(deps): bump hyper from 0.14.28 to 0.14.29 ([#846](https://github.com/paritytech/staking-miner-v2/pull/846))
+- chore(deps): bump serde_json from 1.0.117 to 1.0.119 ([#857](https://github.com/paritytech/staking-miner-v2/pull/857))
+- chore(deps): bump frame-support from 34.0.0 to 35.0.0 ([#853](https://github.com/paritytech/staking-miner-v2/pull/853))
+- chore(deps): bump sp-runtime from 37.0.0 to 38.0.0 ([#855](https://github.com/paritytech/staking-miner-v2/pull/855))
+- chore(deps): bump clap from 4.5.4 to 4.5.7 ([#850](https://github.com/paritytech/staking-miner-v2/pull/850))
+- chore: update polkadot-sdk deps ([#861](https://github.com/paritytech/staking-miner-v2/pull/861))
+
+### Compatibility
+
+Tested against:
+- Westend v1,014,000
+- Kusama v1,002,006
+- Polkadot v1,002,006
+
 ## [v1.5.0] - 2024-06-07
 
 This release updates subxt to support the signed extension [CheckMetadataHash](https://github.com/paritytech/polkadot-sdk/pull/4274)
