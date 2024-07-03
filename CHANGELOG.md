@@ -23,6 +23,13 @@ BTreeMap to MinHeap to support voters with the same weight.
 - chore(deps): bump clap from 4.5.4 to 4.5.7 ([#850](https://github.com/paritytech/staking-miner-v2/pull/850))
 - chore: update polkadot-sdk deps ([#861](https://github.com/paritytech/staking-miner-v2/pull/861))
 
+### Compatibility
+
+Tested against:
+- Westend v1,013,000
+- Kusama v1,002,006
+- Polkadot v1,002,006
+
 ## [v1.5.0] - 2024-06-07
 
 This release updates subxt to support the signed extension [CheckMetadataHash](https://github.com/paritytech/polkadot-sdk/pull/4274)
