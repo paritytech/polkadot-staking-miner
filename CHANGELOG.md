@@ -10,7 +10,7 @@ This is a bug-fix release that changes internal trimming data structure from
 BTreeMap to MinHeap to support voters with the same weight.
 
 ### [Fixed]
-- fix: feasibility check fails when all voters have the same staked amount ([#856](https://github.com/paritytech/staking-miner-v2/pull/856))
+- fix: feasibility check when voters have the same staked amount ([#856](https://github.com/paritytech/staking-miner-v2/pull/856))
 
 ### [Changed]
 - chore(deps): bump tokio from 1.37.0 to 1.38.0 ([#845](https://github.com/paritytech/staking-miner-v2/pull/845))
