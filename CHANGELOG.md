@@ -26,7 +26,7 @@ BTreeMap to MinHeap to support voters with the same weight.
 ### Compatibility
 
 Tested against:
-- Westend v1,013,000
+- Westend v1,014,000
 - Kusama v1,002,006
 - Polkadot v1,002,006
 
