@@ -64,4 +64,4 @@ jobs:
           access_token: ${{ secrets.MATRIX_ACCESS_TOKEN }}
           server: m.parity.io
           message: |
-            Daily integration tests passed (temporary message to test the notification, this will omitted in the future)
+            Daily integration tests passed (temporary message to test the notification, this will be omitted in the future)
