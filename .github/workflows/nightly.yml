@@ -8,6 +8,11 @@ on:
 jobs:
   nightly-test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        channel:
+          - name: 'Staking Miner Dev'
+            room: '!tXyUlsDAYvDfRKbzKx:parity.io'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -41,3 +46,22 @@ jobs:
           # create a new one if we only find closed versions):
           search_existing: open
 
+      - name: Notify daily integration tests failure
+        if: failure()
+        uses: s3krit/matrix-message-action@70ad3fb812ee0e45ff8999d6af11cafad11a6ecf # v0.0.3
+        with:
+          room_id: ${{ matrix.channel.room }}
+          access_token: ${{ secrets.MATRIX_ACCESS_TOKEN }}
+          server: m.parity.io
+          message: |
+            @room Daily integration tests failed https://github.com/${{ github.repository }}/commit/${{ github.sha }}/checks/${{ github.run_id }}
+
+      - name: Notify daily integration tests success
+        if: success()
+        uses: s3krit/matrix-message-action@70ad3fb812ee0e45ff8999d6af11cafad11a6ecf # v0.0.3
+        with:
+          room_id: ${{ matrix.channel.room }}
+          access_token: ${{ secrets.MATRIX_ACCESS_TOKEN }}
+          server: m.parity.io
+          message: |
+            Daily integration tests passed (temporary message to test the notification, this will be omitted in the future)
