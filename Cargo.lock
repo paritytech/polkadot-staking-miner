@@ -1567,7 +1567,7 @@ dependencies = [
  "sp-application-crypto 38.0.0",
  "sp-core 34.0.0",
  "sp-io 38.0.0",
- "sp-runtime 39.0.0",
+ "sp-runtime 39.0.1",
  "sp-runtime-interface 28.0.0",
  "sp-storage 21.0.0",
  "static_assertions",
@@ -1599,7 +1599,7 @@ dependencies = [
  "sp-arithmetic 26.0.0",
  "sp-core 34.0.0",
  "sp-npos-elections",
- "sp-runtime 39.0.0",
+ "sp-runtime 39.0.1",
 ]
 
 [[package]]
@@ -1657,7 +1657,7 @@ dependencies = [
  "sp-inherents",
  "sp-io 38.0.0",
  "sp-metadata-ir",
- "sp-runtime 39.0.0",
+ "sp-runtime 39.0.1",
  "sp-staking",
  "sp-state-machine 0.43.0",
  "sp-std",
@@ -1726,7 +1726,7 @@ dependencies = [
  "serde",
  "sp-core 34.0.0",
  "sp-io 38.0.0",
- "sp-runtime 39.0.0",
+ "sp-runtime 39.0.1",
  "sp-std",
  "sp-version",
  "sp-weights 31.0.0",
@@ -3018,7 +3018,7 @@ dependencies = [
  "sp-core 34.0.0",
  "sp-io 38.0.0",
  "sp-npos-elections",
- "sp-runtime 39.0.0",
+ "sp-runtime 39.0.1",
  "strum",
 ]
 
@@ -3033,7 +3033,7 @@ dependencies = [
  "frame-system",
  "parity-scale-codec",
  "sp-npos-elections",
- "sp-runtime 39.0.0",
+ "sp-runtime 39.0.1",
 ]
 
 [[package]]
@@ -3221,7 +3221,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sp-npos-elections",
- "sp-runtime 39.0.0",
+ "sp-runtime 39.0.1",
  "sp-storage 21.0.0",
  "subxt",
  "thiserror",
@@ -4505,7 +4505,7 @@ dependencies = [
  "sp-core 34.0.0",
  "sp-externalities 0.29.0",
  "sp-metadata-ir",
- "sp-runtime 39.0.0",
+ "sp-runtime 39.0.1",
  "sp-runtime-interface 28.0.0",
  "sp-state-machine 0.43.0",
  "sp-trie 37.0.0",
@@ -4749,7 +4749,7 @@ dependencies = [
  "scale-info",
  "serde_json",
  "sp-api",
- "sp-runtime 39.0.0",
+ "sp-runtime 39.0.1",
 ]
 
 [[package]]
@@ -4762,7 +4762,7 @@ dependencies = [
  "impl-trait-for-tuples",
  "parity-scale-codec",
  "scale-info",
- "sp-runtime 39.0.0",
+ "sp-runtime 39.0.1",
  "thiserror",
 ]
 
@@ -4866,7 +4866,7 @@ dependencies = [
  "serde",
  "sp-arithmetic 26.0.0",
  "sp-core 34.0.0",
- "sp-runtime 39.0.0",
+ "sp-runtime 39.0.1",
 ]
 
 [[package]]
@@ -4907,9 +4907,9 @@ dependencies = [
 
 [[package]]
 name = "sp-runtime"
-version = "39.0.0"
+version = "39.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5641385c2cd8e2252aacf35e0aff2f236331dfaea8dc11c5a4ec6bb36544450"
+checksum = "806f19b91dc283145e0580353e6ae68e4e634c0915d3dd950f57547b90b55a8c"
 dependencies = [
  "docify",
  "either",
@@ -4997,7 +4997,7 @@ dependencies = [
  "scale-info",
  "serde",
  "sp-core 34.0.0",
- "sp-runtime 39.0.0",
+ "sp-runtime 39.0.1",
 ]
 
 [[package]]
@@ -5162,7 +5162,7 @@ dependencies = [
  "scale-info",
  "serde",
  "sp-crypto-hashing-proc-macro",
- "sp-runtime 39.0.0",
+ "sp-runtime 39.0.1",
  "sp-std",
  "sp-version-proc-macro",
  "thiserror",
