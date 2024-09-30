@@ -32,7 +32,7 @@ frame-election-provider-support = "37.0.0"
 pallet-election-provider-multi-phase = "36.0.0"
 sp-npos-elections = "34.0.0"
 frame-support = "37.0.0"
-sp-runtime = "39.0.0"
+sp-runtime = "39.0.1"
 
 # prometheus
 prometheus = "0.13"
