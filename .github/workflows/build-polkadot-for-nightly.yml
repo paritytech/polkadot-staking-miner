@@ -11,7 +11,7 @@ jobs:
   tests:
     name: Build polkadot binary
     runs-on: ubuntu-latest
-    container: paritytech/ci-unified:bullseye-1.77.0-2024-04-10-v20240408
+    container: paritytech/ci-unified:bullseye-1.81.0-2024-09-11
     steps:
       - name: checkout polkadot-sdk
         uses: actions/checkout@v4
