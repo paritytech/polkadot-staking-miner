@@ -12,10 +12,14 @@ pub enum Error {
 	InvalidChain(String),
 	#[error("Invalid metadata: {0}")]
 	InvalidMetadata(String),
+	#[error("Codec error: `{0}`")]
+	Codec(#[from] codec::Error),
 	#[error("The account does not exist")]
 	AccountDoesNotExists,
 	#[error("Crypto error: `{0:?}`")]
 	Crypto(sp_core::crypto::SecretStringError),
+	#[error("Empty snapshot")]
+	EmptySnapshot,
 	#[error("Other error: `{0}`")]
 	Other(String),
 }

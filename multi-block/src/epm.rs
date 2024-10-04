@@ -1,4 +1,7 @@
-use crate::{error::Error, prelude::*, static_types};
+use crate::{error::Error, helpers, prelude::*, static_types};
+
+use codec::{Decode, Encode};
+use subxt::{dynamic::Value, tx::DynamicPayload};
 
 const EPM_PALLET_NAME: &str = "ElectionProviderMultiBlock";
 
@@ -24,27 +27,74 @@ impl EpmConstant {
 }
 
 pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
-    const PAGES: EpmConstant = EpmConstant::new("Pages");
-    const TARGET_SNAPSHOT_PER_BLOCK: EpmConstant = EpmConstant::new("TargetSnapshotPerBlock");
-    const VOTER_SNAPSHOT_PER_BLOCK: EpmConstant = EpmConstant::new("VoterSnapshotPerBlock");
+	const PAGES: EpmConstant = EpmConstant::new("Pages");
+	const TARGET_SNAPSHOT_PER_BLOCK: EpmConstant = EpmConstant::new("TargetSnapshotPerBlock");
+	const VOTER_SNAPSHOT_PER_BLOCK: EpmConstant = EpmConstant::new("VoterSnapshotPerBlock");
 
-    let pages: u32 = read_constant(api, PAGES)?;
-    let target_snapshot_per_block: u32 = read_constant(api, TARGET_SNAPSHOT_PER_BLOCK)?;
-    let voter_snapshot_per_block: u32 = read_constant(api, VOTER_SNAPSHOT_PER_BLOCK)?;
+	let pages: u32 = read_constant(api, PAGES)?;
+	let target_snapshot_per_block: u32 = read_constant(api, TARGET_SNAPSHOT_PER_BLOCK)?;
+	let voter_snapshot_per_block: u32 = read_constant(api, VOTER_SNAPSHOT_PER_BLOCK)?;
 
 	fn log_metadata(metadata: EpmConstant, val: impl std::fmt::Display) {
 		log::info!(target: LOG_TARGET, "updating metadata constant `{metadata}`: {val}",);
 	}
 
-    log_metadata(PAGES, pages);
-    log_metadata(TARGET_SNAPSHOT_PER_BLOCK, target_snapshot_per_block);
-    log_metadata(VOTER_SNAPSHOT_PER_BLOCK, voter_snapshot_per_block);
+	log_metadata(PAGES, pages);
+	log_metadata(TARGET_SNAPSHOT_PER_BLOCK, target_snapshot_per_block);
+	log_metadata(VOTER_SNAPSHOT_PER_BLOCK, voter_snapshot_per_block);
 
-    static_types::Pages::set(pages);
-    static_types::TargetSnapshotPerBlock::set(target_snapshot_per_block);
-    static_types::VoterSnapshotPerBlock::set(voter_snapshot_per_block);
+	static_types::Pages::set(pages);
+	static_types::TargetSnapshotPerBlock::set(target_snapshot_per_block);
+	static_types::VoterSnapshotPerBlock::set(voter_snapshot_per_block);
 
 	Ok(())
+}
+
+pub(crate) async fn target_snapshot(storage: &Storage) -> Result<TargetSnapshotPage, Error> {
+	// target snapshot has *always* one page.
+	let page_idx = vec![Value::from(0u32)];
+	let addr = subxt::dynamic::storage(EPM_PALLET_NAME, "PagedTargetSnapshot", page_idx);
+
+	match storage.fetch(&addr).await {
+		Ok(Some(val)) => {
+			let snapshot = Decode::decode(&mut val.encoded())?;
+			Ok(snapshot)
+		},
+		Ok(None) => Err(Error::EmptySnapshot),
+		Err(err) => Err(err.into()),
+	}
+}
+
+pub(crate) async fn paged_voter_snapshot(
+	page: u32,
+	storage: &Storage,
+) -> Result<VoterSnapshotPage, Error> {
+	let page_idx = vec![Value::from(page)];
+	let addr = subxt::dynamic::storage(EPM_PALLET_NAME, "PagedVoterSnapshot", page_idx);
+
+	match storage.fetch(&addr).await {
+		Ok(Some(val)) => {
+			let snapshot = Decode::decode(&mut val.encoded())?;
+			Ok(snapshot)
+		},
+		Ok(None) => Err(Error::EmptySnapshot),
+		Err(err) => Err(err.into()),
+	}
+}
+
+pub(crate) async fn fetch_full_snapshots(
+	n_pages: u32,
+	storage: &Storage,
+) -> Result<(TargetSnapshotPage, Vec<VoterSnapshotPage>), Error> {
+	let mut voters = vec![];
+	let targets = target_snapshot(storage).await?;
+
+	for page in 0..n_pages {
+		let paged_voters = paged_voter_snapshot(page, storage).await?;
+		voters.push(paged_voters);
+	}
+
+	Ok((targets, voters))
 }
 
 fn read_constant<'a, T: serde::Deserialize<'a>>(
@@ -68,4 +118,3 @@ fn read_constant<'a, T: serde::Deserialize<'a>>(
 fn invalid_metadata_error<E: std::error::Error>(item: String, err: E) -> Error {
 	Error::InvalidMetadata(format!("{} failed: {}", item, err))
 }
-
