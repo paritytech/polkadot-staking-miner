@@ -45,6 +45,9 @@ pub enum Command {
 	Monitor(monitor::MonitorConfig),
 }
 
+// TODO: use any_runtime! macro to cover all runtimes.
+use crate::static_types::staking_dev::MinerConfig;
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
 	let Opt { uri, command, log } = Opt::parse();
@@ -67,7 +70,7 @@ async fn main() -> Result<(), Error> {
 	tokio::spawn(runtime_upgrade_task(client.chain_api().clone(), tx_upgrade));
 
 	let fut = match command {
-		Command::Monitor(cfg) => commands::monitor_cmd(client, cfg).boxed(),
+		Command::Monitor(cfg) => commands::monitor_cmd::<MinerConfig>(client, cfg).boxed(),
 		// TODO: other commands
 	};
 

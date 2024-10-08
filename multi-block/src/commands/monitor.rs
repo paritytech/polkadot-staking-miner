@@ -2,14 +2,17 @@ use crate::{client::Client, error::Error, prelude::*, signer::Signer};
 
 use crate::{
 	epm, helpers, runtime::runtime_types::pallet_election_provider_multi_block::types::*,
-	static_types::Pages,
+	static_types,
 };
+
+use pallet_election_provider_multi_block::unsigned::miner;
+
 use clap::Parser;
 use std::sync::Arc;
 use subxt::{backend::rpc::RpcSubscription, config::Header as _, OnlineClient, PolkadotConfig};
 use tokio::sync::Mutex;
 
-#[derive(Debug, Clone, Parser)]
+#[derive(Debug, Clone, Parser, PartialEq)]
 pub struct MonitorConfig {
 	#[clap(long)]
 	pub at: Option<Hash>,
@@ -21,14 +24,20 @@ pub struct MonitorConfig {
 	pub listen: Listen,
 }
 
-#[cfg_attr(test, derive(PartialEq))]
-#[derive(clap::ValueEnum, Debug, Copy, Clone)]
+#[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq)]
 pub enum Listen {
 	Finalized,
 	Head,
 }
 
-pub async fn monitor_cmd(client: Client, config: MonitorConfig) -> Result<(), Error> {
+pub async fn monitor_cmd<T>(client: Client, config: MonitorConfig) -> Result<(), Error>
+where
+	T: miner::Config<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
+		+ Send
+		+ Sync
+		+ 'static,
+	T::Solution: Send,
+{
 	let signer = Signer::new(&config.seed_or_path)?;
 	let account_info = {
 		let addr = runtime::storage().system().account(signer.account_id());
@@ -54,10 +63,10 @@ pub async fn monitor_cmd(client: Client, config: MonitorConfig) -> Result<(), Er
 	let (_tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
 	let _submit_lock = Arc::new(Mutex::new(()));
 
-	let mut target_snapshot: Vec<TargetSnapshotPage> = Default::default();
+	let mut target_snapshot: TargetSnapshotPage = Default::default();
 	let mut voter_snapshot_paged: Vec<VoterSnapshotPage> = Default::default();
 
-	let n_pages = Pages::get();
+	let n_pages = static_types::Pages::get();
 	let mut last_round_submitted = None;
 
 	loop {
@@ -99,7 +108,7 @@ pub async fn monitor_cmd(client: Client, config: MonitorConfig) -> Result<(), Er
 		let result = tokio::spawn(async move {
 			match phase {
 				Phase::Off => {
-					log::info!(target: LOG_TARGET, "Phase::Off, do nothing.");
+					log::trace!(target: LOG_TARGET, "Phase::Off, do nothing.");
 					Artifact::Nothing
 				},
 
@@ -116,11 +125,11 @@ pub async fn monitor_cmd(client: Client, config: MonitorConfig) -> Result<(), Er
 							.unwrap_or(Artifact::Nothing)
 					},
 				Phase::Signed => {
-					log::info!(target: LOG_TARGET, "Phase::Signed",);
+					log::trace!(target: LOG_TARGET, "Phase::Signed",);
 					Artifact::ComputeElectionResult
 				},
 				_ => {
-					log::info!(target: LOG_TARGET, "other phase");
+					log::trace!(target: LOG_TARGET, "other phase");
 					Artifact::Nothing
 				},
 			}
@@ -128,16 +137,19 @@ pub async fn monitor_cmd(client: Client, config: MonitorConfig) -> Result<(), Er
 
 		match result.await {
 			Ok(Artifact::TargetSnapshot(s)) => {
-				target_snapshot.push(s);
+				target_snapshot = s;
 			},
 			Ok(Artifact::VoterSnapshot(p)) => {
 				voter_snapshot_paged.push(p);
 			},
 			Ok(Artifact::ComputeElectionResult) => {
-				log::info!(target: LOG_TARGET, "Artifact::ComputeElectionResult");
 				if last_round_submitted == Some(round) {
 					// skip minig again, everything submitted.
-					log::info!(target: LOG_TARGET, "Successfully submitted in round {}", round);
+					log::trace!(
+						target: LOG_TARGET,
+						"Solution successfully submitted for round {}, do nothing.",
+						round
+					);
 					continue
 				}
 
@@ -145,8 +157,15 @@ pub async fn monitor_cmd(client: Client, config: MonitorConfig) -> Result<(), Er
 				if target_snapshot.len() == 1 as usize &&
 					voter_snapshot_paged.len() == n_pages as usize
 				{
-					match mine_and_submit(&signer, &config, &target_snapshot, &voter_snapshot_paged)
-						.await
+					match epm::mine_and_submit::<T>(
+						&signer,
+						&config,
+						&target_snapshot,
+						&voter_snapshot_paged,
+						n_pages,
+						round,
+					)
+					.await
 					{
 						Ok(_) => last_round_submitted = Some(round),
 						Err(_) => (), // continue trying.
@@ -154,11 +173,15 @@ pub async fn monitor_cmd(client: Client, config: MonitorConfig) -> Result<(), Er
 				} else {
 					// TODO: check if there are already *some* pageed cached and fetch only missing
 					// ones.
-					match fetch_mine_and_submit(n_pages, &signer, &config, &storage2).await {
+					match epm::fetch_mine_and_submit::<T>(
+						n_pages, round, &signer, &config, &storage2,
+					)
+					.await
+					{
 						Ok(_) => last_round_submitted = Some(round),
 						Err(_) => (), // continue trying.
 					}
-					log::info!(target: LOG_TARGET, "not all snapshots in cache, fetch all and compute.");
+					log::trace!(target: LOG_TARGET, "not all snapshots in cache, fetch all and compute.");
 				}
 			},
 			Ok(Artifact::Nothing) => (), // do nothing.
@@ -172,31 +195,6 @@ enum Artifact {
 	TargetSnapshot(TargetSnapshotPage),
 	VoterSnapshot(VoterSnapshotPage),
 	ComputeElectionResult,
-}
-
-async fn mine_and_submit(
-	_signer: &Signer,
-	_config: &MonitorConfig,
-	target_snapshot: &Vec<TargetSnapshotPage>,
-	voter_snapshot_paged: &Vec<VoterSnapshotPage>,
-) -> Result<u64, Error> {
-	log::info!(target: LOG_TARGET, "Mine, submit: election target snap size: {:?}, voter snap size: {:?}", target_snapshot.len(), voter_snapshot_paged.len());
-
-	//Err(Error::Other("testing".into()))
-	Ok(10)
-}
-
-async fn fetch_mine_and_submit(
-	n_pages: u32,
-	_signer: &Signer,
-	_config: &MonitorConfig,
-	storage: &Storage,
-) -> Result<u64, Error> {
-	let (target_snapshot, voter_snapshot_paged) =
-		epm::fetch_full_snapshots(n_pages, storage).await?;
-	log::info!(target: LOG_TARGET, "(Fetch), mine, submit: election target snapshot with {} targets, voter snapshot with {:?} pages.", target_snapshot.len(), voter_snapshot_paged.len());
-
-	Ok(1)
 }
 
 async fn heads_subscription(

@@ -1,6 +1,12 @@
-use crate::{error::Error, helpers, prelude::*, static_types};
+use crate::{
+	commands::monitor::MonitorConfig, error::Error, prelude::*, signer::Signer, static_types,
+};
+use frame_election_provider_support::SequentialPhragmen;
+use pallet_election_provider_multi_block::unsigned::miner;
 
 use codec::{Decode, Encode};
+use frame_support::BoundedVec;
+use sp_runtime::AccountId32;
 use subxt::{dynamic::Value, tx::DynamicPayload};
 
 const EPM_PALLET_NAME: &str = "ElectionProviderMultiBlock";
@@ -36,7 +42,7 @@ pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> 
 	let voter_snapshot_per_block: u32 = read_constant(api, VOTER_SNAPSHOT_PER_BLOCK)?;
 
 	fn log_metadata(metadata: EpmConstant, val: impl std::fmt::Display) {
-		log::info!(target: LOG_TARGET, "updating metadata constant `{metadata}`: {val}",);
+		log::trace!(target: LOG_TARGET, "updating metadata constant `{metadata}`: {val}",);
 	}
 
 	log_metadata(PAGES, pages);
@@ -95,6 +101,88 @@ pub(crate) async fn fetch_full_snapshots(
 	}
 
 	Ok((targets, voters))
+}
+
+pub(crate) async fn mine_and_submit<T>(
+	_signer: &Signer,
+	_config: &MonitorConfig,
+	target_snapshot: &TargetSnapshotPage,
+	voter_snapshot_paged: &Vec<VoterSnapshotPage>,
+	n_pages: u32,
+	round: u32,
+) -> Result<(), Error>
+where
+	T: miner::Config<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
+		+ Send
+		+ Sync
+		+ 'static,
+	T::Solution: Send,
+{
+	log::info!(
+		target: LOG_TARGET,
+		"Mine, submit: election target snap size: {:?}, voter snap size: {:?}",
+		target_snapshot.len(),
+		voter_snapshot_paged.len()
+	);
+
+	// TODO: take from configs.
+	let do_reduce = false;
+
+	// one page.
+	let target_snapshot: TargetSnapshotPage = target_snapshot.clone();
+	let voter_snapshot: BoundedVec<VoterSnapshotPage, static_types::Pages> =
+		BoundedVec::truncate_from(voter_snapshot_paged.clone());
+
+	// TODO: get from runtime/configs.
+	let desired_targets = 1_000;
+
+	let (paged_raw_solution, _trimming_status) = miner::Miner::<
+		T,
+		SequentialPhragmen<AccountId, AccuracyOf<T>, Balancing>,
+	>::mine_paged_solution_with_snaphsot(
+		voter_snapshot,
+		target_snapshot,
+		n_pages,
+		round,
+		desired_targets,
+		do_reduce,
+	)
+	.unwrap(); // TODO: convert error.
+
+	let partial_score =
+	miner::Miner::<T, SequentialPhragmen<AccountId, AccuracyOf<T>, Balancing>>::compute_partial_score(
+			paged_raw_solution,
+			0,
+		)
+		.unwrap(); // TODO: convert error.
+
+	Ok(())
+}
+
+pub(crate) async fn fetch_mine_and_submit<T>(
+	n_pages: u32,
+	round: u32,
+	signer: &Signer,
+	config: &MonitorConfig,
+	storage: &Storage,
+) -> Result<(), Error>
+where
+	T: miner::Config<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
+		+ Send
+		+ Sync
+		+ 'static,
+	T::Solution: Send,
+{
+	let (target_snapshot, voter_snapshot_paged) = fetch_full_snapshots(n_pages, storage).await?;
+	log::info!(
+		target: LOG_TARGET,
+		"Fetched, full election target snapshot with {} targets, voter snapshot with {:?} pages.",
+		target_snapshot.len(),
+		voter_snapshot_paged.len()
+	);
+
+	mine_and_submit::<T>(signer, config, &target_snapshot, &voter_snapshot_paged, n_pages, round)
+		.await
 }
 
 fn read_constant<'a, T: serde::Deserialize<'a>>(
