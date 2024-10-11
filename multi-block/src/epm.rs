@@ -1,15 +1,24 @@
 use crate::{
-	commands::monitor::MonitorConfig, error::Error, prelude::*, signer::Signer, static_types,
+	commands::monitor::MonitorConfig,
+	error::Error,
+	prelude::*,
+	signer::Signer,
+	static_types::{self, MaxVotesPerVoter},
 };
-use frame_election_provider_support::SequentialPhragmen;
 use pallet_election_provider_multi_block::unsigned::miner;
+use sp_npos_elections::ElectionScore;
 
 use codec::{Decode, Encode};
 use frame_support::BoundedVec;
-use sp_runtime::AccountId32;
+use scale_info::{PortableRegistry, TypeInfo};
+use scale_value::scale::decode_as_type;
 use subxt::{dynamic::Value, tx::DynamicPayload};
 
 const EPM_PALLET_NAME: &str = "ElectionProviderMultiBlock";
+const EPM_SIGNED_PALLET_NAME: &str = "ElectionSignedMultiBlock";
+
+type TypeId = u32;
+type PagedRawSolutionOf<T> = pallet_election_provider_multi_block::types::PagedRawSolutionC<T>;
 
 #[derive(Copy, Clone, Debug)]
 struct EpmConstant {
@@ -36,10 +45,16 @@ pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> 
 	const PAGES: EpmConstant = EpmConstant::new("Pages");
 	const TARGET_SNAPSHOT_PER_BLOCK: EpmConstant = EpmConstant::new("TargetSnapshotPerBlock");
 	const VOTER_SNAPSHOT_PER_BLOCK: EpmConstant = EpmConstant::new("VoterSnapshotPerBlock");
+	const MAX_VOTES_PER_VOTER: EpmConstant = EpmConstant::new("MinerMaxVotesPerVoter");
+	const MAX_BACKERS_PER_WINNER: EpmConstant = EpmConstant::new("MinerMaxBackersPerWinner");
+	const MAX_WINNERS_PER_PAGE: EpmConstant = EpmConstant::new("MinerMaxWinnersPerPage");
 
 	let pages: u32 = read_constant(api, PAGES)?;
 	let target_snapshot_per_block: u32 = read_constant(api, TARGET_SNAPSHOT_PER_BLOCK)?;
 	let voter_snapshot_per_block: u32 = read_constant(api, VOTER_SNAPSHOT_PER_BLOCK)?;
+	let max_votes_per_voter: u32 = read_constant(api, MAX_VOTES_PER_VOTER)?;
+	let max_backers_per_winner: u32 = read_constant(api, MAX_BACKERS_PER_WINNER)?;
+	let max_winners_per_page: u32 = read_constant(api, MAX_WINNERS_PER_PAGE)?;
 
 	fn log_metadata(metadata: EpmConstant, val: impl std::fmt::Display) {
 		log::trace!(target: LOG_TARGET, "updating metadata constant `{metadata}`: {val}",);
@@ -48,10 +63,16 @@ pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> 
 	log_metadata(PAGES, pages);
 	log_metadata(TARGET_SNAPSHOT_PER_BLOCK, target_snapshot_per_block);
 	log_metadata(VOTER_SNAPSHOT_PER_BLOCK, voter_snapshot_per_block);
+	log_metadata(MAX_VOTES_PER_VOTER, max_votes_per_voter);
+	log_metadata(MAX_BACKERS_PER_WINNER, max_backers_per_winner);
+	log_metadata(MAX_WINNERS_PER_PAGE, max_winners_per_page);
 
 	static_types::Pages::set(pages);
 	static_types::TargetSnapshotPerBlock::set(target_snapshot_per_block);
 	static_types::VoterSnapshotPerBlock::set(voter_snapshot_per_block);
+	static_types::MaxVotesPerVoter::set(max_votes_per_voter);
+	static_types::MaxBackersPerWinner::set(max_backers_per_winner);
+	static_types::MaxWinnersPerPage::set(max_winners_per_page);
 
 	Ok(())
 }
@@ -63,7 +84,12 @@ pub(crate) async fn target_snapshot(storage: &Storage) -> Result<TargetSnapshotP
 
 	match storage.fetch(&addr).await {
 		Ok(Some(val)) => {
-			let snapshot = Decode::decode(&mut val.encoded())?;
+			let snapshot: TargetSnapshotPage = Decode::decode(&mut val.encoded())?;
+			log::info!(
+				target: LOG_TARGET,
+				"Target snapshot with len {:?}",
+				snapshot.len()
+			);
 			Ok(snapshot)
 		},
 		Ok(None) => Err(Error::EmptySnapshot),
@@ -80,8 +106,21 @@ pub(crate) async fn paged_voter_snapshot(
 
 	match storage.fetch(&addr).await {
 		Ok(Some(val)) => {
-			let snapshot = Decode::decode(&mut val.encoded())?;
-			Ok(snapshot)
+			let v: Vec<Voter> = Decode::decode(&mut val.encoded())?;
+
+			match Decode::decode(&mut val.encoded()) {
+				Ok(s) => {
+					let snapshot: VoterSnapshotPage = s;
+					log::info!(
+						target: LOG_TARGET,
+						"Voter snapshot page {:?} with len {:?}",
+						page,
+						snapshot.len()
+					);
+					Ok(snapshot)
+				},
+				Err(err) => Err(err.into()),
+			}
 		},
 		Ok(None) => Err(Error::EmptySnapshot),
 		Err(err) => Err(err.into()),
@@ -92,6 +131,8 @@ pub(crate) async fn fetch_full_snapshots(
 	n_pages: u32,
 	storage: &Storage,
 ) -> Result<(TargetSnapshotPage, Vec<VoterSnapshotPage>), Error> {
+	log::trace!(target: LOG_TARGET, "fetch_full_snapshots");
+
 	let mut voters = vec![];
 	let targets = target_snapshot(storage).await?;
 
@@ -100,61 +141,83 @@ pub(crate) async fn fetch_full_snapshots(
 		voters.push(paged_voters);
 	}
 
+	log::info!(target: LOG_TARGET, "fetch_full_snapshots: voters with {} pages; targets with {} len", voters.len(), targets.len());
+
 	Ok((targets, voters))
 }
 
 pub(crate) async fn mine_and_submit<T>(
 	_signer: &Signer,
 	_config: &MonitorConfig,
-	target_snapshot: &TargetSnapshotPage,
-	voter_snapshot_paged: &Vec<VoterSnapshotPage>,
+	target_snapshot: &TargetSnapshotPageOf<T>,
+	voter_snapshot_paged: &Vec<VoterSnapshotPageOf<T>>,
 	n_pages: u32,
 	round: u32,
 ) -> Result<(), Error>
 where
-	T: miner::Config<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
-		+ Send
+	T: miner::Config<
+			AccountId = AccountId,
+			MaxVotesPerVoter = static_types::MaxVotesPerVoter,
+			TargetSnapshotPerBlock = static_types::TargetSnapshotPerBlock,
+			VoterSnapshotPerBlock = static_types::VoterSnapshotPerBlock,
+			Pages = static_types::Pages,
+		> + Send
 		+ Sync
 		+ 'static,
 	T::Solution: Send,
 {
-	log::info!(
+	// TODO: get from runtime/configs.
+	let do_reduce = false;
+	let desired_targets = 400;
+
+	log::trace!(
 		target: LOG_TARGET,
 		"Mine, submit: election target snap size: {:?}, voter snap size: {:?}",
 		target_snapshot.len(),
 		voter_snapshot_paged.len()
 	);
 
-	// TODO: take from configs.
-	let do_reduce = false;
-
-	// one page.
-	let target_snapshot: TargetSnapshotPage = target_snapshot.clone();
-	let voter_snapshot: BoundedVec<VoterSnapshotPage, static_types::Pages> =
+	let targets: TargetSnapshotPageOf<T> = target_snapshot.clone(); // one page.
+	let voters: BoundedVec<VoterSnapshotPageOf<T>, T::Pages> =
 		BoundedVec::truncate_from(voter_snapshot_paged.clone());
 
-	// TODO: get from runtime/configs.
-	let desired_targets = 1_000;
-
-	let (paged_raw_solution, _trimming_status) = miner::Miner::<
-		T,
-		SequentialPhragmen<AccountId, AccuracyOf<T>, Balancing>,
-	>::mine_paged_solution_with_snaphsot(
-		voter_snapshot,
-		target_snapshot,
-		n_pages,
-		round,
-		desired_targets,
-		do_reduce,
-	)
-	.unwrap(); // TODO: convert error.
-
-	let partial_score =
-	miner::Miner::<T, SequentialPhragmen<AccountId, AccuracyOf<T>, Balancing>>::compute_partial_score(
-			paged_raw_solution,
-			0,
+	let (paged_raw_solution, _trimming_status): (PagedRawSolutionOf<T>, _) =
+		miner::Miner::<T>::mine_paged_solution_with_snapshot(
+			&voters,
+			&targets,
+			n_pages,
+			round,
+			desired_targets,
+			do_reduce,
 		)
-		.unwrap(); // TODO: convert error.
+		.unwrap(); // TODO: handle err
+
+	let solution_pages: Vec<(u32, ElectionScore, <T as miner::Config>::Solution)> =
+		paged_raw_solution
+			.solution_pages
+			.iter()
+			.enumerate()
+			.map(|(page, solution)| {
+				let partial_score = miner::Miner::<T>::compute_partial_score(
+					&voters,
+					&targets,
+					solution,
+					desired_targets,
+					page as u32,
+				)
+				.map_err(|_| Error::Other("MinerError - computing solution".to_string()))?;
+
+				Ok((page as u32, partial_score, solution.to_owned()))
+			})
+			.collect::<Result<Vec<_>, Error>>()?;
+
+	// register solution.
+	let register_tx = register_solution(paged_raw_solution.score)?;
+
+	// submit all solution pages.
+	for (page, _score, solution) in solution_pages {
+		let submit_tx = submit_page::<T>(page, Some(solution))?;
+	}
 
 	Ok(())
 }
@@ -167,12 +230,19 @@ pub(crate) async fn fetch_mine_and_submit<T>(
 	storage: &Storage,
 ) -> Result<(), Error>
 where
-	T: miner::Config<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
-		+ Send
+	T: miner::Config<
+			AccountId = AccountId,
+			MaxVotesPerVoter = static_types::MaxVotesPerVoter,
+			TargetSnapshotPerBlock = static_types::TargetSnapshotPerBlock,
+			VoterSnapshotPerBlock = static_types::VoterSnapshotPerBlock,
+			Pages = static_types::Pages,
+		> + Send
 		+ Sync
 		+ 'static,
 	T::Solution: Send,
 {
+	log::info!(target: LOG_TARGET, "fetch_mine_and_compute");
+
 	let (target_snapshot, voter_snapshot_paged) = fetch_full_snapshots(n_pages, storage).await?;
 	log::info!(
 		target: LOG_TARGET,
@@ -183,6 +253,33 @@ where
 
 	mine_and_submit::<T>(signer, config, &target_snapshot, &voter_snapshot_paged, n_pages, round)
 		.await
+}
+
+// Helper to constrct a register solution transaction.
+fn register_solution(election_score: ElectionScore) -> Result<DynamicPayload, Error> {
+	let scale_score = to_scale_value(election_score).map_err(|err| {
+		Error::DynamicTransaction(format!("failed to encode `ElectionScore: {:?}", err))
+	})?;
+
+	Ok(subxt::dynamic::tx(EPM_SIGNED_PALLET_NAME, "register", vec![scale_score]))
+}
+
+// Helper to constrct a submit page transaction.
+fn submit_page<T: miner::Config>(
+	page: u32,
+	maybe_solution: Option<T::Solution>,
+) -> Result<DynamicPayload, Error>
+where
+	<T as miner::Config>::Solution: 'static,
+{
+	let scale_page = to_scale_value(page)
+		.map_err(|err| Error::DynamicTransaction(format!("failed to encode Page: {:?}", err)))?;
+
+	let scale_solution = to_scale_value(maybe_solution).map_err(|err| {
+		Error::DynamicTransaction(format!("failed to encode Solution: {:?}", err))
+	})?;
+
+	Ok(subxt::dynamic::tx(EPM_SIGNED_PALLET_NAME, "register", vec![scale_page, scale_solution]))
 }
 
 fn read_constant<'a, T: serde::Deserialize<'a>>(
@@ -205,4 +302,29 @@ fn read_constant<'a, T: serde::Deserialize<'a>>(
 
 fn invalid_metadata_error<E: std::error::Error>(item: String, err: E) -> Error {
 	Error::InvalidMetadata(format!("{} failed: {}", item, err))
+}
+
+fn make_type<T: scale_info::TypeInfo + 'static>() -> (TypeId, PortableRegistry) {
+	let m = scale_info::MetaType::new::<T>();
+	let mut types = scale_info::Registry::new();
+	let id = types.register_type(&m);
+	let portable_registry: PortableRegistry = types.into();
+
+	(id.id, portable_registry)
+}
+
+fn to_scale_value<T: scale_info::TypeInfo + 'static + Encode>(val: T) -> Result<Value, Error> {
+	let (ty_id, types) = make_type::<T>();
+
+	let bytes = val.encode();
+
+	decode_as_type(&mut bytes.as_ref(), ty_id, &types)
+		.map(|v| v.remove_context())
+		.map_err(|e| {
+			Error::DynamicTransaction(format!(
+				"Failed to decode {}: {:?}",
+				std::any::type_name::<T>(),
+				e
+			))
+		})
 }

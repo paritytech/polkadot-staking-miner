@@ -17,6 +17,7 @@ macro_rules! impl_atomic_u32_parameter_types {
 					I::from(Self::get())
 				}
 			}
+
 			impl $name {
 				pub fn set(val: u32) {
 					VAL.store(val, std::sync::atomic::Ordering::SeqCst);
@@ -28,7 +29,7 @@ macro_rules! impl_atomic_u32_parameter_types {
 }
 
 impl_atomic_u32_parameter_types!(pages, Pages);
-impl_atomic_u32_parameter_types!(max_votes_per_vote, MaxVotesPerVoter);
+impl_atomic_u32_parameter_types!(max_votes_per_voter, MaxVotesPerVoter);
 impl_atomic_u32_parameter_types!(target_snapshot_per_block, TargetSnapshotPerBlock);
 impl_atomic_u32_parameter_types!(voter_snapshot_per_block, VoterSnapshotPerBlock);
 impl_atomic_u32_parameter_types!(max_winners_per_page, MaxWinnersPerPage);
@@ -44,7 +45,7 @@ pub mod staking_dev {
 			VoterIndex = u32,
 			TargetIndex = u16,
 			Accuracy = sp_runtime::PerU16,
-			MaxVoters = ConstU32::<22500>
+			MaxVoters = ConstU32::<22500> // TODO: fetch
 		>(16)
 	);
 
@@ -53,7 +54,7 @@ pub mod staking_dev {
 	impl pallet_election_provider_multi_block::unsigned::miner::Config for MinerConfig {
 		type AccountId = AccountId;
 		type Solution = NposSolution16;
-		//type Verifier = pallet_election_provider_multi_block::verifier::VerifierImpl;
+		type Solver = Solver;
 		type Pages = Pages;
 		type MaxVotesPerVoter = MaxVotesPerVoter;
 		type MaxWinnersPerPage = MaxWinnersPerPage;

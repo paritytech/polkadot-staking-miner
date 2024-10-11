@@ -32,8 +32,13 @@ pub enum Listen {
 
 pub async fn monitor_cmd<T>(client: Client, config: MonitorConfig) -> Result<(), Error>
 where
-	T: miner::Config<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
-		+ Send
+	T: miner::Config<
+			AccountId = AccountId,
+			MaxVotesPerVoter = static_types::MaxVotesPerVoter,
+			TargetSnapshotPerBlock = static_types::TargetSnapshotPerBlock,
+			VoterSnapshotPerBlock = static_types::VoterSnapshotPerBlock,
+			Pages = static_types::Pages,
+		> + Send
 		+ Sync
 		+ 'static,
 	T::Solution: Send,
@@ -129,7 +134,7 @@ where
 					Artifact::ComputeElectionResult
 				},
 				_ => {
-					log::trace!(target: LOG_TARGET, "other phase");
+					log::trace!(target: LOG_TARGET, "{:?}, do nothing.", phase);
 					Artifact::Nothing
 				},
 			}
@@ -153,10 +158,8 @@ where
 					continue
 				}
 
-				// all pages in cache, compute election.
-				if target_snapshot.len() == 1 as usize &&
-					voter_snapshot_paged.len() == n_pages as usize
-				{
+				if !target_snapshot.is_empty() && voter_snapshot_paged.len() == n_pages as usize {
+					// all pages in cache, compute election.
 					match epm::mine_and_submit::<T>(
 						&signer,
 						&config,
@@ -184,7 +187,11 @@ where
 					log::trace!(target: LOG_TARGET, "not all snapshots in cache, fetch all and compute.");
 				}
 			},
-			Ok(Artifact::Nothing) => (), // do nothing.
+			Ok(Artifact::Nothing) => {
+				// reset cached snapshot.
+				target_snapshot = Default::default();
+				voter_snapshot_paged = Default::default();
+			},
 			Err(e) => log::error!(target: LOG_TARGET, "ERROR: {:?}", e),
 		}
 	}
