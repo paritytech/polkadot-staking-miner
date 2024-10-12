@@ -78,15 +78,17 @@ pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> 
 	Ok(())
 }
 
+/// Fetches the target snapshot.
+///
+/// Note: the target snapshot is single paged.
 pub(crate) async fn target_snapshot(storage: &Storage) -> Result<TargetSnapshotPage, Error> {
-	// target snapshot has *always* one page.
 	let page_idx = vec![Value::from(0u32)];
 	let addr = subxt::dynamic::storage(EPM_PALLET_NAME, "PagedTargetSnapshot", page_idx);
 
 	match storage.fetch(&addr).await {
 		Ok(Some(val)) => {
 			let snapshot: TargetSnapshotPage = Decode::decode(&mut val.encoded())?;
-			log::info!(
+			log::trace!(
 				target: LOG_TARGET,
 				"Target snapshot with len {:?}",
 				snapshot.len()
@@ -98,6 +100,7 @@ pub(crate) async fn target_snapshot(storage: &Storage) -> Result<TargetSnapshotP
 	}
 }
 
+/// Fetches `page` of the voter snapshot.
 pub(crate) async fn paged_voter_snapshot(
 	page: u32,
 	storage: &Storage,
@@ -109,7 +112,7 @@ pub(crate) async fn paged_voter_snapshot(
 		Ok(Some(val)) => match Decode::decode(&mut val.encoded()) {
 			Ok(s) => {
 				let snapshot: VoterSnapshotPage = s;
-				log::info!(
+				log::trace!(
 					target: LOG_TARGET,
 					"Voter snapshot page {:?} with len {:?}",
 					page,
@@ -124,6 +127,7 @@ pub(crate) async fn paged_voter_snapshot(
 	}
 }
 
+/// Fetches the full voter and target snapshots.
 pub(crate) async fn fetch_full_snapshots(
 	n_pages: u32,
 	storage: &Storage,
@@ -138,11 +142,10 @@ pub(crate) async fn fetch_full_snapshots(
 		voters.push(paged_voters);
 	}
 
-	log::info!(target: LOG_TARGET, "fetch_full_snapshots: voters with {} pages; targets with {} len", voters.len(), targets.len());
-
 	Ok((targets, voters))
 }
 
+/// Mines, registers and submits a solution.
 pub(crate) async fn mine_and_submit<T>(
 	at: &Header,
 	client: &Client,
@@ -176,7 +179,7 @@ where
 		voter_snapshot_paged.len()
 	);
 
-	let targets: TargetSnapshotPageOf<T> = target_snapshot.clone(); // one page.
+	let targets: TargetSnapshotPageOf<T> = target_snapshot.clone();
 	let voters: BoundedVec<VoterSnapshotPageOf<T>, T::Pages> =
 		BoundedVec::truncate_from(voter_snapshot_paged.clone());
 
@@ -189,7 +192,7 @@ where
 			desired_targets,
 			do_reduce,
 		)
-		.unwrap(); // TODO: handle err
+		.map_err(|_| Error::Miner("mine paged solution.".to_string()))?;
 
 	let solution_pages: Vec<(u32, ElectionScore, <T as miner::Config>::Solution)> =
 		paged_raw_solution
@@ -204,7 +207,7 @@ where
 					desired_targets,
 					page as u32,
 				)
-				.map_err(|_| Error::Other("MinerError - computing solution".to_string()))?;
+				.map_err(|_| Error::Miner("solution compute..".to_string()))?;
 
 				Ok((page as u32, partial_score, solution.to_owned()))
 			})
@@ -223,7 +226,54 @@ where
 	Ok(())
 }
 
-// TODO: move this down, doc.
+/// Performs the whole set of steps to submit a new solution:
+/// 1. Fetches target and voter snapshots;
+/// 2. Mines a solution;
+/// 3. Registers new solution;
+/// 4. Submits the paged solution.
+pub(crate) async fn fetch_mine_and_submit<T>(
+	at: &Header,
+	client: &Client,
+	signer: Signer,
+	listen: Listen,
+	storage: &Storage,
+	n_pages: u32,
+	round: u32,
+) -> Result<(), Error>
+where
+	T: miner::Config<
+			AccountId = AccountId,
+			MaxVotesPerVoter = static_types::MaxVotesPerVoter,
+			TargetSnapshotPerBlock = static_types::TargetSnapshotPerBlock,
+			VoterSnapshotPerBlock = static_types::VoterSnapshotPerBlock,
+			Pages = static_types::Pages,
+		> + Send
+		+ Sync
+		+ 'static,
+	T::Solution: Send,
+{
+	let (target_snapshot, voter_snapshot_paged) = fetch_full_snapshots(n_pages, storage).await?;
+	log::trace!(
+		target: LOG_TARGET,
+		"Fetched, full election target snapshot with {} targets, voter snapshot with {:?} pages.",
+		target_snapshot.len(),
+		voter_snapshot_paged.len()
+	);
+
+	mine_and_submit::<T>(
+		at,
+		client,
+		signer,
+		listen,
+		&target_snapshot,
+		&voter_snapshot_paged,
+		n_pages,
+		round,
+	)
+	.await
+}
+
+/// Submits and watches a `DynamicPayload`, ie. an extrinsic.
 async fn submit_and_watch<T: miner::Config + Send + Sync + 'static>(
 	at: &Header,
 	client: &Client,
@@ -250,63 +300,19 @@ async fn submit_and_watch<T: miner::Config + Send + Sync + 'static>(
 		Listen::Head => {
 			let in_block = helpers::wait_for_in_block(tx_progress).await?;
 			let _events = in_block.fetch_events().await.expect("events should exist");
-			// TODO
+			// TODO: finish
 		},
 		Listen::Finalized => {
 			let finalized_block = tx_progress.wait_for_finalized().await?;
 			let _block_hash = finalized_block.block_hash();
 			let _finalized_success = finalized_block.wait_for_success().await?;
-			// TODO
+			// TODO: finish
 		},
 	}
 	Ok(())
 }
 
-pub(crate) async fn fetch_mine_and_submit<T>(
-	at: &Header,
-	client: &Client,
-	signer: Signer,
-	listen: Listen,
-	storage: &Storage,
-	n_pages: u32,
-	round: u32,
-) -> Result<(), Error>
-where
-	T: miner::Config<
-			AccountId = AccountId,
-			MaxVotesPerVoter = static_types::MaxVotesPerVoter,
-			TargetSnapshotPerBlock = static_types::TargetSnapshotPerBlock,
-			VoterSnapshotPerBlock = static_types::VoterSnapshotPerBlock,
-			Pages = static_types::Pages,
-		> + Send
-		+ Sync
-		+ 'static,
-	T::Solution: Send,
-{
-	log::info!(target: LOG_TARGET, "fetch_mine_and_compute");
-
-	let (target_snapshot, voter_snapshot_paged) = fetch_full_snapshots(n_pages, storage).await?;
-	log::info!(
-		target: LOG_TARGET,
-		"Fetched, full election target snapshot with {} targets, voter snapshot with {:?} pages.",
-		target_snapshot.len(),
-		voter_snapshot_paged.len()
-	);
-
-	mine_and_submit::<T>(
-		at,
-		client,
-		signer,
-		listen,
-		&target_snapshot,
-		&voter_snapshot_paged,
-		n_pages,
-		round,
-	)
-	.await
-}
-
-/// Helper to constrct a register solution transaction.
+/// Helper to construct a register solution transaction.
 fn register_solution(election_score: ElectionScore) -> Result<DynamicPayload, Error> {
 	let scale_score = to_scale_value(election_score).map_err(|err| {
 		Error::DynamicTransaction(format!("failed to encode `ElectionScore: {:?}", err))
@@ -315,7 +321,7 @@ fn register_solution(election_score: ElectionScore) -> Result<DynamicPayload, Er
 	Ok(subxt::dynamic::tx(EPM_SIGNED_PALLET_NAME, "register", vec![scale_score]))
 }
 
-/// Helper to constrct a submit page transaction.
+/// Helper to construct a submit page transaction.
 fn submit_page<T: miner::Config + 'static>(
 	page: u32,
 	maybe_solution: Option<T::Solution>,

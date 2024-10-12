@@ -20,6 +20,8 @@ pub enum Error {
 	Crypto(sp_core::crypto::SecretStringError),
 	#[error("Empty snapshot")]
 	EmptySnapshot,
+	#[error("Miner error: `{0}`")]
+	Miner(String),
 	#[error("Dynamic transaction error: {0}")]
 	DynamicTransaction(String),
 	#[error("Other error: `{0}`")]

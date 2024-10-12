@@ -12,6 +12,18 @@ use std::sync::Arc;
 use subxt::backend::rpc::RpcSubscription;
 use tokio::sync::Mutex;
 
+/// Represents the current task to be performed in the election round.
+enum Task {
+	/// Do nothing.
+	Nothing,
+	/// A page of the target snapshot has been fetched, cache it locally.
+	CacheTargetSnapshot(TargetSnapshotPage),
+	/// A page of the voter snapshot has been fetched, cache it locally.
+	CacheVoterSnapshot(VoterSnapshotPage),
+	/// Next task is to compute the election.
+	ComputeElectionResult,
+}
+
 #[derive(Debug, Clone, Parser, PartialEq)]
 pub struct MonitorConfig {
 	#[clap(long)]
@@ -30,6 +42,17 @@ pub enum Listen {
 	Head,
 }
 
+/// Monitors the current on-chain phase and performs the relevant actions.
+///
+/// Steps:
+/// 1. In `Phase::Snapshot(page)`, fetch the pages of the target and voter snapshot.
+/// 2. In `Phase::Signed`:
+///  2.1. Compute the solution
+///  2.2. Register the solution with the *full* election score of the submission
+///  2.3. Submit each page separately (1 per block).
+///
+/// If by the time of computing the solution the snapshot pages have not been fetched and cached,
+/// the snapshots will be fetched before computing the solution.
 pub async fn monitor_cmd<T>(client: Client, config: MonitorConfig) -> Result<(), Error>
 where
 	T: miner::Config<
@@ -114,41 +137,41 @@ where
 			match phase {
 				Phase::Off => {
 					log::trace!(target: LOG_TARGET, "Phase::Off, do nothing.");
-					Artifact::Nothing
+					Task::Nothing
 				},
 
 				Phase::Snapshot(page) =>
 					if page == n_pages {
 						epm::target_snapshot(&storage)
 							.await
-							.map(|t| Artifact::TargetSnapshot(t))
-							.unwrap_or(Artifact::Nothing)
+							.map(|t| Task::CacheTargetSnapshot(t))
+							.unwrap_or(Task::Nothing)
 					} else {
 						epm::paged_voter_snapshot(page, &storage)
 							.await
-							.map(|v| Artifact::VoterSnapshot(v))
-							.unwrap_or(Artifact::Nothing)
+							.map(|v| Task::CacheVoterSnapshot(v))
+							.unwrap_or(Task::Nothing)
 					},
 				Phase::Signed => {
 					log::trace!(target: LOG_TARGET, "Phase::Signed",);
-					Artifact::ComputeElectionResult
+					Task::ComputeElectionResult
 				},
 				_ => {
 					log::trace!(target: LOG_TARGET, "{:?}, do nothing.", phase);
-					Artifact::Nothing
+					Task::Nothing
 				},
 			}
 		});
 
 		match result.await {
-			Ok(Artifact::TargetSnapshot(s)) => {
+			Ok(Task::CacheTargetSnapshot(s)) => {
 				target_snapshot = s;
 			},
-			Ok(Artifact::VoterSnapshot(p)) => {
+			Ok(Task::CacheVoterSnapshot(p)) => {
 				// TODO: page from msp -> lsp, prepend p instead of push().
 				voter_snapshot_paged.push(p);
 			},
-			Ok(Artifact::ComputeElectionResult) => {
+			Ok(Task::ComputeElectionResult) => {
 				if last_round_submitted == Some(round) {
 					// skip minig again, everything submitted.
 					log::trace!(
@@ -200,7 +223,7 @@ where
 					log::trace!(target: LOG_TARGET, "not all snapshots in cache, fetch all and compute.");
 				}
 			},
-			Ok(Artifact::Nothing) => {
+			Ok(Task::Nothing) => {
 				// reset cached snapshot.
 				target_snapshot = Default::default();
 				voter_snapshot_paged = Default::default();
@@ -208,13 +231,6 @@ where
 			Err(e) => log::error!(target: LOG_TARGET, "ERROR: {:?}", e),
 		}
 	}
-}
-
-enum Artifact {
-	Nothing,
-	TargetSnapshot(TargetSnapshotPage),
-	VoterSnapshot(VoterSnapshotPage),
-	ComputeElectionResult,
 }
 
 async fn heads_subscription(
