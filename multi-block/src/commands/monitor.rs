@@ -9,7 +9,7 @@ use pallet_election_provider_multi_block::unsigned::miner;
 
 use clap::Parser;
 use std::sync::Arc;
-use subxt::{backend::rpc::RpcSubscription, config::Header as _, OnlineClient, PolkadotConfig};
+use subxt::backend::rpc::RpcSubscription;
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Parser, PartialEq)]
@@ -20,7 +20,7 @@ pub struct MonitorConfig {
 	#[clap(long, short, env = "SEED")]
 	pub seed_or_path: String,
 
-	#[clap(long, value_enum, default_value_t = Listen::Finalized)]
+	#[clap(long, value_enum, default_value_t = Listen::Head)]
 	pub listen: Listen,
 }
 
@@ -75,7 +75,7 @@ where
 	let mut last_round_submitted = None;
 
 	loop {
-		tokio::select! {
+		let at = tokio::select! {
 			maybe_rp = subscription.next() => {
 				match maybe_rp {
 					Some(Ok(r)) => r,
@@ -145,6 +145,7 @@ where
 				target_snapshot = s;
 			},
 			Ok(Artifact::VoterSnapshot(p)) => {
+				// TODO: page from msp -> lsp, prepend p instead of push().
 				voter_snapshot_paged.push(p);
 			},
 			Ok(Artifact::ComputeElectionResult) => {
@@ -161,8 +162,10 @@ where
 				if !target_snapshot.is_empty() && voter_snapshot_paged.len() == n_pages as usize {
 					// all pages in cache, compute election.
 					match epm::mine_and_submit::<T>(
-						&signer,
-						&config,
+						&at,
+						&client,
+						signer.clone(),
+						config.listen,
 						&target_snapshot,
 						&voter_snapshot_paged,
 						n_pages,
@@ -171,18 +174,28 @@ where
 					.await
 					{
 						Ok(_) => last_round_submitted = Some(round),
-						Err(_) => (), // continue trying.
+						Err(err) => {
+							log::error!("mine_and_submit: {:?}", err);
+						}, // continue trying.
 					}
 				} else {
 					// TODO: check if there are already *some* pageed cached and fetch only missing
 					// ones.
 					match epm::fetch_mine_and_submit::<T>(
-						n_pages, round, &signer, &config, &storage2,
+						&at,
+						&client,
+						signer.clone(),
+						config.listen,
+						&storage2,
+						n_pages,
+						round,
 					)
 					.await
 					{
 						Ok(_) => last_round_submitted = Some(round),
-						Err(_) => (), // continue trying.
+						Err(err) => {
+							log::error!("fetch_mine_and_submit: {:?}", err);
+						}, // continue trying.
 					}
 					log::trace!(target: LOG_TARGET, "not all snapshots in cache, fetch all and compute.");
 				}

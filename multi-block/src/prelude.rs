@@ -11,6 +11,7 @@ pub type Hash = sp_core::H256;
 
 pub type RpcClient = subxt::backend::legacy::LegacyRpcMethods<subxt::PolkadotConfig>;
 pub type ChainClient = subxt::OnlineClient<subxt::PolkadotConfig>;
+pub type Storage = subxt::storage::Storage<PolkadotConfig, OnlineClient<PolkadotConfig>>;
 
 pub const DEFAULT_URI: &str = "ws://127.0.0.1:9944";
 pub const LOG_TARGET: &str = "polkadot-staking-miner-mb";
@@ -18,9 +19,6 @@ pub const LOG_TARGET: &str = "polkadot-staking-miner-mb";
 pub type AccountId = sp_runtime::AccountId32;
 
 pub type Solver = SequentialPhragmen<AccountId, sp_runtime::PerU16, ()>;
-
-pub type SolutionPageOf<T> =
-	BoundedVec<<T as miner::Config>::Solution, <T as miner::Config>::Pages>;
 
 pub type TargetSnapshotPageOf<T> =
 	BoundedVec<AccountId, <T as miner::Config>::TargetSnapshotPerBlock>;
@@ -31,24 +29,10 @@ pub type Voter = frame_election_provider_support::Voter<AccountId, static_types:
 pub type TargetSnapshotPage = BoundedVec<AccountId, static_types::TargetSnapshotPerBlock>;
 pub type VoterSnapshotPage = BoundedVec<Voter, static_types::VoterSnapshotPerBlock>;
 
-//pub type AllVoterSnapshotOf<T> = BoundedVec<VoterSnapshotPageOf<T>, <T as miner::Config>::Pages>;
-//pub type AllVoterSnapshot = BoundedVec<VoterSnapshotPage, static_types::Pages>;
-
-/*
-pub type VoterOf<D> =
-	Voter<<D as ElectionDataProvider>::AccountId, <D as ElectionDataProvider>::MaxVotesPerVoter>;
-pub(crate) type VoterOf<T> =
-	frame_election_provider_support::VoterOf<<T as crate::Config>::DataProvider>;
-pub(crate) type VoterPageOf<T> =
-	BoundedVec<VoterOf<T>, <T as crate::Config>::VoterSnapshotPerBlock>;
-*/
-
 pub type Header =
 	subxt::config::substrate::SubstrateHeader<u32, subxt::config::substrate::BlakeTwo256>;
 
 pub type Pair = sp_core::sr25519::Pair;
-
-pub type Storage = subxt::storage::Storage<PolkadotConfig, OnlineClient<PolkadotConfig>>;
 
 // TODO: move under opts to expose to caller.
 use sp_npos_elections::BalancingConfig;

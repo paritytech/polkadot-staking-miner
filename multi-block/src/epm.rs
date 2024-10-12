@@ -1,21 +1,22 @@
 use crate::{
-	commands::monitor::MonitorConfig,
-	error::Error,
-	prelude::*,
-	signer::Signer,
-	static_types::{self, MaxVotesPerVoter},
+	client::Client, commands::monitor::Listen, error::Error, helpers, prelude::*, signer::Signer,
+	static_types,
 };
 use pallet_election_provider_multi_block::unsigned::miner;
 use sp_npos_elections::ElectionScore;
 
 use codec::{Decode, Encode};
 use frame_support::BoundedVec;
-use scale_info::{PortableRegistry, TypeInfo};
+use scale_info::PortableRegistry;
 use scale_value::scale::decode_as_type;
-use subxt::{dynamic::Value, tx::DynamicPayload};
+use subxt::{
+	config::{DefaultExtrinsicParamsBuilder, Header as _},
+	dynamic::Value,
+	tx::DynamicPayload,
+};
 
 const EPM_PALLET_NAME: &str = "ElectionProviderMultiBlock";
-const EPM_SIGNED_PALLET_NAME: &str = "ElectionSignedMultiBlock";
+const EPM_SIGNED_PALLET_NAME: &str = "ElectionSignedPallet";
 
 type TypeId = u32;
 type PagedRawSolutionOf<T> = pallet_election_provider_multi_block::types::PagedRawSolutionC<T>;
@@ -105,22 +106,18 @@ pub(crate) async fn paged_voter_snapshot(
 	let addr = subxt::dynamic::storage(EPM_PALLET_NAME, "PagedVoterSnapshot", page_idx);
 
 	match storage.fetch(&addr).await {
-		Ok(Some(val)) => {
-			let v: Vec<Voter> = Decode::decode(&mut val.encoded())?;
-
-			match Decode::decode(&mut val.encoded()) {
-				Ok(s) => {
-					let snapshot: VoterSnapshotPage = s;
-					log::info!(
-						target: LOG_TARGET,
-						"Voter snapshot page {:?} with len {:?}",
-						page,
-						snapshot.len()
-					);
-					Ok(snapshot)
-				},
-				Err(err) => Err(err.into()),
-			}
+		Ok(Some(val)) => match Decode::decode(&mut val.encoded()) {
+			Ok(s) => {
+				let snapshot: VoterSnapshotPage = s;
+				log::info!(
+					target: LOG_TARGET,
+					"Voter snapshot page {:?} with len {:?}",
+					page,
+					snapshot.len()
+				);
+				Ok(snapshot)
+			},
+			Err(err) => Err(err.into()),
 		},
 		Ok(None) => Err(Error::EmptySnapshot),
 		Err(err) => Err(err.into()),
@@ -147,8 +144,10 @@ pub(crate) async fn fetch_full_snapshots(
 }
 
 pub(crate) async fn mine_and_submit<T>(
-	_signer: &Signer,
-	_config: &MonitorConfig,
+	at: &Header,
+	client: &Client,
+	signer: Signer,
+	listen: Listen,
 	target_snapshot: &TargetSnapshotPageOf<T>,
 	voter_snapshot_paged: &Vec<VoterSnapshotPageOf<T>>,
 	n_pages: u32,
@@ -213,21 +212,64 @@ where
 
 	// register solution.
 	let register_tx = register_solution(paged_raw_solution.score)?;
+	submit_and_watch::<T>(at, client, signer.clone(), listen, register_tx, "register").await?;
 
 	// submit all solution pages.
 	for (page, _score, solution) in solution_pages {
 		let submit_tx = submit_page::<T>(page, Some(solution))?;
+		submit_and_watch::<T>(at, client, signer.clone(), listen, submit_tx, "submit page").await?;
 	}
 
 	Ok(())
 }
 
+// TODO: move this down, doc.
+async fn submit_and_watch<T: miner::Config + Send + Sync + 'static>(
+	at: &Header,
+	client: &Client,
+	signer: Signer,
+	listen: Listen,
+	tx: DynamicPayload,
+	reason: &'static str,
+) -> Result<(), Error> {
+	let block_hash = at.hash();
+	let nonce = client.rpc().system_account_next_index(signer.account_id()).await?;
+
+	log::trace!(target: LOG_TARGET, "submit_and_watch for `{:?}` at {:?}", reason, block_hash);
+
+	// TODO:set mortality.
+	let xt_cfg = DefaultExtrinsicParamsBuilder::default().nonce(nonce).build();
+	let xt = client.chain_api().tx().create_signed(&tx, &*signer, xt_cfg).await?;
+
+	let tx_progress = xt.submit_and_watch().await.map_err(|e| {
+		log::error!(target: LOG_TARGET, "submit solution failed: {:?}", e);
+		e
+	})?;
+
+	match listen {
+		Listen::Head => {
+			let in_block = helpers::wait_for_in_block(tx_progress).await?;
+			let _events = in_block.fetch_events().await.expect("events should exist");
+			// TODO
+		},
+		Listen::Finalized => {
+			let finalized_block = tx_progress.wait_for_finalized().await?;
+			let _block_hash = finalized_block.block_hash();
+			let _finalized_success = finalized_block.wait_for_success().await?;
+			// TODO
+		},
+	}
+	Ok(())
+}
+
 pub(crate) async fn fetch_mine_and_submit<T>(
+	at: &Header,
+	client: &Client,
+	signer: Signer,
+	listen: Listen,
+	storage: &Storage,
 	n_pages: u32,
 	round: u32,
-	signer: &Signer,
-	config: &MonitorConfig,
-	storage: &Storage,
 ) -> Result<(), Error>
 where
 	T: miner::Config<
@@ -251,11 +293,20 @@ where
 		voter_snapshot_paged.len()
 	);
 
-	mine_and_submit::<T>(signer, config, &target_snapshot, &voter_snapshot_paged, n_pages, round)
-		.await
+	mine_and_submit::<T>(
+		at,
+		client,
+		signer,
+		listen,
+		&target_snapshot,
+		&voter_snapshot_paged,
+		n_pages,
+		round,
+	)
+	.await
 }
 
-// Helper to constrct a register solution transaction.
+/// Helper to constrct a register solution transaction.
 fn register_solution(election_score: ElectionScore) -> Result<DynamicPayload, Error> {
 	let scale_score = to_scale_value(election_score).map_err(|err| {
 		Error::DynamicTransaction(format!("failed to encode `ElectionScore: {:?}", err))
@@ -264,14 +315,11 @@ fn register_solution(election_score: ElectionScore) -> Result<DynamicPayload, Er
 	Ok(subxt::dynamic::tx(EPM_SIGNED_PALLET_NAME, "register", vec![scale_score]))
 }
 
-// Helper to constrct a submit page transaction.
-fn submit_page<T: miner::Config>(
+/// Helper to constrct a submit page transaction.
+fn submit_page<T: miner::Config + 'static>(
 	page: u32,
 	maybe_solution: Option<T::Solution>,
-) -> Result<DynamicPayload, Error>
-where
-	<T as miner::Config>::Solution: 'static,
-{
+) -> Result<DynamicPayload, Error> {
 	let scale_page = to_scale_value(page)
 		.map_err(|err| Error::DynamicTransaction(format!("failed to encode Page: {:?}", err)))?;
 
@@ -279,7 +327,7 @@ where
 		Error::DynamicTransaction(format!("failed to encode Solution: {:?}", err))
 	})?;
 
-	Ok(subxt::dynamic::tx(EPM_SIGNED_PALLET_NAME, "register", vec![scale_page, scale_solution]))
+	Ok(subxt::dynamic::tx(EPM_SIGNED_PALLET_NAME, "submit_page", vec![scale_page, scale_solution]))
 }
 
 fn read_constant<'a, T: serde::Deserialize<'a>>(

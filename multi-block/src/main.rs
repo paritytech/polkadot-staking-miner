@@ -69,6 +69,7 @@ async fn main() -> Result<(), Error> {
 	let (tx_upgrade, rx_upgrade) = oneshot::channel::<Error>();
 	tokio::spawn(runtime_upgrade_task(client.chain_api().clone(), tx_upgrade));
 
+	// TODO: any_runtime!
 	let fut = match command {
 		Command::Monitor(cfg) => commands::monitor_cmd::<MinerConfig>(client, cfg).boxed(),
 		// TODO: other commands
