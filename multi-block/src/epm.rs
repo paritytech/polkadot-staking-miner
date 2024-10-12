@@ -19,7 +19,7 @@ const EPM_PALLET_NAME: &str = "ElectionProviderMultiBlock";
 const EPM_SIGNED_PALLET_NAME: &str = "ElectionSignedPallet";
 
 type TypeId = u32;
-type PagedRawSolutionOf<T> = pallet_election_provider_multi_block::types::PagedRawSolutionC<T>;
+type PagedRawSolutionOf<T> = pallet_election_provider_multi_block::types::PagedRawSolution<T>;
 
 #[derive(Copy, Clone, Debug)]
 struct EpmConstant {
