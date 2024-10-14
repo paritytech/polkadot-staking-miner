@@ -31,7 +31,7 @@ subxt = { version = "0.37.0", features = ["substrate-compat"] }
 frame-election-provider-support = "37.0.0"
 pallet-election-provider-multi-phase = "36.0.0"
 sp-npos-elections = "34.0.0"
-frame-support = "37.0.0"
+frame-support = "37.0.1"
 sp-runtime = "39.0.2"
 
 # prometheus
