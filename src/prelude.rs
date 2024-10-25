@@ -29,7 +29,7 @@ pub type AccountId = sp_runtime::AccountId32;
 pub type Header =
 	subxt::config::substrate::SubstrateHeader<u32, subxt::config::substrate::BlakeTwo256>;
 /// The header type. We re-export it here, but we can easily get it from block as well.
-pub type Hash = sp_core::H256;
+pub type Hash = subxt::utils::H256;
 /// Balance type
 pub type Balance = u128;
 pub use subxt::ext::sp_runtime::traits::{Block as BlockT, Header as HeaderT};
