@@ -1,6 +1,6 @@
 [package]
 name = "polkadot-staking-miner"
-version = "1.5.1"
+version = "1.6.0"
 authors = ["Parity Technologies <admin@parity.io>"]
 edition = "2021"
 rust-version = "1.74.0"
