@@ -4,6 +4,21 @@ The format is based on [Keep a Changelog].
 
 [Keep a Changelog]: http://keepachangelog.com/en/1.0.0/
 
+## [v1.6.0] - 2024-10-25
+
+This release primarily updates the staking-miner to be able to decode v5 extrinsics
+which may be required for future releases, see https://github.com/paritytech/polkadot-sdk/pull/3685 for more information.
+
+### [Changed]
+- chore(deps): bump subxt to 0.38 and related deps ([#918](https://github.com/paritytech/staking-miner-v2/pull/918))
+
+### Compatibility
+
+Tested against:
+- Westend v1,016,001
+- Kusama v1,003,003
+- Polkadot v1,003,003
+
 ## [v1.5.1] - 2024-07-03
 
 This is a bug-fix release that changes internal trimming data structure from 
