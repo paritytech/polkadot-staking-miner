@@ -32,14 +32,17 @@ use std::{
 };
 
 use codec::{Decode, Encode};
-use frame_election_provider_support::{Get, NposSolution, PhragMMS, SequentialPhragmen};
-use frame_support::{weights::Weight, BoundedVec};
-use pallet_election_provider_multi_phase::{
-	unsigned::TrimmingStatus, RawSolution, ReadySolution, SolutionOf, SolutionOrSnapshotSize,
+use polkadot_sdk::{
+	frame_election_provider_support::{self, Get, NposSolution, PhragMMS, SequentialPhragmen},
+	frame_support::{weights::Weight, BoundedVec},
+	pallet_election_provider_multi_phase::{
+		self, unsigned::TrimmingStatus, MinerConfig, RawSolution, ReadySolution, SolutionOf,
+		SolutionOrSnapshotSize,
+	},
+	sp_npos_elections::{ElectionScore, VoteWeight},
 };
 use scale_info::{PortableRegistry, TypeInfo};
 use scale_value::scale::decode_as_type;
-use sp_npos_elections::{ElectionScore, VoteWeight};
 use subxt::{dynamic::Value, tx::DynamicPayload};
 
 const EPM_PALLET_NAME: &str = "ElectionProviderMultiPhase";
