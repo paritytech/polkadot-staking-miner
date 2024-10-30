@@ -28,11 +28,7 @@ scale-value = "0.17"
 subxt = { version = "0.38.0", features = ["substrate-compat"] }
 
 # polkadot-sdk
-frame-election-provider-support = "38.0.0"
-pallet-election-provider-multi-phase = "37.0.0"
-sp-npos-elections = "34.0.0"
-frame-support = "38.0.0"
-sp-runtime = "39.0.2"
+polkadot-sdk = { version = "0.7", features = ["frame-election-provider-support", "frame-support", "sp-npos-elections", "sp-runtime", "pallet-election-provider-multi-phase"] }
 
 # prometheus
 prometheus = "0.13"
@@ -42,5 +38,4 @@ once_cell = "1.20"
 [dev-dependencies]
 anyhow = "1"
 assert_cmd = "2.0"
-sp-storage = "21.0.0"
 regex = "1"
