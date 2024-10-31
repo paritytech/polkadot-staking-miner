@@ -21,7 +21,7 @@ use crate::{
 };
 use clap::Parser;
 use codec::Encode;
-use sp_core::hexdisplay::HexDisplay;
+use polkadot_sdk::sp_core::hexdisplay::HexDisplay;
 use std::io::Write;
 use subxt::tx::Payload;
 
