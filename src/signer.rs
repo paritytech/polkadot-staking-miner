@@ -29,7 +29,7 @@ use polkadot_sdk::{
 };
 use subxt::Config;
 
-/// A [`Signer`] implementation that can be constructed from an [`sp_core::Pair`].
+/// A [`Signer`] implementation that can be constructed from an [`polkadot_sdk::sp_core::Pair`].
 #[derive(Clone)]
 pub struct PairSigner {
 	account_id: <PolkadotConfig as Config>::AccountId,
@@ -37,7 +37,7 @@ pub struct PairSigner {
 }
 
 impl PairSigner {
-	/// Creates a new [`Signer`] from an [`sp_core::Pair`].
+	/// Creates a new [`Signer`] from an [`Pair`].
 	pub fn new(signer: Pair) -> Self {
 		let account_id = <SpMultiSignature as Verify>::Signer::from(signer.public()).into_account();
 		let subxt_account_id = subxt::config::substrate::AccountId32(account_id.into());
