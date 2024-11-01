@@ -25,10 +25,10 @@ pin-project-lite = "0.2"
 
 # subxt
 scale-value = "0.17"
-subxt = { version = "0.38.0", features = ["substrate-compat"] }
+subxt = "0.38.0"
 
 # polkadot-sdk
-polkadot-sdk = { version = "0.7", features = ["frame-election-provider-support", "frame-support", "sp-npos-elections", "sp-runtime", "pallet-election-provider-multi-phase"] }
+polkadot-sdk = { version = "0.7", features = ["frame-election-provider-support", "frame-support", "sp-npos-elections", "sp-core", "sp-runtime", "pallet-election-provider-multi-phase"] }
 
 # prometheus
 prometheus = "0.13"
