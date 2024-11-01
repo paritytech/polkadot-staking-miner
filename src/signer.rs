@@ -29,7 +29,7 @@ use polkadot_sdk::{
 };
 use subxt::Config;
 
-/// A [`Signer`] implementation that can be constructed from an [`polkadot_sdk::sp_core::Pair`].
+/// A [`Signer`] implementation that can be constructed from an [`Pair`].
 #[derive(Clone)]
 pub struct PairSigner {
 	account_id: <PolkadotConfig as Config>::AccountId,
