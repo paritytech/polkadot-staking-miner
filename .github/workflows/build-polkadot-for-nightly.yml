@@ -34,7 +34,7 @@ jobs:
           strip -s ./target/release/polkadot-execute-worker
 
       - name: upload polkadot binary
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: nightly-polkadot-binary
           path: |

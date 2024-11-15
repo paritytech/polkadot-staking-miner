@@ -6,7 +6,7 @@ on:
     branches:
       - main
     paths:
-      - 'staking-miner-playground/**'
+      - "staking-miner-playground/**"
   # Allow it to be manually ran to rebuild binary when needed:
   workflow_dispatch: {}
   # Run at 22pm every week on Mondays for nightly builds.
@@ -37,7 +37,7 @@ jobs:
           strip -s ./target/release/staking-miner-playground
 
       - name: upload staking-miner-playground binary
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: staking-miner-playground-binary
           path: ./staking-miner-playground/target/release/staking-miner-playground
