@@ -21,18 +21,19 @@
 //! needing to sprinkle `any_runtime` in a few extra places.
 
 // re-exports.
-pub use pallet_election_provider_multi_phase::{Miner, MinerConfig};
-pub use subxt::ext::sp_core;
+pub use polkadot_sdk::{
+	pallet_election_provider_multi_phase::{Miner, MinerConfig},
+	sp_runtime::traits::{Block as BlockT, Header as HeaderT},
+};
 /// The account id type.
-pub type AccountId = sp_runtime::AccountId32;
+pub type AccountId = polkadot_sdk::sp_runtime::AccountId32;
 /// The header type. We re-export it here, but we can easily get it from block as well.
 pub type Header =
 	subxt::config::substrate::SubstrateHeader<u32, subxt::config::substrate::BlakeTwo256>;
 /// The header type. We re-export it here, but we can easily get it from block as well.
-pub type Hash = sp_core::H256;
+pub type Hash = subxt::utils::H256;
 /// Balance type
 pub type Balance = u128;
-pub use subxt::ext::sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 
 /// Default URI to connect to.
 ///
@@ -42,23 +43,19 @@ pub const DEFAULT_URI: &str = "ws://127.0.0.1:9944";
 pub const DEFAULT_PROMETHEUS_PORT: u16 = 9999;
 /// The logging target.
 pub const LOG_TARGET: &str = "polkadot-staking-miner";
-
 /// The key pair type being used. We "strongly" assume sr25519 for simplicity.
-pub type Pair = sp_core::sr25519::Pair;
-
-/// The accuracy that we use for election computation.
-pub type Accuracy = sp_runtime::Perbill;
-
+pub type Pair = polkadot_sdk::sp_core::sr25519::Pair;
+/// The accuracy that we use for election computations.
+pub type Accuracy = polkadot_sdk::sp_runtime::Perbill;
+/// RPC client.
 pub type RpcClient = subxt::backend::legacy::LegacyRpcMethods<subxt::PolkadotConfig>;
 /// Subxt client used by the staking miner on all chains.
 pub type ChainClient = subxt::OnlineClient<subxt::PolkadotConfig>;
-
 /// Config used by the staking-miner
 pub type Config = subxt::PolkadotConfig;
-
 /// Submission type used by the staking miner.
 pub type SignedSubmission<S> =
-	pallet_election_provider_multi_phase::SignedSubmission<AccountId, Balance, S>;
+	polkadot_sdk::pallet_election_provider_multi_phase::SignedSubmission<AccountId, Balance, S>;
 
 #[subxt::subxt(
 	runtime_metadata_path = "artifacts/metadata.scale",
@@ -69,11 +66,11 @@ pub type SignedSubmission<S> =
 	),
 	substitute_type(
 		path = "sp_npos_elections::ElectionScore",
-		with = "::subxt::utils::Static<::sp_npos_elections::ElectionScore>"
+		with = "::subxt::utils::Static<polkadot_sdk::sp_npos_elections::ElectionScore>"
 	),
 	substitute_type(
 		path = "pallet_election_provider_multi_phase::Phase<Bn>",
-		with = "::subxt::utils::Static<::pallet_election_provider_multi_phase::Phase<Bn>>"
+		with = "::subxt::utils::Static<polkadot_sdk::pallet_election_provider_multi_phase::Phase<Bn>>"
 	)
 )]
 pub mod runtime {}

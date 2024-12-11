@@ -17,9 +17,8 @@
 use crate::error::Error;
 
 use clap::*;
-use serde::{Deserialize, Serialize};
-use sp_npos_elections::BalancingConfig;
-use sp_runtime::DeserializeOwned;
+use polkadot_sdk::{frame_support, sp_npos_elections::BalancingConfig};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{collections::HashMap, fmt, str::FromStr};
 use subxt::backend::legacy::rpc_methods as subxt_rpc;
 
