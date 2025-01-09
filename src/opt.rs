@@ -17,8 +17,9 @@
 use crate::error::Error;
 
 use clap::*;
-use polkadot_sdk::{frame_support, sp_npos_elections::BalancingConfig};
+use frame_support;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use sp_npos_elections::BalancingConfig;
 use std::{collections::HashMap, fmt, str::FromStr};
 use subxt::backend::legacy::rpc_methods as subxt_rpc;
 
@@ -50,6 +51,7 @@ pub enum Chain {
 	Westend,
 	Kusama,
 	Polkadot,
+	
 }
 
 impl fmt::Display for Chain {

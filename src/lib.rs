@@ -21,8 +21,11 @@ pub mod commands;
 pub mod epm;
 pub mod error;
 pub mod helpers;
+#[cfg(experimental_multi_block)]
+pub mod multi_block;
 pub mod opt;
 pub mod prelude;
 pub mod prometheus;
 pub mod signer;
+#[cfg(legacy)]
 pub mod static_types;

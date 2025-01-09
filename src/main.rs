@@ -33,10 +33,13 @@ mod commands;
 mod epm;
 mod error;
 mod helpers;
+#[cfg(experimental_multi_block)]
+pub mod multi_block;
 mod opt;
 mod prelude;
 mod prometheus;
 mod signer;
+#[cfg(legacy)]
 mod static_types;
 
 use clap::Parser;

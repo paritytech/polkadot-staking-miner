@@ -16,7 +16,7 @@
 
 //! The dry-run command.
 
-use polkadot_sdk::pallet_election_provider_multi_phase::RawSolution;
+use pallet_election_provider_multi_phase::RawSolution;
 use subxt::config::DefaultExtrinsicParamsBuilder;
 
 use crate::{

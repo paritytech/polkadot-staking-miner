@@ -5,7 +5,7 @@ use crate::{
 	static_types,
 };
 
-use pallet_election_provider_multi_block::unsigned::miner;
+use pallet_election_provider_multi_block_v2::unsigned::miner;
 
 use clap::Parser;
 use std::sync::Arc;

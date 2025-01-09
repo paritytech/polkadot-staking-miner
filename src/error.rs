@@ -25,7 +25,7 @@ pub enum Error {
 	#[error("subxt error: `{0}`")]
 	Subxt(#[from] subxt::Error),
 	#[error("Crypto error: `{0:?}`")]
-	Crypto(polkadot_sdk::sp_core::crypto::SecretStringError),
+	Crypto(sp_core::crypto::SecretStringError),
 	#[error("Codec error: `{0}`")]
 	Codec(#[from] codec::Error),
 	#[error("Incorrect phase")]

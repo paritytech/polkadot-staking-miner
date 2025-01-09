@@ -21,12 +21,10 @@
 //! needing to sprinkle `any_runtime` in a few extra places.
 
 // re-exports.
-pub use polkadot_sdk::{
-	pallet_election_provider_multi_phase::{Miner, MinerConfig},
-	sp_runtime::traits::{Block as BlockT, Header as HeaderT},
-};
+pub use pallet_election_provider_multi_phase::{Miner, MinerConfig};
+pub use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 /// The account id type.
-pub type AccountId = polkadot_sdk::sp_runtime::AccountId32;
+pub type AccountId = sp_runtime::AccountId32;
 /// The header type. We re-export it here, but we can easily get it from block as well.
 pub type Header =
 	subxt::config::substrate::SubstrateHeader<u32, subxt::config::substrate::BlakeTwo256>;
@@ -44,9 +42,9 @@ pub const DEFAULT_PROMETHEUS_PORT: u16 = 9999;
 /// The logging target.
 pub const LOG_TARGET: &str = "polkadot-staking-miner";
 /// The key pair type being used. We "strongly" assume sr25519 for simplicity.
-pub type Pair = polkadot_sdk::sp_core::sr25519::Pair;
+pub type Pair = sp_core::sr25519::Pair;
 /// The accuracy that we use for election computations.
-pub type Accuracy = polkadot_sdk::sp_runtime::Perbill;
+pub type Accuracy = sp_runtime::Perbill;
 /// RPC client.
 pub type RpcClient = subxt::backend::legacy::LegacyRpcMethods<subxt::PolkadotConfig>;
 /// Subxt client used by the staking miner on all chains.
@@ -55,7 +53,7 @@ pub type ChainClient = subxt::OnlineClient<subxt::PolkadotConfig>;
 pub type Config = subxt::PolkadotConfig;
 /// Submission type used by the staking miner.
 pub type SignedSubmission<S> =
-	polkadot_sdk::pallet_election_provider_multi_phase::SignedSubmission<AccountId, Balance, S>;
+	pallet_election_provider_multi_phase::SignedSubmission<AccountId, Balance, S>;
 
 #[subxt::subxt(
 	runtime_metadata_path = "artifacts/metadata.scale",
@@ -66,11 +64,11 @@ pub type SignedSubmission<S> =
 	),
 	substitute_type(
 		path = "sp_npos_elections::ElectionScore",
-		with = "::subxt::utils::Static<polkadot_sdk::sp_npos_elections::ElectionScore>"
+		with = "::subxt::utils::Static<sp_npos_elections::ElectionScore>"
 	),
 	substitute_type(
 		path = "pallet_election_provider_multi_phase::Phase<Bn>",
-		with = "::subxt::utils::Static<polkadot_sdk::pallet_election_provider_multi_phase::Phase<Bn>>"
+		with = "::subxt::utils::Static<pallet_election_provider_multi_phase::Phase<Bn>>"
 	)
 )]
 pub mod runtime {}

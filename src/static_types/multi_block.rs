@@ -1,5 +1,3 @@
-use frame_support::traits::ConstU32;
-
 macro_rules! impl_atomic_u32_parameter_types {
 	($mod:ident, $name:ident) => {
 		mod $mod {
@@ -39,7 +37,7 @@ pub mod staking_dev {
 	use super::*;
 	use crate::prelude::*;
 
-	frame_election_provider_support::generate_solution_type!(
+	frame_election_provider_support_v2::generate_solution_type!(
 		#[compact]
 		pub struct NposSolution16::<
 			VoterIndex = u32,
@@ -51,7 +49,7 @@ pub mod staking_dev {
 
 	#[derive(Debug)]
 	pub struct MinerConfig;
-	impl pallet_election_provider_multi_block::unsigned::miner::Config for MinerConfig {
+	impl pallet_election_provider_multi_block_v2::unsigned::miner::Config for MinerConfig {
 		type AccountId = AccountId;
 		type Solution = NposSolution16;
 		type Solver = Solver;

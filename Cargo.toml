@@ -8,6 +8,7 @@ license = "GPL-3.0"
 repository = "https://github.com/paritytech/polkadot-staking-miner"
 homepage = "https://www.parity.io/"
 description = "A tool to submit NPoS election solutions for substrate based chains"
+resolver = "2"
 
 [dependencies]
 codec = { package = "parity-scale-codec", version = "3.0.0" }
@@ -27,8 +28,22 @@ pin-project-lite = "0.2"
 scale-value = "0.17"
 subxt = "0.38.0"
 
+# goncalo's polkadot-sdk branch
+frame-election-provider-support-v2 = { package = "frame-election-provider-support", optional = true, git = "https://github.com/paritytech/polkadot-sdk", branch = "staking-parachain-exp" }
+frame-support-v2 = { package = "frame-support", optional = true, git = "https://github.com/paritytech/polkadot-sdk", branch = "staking-parachain-exp" }
+sp-npos-elections-v2 = { package = "sp-npos-elections", optional = true, git = "https://github.com/paritytech/polkadot-sdk", branch = "staking-parachain-exp" }
+sp-core-v2 = { package = "sp-core", optional = true, git = "https://github.com/paritytech/polkadot-sdk", branch = "staking-parachain-exp" }
+sp-runtime-v2 = { package = "sp-runtime", optional = true, git = "https://github.com/paritytech/polkadot-sdk", branch = "staking-parachain-exp" }
+pallet-election-provider-multi-phase-v2 = { package = "pallet-election-provider-multi-phase", optional = true, git = "https://github.com/paritytech/polkadot-sdk", branch = "staking-parachain-exp" }
+
 # polkadot-sdk
-polkadot-sdk = { version = "0.7", features = ["frame-election-provider-support", "frame-support", "sp-npos-elections", "sp-core", "sp-runtime", "pallet-election-provider-multi-phase"] }
+#polkadot-sdk = { version = "0.9", features = ["frame-election-provider-support", "frame-support", "sp-npos-elections", "sp-core", "sp-runtime", "pallet-election-provider-multi-phase"], optional = true }
+frame-election-provider-support = { package = "frame-election-provider-support", optional = true, version = "38" }
+frame-support = { optional = true, version = "38.2" }
+sp-npos-elections = { optional = true, version = "34" }
+sp-core = { optional = true, version = "34" }
+sp-runtime = { optional = true, version = "39" }
+pallet-election-provider-multi-phase = { optional = true, version = "37" }
 
 # prometheus
 prometheus = "0.13"
@@ -39,3 +54,11 @@ once_cell = "1.20"
 anyhow = "1"
 assert_cmd = "2.0"
 regex = "1"
+
+[build-dependencies]
+cfg_aliases = "0.2.0"
+
+[features]
+default = ["legacy"]
+legacy = ["frame-election-provider-support", "frame-support", "sp-npos-elections", "sp-core", "sp-runtime", "pallet-election-provider-multi-phase"]
+experimental-multi-block = ["frame-election-provider-support-v2", "frame-support-v2", "sp-npos-elections-v2", "sp-core-v2", "sp-runtime-v2", "pallet-election-provider-multi-phase-v2"]

@@ -20,12 +20,10 @@ use crate::{
 	error::Error,
 	prelude::{Config as PolkadotConfig, Pair},
 };
-use polkadot_sdk::{
-	sp_core::Pair as PairT,
-	sp_runtime::{
-		traits::{IdentifyAccount, Verify},
-		MultiSignature as SpMultiSignature,
-	},
+use sp_core::Pair as PairT;
+use sp_runtime::{
+	traits::{IdentifyAccount, Verify},
+	MultiSignature as SpMultiSignature,
 };
 use subxt::Config;
 

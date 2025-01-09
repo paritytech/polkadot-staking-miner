@@ -14,13 +14,13 @@
 // You should have received a copy of the GNU General Public License
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
+#![cfg(legacy)]
+
 use crate::{epm, prelude::*};
-use polkadot_sdk::{
-	frame_election_provider_support::{self, traits::NposSolution},
-	frame_support::{self, traits::ConstU32, weights::Weight},
-	pallet_election_provider_multi_phase::{self, RawSolution, SolutionOrSnapshotSize},
-	sp_runtime,
-};
+use frame_election_provider_support::traits::NposSolution;
+use frame_support::{self, traits::ConstU32, weights::Weight};
+use pallet_election_provider_multi_phase::{self, RawSolution, SolutionOrSnapshotSize};
+use sp_runtime;
 
 macro_rules! impl_atomic_u32_parameter_types {
 	($mod:ident, $name:ident) => {
@@ -37,7 +37,7 @@ macro_rules! impl_atomic_u32_parameter_types {
 				}
 			}
 
-			impl<I: From<u32>> polkadot_sdk::frame_support::traits::Get<I> for $name {
+			impl<I: From<u32>> frame_support::traits::Get<I> for $name {
 				fn get() -> I {
 					I::from(Self::get())
 				}
@@ -55,7 +55,7 @@ macro_rules! impl_atomic_u32_parameter_types {
 }
 
 mod max_weight {
-	use polkadot_sdk::frame_support::{self, weights::Weight};
+	use frame_support::{self, weights::Weight};
 	use std::sync::atomic::{AtomicU64, Ordering};
 
 	static REF_TIME: AtomicU64 = AtomicU64::new(0);
