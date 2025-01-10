@@ -33,8 +33,6 @@ mod commands;
 mod epm;
 mod error;
 mod helpers;
-#[cfg(experimental_multi_block)]
-pub mod multi_block;
 mod opt;
 mod prelude;
 mod prometheus;
@@ -105,6 +103,11 @@ macro_rules! any_runtime {
 			$crate::opt::Chain::Westend => {
 				#[allow(unused)]
 				use $crate::static_types::westend::MinerConfig;
+				$($code)*
+			},
+			$crate::opt::Chain::Rococo => {
+				#[allow(unused)]
+				use $crate::static_types::staking_dev::MinerConfig;
 				$($code)*
 			},
 		}
