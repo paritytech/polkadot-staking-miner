@@ -70,7 +70,7 @@ impl std::str::FromStr for Chain {
 		match s {
 			"polkadot" => Ok(Self::Polkadot),
 			"kusama" => Ok(Self::Kusama),
-			"westend" => Ok(Self::Westend),
+			"westend" | "node" => Ok(Self::Westend),
 			chain => Err(Error::InvalidChain(chain.to_string())),
 		}
 	}
