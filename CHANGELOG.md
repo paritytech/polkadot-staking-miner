@@ -19,9 +19,9 @@ This release comes with the following changes:
 ### Compatibility
 
 Tested against:
-- Westend v1,016,001
-- Kusama v1,003,003
-- Polkadot v1,003,003
+- Westend v1,017,001
+- Kusama v1,002,005
+- Polkadot v1,003,004
 
 ## [v1.6.0] - 2024-10-25
 
