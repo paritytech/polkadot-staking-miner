@@ -4,6 +4,25 @@ The format is based on [Keep a Changelog].
 
 [Keep a Changelog]: http://keepachangelog.com/en/1.0.0/
 
+## [v1.7.0] - 2025-01-20
+
+This release comes with the following changes:
+- The polkadot-staking-miner now disables `substrate-compat` feature to avoid duplicate versions of polkadot-sdk dependencies
+- Support substrate-node which is treated as westend node.
+- Move to the polkadot-sdk umbrella crate.
+
+### [Changed]
+- allow substrate node equal to westend ([#960](https://github.com/paritytech/staking-miner-v2/pull/960))
+- remove `subxt substrate-compat` feature ([#927](https://github.com/paritytech/staking-miner-v2/pull/927))
+- chore(deps): move to polkadot-sdk umbrella crate ([#926](https://github.com/paritytech/staking-miner-v2/pull/926))
+
+### Compatibility
+
+Tested against:
+- Westend v1,016,001
+- Kusama v1,003,003
+- Polkadot v1,003,003
+
 ## [v1.6.0] - 2024-10-25
 
 This release primarily updates the staking-miner to be able to decode v5 extrinsics
