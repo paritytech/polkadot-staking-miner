@@ -4,7 +4,7 @@ The format is based on [Keep a Changelog].
 
 [Keep a Changelog]: http://keepachangelog.com/en/1.0.0/
 
-## [v1.7.0] - 2025-01-20
+## [v1.7.0] - 2025-01-21
 
 This release comes with the following changes:
 - The polkadot-staking-miner now disables the feature `substrate-compat` in subxt to avoid duplicate versions of polkadot-sdk dependencies
