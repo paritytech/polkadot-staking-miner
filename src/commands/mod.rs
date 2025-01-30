@@ -12,7 +12,7 @@ pub use dry_run::{dry_run_cmd, DryRunConfig};
 #[cfg(legacy)]
 pub use emergency_solution::{emergency_solution_cmd, EmergencySolutionConfig};
 #[cfg(legacy)]
-pub use monitor::{monitor_cmd, MonitorConfig};
+pub use monitor::{monitor_cmd, Listen, MonitorConfig};
 
 #[cfg(experimental_multi_block)]
 pub use monitor_multi_block::*;

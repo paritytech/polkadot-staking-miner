@@ -1,12 +1,14 @@
 use crate::{
-	client::Client, commands::monitor::Listen, error::Error, helpers, prelude::*, signer::Signer,
+	client::Client, commands::Listen, error::Error, helpers, prelude::*, signer::Signer,
 	static_types,
 };
-use pallet_election_provider_multi_block::unsigned::miner;
-use sp_npos_elections::ElectionScore;
+use polkadot_sdk::{
+	frame_support::BoundedVec,
+	pallet_election_provider_multi_block::unsigned::miner::{BaseMiner as Miner, MinerConfig},
+	sp_npos_elections::ElectionScore,
+};
 
 use codec::{Decode, Encode};
-use frame_support::BoundedVec;
 use scale_info::PortableRegistry;
 use scale_value::scale::decode_as_type;
 use subxt::{
@@ -15,11 +17,13 @@ use subxt::{
 	tx::DynamicPayload,
 };
 
-const EPM_PALLET_NAME: &str = "ElectionProviderMultiBlock";
+//const EPM_PALLET_NAME: &str = "ElectionProviderMultiBlock";
+const EPM_PALLET_NAME: &str = "MultiBlock";
 const EPM_SIGNED_PALLET_NAME: &str = "ElectionSignedPallet";
 
 type TypeId = u32;
-type PagedRawSolutionOf<T> = pallet_election_provider_multi_block::types::PagedRawSolution<T>;
+type PagedRawSolutionOf<T> =
+	polkadot_sdk::pallet_election_provider_multi_block::types::PagedRawSolution<T>;
 
 #[derive(Copy, Clone, Debug)]
 struct EpmConstant {
@@ -46,16 +50,21 @@ pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> 
 	const PAGES: EpmConstant = EpmConstant::new("Pages");
 	const TARGET_SNAPSHOT_PER_BLOCK: EpmConstant = EpmConstant::new("TargetSnapshotPerBlock");
 	const VOTER_SNAPSHOT_PER_BLOCK: EpmConstant = EpmConstant::new("VoterSnapshotPerBlock");
+
+	// Not exposed as constants in the pallet API.
 	const MAX_VOTES_PER_VOTER: EpmConstant = EpmConstant::new("MinerMaxVotesPerVoter");
 	const MAX_BACKERS_PER_WINNER: EpmConstant = EpmConstant::new("MinerMaxBackersPerWinner");
 	const MAX_WINNERS_PER_PAGE: EpmConstant = EpmConstant::new("MinerMaxWinnersPerPage");
+	const MAX_LENGTH: EpmConstant = EpmConstant::new("MinerMaxLength");
 
 	let pages: u32 = read_constant(api, PAGES)?;
 	let target_snapshot_per_block: u32 = read_constant(api, TARGET_SNAPSHOT_PER_BLOCK)?;
 	let voter_snapshot_per_block: u32 = read_constant(api, VOTER_SNAPSHOT_PER_BLOCK)?;
-	let max_votes_per_voter: u32 = read_constant(api, MAX_VOTES_PER_VOTER)?;
-	let max_backers_per_winner: u32 = read_constant(api, MAX_BACKERS_PER_WINNER)?;
-	let max_winners_per_page: u32 = read_constant(api, MAX_WINNERS_PER_PAGE)?;
+
+	//let max_votes_per_voter: u32 = read_constant(api, MAX_VOTES_PER_VOTER)?;
+	//let max_backers_per_winner: u32 = read_constant(api, MAX_BACKERS_PER_WINNER)?;
+	//let max_winners_per_page: u32 = read_constant(api, MAX_WINNERS_PER_PAGE)?;
+	//let max_length: u32 = read_constant(api, MAX_LENGTH)?;
 
 	fn log_metadata(metadata: EpmConstant, val: impl std::fmt::Display) {
 		log::trace!(target: LOG_TARGET, "updating metadata constant `{metadata}`: {val}",);
@@ -64,16 +73,20 @@ pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> 
 	log_metadata(PAGES, pages);
 	log_metadata(TARGET_SNAPSHOT_PER_BLOCK, target_snapshot_per_block);
 	log_metadata(VOTER_SNAPSHOT_PER_BLOCK, voter_snapshot_per_block);
-	log_metadata(MAX_VOTES_PER_VOTER, max_votes_per_voter);
+	/*log_metadata(MAX_VOTES_PER_VOTER, max_votes_per_voter);
 	log_metadata(MAX_BACKERS_PER_WINNER, max_backers_per_winner);
 	log_metadata(MAX_WINNERS_PER_PAGE, max_winners_per_page);
+	log_metadata(MAX_LENGTH, max_length);*/
 
 	static_types::Pages::set(pages);
 	static_types::TargetSnapshotPerBlock::set(target_snapshot_per_block);
 	static_types::VoterSnapshotPerBlock::set(voter_snapshot_per_block);
-	static_types::MaxVotesPerVoter::set(max_votes_per_voter);
-	static_types::MaxBackersPerWinner::set(max_backers_per_winner);
-	static_types::MaxWinnersPerPage::set(max_winners_per_page);
+
+	// TODO: set from runtime/configs.
+	static_types::MaxVotesPerVoter::set(16);
+	static_types::MaxBackersPerWinner::set(200);
+	static_types::MaxWinnersPerPage::set(200);
+	static_types::MaxLength::set(1024);
 
 	Ok(())
 }
@@ -157,7 +170,7 @@ pub(crate) async fn mine_and_submit<T>(
 	round: u32,
 ) -> Result<(), Error>
 where
-	T: miner::Config<
+	T: MinerConfig<
 			AccountId = AccountId,
 			MaxVotesPerVoter = static_types::MaxVotesPerVoter,
 			TargetSnapshotPerBlock = static_types::TargetSnapshotPerBlock,
@@ -168,8 +181,10 @@ where
 		+ 'static,
 	T::Solution: Send,
 {
+	todo!();
+
 	// TODO: get from runtime/configs.
-	let do_reduce = false;
+	/*let do_reduce = false;
 	let desired_targets = 400;
 
 	log::trace!(
@@ -184,7 +199,7 @@ where
 		BoundedVec::truncate_from(voter_snapshot_paged.clone());
 
 	let (paged_raw_solution, _trimming_status): (PagedRawSolutionOf<T>, _) =
-		miner::Miner::<T>::mine_paged_solution_with_snapshot(
+		Miner::<T>::mine_paged_solution_with_snapshot(
 			&voters,
 			&targets,
 			n_pages,
@@ -194,13 +209,13 @@ where
 		)
 		.map_err(|_| Error::Miner("mine paged solution.".to_string()))?;
 
-	let solution_pages: Vec<(u32, ElectionScore, <T as miner::Config>::Solution)> =
+	let solution_pages: Vec<(u32, ElectionScore, <T as MinerConfig>::Solution)> =
 		paged_raw_solution
 			.solution_pages
 			.iter()
 			.enumerate()
 			.map(|(page, solution)| {
-				let partial_score = miner::Miner::<T>::compute_partial_score(
+				let partial_score = Miner::<T>::compute_partial_score(
 					&voters,
 					&targets,
 					solution,
@@ -223,7 +238,7 @@ where
 		submit_and_watch::<T>(at, client, signer.clone(), listen, submit_tx, "submit page").await?;
 	}
 
-	Ok(())
+	Ok(())*/
 }
 
 /// Performs the whole set of steps to submit a new solution:
@@ -241,7 +256,7 @@ pub(crate) async fn fetch_mine_and_submit<T>(
 	round: u32,
 ) -> Result<(), Error>
 where
-	T: miner::Config<
+	T: MinerConfig<
 			AccountId = AccountId,
 			MaxVotesPerVoter = static_types::MaxVotesPerVoter,
 			TargetSnapshotPerBlock = static_types::TargetSnapshotPerBlock,
@@ -274,7 +289,7 @@ where
 }
 
 /// Submits and watches a `DynamicPayload`, ie. an extrinsic.
-async fn submit_and_watch<T: miner::Config + Send + Sync + 'static>(
+async fn submit_and_watch<T: MinerConfig + Send + Sync + 'static>(
 	at: &Header,
 	client: &Client,
 	signer: Signer,
@@ -322,7 +337,7 @@ fn register_solution(election_score: ElectionScore) -> Result<DynamicPayload, Er
 }
 
 /// Helper to construct a submit page transaction.
-fn submit_page<T: miner::Config + 'static>(
+fn submit_page<T: MinerConfig + 'static>(
 	page: u32,
 	maybe_solution: Option<T::Solution>,
 ) -> Result<DynamicPayload, Error> {

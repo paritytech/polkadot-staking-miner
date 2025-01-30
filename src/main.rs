@@ -37,7 +37,6 @@ mod opt;
 mod prelude;
 mod prometheus;
 mod signer;
-#[cfg(legacy)]
 mod static_types;
 
 use clap::Parser;
@@ -78,12 +77,12 @@ pub struct Opt {
 pub enum Command {
 	/// Monitor for the phase being signed, then compute.
 	Monitor(commands::MonitorConfig),
-	/// Just compute a solution now, and don't submit it.
+	/*/// Just compute a solution now, and don't submit it.
 	DryRun(commands::DryRunConfig),
 	/// Provide a solution that can be submitted to the chain as an emergency response.
 	EmergencySolution(commands::EmergencySolutionConfig),
 	/// Check if the staking-miner metadata is compatible to a remote node.
-	Info,
+	Info,*/
 }
 
 // A helper to use different MinerConfig depending on chain.
@@ -103,11 +102,6 @@ macro_rules! any_runtime {
 			$crate::opt::Chain::Westend => {
 				#[allow(unused)]
 				use $crate::static_types::westend::MinerConfig;
-				$($code)*
-			},
-			$crate::opt::Chain::Rococo => {
-				#[allow(unused)]
-				use $crate::static_types::staking_dev::MinerConfig;
 				$($code)*
 			},
 		}
@@ -139,7 +133,7 @@ async fn main() -> Result<(), Error> {
 	let res = any_runtime!(chain, {
 		let fut = match command {
 			Command::Monitor(cfg) => commands::monitor_cmd::<MinerConfig>(client, cfg).boxed(),
-			Command::DryRun(cfg) => commands::dry_run_cmd::<MinerConfig>(client, cfg).boxed(),
+			/*Command::DryRun(cfg) => commands::dry_run_cmd::<MinerConfig>(client, cfg).boxed(),
 			Command::EmergencySolution(cfg) =>
 				commands::emergency_solution_cmd::<MinerConfig>(client, cfg).boxed(),
 			Command::Info => async {
@@ -157,7 +151,7 @@ async fn main() -> Result<(), Error> {
 
 				Ok(())
 			}
-			.boxed(),
+			.boxed(),*/
 		};
 
 		run_command(fut, rx_upgrade).await
@@ -258,7 +252,7 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 	}
 }
 
-#[cfg(test)]
+#[cfg(all(test, legacy))]
 mod tests {
 	use super::*;
 	use commands::monitor;

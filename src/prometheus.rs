@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
-use super::prelude::LOG_TARGET;
+use crate::prelude::*;
 use futures::channel::oneshot;
 pub use hidden::*;
 use hyper::{
@@ -85,10 +85,9 @@ pub fn run(port: u16) -> Result<GracefulShutdown, String> {
 }
 
 mod hidden {
-	use frame_election_provider_support::Weight;
 	use once_cell::sync::Lazy;
+	use polkadot_sdk::{frame_election_provider_support::Weight, sp_npos_elections};
 	use prometheus::{opts, register_counter, register_gauge, Counter, Gauge};
-	use sp_npos_elections;
 
 	static TRIMMED_SOLUTION_STARTED: Lazy<Counter> = Lazy::new(|| {
 		register_counter!(opts!(

@@ -14,6 +14,12 @@
 // You should have received a copy of the GNU General Public License
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
+#[cfg(legacy)]
+use polkadot_sdk::sp_core::crypto::SecretStringError;
+
+#[cfg(experimental_multi_block)]
+use polkadot_sdk::sp_core::crypto::SecretStringError;
+
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
 	#[error("Failed to parse log directive: `{0}´")]
@@ -25,7 +31,7 @@ pub enum Error {
 	#[error("subxt error: `{0}`")]
 	Subxt(#[from] subxt::Error),
 	#[error("Crypto error: `{0:?}`")]
-	Crypto(sp_core::crypto::SecretStringError),
+	Crypto(SecretStringError),
 	#[error("Codec error: `{0}`")]
 	Codec(#[from] codec::Error),
 	#[error("Incorrect phase")]

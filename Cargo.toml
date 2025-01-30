@@ -26,24 +26,10 @@ pin-project-lite = "0.2"
 
 # subxt
 scale-value = "0.17"
-subxt = "0.38.0"
-
-# goncalo's polkadot-sdk branch
-frame-election-provider-support-v2 = { package = "frame-election-provider-support", optional = true, git = "https://github.com/paritytech/polkadot-sdk", branch = "staking-parachain-exp" }
-frame-support-v2 = { package = "frame-support", optional = true, git = "https://github.com/paritytech/polkadot-sdk", branch = "staking-parachain-exp" }
-sp-npos-elections-v2 = { package = "sp-npos-elections", optional = true, git = "https://github.com/paritytech/polkadot-sdk", branch = "staking-parachain-exp" }
-sp-core-v2 = { package = "sp-core", optional = true, git = "https://github.com/paritytech/polkadot-sdk", branch = "staking-parachain-exp" }
-sp-runtime-v2 = { package = "sp-runtime", optional = true, git = "https://github.com/paritytech/polkadot-sdk", branch = "staking-parachain-exp" }
-pallet-election-provider-multi-phase-v2 = { package = "pallet-election-provider-multi-phase", optional = true, git = "https://github.com/paritytech/polkadot-sdk", branch = "staking-parachain-exp" }
+subxt = "0.38.1"
 
 # polkadot-sdk
-#polkadot-sdk = { version = "0.9", features = ["frame-election-provider-support", "frame-support", "sp-npos-elections", "sp-core", "sp-runtime", "pallet-election-provider-multi-phase"], optional = true }
-frame-election-provider-support = { package = "frame-election-provider-support", optional = true, version = "38" }
-frame-support = { optional = true, version = "38.2" }
-sp-npos-elections = { optional = true, version = "34" }
-sp-core = { optional = true, version = "34" }
-sp-runtime = { optional = true, version = "39" }
-pallet-election-provider-multi-phase = { optional = true, version = "37" }
+polkadot-sdk = { git = "https://github.com/paritytech/polkadot-sdk", features = ["frame-election-provider-support", "frame-support", "sp-npos-elections", "sp-core", "sp-runtime", "pallet-election-provider-multi-phase", "pallet-election-provider-multi-block"],  branch = "na-multi-block-election" }
 
 # prometheus
 prometheus = "0.13"
@@ -59,6 +45,6 @@ regex = "1"
 cfg_aliases = "0.2.0"
 
 [features]
-default = ["legacy"]
-legacy = ["frame-election-provider-support", "frame-support", "sp-npos-elections", "sp-core", "sp-runtime", "pallet-election-provider-multi-phase"]
-experimental-multi-block = ["frame-election-provider-support-v2", "frame-support-v2", "sp-npos-elections-v2", "sp-core-v2", "sp-runtime-v2", "pallet-election-provider-multi-phase-v2"]
+# todo made legacy default when ready for merge.
+default = ["experimental-multi-block"]
+experimental-multi-block = ["polkadot-sdk/pallet-election-provider-multi-block"]

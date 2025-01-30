@@ -1,13 +1,20 @@
-use crate::{client::Client, error::Error, prelude::*, signer::Signer};
-
 use crate::{
-	epm, helpers, runtime::runtime_types::pallet_election_provider_multi_block::types::*,
+	client::Client,
+	epm,
+	error::Error,
+	helpers,
+	prelude::{
+		runtime, AccountId, Hash, Header, RpcClient, TargetSnapshotPage, VoterSnapshotPage,
+		LOG_TARGET,
+	},
+	signer::Signer,
 	static_types,
 };
 
-use pallet_election_provider_multi_block_v2::unsigned::miner;
-
 use clap::Parser;
+use polkadot_sdk::pallet_election_provider_multi_block::{
+	types::Phase, unsigned::miner::MinerConfig,
+};
 use std::sync::Arc;
 use subxt::backend::rpc::RpcSubscription;
 use tokio::sync::Mutex;
@@ -50,12 +57,9 @@ pub enum Listen {
 ///  2.1. Compute the solution
 ///  2.2. Register the solution with the *full* election score of the submission
 ///  2.3. Submit each page separately (1 per block).
-///
-/// If by the time of computing the solution the snapshot pages have not been fetched and cached,
-/// the snapshots will be fetched before computing the solution.
 pub async fn monitor_cmd<T>(client: Client, config: MonitorConfig) -> Result<(), Error>
 where
-	T: miner::Config<
+	T: MinerConfig<
 			AccountId = AccountId,
 			MaxVotesPerVoter = static_types::MaxVotesPerVoter,
 			TargetSnapshotPerBlock = static_types::TargetSnapshotPerBlock,
@@ -127,14 +131,12 @@ where
 		let storage = helpers::storage_at(config.at, client.chain_api()).await?;
 		let storage2 = storage.clone();
 		let phase = storage
-			.fetch_or_default(&runtime::storage().election_provider_multi_block().current_phase())
+			.fetch_or_default(&runtime::storage().multi_block().current_phase())
 			.await?;
-		let round = storage
-			.fetch_or_default(&runtime::storage().election_provider_multi_block().round())
-			.await?;
+		let round = storage.fetch_or_default(&runtime::storage().multi_block().round()).await?;
 
 		let result = tokio::spawn(async move {
-			match phase {
+			match phase.0 {
 				Phase::Off => {
 					log::trace!(target: LOG_TARGET, "Phase::Off, do nothing.");
 					Task::Nothing

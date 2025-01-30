@@ -16,21 +16,19 @@
 
 //! Wrappers around creating a signer account.
 
-use crate::{
-	error::Error,
-	prelude::{Config as PolkadotConfig, Pair},
+use crate::{error::Error, prelude::*};
+use polkadot_sdk::{
+	sp_core::Pair as PairT,
+	sp_runtime::{
+		traits::{IdentifyAccount, Verify},
+		MultiSignature as SpMultiSignature,
+	},
 };
-use sp_core::Pair as PairT;
-use sp_runtime::{
-	traits::{IdentifyAccount, Verify},
-	MultiSignature as SpMultiSignature,
-};
-use subxt::Config;
 
 /// A [`Signer`] implementation that can be constructed from an [`Pair`].
 #[derive(Clone)]
 pub struct PairSigner {
-	account_id: <PolkadotConfig as Config>::AccountId,
+	account_id: <Config as subxt::Config>::AccountId,
 	signer: Pair,
 }
 
@@ -43,21 +41,21 @@ impl PairSigner {
 	}
 
 	/// Return the account ID.
-	pub fn account_id(&self) -> &<PolkadotConfig as Config>::AccountId {
+	pub fn account_id(&self) -> &<Config as subxt::Config>::AccountId {
 		&self.account_id
 	}
 }
 
-impl subxt::tx::Signer<PolkadotConfig> for PairSigner {
-	fn account_id(&self) -> <PolkadotConfig as Config>::AccountId {
+impl subxt::tx::Signer<Config> for PairSigner {
+	fn account_id(&self) -> <Config as subxt::Config>::AccountId {
 		self.account_id.clone()
 	}
 
-	fn address(&self) -> <PolkadotConfig as Config>::Address {
+	fn address(&self) -> <Config as subxt::Config>::Address {
 		self.account_id.clone().into()
 	}
 
-	fn sign(&self, signer_payload: &[u8]) -> <PolkadotConfig as Config>::Signature {
+	fn sign(&self, signer_payload: &[u8]) -> <Config as subxt::Config>::Signature {
 		let signature = self.signer.sign(signer_payload);
 		subxt::config::substrate::MultiSignature::Sr25519(signature.0)
 	}

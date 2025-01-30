@@ -17,9 +17,8 @@
 use crate::error::Error;
 
 use clap::*;
-use frame_support;
+use polkadot_sdk::{frame_support, sp_npos_elections::BalancingConfig};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use sp_npos_elections::BalancingConfig;
 use std::{collections::HashMap, fmt, str::FromStr};
 use subxt::backend::legacy::rpc_methods as subxt_rpc;
 
@@ -51,7 +50,6 @@ pub enum Chain {
 	Westend,
 	Kusama,
 	Polkadot,
-	Rococo,
 }
 
 impl fmt::Display for Chain {
@@ -60,7 +58,6 @@ impl fmt::Display for Chain {
 			Self::Polkadot => "polkadot",
 			Self::Kusama => "kusama",
 			Self::Westend => "westend",
-			Self::Rococo => "staking-dev",
 		};
 		write!(f, "{}", chain)
 	}
@@ -73,8 +70,7 @@ impl std::str::FromStr for Chain {
 		match s {
 			"polkadot" => Ok(Self::Polkadot),
 			"kusama" => Ok(Self::Kusama),
-			"westend" => Ok(Self::Westend),
-			"staking-dev" => Ok(Self::Rococo),
+			"westend" | "node" => Ok(Self::Westend),
 			chain => Err(Error::InvalidChain(chain.to_string())),
 		}
 	}

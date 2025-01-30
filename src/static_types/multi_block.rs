@@ -1,3 +1,20 @@
+use crate::prelude::{AccountId, Accuracy, Hash};
+use polkadot_sdk::{
+	frame_election_provider_support, frame_support,
+	pallet_election_provider_multi_block as multi_block,
+	sp_runtime::{
+		traits::{parameter_types, ConstU32},
+		PerU16,
+	},
+};
+
+const EPOCH_DURATION_IN_BLOCKS: u32 = 6 * 60;
+
+type Balance = u64;
+type BlockNumber = u64;
+type VoterIndex = u32;
+type TargetIndex = u16;
+
 macro_rules! impl_atomic_u32_parameter_types {
 	($mod:ident, $name:ident) => {
 		mod $mod {
@@ -10,7 +27,7 @@ macro_rules! impl_atomic_u32_parameter_types {
 					VAL.load(Ordering::SeqCst)
 				}
 			}
-			impl<I: From<u32>> frame_support::traits::Get<I> for $name {
+			impl<I: From<u32>> polkadot_sdk::frame_support::traits::Get<I> for $name {
 				fn get() -> I {
 					I::from(Self::get())
 				}
@@ -32,127 +49,106 @@ impl_atomic_u32_parameter_types!(target_snapshot_per_block, TargetSnapshotPerBlo
 impl_atomic_u32_parameter_types!(voter_snapshot_per_block, VoterSnapshotPerBlock);
 impl_atomic_u32_parameter_types!(max_winners_per_page, MaxWinnersPerPage);
 impl_atomic_u32_parameter_types!(max_backers_per_winner, MaxBackersPerWinner);
+impl_atomic_u32_parameter_types!(max_length, MaxLength);
 
 pub mod polkadot {
 	use super::*;
-	use crate::prelude::*;
+	use frame_election_provider_support::SequentialPhragmen;
 
-	frame_election_provider_support_v2::generate_solution_type!(
+	frame_election_provider_support::generate_solution_type!(
 		#[compact]
 		pub struct NposSolution16::<
 			VoterIndex = u32,
 			TargetIndex = u16,
-			Accuracy = sp_runtime::PerU16,
+			Accuracy = PerU16,
 			MaxVoters = ConstU32::<22500> // TODO: fetch
 		>(16)
 	);
 
 	#[derive(Debug)]
 	pub struct MinerConfig;
-	impl pallet_election_provider_multi_block_v2::unsigned::miner::Config for MinerConfig {
+
+	// TODO: make it configurable via CLI/data from the node.
+	impl multi_block::unsigned::miner::MinerConfig for MinerConfig {
 		type AccountId = AccountId;
 		type Solution = NposSolution16;
-		type Solver = Solver;
+		type Solver = SequentialPhragmen<AccountId, Accuracy>;
 		type Pages = Pages;
 		type MaxVotesPerVoter = MaxVotesPerVoter;
 		type MaxWinnersPerPage = MaxWinnersPerPage;
 		type MaxBackersPerWinner = MaxBackersPerWinner;
+		type MaxBackersPerWinnerFinal = ();
 		type VoterSnapshotPerBlock = VoterSnapshotPerBlock;
 		type TargetSnapshotPerBlock = TargetSnapshotPerBlock;
-		type MaxWeight = (); // TODO
-		type MaxLength = (); // TODO
+		type MaxLength = MaxLength;
+		type Hash = Hash;
 	}
 }
 
 pub mod kusama {
 	use super::*;
-	use crate::prelude::*;
+	use frame_election_provider_support::SequentialPhragmen;
 
 	frame_election_provider_support::generate_solution_type!(
 		#[compact]
 		pub struct NposSolution24::<
 			VoterIndex = u32,
 			TargetIndex = u16,
-			Accuracy = sp_runtime::PerU16,
+			Accuracy = PerU16,
 			MaxVoters = ConstU32::<12500>
 		>(24)
 	);
 
 	#[derive(Debug)]
 	pub struct MinerConfig;
-	impl pallet_election_provider_multi_block_v2::unsigned::miner::Config for MinerConfig {
+
+	// TODO: make it configurable via CLI/data from the node.
+	impl multi_block::unsigned::miner::MinerConfig for MinerConfig {
 		type AccountId = AccountId;
-		type Solution = NposSolution16;
-		type Solver = Solver;
+		type Solution = NposSolution24;
+		type Solver = SequentialPhragmen<AccountId, Accuracy>;
 		type Pages = Pages;
 		type MaxVotesPerVoter = MaxVotesPerVoter;
 		type MaxWinnersPerPage = MaxWinnersPerPage;
 		type MaxBackersPerWinner = MaxBackersPerWinner;
+		type MaxBackersPerWinnerFinal = ();
 		type VoterSnapshotPerBlock = VoterSnapshotPerBlock;
 		type TargetSnapshotPerBlock = TargetSnapshotPerBlock;
-		type MaxWeight = (); // TODO
-		type MaxLength = (); // TODO
+		type MaxLength = MaxLength;
+		type Hash = Hash;
 	}
 }
 
 pub mod westend {
 	use super::*;
-	use crate::prelude::*;
+	use frame_election_provider_support::SequentialPhragmen;
 
-	frame_election_provider_support_v2::generate_solution_type!(
+	frame_election_provider_support::generate_solution_type!(
 		#[compact]
 		pub struct NposSolution16::<
 			VoterIndex = u32,
 			TargetIndex = u16,
-			Accuracy = sp_runtime::PerU16,
+			Accuracy = PerU16,
 			MaxVoters = ConstU32::<22500> // TODO: fetch
 		>(16)
 	);
 
 	#[derive(Debug)]
 	pub struct MinerConfig;
-	impl pallet_election_provider_multi_block_v2::unsigned::miner::Config for MinerConfig {
+
+	// TODO: make it configurable via CLI/data from the node.
+	impl multi_block::unsigned::miner::MinerConfig for MinerConfig {
 		type AccountId = AccountId;
 		type Solution = NposSolution16;
-		type Solver = Solver;
+		type Solver = SequentialPhragmen<AccountId, Accuracy>;
 		type Pages = Pages;
 		type MaxVotesPerVoter = MaxVotesPerVoter;
 		type MaxWinnersPerPage = MaxWinnersPerPage;
 		type MaxBackersPerWinner = MaxBackersPerWinner;
+		type MaxBackersPerWinnerFinal = ();
 		type VoterSnapshotPerBlock = VoterSnapshotPerBlock;
 		type TargetSnapshotPerBlock = TargetSnapshotPerBlock;
-		type MaxWeight = (); // TODO
-		type MaxLength = (); // TODO
-	}
-}
-
-pub mod staking_dev {
-	use super::*;
-	use crate::prelude::*;
-
-	frame_election_provider_support_v2::generate_solution_type!(
-		#[compact]
-		pub struct NposSolution16::<
-			VoterIndex = u32,
-			TargetIndex = u16,
-			Accuracy = sp_runtime::PerU16,
-			MaxVoters = ConstU32::<22500> // TODO: fetch
-		>(16)
-	);
-
-	#[derive(Debug)]
-	pub struct MinerConfig;
-	impl pallet_election_provider_multi_block_v2::unsigned::miner::Config for MinerConfig {
-		type AccountId = AccountId;
-		type Solution = NposSolution16;
-		type Solver = Solver;
-		type Pages = Pages;
-		type MaxVotesPerVoter = MaxVotesPerVoter;
-		type MaxWinnersPerPage = MaxWinnersPerPage;
-		type MaxBackersPerWinner = MaxBackersPerWinner;
-		type VoterSnapshotPerBlock = VoterSnapshotPerBlock;
-		type TargetSnapshotPerBlock = TargetSnapshotPerBlock;
-		type MaxWeight = (); // TODO
-		type MaxLength = (); // TODO
+		type MaxLength = MaxLength;
+		type Hash = Hash;
 	}
 }

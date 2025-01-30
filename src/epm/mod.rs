@@ -4,7 +4,7 @@ mod legacy;
 mod multi_block;
 
 #[cfg(legacy)]
-pub use legacy::*;
+pub(crate) use legacy::*;
 
 #[cfg(experimental_multi_block)]
-pub use multi_block::*;
+pub(crate) use multi_block::*;
