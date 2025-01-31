@@ -2,18 +2,8 @@ use crate::prelude::{AccountId, Accuracy, Hash};
 use polkadot_sdk::{
 	frame_election_provider_support, frame_support,
 	pallet_election_provider_multi_block as multi_block,
-	sp_runtime::{
-		traits::{parameter_types, ConstU32},
-		PerU16,
-	},
+	sp_runtime::{traits::ConstU32, PerU16},
 };
-
-const EPOCH_DURATION_IN_BLOCKS: u32 = 6 * 60;
-
-type Balance = u64;
-type BlockNumber = u64;
-type VoterIndex = u32;
-type TargetIndex = u16;
 
 macro_rules! impl_atomic_u32_parameter_types {
 	($mod:ident, $name:ident) => {

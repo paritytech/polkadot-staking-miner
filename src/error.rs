@@ -21,6 +21,7 @@ use polkadot_sdk::sp_core::crypto::SecretStringError;
 use polkadot_sdk::sp_core::crypto::SecretStringError;
 
 #[derive(thiserror::Error, Debug)]
+#[allow(unused)]
 pub enum Error {
 	#[error("Failed to parse log directive: `{0}´")]
 	LogParse(#[from] tracing_subscriber::filter::ParseError),

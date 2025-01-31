@@ -1,92 +1,107 @@
+use std::marker::PhantomData;
+
 use crate::{
 	client::Client, commands::Listen, error::Error, helpers, prelude::*, signer::Signer,
 	static_types,
 };
 use polkadot_sdk::{
 	frame_support::BoundedVec,
-	pallet_election_provider_multi_block::unsigned::miner::{BaseMiner as Miner, MinerConfig},
+	pallet_election_provider_multi_block::unsigned::miner::{
+		BaseMiner as Miner, MineInput, MinerConfig,
+	},
 	sp_npos_elections::ElectionScore,
 };
 
 use codec::{Decode, Encode};
 use scale_info::PortableRegistry;
 use scale_value::scale::decode_as_type;
+use serde::de::DeserializeOwned;
 use subxt::{
 	config::{DefaultExtrinsicParamsBuilder, Header as _},
 	dynamic::Value,
 	tx::DynamicPayload,
 };
 
-//const EPM_PALLET_NAME: &str = "ElectionProviderMultiBlock";
-const EPM_PALLET_NAME: &str = "MultiBlock";
-const EPM_SIGNED_PALLET_NAME: &str = "ElectionSignedPallet";
+const EPM: &str = "ElectionProviderMultiPhase";
+const MULTI_BLOCK: &str = "MultiBlock";
+const EPM_SIGNED: &str = "ElectionSignedPallet";
+
+const PAGES: &str = "Pages";
+const TARGET_SNAPSHOT_PER_BLOCK: &str = "TargetSnapshotPerBlock";
+const MAX_VOTES_PER_VOTER: &str = "MinerMaxVotesPerVoter";
+const MAX_LENGTH: &str = "MinerMaxLength";
+#[allow(unused)]
+const VOTER_SNAPSHOT_PER_BLOCK: &str = "VoterSnapshotPerBlock";
+
+const MB_PAGES: PalletConstant<u32> = PalletConstant::new(MULTI_BLOCK, PAGES);
+const MB_TARGET_SNAPSHOT_PER_BLOCK: PalletConstant<u32> =
+	PalletConstant::new(MULTI_BLOCK, TARGET_SNAPSHOT_PER_BLOCK);
+#[allow(unused)]
+const MB_VOTER_SNAPSHOT_PER_BLOCK: PalletConstant<u32> =
+	PalletConstant::new(EPM, VOTER_SNAPSHOT_PER_BLOCK);
+
+const EPM_MAX_VOTES_PER_VOTER: PalletConstant<u32> = PalletConstant::new(EPM, MAX_VOTES_PER_VOTER);
+const EPM_MAX_LENGTH: PalletConstant<u32> = PalletConstant::new(EPM, MAX_LENGTH);
 
 type TypeId = u32;
-type PagedRawSolutionOf<T> =
-	polkadot_sdk::pallet_election_provider_multi_block::types::PagedRawSolution<T>;
 
 #[derive(Copy, Clone, Debug)]
-struct EpmConstant {
-	epm: &'static str,
-	constant: &'static str,
+struct PalletConstant<T> {
+	pallet: &'static str,
+	variant: &'static str,
+	_marker: std::marker::PhantomData<T>,
 }
 
-impl std::fmt::Display for EpmConstant {
+impl<T> std::fmt::Display for PalletConstant<T> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.write_fmt(format_args!("{}::{}", self.epm, self.constant))
+		f.write_fmt(format_args!("{}::{}", self.pallet, self.variant))
 	}
 }
 
-impl EpmConstant {
-	const fn new(constant: &'static str) -> Self {
-		Self { epm: EPM_PALLET_NAME, constant }
+impl<T: DeserializeOwned + std::fmt::Display> PalletConstant<T> {
+	const fn new(pallet: &'static str, variant: &'static str) -> Self {
+		Self { pallet, variant, _marker: PhantomData }
 	}
-	const fn to_parts(self) -> (&'static str, &'static str) {
-		(self.epm, self.constant)
+	const fn to_parts(&self) -> (&'static str, &'static str) {
+		(self.pallet, self.variant)
+	}
+
+	pub fn fetch(&self, api: &ChainClient) -> Result<T, Error> {
+		let (pallet, variant) = self.to_parts();
+
+		let val = api
+			.constants()
+			.at(&subxt::dynamic::constant(pallet, variant))
+			.map_err(|e| invalid_metadata_error(variant.to_string(), e))?
+			.to_value()
+			.map_err(|e| Error::Subxt(e.into()))?;
+
+		let val = scale_value::serde::from_value::<_, T>(val).map_err(|e| {
+			Error::InvalidMetadata(format!(
+				"Decoding `{}` failed {}",
+				std::any::type_name::<T>(),
+				e
+			))
+		})?;
+
+		log::trace!(target: LOG_TARGET, "updating metadata constant `{self}`: {val}",);
+		Ok(val)
 	}
 }
 
 pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
-	const PAGES: EpmConstant = EpmConstant::new("Pages");
-	const TARGET_SNAPSHOT_PER_BLOCK: EpmConstant = EpmConstant::new("TargetSnapshotPerBlock");
-	const VOTER_SNAPSHOT_PER_BLOCK: EpmConstant = EpmConstant::new("VoterSnapshotPerBlock");
-
-	// Not exposed as constants in the pallet API.
-	const MAX_VOTES_PER_VOTER: EpmConstant = EpmConstant::new("MinerMaxVotesPerVoter");
-	const MAX_BACKERS_PER_WINNER: EpmConstant = EpmConstant::new("MinerMaxBackersPerWinner");
-	const MAX_WINNERS_PER_PAGE: EpmConstant = EpmConstant::new("MinerMaxWinnersPerPage");
-	const MAX_LENGTH: EpmConstant = EpmConstant::new("MinerMaxLength");
-
-	let pages: u32 = read_constant(api, PAGES)?;
-	let target_snapshot_per_block: u32 = read_constant(api, TARGET_SNAPSHOT_PER_BLOCK)?;
-	let voter_snapshot_per_block: u32 = read_constant(api, VOTER_SNAPSHOT_PER_BLOCK)?;
-
-	//let max_votes_per_voter: u32 = read_constant(api, MAX_VOTES_PER_VOTER)?;
-	//let max_backers_per_winner: u32 = read_constant(api, MAX_BACKERS_PER_WINNER)?;
-	//let max_winners_per_page: u32 = read_constant(api, MAX_WINNERS_PER_PAGE)?;
-	//let max_length: u32 = read_constant(api, MAX_LENGTH)?;
-
-	fn log_metadata(metadata: EpmConstant, val: impl std::fmt::Display) {
-		log::trace!(target: LOG_TARGET, "updating metadata constant `{metadata}`: {val}",);
-	}
-
-	log_metadata(PAGES, pages);
-	log_metadata(TARGET_SNAPSHOT_PER_BLOCK, target_snapshot_per_block);
-	log_metadata(VOTER_SNAPSHOT_PER_BLOCK, voter_snapshot_per_block);
-	/*log_metadata(MAX_VOTES_PER_VOTER, max_votes_per_voter);
-	log_metadata(MAX_BACKERS_PER_WINNER, max_backers_per_winner);
-	log_metadata(MAX_WINNERS_PER_PAGE, max_winners_per_page);
-	log_metadata(MAX_LENGTH, max_length);*/
-
+	// multi block constants.
+	let pages: u32 = MB_PAGES.fetch(api)?;
 	static_types::Pages::set(pages);
-	static_types::TargetSnapshotPerBlock::set(target_snapshot_per_block);
-	static_types::VoterSnapshotPerBlock::set(voter_snapshot_per_block);
-
-	// TODO: set from runtime/configs.
+	static_types::TargetSnapshotPerBlock::set(MB_TARGET_SNAPSHOT_PER_BLOCK.fetch(api)?);
+	// TODO: hard coded.
+	static_types::VoterSnapshotPerBlock::set(22500 / pages);
 	static_types::MaxVotesPerVoter::set(16);
-	static_types::MaxBackersPerWinner::set(200);
-	static_types::MaxWinnersPerPage::set(200);
-	static_types::MaxLength::set(1024);
+	static_types::MaxWinnersPerPage::set(100);
+
+	// election provider constants.
+	static_types::MaxBackersPerWinner::set(EPM_MAX_VOTES_PER_VOTER.fetch(api)?);
+	static_types::MaxLength::set(EPM_MAX_LENGTH.fetch(api)?);
 
 	Ok(())
 }
@@ -96,7 +111,7 @@ pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> 
 /// Note: the target snapshot is single paged.
 pub(crate) async fn target_snapshot(storage: &Storage) -> Result<TargetSnapshotPage, Error> {
 	let page_idx = vec![Value::from(0u32)];
-	let addr = subxt::dynamic::storage(EPM_PALLET_NAME, "PagedTargetSnapshot", page_idx);
+	let addr = subxt::dynamic::storage(EPM, "PagedTargetSnapshot", page_idx);
 
 	match storage.fetch(&addr).await {
 		Ok(Some(val)) => {
@@ -119,7 +134,7 @@ pub(crate) async fn paged_voter_snapshot(
 	storage: &Storage,
 ) -> Result<VoterSnapshotPage, Error> {
 	let page_idx = vec![Value::from(page)];
-	let addr = subxt::dynamic::storage(EPM_PALLET_NAME, "PagedVoterSnapshot", page_idx);
+	let addr = subxt::dynamic::storage(EPM, "PagedVoterSnapshot", page_idx);
 
 	match storage.fetch(&addr).await {
 		Ok(Some(val)) => match Decode::decode(&mut val.encoded()) {
@@ -181,12 +196,6 @@ where
 		+ 'static,
 	T::Solution: Send,
 {
-	todo!();
-
-	// TODO: get from runtime/configs.
-	/*let do_reduce = false;
-	let desired_targets = 400;
-
 	log::trace!(
 		target: LOG_TARGET,
 		"Mine, submit: election target snap size: {:?}, voter snap size: {:?}",
@@ -198,47 +207,30 @@ where
 	let voters: BoundedVec<VoterSnapshotPageOf<T>, T::Pages> =
 		BoundedVec::truncate_from(voter_snapshot_paged.clone());
 
-	let (paged_raw_solution, _trimming_status): (PagedRawSolutionOf<T>, _) =
-		Miner::<T>::mine_paged_solution_with_snapshot(
-			&voters,
-			&targets,
-			n_pages,
-			round,
-			desired_targets,
-			do_reduce,
-		)
-		.map_err(|_| Error::Miner("mine paged solution.".to_string()))?;
+	let input = MineInput {
+		// TODO: get from runtime/configs.
+		desired_targets: 400,
+		all_targets: targets.clone(),
+		voter_pages: voters.clone(),
+		pages: n_pages,
+		// TODO: get from runtime/configs.
+		do_reduce: false,
+		round,
+	};
 
-	let solution_pages: Vec<(u32, ElectionScore, <T as MinerConfig>::Solution)> =
-		paged_raw_solution
-			.solution_pages
-			.iter()
-			.enumerate()
-			.map(|(page, solution)| {
-				let partial_score = Miner::<T>::compute_partial_score(
-					&voters,
-					&targets,
-					solution,
-					desired_targets,
-					page as u32,
-				)
-				.map_err(|_| Error::Miner("solution compute..".to_string()))?;
-
-				Ok((page as u32, partial_score, solution.to_owned()))
-			})
-			.collect::<Result<Vec<_>, Error>>()?;
+	let paged_raw_solution = Miner::<T>::mine_solution(input).unwrap();
 
 	// register solution.
 	let register_tx = register_solution(paged_raw_solution.score)?;
 	submit_and_watch::<T>(at, client, signer.clone(), listen, register_tx, "register").await?;
 
 	// submit all solution pages.
-	for (page, _score, solution) in solution_pages {
-		let submit_tx = submit_page::<T>(page, Some(solution))?;
+	for (page, solution) in paged_raw_solution.solution_pages.into_iter().enumerate() {
+		let submit_tx = submit_page::<T>(page as u32, Some(solution))?;
 		submit_and_watch::<T>(at, client, signer.clone(), listen, submit_tx, "submit page").await?;
 	}
 
-	Ok(())*/
+	Ok(())
 }
 
 /// Performs the whole set of steps to submit a new solution:
@@ -333,7 +325,7 @@ fn register_solution(election_score: ElectionScore) -> Result<DynamicPayload, Er
 		Error::DynamicTransaction(format!("failed to encode `ElectionScore: {:?}", err))
 	})?;
 
-	Ok(subxt::dynamic::tx(EPM_SIGNED_PALLET_NAME, "register", vec![scale_score]))
+	Ok(subxt::dynamic::tx(EPM_SIGNED, "register", vec![scale_score]))
 }
 
 /// Helper to construct a submit page transaction.
@@ -348,25 +340,7 @@ fn submit_page<T: MinerConfig + 'static>(
 		Error::DynamicTransaction(format!("failed to encode Solution: {:?}", err))
 	})?;
 
-	Ok(subxt::dynamic::tx(EPM_SIGNED_PALLET_NAME, "submit_page", vec![scale_page, scale_solution]))
-}
-
-fn read_constant<'a, T: serde::Deserialize<'a>>(
-	api: &ChainClient,
-	constant: EpmConstant,
-) -> Result<T, Error> {
-	let (epm_name, constant) = constant.to_parts();
-
-	let val = api
-		.constants()
-		.at(&subxt::dynamic::constant(epm_name, constant))
-		.map_err(|e| invalid_metadata_error(constant.to_string(), e))?
-		.to_value()
-		.map_err(|e| Error::Subxt(e.into()))?;
-
-	scale_value::serde::from_value::<_, T>(val).map_err(|e| {
-		Error::InvalidMetadata(format!("Decoding `{}` failed {}", std::any::type_name::<T>(), e))
-	})
+	Ok(subxt::dynamic::tx(EPM_SIGNED, "submit_page", vec![scale_page, scale_solution]))
 }
 
 fn invalid_metadata_error<E: std::error::Error>(item: String, err: E) -> Error {
