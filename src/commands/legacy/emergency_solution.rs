@@ -25,21 +25,6 @@ use sp_core::hexdisplay::HexDisplay;
 use std::io::Write;
 use subxt::tx::Payload;
 
-#[derive(Debug, Clone, Parser)]
-#[cfg_attr(test, derive(PartialEq))]
-pub struct EmergencySolutionConfig {
-	/// The block hash at which scraping happens. If none is provided, the latest head is used.
-	#[clap(long)]
-	pub at: Option<Hash>,
-
-	/// The solver algorithm to use.
-	#[clap(subcommand)]
-	pub solver: Solver,
-
-	/// The number of top backed winners to take instead. All are taken, if not provided.
-	pub force_winner_count: Option<u32>,
-}
-
 pub async fn emergency_solution_cmd<T>(
 	client: Client,
 	config: EmergencySolutionConfig,

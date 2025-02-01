@@ -1,40 +1,32 @@
 use crate::{
 	client::Client,
+	commands::Listen,
 	epm,
 	error::Error,
 	helpers,
 	prelude::{
-		runtime, AccountId, Hash, Header, RpcClient, TargetSnapshotPage, VoterSnapshotPage,
-		LOG_TARGET,
+		runtime, AccountId, Header, RpcClient, TargetSnapshotPage, VoterSnapshotPage, LOG_TARGET,
 	},
 	signer::Signer,
 	static_types,
 };
 
-use clap::Parser;
 use polkadot_sdk::pallet_election_provider_multi_block::{
 	types::Phase, unsigned::miner::MinerConfig,
 };
 use std::{collections::BTreeMap, sync::Arc};
-use subxt::backend::rpc::RpcSubscription;
+use subxt::{backend::rpc::RpcSubscription, config::Header as _};
 use tokio::sync::Mutex;
 
-#[derive(Debug, Clone, Parser, PartialEq)]
+/// TODO(niklasad1): Add solver algorithm configuration to the monitor command.
+#[derive(Debug, Clone, clap::Parser, PartialEq)]
 pub struct MonitorConfig {
-	#[clap(long)]
-	pub at: Option<Hash>,
-
 	#[clap(long, short, env = "SEED")]
 	pub seed_or_path: String,
 
+	// TODO: finalized head subscription ends with an error, not signed something.
 	#[clap(long, value_enum, default_value_t = Listen::Head)]
 	pub listen: Listen,
-}
-
-#[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq)]
-pub enum Listen {
-	Finalized,
-	Head,
 }
 
 /// Monitors the current on-chain phase and performs the relevant actions.
@@ -116,7 +108,7 @@ where
 			}
 		};
 
-		let storage = helpers::storage_at(config.at, client.chain_api()).await?;
+		let storage = helpers::storage_at(Some(at.hash()), client.chain_api()).await?;
 		let storage2 = storage.clone();
 		let phase = storage
 			.fetch_or_default(&runtime::storage().multi_block().current_phase())

@@ -102,21 +102,6 @@ pub struct MonitorConfig {
 	pub dry_run: bool,
 }
 
-/// The type of event to listen to.
-///
-///
-/// Typically, finalized is safer and there is no chance of anything going wrong, but it can be
-/// slower. It is recommended to use finalized, if the duration of the signed phase is longer
-/// than the the finality delay.
-#[cfg_attr(test, derive(PartialEq))]
-#[derive(clap::ValueEnum, Debug, Copy, Clone)]
-pub enum Listen {
-	/// Latest finalized head of the canonical chain.
-	Finalized,
-	/// Latest head of the canonical chain.
-	Head,
-}
-
 /// Submission strategy to use.
 #[derive(Debug, Copy, Clone)]
 #[cfg_attr(test, derive(PartialEq))]

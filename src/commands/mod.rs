@@ -1,18 +1,14 @@
-#[cfg(legacy)]
-pub mod dry_run;
-#[cfg(legacy)]
-pub mod emergency_solution;
-#[cfg(legacy)]
-pub mod monitor;
-#[cfg(experimental_multi_block)]
-pub mod monitor_multi_block;
+mod types;
 
 #[cfg(legacy)]
-pub use dry_run::{dry_run_cmd, DryRunConfig};
+pub mod legacy;
+#[cfg(experimental_multi_block)]
+pub mod multi_block;
+
 #[cfg(legacy)]
-pub use emergency_solution::{emergency_solution_cmd, EmergencySolutionConfig};
-#[cfg(legacy)]
-pub use monitor::{monitor_cmd, Listen, MonitorConfig};
+pub use legacy::*;
 
 #[cfg(experimental_multi_block)]
-pub use monitor_multi_block::*;
+pub use multi_block::*;
+
+pub use types::*;
