@@ -1,9 +1,8 @@
-use std::marker::PhantomData;
-
 use crate::{
 	client::Client, commands::Listen, error::Error, helpers, prelude::*, signer::Signer,
 	static_types,
 };
+use codec::{Decode, Encode};
 use polkadot_sdk::{
 	frame_support::BoundedVec,
 	pallet_election_provider_multi_block::unsigned::miner::{
@@ -11,37 +10,53 @@ use polkadot_sdk::{
 	},
 	sp_npos_elections::ElectionScore,
 };
-
-use codec::{Decode, Encode};
 use scale_info::PortableRegistry;
 use scale_value::scale::decode_as_type;
 use serde::de::DeserializeOwned;
+use std::marker::PhantomData;
 use subxt::{
 	config::{DefaultExtrinsicParamsBuilder, Header as _},
 	dynamic::Value,
 	tx::DynamicPayload,
 };
 
-const EPM: &str = "ElectionProviderMultiPhase";
-const MULTI_BLOCK: &str = "MultiBlock";
-const EPM_SIGNED: &str = "ElectionSignedPallet";
+mod multi_block {
+	pub const NAME: &str = "MultiBlock";
 
-const PAGES: &str = "Pages";
-const TARGET_SNAPSHOT_PER_BLOCK: &str = "TargetSnapshotPerBlock";
-const MAX_VOTES_PER_VOTER: &str = "MinerMaxVotesPerVoter";
-const MAX_LENGTH: &str = "MinerMaxLength";
-#[allow(unused)]
-const VOTER_SNAPSHOT_PER_BLOCK: &str = "VoterSnapshotPerBlock";
+	pub mod constants {
+		use super::{super::*, *};
 
-const MB_PAGES: PalletConstant<u32> = PalletConstant::new(MULTI_BLOCK, PAGES);
-const MB_TARGET_SNAPSHOT_PER_BLOCK: PalletConstant<u32> =
-	PalletConstant::new(MULTI_BLOCK, TARGET_SNAPSHOT_PER_BLOCK);
-#[allow(unused)]
-const MB_VOTER_SNAPSHOT_PER_BLOCK: PalletConstant<u32> =
-	PalletConstant::new(EPM, VOTER_SNAPSHOT_PER_BLOCK);
+		pub const PAGES: PalletConstant<u32> = PalletConstant::new(NAME, "Pages");
+		pub const TARGET_SNAPSHOT_PER_BLOCK: PalletConstant<u32> =
+			PalletConstant::new(NAME, "TargetSnapshotPerBlock");
+	}
 
-const EPM_MAX_VOTES_PER_VOTER: PalletConstant<u32> = PalletConstant::new(EPM, MAX_VOTES_PER_VOTER);
-const EPM_MAX_LENGTH: PalletConstant<u32> = PalletConstant::new(EPM, MAX_LENGTH);
+	pub mod storage {
+		pub const PAGED_TARGET_SNAPSHOT: &str = "PagedTargetSnapshot";
+		pub const PAGED_VOTER_SNAPSHOT: &str = "PagedVoterSnapshot";
+	}
+}
+
+mod election_provider_multi_phase {
+	pub const NAME: &str = "ElectionProviderMultiPhase";
+
+	pub mod constants {
+		use super::{super::*, *};
+
+		pub const MAX_VOTES_PER_VOTER: PalletConstant<u32> =
+			PalletConstant::new(NAME, "MinerMaxVotesPerVoter");
+		pub const MAX_LENGTH: PalletConstant<u32> = PalletConstant::new(NAME, "MinerMaxLength");
+	}
+}
+
+mod multi_block_signed {
+	pub const NAME: &str = "MultiBlockSigned";
+
+	pub mod storage {
+		pub const SUBMIT_PAGE: &str = "submit_page";
+		pub const REGISTER: &str = "register";
+	}
+}
 
 type TypeId = u32;
 
@@ -91,17 +106,21 @@ impl<T: DeserializeOwned + std::fmt::Display> PalletConstant<T> {
 
 pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
 	// multi block constants.
-	let pages: u32 = MB_PAGES.fetch(api)?;
+	let pages: u32 = multi_block::constants::PAGES.fetch(api)?;
 	static_types::Pages::set(pages);
-	static_types::TargetSnapshotPerBlock::set(MB_TARGET_SNAPSHOT_PER_BLOCK.fetch(api)?);
+	static_types::TargetSnapshotPerBlock::set(
+		multi_block::constants::TARGET_SNAPSHOT_PER_BLOCK.fetch(api)?,
+	);
 	// TODO: hard coded.
 	static_types::VoterSnapshotPerBlock::set(22500 / pages);
 	static_types::MaxVotesPerVoter::set(16);
 	static_types::MaxWinnersPerPage::set(100);
 
 	// election provider constants.
-	static_types::MaxBackersPerWinner::set(EPM_MAX_VOTES_PER_VOTER.fetch(api)?);
-	static_types::MaxLength::set(EPM_MAX_LENGTH.fetch(api)?);
+	static_types::MaxBackersPerWinner::set(
+		election_provider_multi_phase::constants::MAX_VOTES_PER_VOTER.fetch(api)?,
+	);
+	static_types::MaxLength::set(election_provider_multi_phase::constants::MAX_LENGTH.fetch(api)?);
 
 	Ok(())
 }
@@ -109,9 +128,16 @@ pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> 
 /// Fetches the target snapshot.
 ///
 /// Note: the target snapshot is single paged.
-pub(crate) async fn target_snapshot(storage: &Storage) -> Result<TargetSnapshotPage, Error> {
-	let page_idx = vec![Value::from(0u32)];
-	let addr = subxt::dynamic::storage(EPM, "PagedTargetSnapshot", page_idx);
+pub(crate) async fn target_snapshot(
+	page: u32,
+	storage: &Storage,
+) -> Result<TargetSnapshotPage, Error> {
+	let page_idx = vec![Value::from(page)];
+	let addr = subxt::dynamic::storage(
+		multi_block::NAME,
+		multi_block::storage::PAGED_TARGET_SNAPSHOT,
+		page_idx,
+	);
 
 	match storage.fetch(&addr).await {
 		Ok(Some(val)) => {
@@ -134,7 +160,11 @@ pub(crate) async fn paged_voter_snapshot(
 	storage: &Storage,
 ) -> Result<VoterSnapshotPage, Error> {
 	let page_idx = vec![Value::from(page)];
-	let addr = subxt::dynamic::storage(EPM, "PagedVoterSnapshot", page_idx);
+	let addr = subxt::dynamic::storage(
+		multi_block::NAME,
+		multi_block::storage::PAGED_VOTER_SNAPSHOT,
+		page_idx,
+	);
 
 	match storage.fetch(&addr).await {
 		Ok(Some(val)) => match Decode::decode(&mut val.encoded()) {
@@ -162,13 +192,24 @@ pub(crate) async fn fetch_full_snapshots(
 ) -> Result<(TargetSnapshotPage, Vec<VoterSnapshotPage>), Error> {
 	log::trace!(target: LOG_TARGET, "fetch_full_snapshots");
 
-	let mut voters = vec![];
-	let targets = target_snapshot(storage).await?;
+	// TODO(niklasad1): The voter snapshot contains duplicates which seems wrong
+	// and not sure how to handle it properly in the miner.
+	//
+	// double-check with Kian.
+	//
+	// emit page 3 with an empty snapshot.
+	let mut voters = vec![Default::default()];
+	let targets = target_snapshot(n_pages - 1, storage).await?;
 
-	for page in 0..n_pages {
+	// MSB page is skipped and an empty snapshot is emitted.
+	// For instance for 4 pages, the pages are: 3, 2, 1, 0.
+	// and the snapshots are: empty, 2, 1, 0.
+	for page in (0..n_pages - 1).rev() {
 		let paged_voters = paged_voter_snapshot(page, storage).await?;
 		voters.push(paged_voters);
 	}
+
+	log::trace!("Fetched full snapshots: targets: {:?}, voters: {:?}", targets.len(), voters.len());
 
 	Ok((targets, voters))
 }
@@ -183,6 +224,7 @@ pub(crate) async fn mine_and_submit<T>(
 	voter_snapshot_paged: &Vec<VoterSnapshotPageOf<T>>,
 	n_pages: u32,
 	round: u32,
+	desired_targets: u32,
 ) -> Result<(), Error>
 where
 	T: MinerConfig<
@@ -208,8 +250,7 @@ where
 		BoundedVec::truncate_from(voter_snapshot_paged.clone());
 
 	let input = MineInput {
-		// TODO: get from runtime/configs.
-		desired_targets: 400,
+		desired_targets,
 		all_targets: targets.clone(),
 		voter_pages: voters.clone(),
 		pages: n_pages,
@@ -218,7 +259,8 @@ where
 		round,
 	};
 
-	let paged_raw_solution = Miner::<T>::mine_solution(input).unwrap();
+	let paged_raw_solution =
+		Miner::<T>::mine_solution(input).map_err(|e| Error::Other(format!("{:?}", e)))?;
 
 	// register solution.
 	let register_tx = register_solution(paged_raw_solution.score)?;
@@ -246,6 +288,7 @@ pub(crate) async fn fetch_mine_and_submit<T>(
 	storage: &Storage,
 	n_pages: u32,
 	round: u32,
+	desired_targets: u32,
 ) -> Result<(), Error>
 where
 	T: MinerConfig<
@@ -276,6 +319,7 @@ where
 		&voter_snapshot_paged,
 		n_pages,
 		round,
+		desired_targets,
 	)
 	.await
 }
@@ -294,7 +338,7 @@ async fn submit_and_watch<T: MinerConfig + Send + Sync + 'static>(
 
 	log::trace!(target: LOG_TARGET, "submit_and_watch for `{:?}` at {:?}", reason, block_hash);
 
-	// TODO:set mortality.
+	// subxt sets mortal extrinsic by default.
 	let xt_cfg = DefaultExtrinsicParamsBuilder::default().nonce(nonce).build();
 	let xt = client.chain_api().tx().create_signed(&tx, &*signer, xt_cfg).await?;
 
@@ -307,13 +351,13 @@ async fn submit_and_watch<T: MinerConfig + Send + Sync + 'static>(
 		Listen::Head => {
 			let in_block = helpers::wait_for_in_block(tx_progress).await?;
 			let _events = in_block.fetch_events().await.expect("events should exist");
-			// TODO: finish
+			// TODO: check that multi block signed events are emitted.
 		},
 		Listen::Finalized => {
 			let finalized_block = tx_progress.wait_for_finalized().await?;
 			let _block_hash = finalized_block.block_hash();
 			let _finalized_success = finalized_block.wait_for_success().await?;
-			// TODO: finish
+			// TODO: check that multi block signed events are emitted.
 		},
 	}
 	Ok(())
@@ -325,7 +369,11 @@ fn register_solution(election_score: ElectionScore) -> Result<DynamicPayload, Er
 		Error::DynamicTransaction(format!("failed to encode `ElectionScore: {:?}", err))
 	})?;
 
-	Ok(subxt::dynamic::tx(EPM_SIGNED, "register", vec![scale_score]))
+	Ok(subxt::dynamic::tx(
+		multi_block_signed::NAME,
+		multi_block_signed::storage::REGISTER,
+		vec![scale_score],
+	))
 }
 
 /// Helper to construct a submit page transaction.
@@ -340,7 +388,11 @@ fn submit_page<T: MinerConfig + 'static>(
 		Error::DynamicTransaction(format!("failed to encode Solution: {:?}", err))
 	})?;
 
-	Ok(subxt::dynamic::tx(EPM_SIGNED, "submit_page", vec![scale_page, scale_solution]))
+	Ok(subxt::dynamic::tx(
+		multi_block_signed::NAME,
+		multi_block_signed::storage::SUBMIT_PAGE,
+		vec![scale_page, scale_solution],
+	))
 }
 
 fn invalid_metadata_error<E: std::error::Error>(item: String, err: E) -> Error {
@@ -358,7 +410,6 @@ fn make_type<T: scale_info::TypeInfo + 'static>() -> (TypeId, PortableRegistry) 
 
 fn to_scale_value<T: scale_info::TypeInfo + 'static + Encode>(val: T) -> Result<Value, Error> {
 	let (ty_id, types) = make_type::<T>();
-
 	let bytes = val.encode();
 
 	decode_as_type(&mut bytes.as_ref(), ty_id, &types)

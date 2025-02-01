@@ -15,21 +15,9 @@ use clap::Parser;
 use polkadot_sdk::pallet_election_provider_multi_block::{
 	types::Phase, unsigned::miner::MinerConfig,
 };
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 use subxt::backend::rpc::RpcSubscription;
 use tokio::sync::Mutex;
-
-/// Represents the current task to be performed in the election round.
-enum Task {
-	/// Do nothing.
-	Nothing,
-	/// A page of the target snapshot has been fetched, cache it locally.
-	CacheTargetSnapshot(TargetSnapshotPage),
-	/// A page of the voter snapshot has been fetched, cache it locally.
-	CacheVoterSnapshot(VoterSnapshotPage),
-	/// Next task is to compute the election.
-	ComputeElectionResult,
-}
 
 #[derive(Debug, Clone, Parser, PartialEq)]
 pub struct MonitorConfig {
@@ -96,7 +84,7 @@ where
 	let _submit_lock = Arc::new(Mutex::new(()));
 
 	let mut target_snapshot: TargetSnapshotPage = Default::default();
-	let mut voter_snapshot_paged: Vec<VoterSnapshotPage> = Default::default();
+	let mut voter_snapshot_paged: BTreeMap<u32, VoterSnapshotPage> = Default::default();
 
 	let n_pages = static_types::Pages::get();
 	let mut last_round_submitted = None;
@@ -134,57 +122,56 @@ where
 			.fetch_or_default(&runtime::storage().multi_block().current_phase())
 			.await?;
 		let round = storage.fetch_or_default(&runtime::storage().multi_block().round()).await?;
+		let desired_targets = storage
+			.fetch(&runtime::storage().multi_block().desired_targets())
+			.await
+			.unwrap()
+			.unwrap_or(0);
 
-		let result = tokio::spawn(async move {
-			match phase.0 {
-				Phase::Off => {
-					log::trace!(target: LOG_TARGET, "Phase::Off, do nothing.");
-					Task::Nothing
-				},
+		log::trace!(target: LOG_TARGET, "Processing block={} round={}, phase={:?}", at.number, round, phase);
 
-				Phase::Snapshot(page) =>
-					if page == n_pages {
-						epm::target_snapshot(&storage)
-							.await
-							.map(|t| Task::CacheTargetSnapshot(t))
-							.unwrap_or(Task::Nothing)
-					} else {
-						epm::paged_voter_snapshot(page, &storage)
-							.await
-							.map(|v| Task::CacheVoterSnapshot(v))
-							.unwrap_or(Task::Nothing)
-					},
-				Phase::Signed => {
-					log::trace!(target: LOG_TARGET, "Phase::Signed",);
-					Task::ComputeElectionResult
-				},
-				_ => {
-					log::trace!(target: LOG_TARGET, "{:?}, do nothing.", phase);
-					Task::Nothing
-				},
-			}
-		});
+		match phase.0 {
+			Phase::Snapshot(page) => {
+				if page == n_pages - 1 {
+					match epm::target_snapshot(page, &storage).await {
+						Ok(snapshot) => {
+							target_snapshot = snapshot;
+						},
+						Err(err) => {
+							log::error!("fetch snapshot err: {:?}", err);
+						},
+					};
 
-		match result.await {
-			Ok(Task::CacheTargetSnapshot(s)) => {
-				target_snapshot = s;
+					// TODO(niklasad1): The voter snapshot contains duplicates which seems wrong
+					// and not sure how to handle it properly in the miner.
+					//
+					// double-check with Kian.
+					voter_snapshot_paged.insert(page, VoterSnapshotPage::default());
+				} else {
+					match epm::paged_voter_snapshot(page, &storage).await {
+						Ok(snapshot) => {
+							voter_snapshot_paged.insert(page, snapshot);
+						},
+						Err(err) => {
+							log::error!("fetch voter snapshot err: {:?}", err);
+						},
+					};
+				}
 			},
-			Ok(Task::CacheVoterSnapshot(p)) => {
-				// TODO: page from msp -> lsp, prepend p instead of push().
-				voter_snapshot_paged.push(p);
-			},
-			Ok(Task::ComputeElectionResult) => {
+			Phase::Signed => {
 				if last_round_submitted == Some(round) {
-					// skip minig again, everything submitted.
+					// skip mining again, everything submitted.
 					log::trace!(
 						target: LOG_TARGET,
 						"Solution successfully submitted for round {}, do nothing.",
 						round
 					);
-					continue
+					continue;
 				}
 
 				if !target_snapshot.is_empty() && voter_snapshot_paged.len() == n_pages as usize {
+					let v = voter_snapshot_paged.iter().map(|(_, v)| v.clone()).collect::<Vec<_>>();
+
 					// all pages in cache, compute election.
 					match epm::mine_and_submit::<T>(
 						&at,
@@ -192,9 +179,10 @@ where
 						signer.clone(),
 						config.listen,
 						&target_snapshot,
-						&voter_snapshot_paged,
+						&v,
 						n_pages,
 						round,
+						desired_targets,
 					)
 					.await
 					{
@@ -214,6 +202,7 @@ where
 						&storage2,
 						n_pages,
 						round,
+						desired_targets,
 					)
 					.await
 					{
@@ -225,12 +214,11 @@ where
 					log::trace!(target: LOG_TARGET, "not all snapshots in cache, fetch all and compute.");
 				}
 			},
-			Ok(Task::Nothing) => {
-				// reset cached snapshot.
-				target_snapshot = Default::default();
-				voter_snapshot_paged = Default::default();
+			_ => {
+				voter_snapshot_paged.clear();
+				target_snapshot.clear();
+				continue;
 			},
-			Err(e) => log::error!(target: LOG_TARGET, "ERROR: {:?}", e),
 		}
 	}
 }
