@@ -4,6 +4,58 @@ The format is based on [Keep a Changelog].
 
 [Keep a Changelog]: http://keepachangelog.com/en/1.0.0/
 
+## [v1.7.0] - 2025-01-21
+
+This release comes with the following changes:
+- The polkadot-staking-miner now disables the feature `substrate-compat` in subxt to avoid duplicate versions of polkadot-sdk dependencies
+- Support substrate-node which is treated as westend node.
+- Move to the polkadot-sdk umbrella crate.
+
+### [Changed]
+- chore(deps): bump log from 0.4.22 to 0.4.25 ([#961](https://github.com/paritytech/staking-miner-v2/pull/961))
+- chore(deps): bump serde_json from 1.0.135 to 1.0.137 ([#962](https://github.com/paritytech/staking-miner-v2/pull/962))
+- allow substrate node equal to westend ([#960](https://github.com/paritytech/staking-miner-v2/pull/960))
+- chore(deps): bump serde_json from 1.0.134 to 1.0.135 ([#956](https://github.com/paritytech/staking-miner-v2/pull/956))
+- chore(deps): bump clap from 4.5.23 to 4.5.26 ([#957](https://github.com/paritytech/staking-miner-v2/pull/957))
+- chore(deps): bump thiserror from 2.0.9 to 2.0.11 ([#958](https://github.com/paritytech/staking-miner-v2/pull/958))
+- chore(deps): bump tokio from 1.42.0 to 1.43.0 ([#959](https://github.com/paritytech/staking-miner-v2/pull/959))
+- chore(deps): bump pin-project-lite from 0.2.15 to 0.2.16 ([#954](https://github.com/paritytech/staking-miner-v2/pull/954))
+- chore(deps): bump polkadot-sdk from 0.7.0 to 0.9.0 ([#953](https://github.com/paritytech/staking-miner-v2/pull/953))
+- chore(deps): bump anyhow from 1.0.94 to 1.0.95 ([#952](https://github.com/paritytech/staking-miner-v2/pull/952))
+- chore(deps): bump serde_json from 1.0.133 to 1.0.134 ([#949](https://github.com/paritytech/staking-miner-v2/pull/949))
+- chore(deps): bump thiserror from 2.0.6 to 2.0.9 ([#950](https://github.com/paritytech/staking-miner-v2/pull/950))
+- chore(deps): bump serde from 1.0.215 to 1.0.217 ([#951](https://github.com/paritytech/staking-miner-v2/pull/951))
+- chore(deps): bump hyper from 0.14.31 to 0.14.32 ([#948](https://github.com/paritytech/staking-miner-v2/pull/948))
+- chore(deps): bump thiserror from 2.0.3 to 2.0.6 ([#943](https://github.com/paritytech/staking-miner-v2/pull/943))
+- chore(deps): bump clap from 4.5.21 to 4.5.23 ([#942](https://github.com/paritytech/staking-miner-v2/pull/942))
+- chore(deps): bump tokio from 1.41.1 to 1.42.0 ([#944](https://github.com/paritytech/staking-miner-v2/pull/944))
+- chore(deps): bump anyhow from 1.0.93 to 1.0.94 ([#945](https://github.com/paritytech/staking-miner-v2/pull/945))
+- chore(deps): bump tracing-subscriber from 0.3.18 to 0.3.19 ([#940](https://github.com/paritytech/staking-miner-v2/pull/940))
+- chore(deps): bump scale-info from 2.11.5 to 2.11.6 ([#939](https://github.com/paritytech/staking-miner-v2/pull/939))
+- chore(deps): bump clap from 4.5.20 to 4.5.21 ([#938](https://github.com/paritytech/staking-miner-v2/pull/938))
+- chore(deps): bump serde_json from 1.0.132 to 1.0.133 ([#936](https://github.com/paritytech/staking-miner-v2/pull/936))
+- chore(deps): bump serde from 1.0.214 to 1.0.215 ([#937](https://github.com/paritytech/staking-miner-v2/pull/937))
+- chore(deps): bump thiserror from 1.0.67 to 2.0.3 ([#933](https://github.com/paritytech/staking-miner-v2/pull/933))
+- chore(deps): bump anyhow from 1.0.92 to 1.0.93 ([#932](https://github.com/paritytech/staking-miner-v2/pull/932))
+- chore(deps): bump tokio from 1.41.0 to 1.41.1 ([#931](https://github.com/paritytech/staking-miner-v2/pull/931))
+- chore(deps): bump serde from 1.0.213 to 1.0.214 ([#930](https://github.com/paritytech/staking-miner-v2/pull/930))
+- chore(deps): bump thiserror from 1.0.65 to 1.0.67 ([#929](https://github.com/paritytech/staking-miner-v2/pull/929))
+- chore(deps): bump anyhow from 1.0.91 to 1.0.92 ([#928](https://github.com/paritytech/staking-miner-v2/pull/928))
+- remove `subxt substrate-compat` feature ([#927](https://github.com/paritytech/staking-miner-v2/pull/927))
+- chore(deps): move to polkadot-sdk umbrella crate ([#926](https://github.com/paritytech/staking-miner-v2/pull/926))
+- chore(deps): bump serde from 1.0.210 to 1.0.213 ([#922](https://github.com/paritytech/staking-miner-v2/pull/922))
+- chore(deps): bump anyhow from 1.0.90 to 1.0.91 ([#923](https://github.com/paritytech/staking-miner-v2/pull/923))
+- chore(deps): bump regex from 1.11.0 to 1.11.1 ([#924](https://github.com/paritytech/staking-miner-v2/pull/924))
+- chore(deps): bump pin-project-lite from 0.2.14 to 0.2.15 ([#925](https://github.com/paritytech/staking-miner-v2/pull/925))
+- chore(deps): bump thiserror from 1.0.64 to 1.0.65 ([#921](https://github.com/paritytech/staking-miner-v2/pull/921))
+
+### Compatibility
+
+Tested against:
+- Westend v1,017,001
+- Kusama v1,002,005
+- Polkadot v1,003,004
+
 ## [v1.6.0] - 2024-10-25
 
 This release primarily updates the staking-miner to be able to decode v5 extrinsics
