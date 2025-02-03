@@ -16,7 +16,10 @@
 
 //! Wrappers around creating a signer account.
 
-use crate::{error::Error, prelude::*};
+use crate::{
+	error::Error,
+	prelude::{Config, Pair},
+};
 use polkadot_sdk::{
 	sp_core::Pair as PairT,
 	sp_runtime::{

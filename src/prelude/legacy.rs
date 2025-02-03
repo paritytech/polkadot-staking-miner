@@ -20,20 +20,26 @@
 //! It is actually easy to convert the rest as well, but it'll be a lot of noise in our codebase,
 //! needing to sprinkle `any_runtime` in a few extra places.
 
+/// Signed submission type.
+pub type SignedSubmission<S> = polkadot_sdk::pallet_election_provider_multi_phase::SignedSubmission<
+	super::AccountId,
+	Balance,
+	S,
+>;
+
+/// Balance type.
+pub type Balance = u128;
+
 #[subxt::subxt(
 	runtime_metadata_path = "artifacts/metadata.scale",
 	derive_for_all_types = "Clone, Debug, Eq, PartialEq",
-	derive_for_type(
-		path = "polkadot_sdk::pallet_election_provider_multi_phase::RoundSnapshot",
-		derive = "Default"
+	substitute_type(
+		path = "sp_npos_elections::ElectionScore",
+		with = "::subxt::utils::Static<polkadot_sdk::sp_npos_elections::ElectionScore>"
 	),
 	substitute_type(
-		path = "polkadot_sdk::sp_npos_elections::ElectionScore",
-		with = "::subxt::utils::Static<sp_npos_elections::ElectionScore>"
-	),
-	substitute_type(
-		path = "polkadot_sdk::pallet_election_provider_multi_phase::Phase<Bn>",
-		with = "::subxt::utils::Static<pallet_election_provider_multi_phase::Phase<Bn>>"
+		path = "pallet_election_provider_multi_phase::Phase<Bn>",
+		with = "::subxt::utils::Static<polkadot_sdk::pallet_election_provider_multi_phase::Phase<Bn>>"
 	)
 )]
 pub mod runtime {}

@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::prelude::*;
+use crate::prelude::LOG_TARGET;
 use futures::channel::oneshot;
 pub use hidden::*;
 use hyper::{

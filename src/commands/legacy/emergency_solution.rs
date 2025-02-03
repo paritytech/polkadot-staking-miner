@@ -17,11 +17,18 @@
 //! The emergency-solution command.
 
 use crate::{
-	client::Client, epm, error::Error, helpers::storage_at, opt::Solver, prelude::*, static_types,
+	client::Client,
+	commands::EmergencySolutionConfig,
+	epm,
+	error::Error,
+	helpers::storage_at,
+	prelude::{runtime, AccountId, LOG_TARGET},
+	static_types,
 };
-use clap::Parser;
 use codec::Encode;
-use sp_core::hexdisplay::HexDisplay;
+use polkadot_sdk::{
+	pallet_election_provider_multi_phase::MinerConfig, sp_core::hexdisplay::HexDisplay,
+};
 use std::io::Write;
 use subxt::tx::Payload;
 
@@ -55,10 +62,12 @@ where
 	)
 	.await?;
 
-	let ready_solution = miner_solution.feasibility_check()?;
+	todo!();
+
+	/*let ready_solution = miner_solution.feasibility_check()?;
 	let encoded_size = ready_solution.encoded_size();
 	let score = ready_solution.score;
-	let mut supports: Vec<_> = ready_solution.supports.into_inner();
+	let mut supports: Vec<_> = ready_solution.supports.clone().into_inner();
 
 	// maybe truncate.
 	if let Some(force_winner_count) = config.force_winner_count {
@@ -91,5 +100,5 @@ where
 	log::info!(target: LOG_TARGET, "ReadySolution: size {:?} / score = {:?}", encoded_size, score);
 	log::info!(target: LOG_TARGET, "`set_emergency_result` encoded call written to ./encoded.call");
 
-	Ok(())
+	Ok(())*/
 }

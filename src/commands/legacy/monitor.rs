@@ -16,23 +16,26 @@
 
 use crate::{
 	client::Client,
+	commands::Listen,
 	epm,
 	error::Error,
 	helpers::{kill_main_task_if_critical_err, TimedFuture},
 	opt::Solver,
-	prelude::*,
+	prelude::{runtime, AccountId, ChainClient, Hash, Header, RpcClient, LOG_TARGET},
 	prometheus,
 	signer::Signer,
 	static_types,
 };
 use clap::Parser;
 use codec::{Decode, Encode};
-use frame_election_provider_support::NposSolution;
 use futures::future::TryFutureExt;
 use jsonrpsee::core::ClientError as JsonRpseeError;
-use pallet_election_provider_multi_phase::{RawSolution, SolutionOf};
-use sp_npos_elections;
-use sp_runtime::Perbill;
+use polkadot_sdk::{
+	frame_election_provider_support::NposSolution,
+	pallet_election_provider_multi_phase::{MinerConfig, RawSolution, SolutionOf},
+	sp_npos_elections,
+	sp_runtime::Perbill,
+};
 use std::{str::FromStr, sync::Arc};
 use subxt::{
 	backend::{legacy::rpc_methods::DryRunResult, rpc::RpcSubscription},
@@ -444,7 +447,7 @@ where
 
 /// Ensure that now is the signed phase.
 async fn ensure_signed_phase(api: &ChainClient, block_hash: Hash) -> Result<(), Error> {
-	use pallet_election_provider_multi_phase::Phase;
+	use polkadot_sdk::pallet_election_provider_multi_phase::Phase;
 
 	let addr = runtime::storage().election_provider_multi_phase().current_phase();
 	let phase = api.storage().at(block_hash).fetch(&addr).await?;

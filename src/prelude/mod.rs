@@ -1,12 +1,9 @@
 #[cfg(legacy)]
 mod legacy;
-
-#[cfg(experimental_multi_block)]
-mod multi_block;
-
 #[cfg(legacy)]
 pub use legacy::*;
-
+#[cfg(experimental_multi_block)]
+mod multi_block;
 #[cfg(experimental_multi_block)]
 pub use multi_block::*;
 
@@ -15,8 +12,6 @@ pub type Header =
 	subxt::config::substrate::SubstrateHeader<u32, subxt::config::substrate::BlakeTwo256>;
 /// The header type. We re-export it here, but we can easily get it from block as well.
 pub type Hash = subxt::utils::H256;
-/// Balance type
-pub type Balance = u128;
 /// Default URI to connect to.
 ///
 /// This will never work on a remote node, so we might as well try a local node.
@@ -41,7 +36,3 @@ pub type AccountId = polkadot_sdk::sp_runtime::AccountId32;
 pub type Pair = polkadot_sdk::sp_core::sr25519::Pair;
 /// The accuracy that we use for election computations.
 pub type Accuracy = polkadot_sdk::sp_runtime::Perbill;
-pub type SignedSubmission<S> =
-	polkadot_sdk::pallet_election_provider_multi_phase::SignedSubmission<AccountId, Balance, S>;
-/// Storage type.
-pub type Storage = subxt::storage::Storage<Config, ChainClient>;

@@ -14,7 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::{error::Error, prelude::*};
+use crate::{
+	error::Error,
+	prelude::{ChainClient, Config, Hash, LOG_TARGET},
+};
 use codec::Decode;
 use jsonrpsee::core::ClientError as JsonRpseeError;
 use pin_project_lite::pin_project;

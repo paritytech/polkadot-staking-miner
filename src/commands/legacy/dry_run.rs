@@ -16,14 +16,19 @@
 
 //! The dry-run command.
 
-use pallet_election_provider_multi_phase::RawSolution;
+use polkadot_sdk::pallet_election_provider_multi_phase::{MinerConfig, RawSolution};
 use subxt::config::DefaultExtrinsicParamsBuilder;
 
 use crate::{
-	client::Client, epm, error::Error, helpers::storage_at, opt::Solver, prelude::*,
-	signer::Signer, static_types,
+	client::Client,
+	commands::DryRunConfig,
+	epm,
+	error::Error,
+	helpers::storage_at,
+	prelude::{runtime, AccountId, LOG_TARGET},
+	signer::Signer,
+	static_types,
 };
-use clap::Parser;
 use codec::Encode;
 
 pub async fn dry_run_cmd<T>(client: Client, config: DryRunConfig) -> Result<(), Error>

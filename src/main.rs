@@ -28,21 +28,36 @@
 //!   development. It is intended to run this bot with a `restart = true` way, so that it reports it
 //!   crash, but resumes work thereafter.
 
+#[cfg(all(experimental_multi_block, legacy))]
+std::compile_error!("Feature `legacy` and `experimental-multi-block` are mutually exclusive. You can only enable one of them.");
+
+#[cfg(not(any(experimental_multi_block, legacy)))]
+std::compile_error!(
+	"Exactly one of the features `legacy` and `experimental-multi-block` must be enabled."
+);
+
 mod client;
 mod commands;
 mod epm;
 mod error;
+// TODO(niklasad1): feature-gate this module to avoid unused code.
+#[allow(unused, dead_code)]
 mod helpers;
 mod opt;
 mod prelude;
+// TODO(niklasad1): prometheus not enabled yet in the multi-block monitor command.
+#[allow(unused, dead_code)]
 mod prometheus;
 mod signer;
+#[macro_use]
 mod static_types;
 
 use clap::Parser;
 use error::Error;
 use futures::future::{BoxFuture, FutureExt};
-use prelude::*;
+use prelude::{
+	runtime, ChainClient, DEFAULT_PROMETHEUS_PORT, DEFAULT_URI, LOG_TARGET, SHARED_CLIENT,
+};
 use std::str::FromStr;
 use tokio::sync::oneshot;
 use tracing_subscriber::EnvFilter;

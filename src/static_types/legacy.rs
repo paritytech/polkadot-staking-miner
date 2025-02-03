@@ -14,42 +14,16 @@
 // You should have received a copy of the GNU General Public License
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::{epm, prelude::*};
-use frame_election_provider_support::traits::NposSolution;
-use frame_support::{self, traits::ConstU32, weights::Weight};
-use pallet_election_provider_multi_phase::{self, RawSolution, SolutionOrSnapshotSize};
-use sp_runtime;
-
-macro_rules! impl_atomic_u32_parameter_types {
-	($mod:ident, $name:ident) => {
-		mod $mod {
-			use std::sync::atomic::{AtomicU32, Ordering};
-			static VAL: AtomicU32 = AtomicU32::new(0);
-			pub struct $name;
-
-			impl $name {
-				pub fn get() -> u32 {
-					VAL.load(Ordering::SeqCst)
-				}
-			}
-			impl<I: From<u32>> frame_support::traits::Get<I> for $name {
-				fn get() -> I {
-					I::from(Self::get())
-				}
-			}
-
-			impl $name {
-				pub fn set(val: u32) {
-					VAL.store(val, std::sync::atomic::Ordering::SeqCst);
-				}
-			}
-		}
-		pub use $mod::$name;
-	};
-}
+use crate::{epm, impl_atomic_u32_parameter_types, prelude::AccountId};
+use polkadot_sdk::{
+	frame_election_provider_support::{self, traits::NposSolution},
+	frame_support::{self, traits::ConstU32, weights::Weight},
+	pallet_election_provider_multi_phase::{self, RawSolution, SolutionOrSnapshotSize},
+	sp_runtime,
+};
 
 mod max_weight {
-	use frame_support::{self, weights::Weight};
+	use polkadot_sdk::frame_support::weights::Weight;
 	use std::sync::atomic::{AtomicU64, Ordering};
 
 	static REF_TIME: AtomicU64 = AtomicU64::new(0);
@@ -63,7 +37,7 @@ mod max_weight {
 		}
 	}
 
-	impl frame_support::traits::Get<Weight> for MaxWeight {
+	impl polkadot_sdk::frame_support::traits::Get<Weight> for MaxWeight {
 		fn get() -> Weight {
 			Self::get()
 		}
@@ -103,6 +77,7 @@ pub mod westend {
 		type MaxLength = MaxLength;
 		type MaxWeight = MaxWeight;
 		type MaxVotesPerVoter = MaxVotesPerVoter;
+		type MaxBackersPerWinner = ();
 		type Solution = NposSolution16;
 		type MaxWinners = MaxWinners;
 
@@ -161,6 +136,7 @@ pub mod polkadot {
 		type MaxLength = MaxLength;
 		type MaxWeight = MaxWeight;
 		type MaxVotesPerVoter = MaxVotesPerVoter;
+		type MaxBackersPerWinner = ();
 		type Solution = NposSolution16;
 		type MaxWinners = MaxWinners;
 
@@ -219,6 +195,7 @@ pub mod kusama {
 		type MaxLength = MaxLength;
 		type MaxWeight = MaxWeight;
 		type MaxVotesPerVoter = MaxVotesPerVoter;
+		type MaxBackersPerWinner = ();
 		type Solution = NposSolution24;
 		type MaxWinners = MaxWinners;
 

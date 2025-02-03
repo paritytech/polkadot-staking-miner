@@ -25,4 +25,5 @@ pub mod opt;
 pub mod prelude;
 pub mod prometheus;
 pub mod signer;
+#[macro_use]
 pub mod static_types;

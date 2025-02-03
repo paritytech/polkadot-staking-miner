@@ -20,7 +20,10 @@ use crate::{
 	error::Error,
 	helpers::{storage_at, RuntimeDispatchInfo},
 	opt::{BalanceIterations, Balancing, Solver},
-	prelude::*,
+	prelude::{
+		runtime, AccountId, Accuracy, ChainClient, Hash, SignedSubmission, LOG_TARGET,
+		SHARED_CLIENT,
+	},
 	prometheus,
 	static_types::{self},
 };
@@ -32,15 +35,17 @@ use std::{
 };
 
 use codec::{Decode, Encode};
-use frame_election_provider_support::{self, Get, NposSolution, PhragMMS, SequentialPhragmen};
-use frame_support::{weights::Weight, BoundedVec};
-use pallet_election_provider_multi_phase::{
-	self, unsigned::TrimmingStatus, MinerConfig, RawSolution, ReadySolution, SolutionOf,
-	SolutionOrSnapshotSize,
+use polkadot_sdk::{
+	frame_election_provider_support::{self, Get, NposSolution, PhragMMS, SequentialPhragmen},
+	frame_support::{weights::Weight, BoundedVec},
+	pallet_election_provider_multi_phase::{
+		self, unsigned::TrimmingStatus, Miner, MinerConfig, RawSolution, ReadySolution, SolutionOf,
+		SolutionOrSnapshotSize,
+	},
+	sp_npos_elections::{ElectionScore, VoteWeight},
 };
 use scale_info::{PortableRegistry, TypeInfo};
 use scale_value::scale::decode_as_type;
-use sp_npos_elections::{ElectionScore, VoteWeight};
 use subxt::{dynamic::Value, tx::DynamicPayload};
 
 const EPM_PALLET_NAME: &str = "ElectionProviderMultiPhase";
@@ -476,7 +481,9 @@ where
 	/// Check that this solution is feasible
 	///
 	/// Returns a [`pallet_election_provider_multi_phase::ReadySolution`] if the check passes.
-	pub fn feasibility_check(&self) -> Result<ReadySolution<AccountId, T::MaxWinners>, Error> {
+	pub fn feasibility_check(
+		&self,
+	) -> Result<ReadySolution<AccountId, T::MaxWinners, T::MaxBackersPerWinner>, Error> {
 		match Miner::<T>::feasibility_check(
 			RawSolution { solution: self.solution.clone(), score: self.score, round: self.round },
 			pallet_election_provider_multi_phase::ElectionCompute::Signed,
