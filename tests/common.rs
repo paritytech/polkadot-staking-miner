@@ -1,7 +1,7 @@
 use assert_cmd::cargo::cargo_bin;
 use polkadot_staking_miner::{
-	legacy::{runtime, ChainClient},
 	opt::Chain,
+	prelude::{runtime, ChainClient},
 };
 use std::{
 	io::{BufRead, BufReader, Read},
