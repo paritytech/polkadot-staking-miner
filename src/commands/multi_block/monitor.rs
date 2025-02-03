@@ -133,22 +133,16 @@ where
 							log::error!("fetch snapshot err: {:?}", err);
 						},
 					};
-
-					// TODO(niklasad1): The voter snapshot contains duplicates which seems wrong
-					// and not sure how to handle it properly in the miner.
-					//
-					// double-check with Kian.
-					voter_snapshot_paged.insert(page, VoterSnapshotPage::default());
-				} else {
-					match epm::paged_voter_snapshot(page, &storage).await {
-						Ok(snapshot) => {
-							voter_snapshot_paged.insert(page, snapshot);
-						},
-						Err(err) => {
-							log::error!("fetch voter snapshot err: {:?}", err);
-						},
-					};
 				}
+
+				match epm::paged_voter_snapshot(page, &storage).await {
+					Ok(snapshot) => {
+						voter_snapshot_paged.insert(page, snapshot);
+					},
+					Err(err) => {
+						log::error!("fetch voter snapshot err: {:?}", err);
+					},
+				};
 			},
 			Phase::Signed => {
 				if last_round_submitted == Some(round) {

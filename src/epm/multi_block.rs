@@ -110,19 +110,10 @@ pub(crate) async fn fetch_full_snapshots(
 ) -> Result<(TargetSnapshotPage, Vec<VoterSnapshotPage>), Error> {
 	log::trace!(target: LOG_TARGET, "fetch_full_snapshots");
 
-	// TODO(niklasad1): The voter snapshot contains duplicates which seems wrong
-	// and not sure how to handle it properly in the miner.
-	//
-	// double-check with Kian.
-	//
-	// emit page 3 with an empty snapshot.
-	let mut voters = vec![Default::default()];
+	let mut voters = Vec::with_capacity(n_pages as usize);
 	let targets = target_snapshot(n_pages - 1, storage).await?;
 
-	// MSB page is skipped and an empty snapshot is emitted.
-	// For instance for 4 pages, the pages are: 3, 2, 1, 0.
-	// and the snapshots are: empty, 2, 1, 0.
-	for page in (0..n_pages - 1).rev() {
+	for page in (0..n_pages).rev() {
 		let paged_voters = paged_voter_snapshot(page, storage).await?;
 		voters.push(paged_voters);
 	}
