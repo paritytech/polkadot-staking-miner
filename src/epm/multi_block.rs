@@ -1,6 +1,10 @@
 use crate::{
 	client::Client,
 	commands::Listen,
+	epm::{
+		pallet_api,
+		utils::{storage_addr, to_scale_value, tx},
+	},
 	error::Error,
 	helpers,
 	prelude::{
@@ -10,7 +14,7 @@ use crate::{
 	signer::Signer,
 	static_types,
 };
-use codec::{Decode, Encode};
+use codec::Decode;
 use polkadot_sdk::{
 	frame_support::BoundedVec,
 	pallet_election_provider_multi_block::unsigned::miner::{
@@ -18,106 +22,18 @@ use polkadot_sdk::{
 	},
 	sp_npos_elections::ElectionScore,
 };
-use scale_info::PortableRegistry;
-use scale_value::scale::decode_as_type;
-use serde::de::DeserializeOwned;
-use std::marker::PhantomData;
 use subxt::{
 	config::{DefaultExtrinsicParamsBuilder, Header as _},
 	dynamic::Value,
 	tx::DynamicPayload,
 };
 
-mod multi_block {
-	pub const NAME: &str = "MultiBlock";
-
-	pub mod constants {
-		use super::{super::*, *};
-
-		pub const PAGES: PalletConstant<u32> = PalletConstant::new(NAME, "Pages");
-		pub const TARGET_SNAPSHOT_PER_BLOCK: PalletConstant<u32> =
-			PalletConstant::new(NAME, "TargetSnapshotPerBlock");
-	}
-
-	pub mod storage {
-		pub const PAGED_TARGET_SNAPSHOT: &str = "PagedTargetSnapshot";
-		pub const PAGED_VOTER_SNAPSHOT: &str = "PagedVoterSnapshot";
-	}
-}
-
-mod election_provider_multi_phase {
-	pub const NAME: &str = "ElectionProviderMultiPhase";
-
-	pub mod constants {
-		use super::{super::*, *};
-
-		pub const MAX_VOTES_PER_VOTER: PalletConstant<u32> =
-			PalletConstant::new(NAME, "MinerMaxVotesPerVoter");
-		pub const MAX_LENGTH: PalletConstant<u32> = PalletConstant::new(NAME, "MinerMaxLength");
-	}
-}
-
-mod multi_block_signed {
-	pub const NAME: &str = "MultiBlockSigned";
-
-	pub mod storage {
-		pub const SUBMIT_PAGE: &str = "submit_page";
-		pub const REGISTER: &str = "register";
-	}
-}
-
-type TypeId = u32;
-
-#[derive(Copy, Clone, Debug)]
-struct PalletConstant<T> {
-	pallet: &'static str,
-	variant: &'static str,
-	_marker: std::marker::PhantomData<T>,
-}
-
-impl<T> std::fmt::Display for PalletConstant<T> {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.write_fmt(format_args!("{}::{}", self.pallet, self.variant))
-	}
-}
-
-impl<T: DeserializeOwned + std::fmt::Display> PalletConstant<T> {
-	const fn new(pallet: &'static str, variant: &'static str) -> Self {
-		Self { pallet, variant, _marker: PhantomData }
-	}
-	const fn to_parts(&self) -> (&'static str, &'static str) {
-		(self.pallet, self.variant)
-	}
-
-	pub fn fetch(&self, api: &ChainClient) -> Result<T, Error> {
-		let (pallet, variant) = self.to_parts();
-
-		let val = api
-			.constants()
-			.at(&subxt::dynamic::constant(pallet, variant))
-			.map_err(|e| invalid_metadata_error(variant.to_string(), e))?
-			.to_value()
-			.map_err(|e| Error::Subxt(e.into()))?;
-
-		let val = scale_value::serde::from_value::<_, T>(val).map_err(|e| {
-			Error::InvalidMetadata(format!(
-				"Decoding `{}` failed {}",
-				std::any::type_name::<T>(),
-				e
-			))
-		})?;
-
-		log::trace!(target: LOG_TARGET, "updating metadata constant `{self}`: {val}",);
-		Ok(val)
-	}
-}
-
 pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
 	// multi block constants.
-	let pages: u32 = multi_block::constants::PAGES.fetch(api)?;
+	let pages: u32 = pallet_api::multi_block::constants::PAGES.fetch(api)?;
 	static_types::Pages::set(pages);
 	static_types::TargetSnapshotPerBlock::set(
-		multi_block::constants::TARGET_SNAPSHOT_PER_BLOCK.fetch(api)?,
+		pallet_api::multi_block::constants::TARGET_SNAPSHOT_PER_BLOCK.fetch(api)?,
 	);
 	// TODO: hard coded.
 	static_types::VoterSnapshotPerBlock::set(22500 / pages);
@@ -126,9 +42,11 @@ pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> 
 
 	// election provider constants.
 	static_types::MaxBackersPerWinner::set(
-		election_provider_multi_phase::constants::MAX_VOTES_PER_VOTER.fetch(api)?,
+		pallet_api::election_provider_multi_phase::constants::MAX_VOTES_PER_VOTER.fetch(api)?,
 	);
-	static_types::MaxLength::set(election_provider_multi_phase::constants::MAX_LENGTH.fetch(api)?);
+	static_types::MaxLength::set(
+		pallet_api::election_provider_multi_phase::constants::MAX_LENGTH.fetch(api)?,
+	);
 
 	Ok(())
 }
@@ -141,11 +59,7 @@ pub(crate) async fn target_snapshot(
 	storage: &Storage,
 ) -> Result<TargetSnapshotPage, Error> {
 	let page_idx = vec![Value::from(page)];
-	let addr = subxt::dynamic::storage(
-		multi_block::NAME,
-		multi_block::storage::PAGED_TARGET_SNAPSHOT,
-		page_idx,
-	);
+	let addr = storage_addr(pallet_api::multi_block::storage::PAGED_TARGET_SNAPSHOT, page_idx);
 
 	match storage.fetch(&addr).await {
 		Ok(Some(val)) => {
@@ -168,11 +82,7 @@ pub(crate) async fn paged_voter_snapshot(
 	storage: &Storage,
 ) -> Result<VoterSnapshotPage, Error> {
 	let page_idx = vec![Value::from(page)];
-	let addr = subxt::dynamic::storage(
-		multi_block::NAME,
-		multi_block::storage::PAGED_VOTER_SNAPSHOT,
-		page_idx,
-	);
+	let addr = storage_addr(pallet_api::multi_block::storage::PAGED_VOTER_SNAPSHOT, page_idx);
 
 	match storage.fetch(&addr).await {
 		Ok(Some(val)) => match Decode::decode(&mut val.encoded()) {
@@ -377,11 +287,7 @@ fn register_solution(election_score: ElectionScore) -> Result<DynamicPayload, Er
 		Error::DynamicTransaction(format!("failed to encode `ElectionScore: {:?}", err))
 	})?;
 
-	Ok(subxt::dynamic::tx(
-		multi_block_signed::NAME,
-		multi_block_signed::storage::REGISTER,
-		vec![scale_score],
-	))
+	Ok(tx(pallet_api::multi_block_signed::tx::REGISTER, vec![scale_score]))
 }
 
 /// Helper to construct a submit page transaction.
@@ -396,37 +302,5 @@ fn submit_page<T: MinerConfig + 'static>(
 		Error::DynamicTransaction(format!("failed to encode Solution: {:?}", err))
 	})?;
 
-	Ok(subxt::dynamic::tx(
-		multi_block_signed::NAME,
-		multi_block_signed::storage::SUBMIT_PAGE,
-		vec![scale_page, scale_solution],
-	))
-}
-
-fn invalid_metadata_error<E: std::error::Error>(item: String, err: E) -> Error {
-	Error::InvalidMetadata(format!("{} failed: {}", item, err))
-}
-
-fn make_type<T: scale_info::TypeInfo + 'static>() -> (TypeId, PortableRegistry) {
-	let m = scale_info::MetaType::new::<T>();
-	let mut types = scale_info::Registry::new();
-	let id = types.register_type(&m);
-	let portable_registry: PortableRegistry = types.into();
-
-	(id.id, portable_registry)
-}
-
-fn to_scale_value<T: scale_info::TypeInfo + 'static + Encode>(val: T) -> Result<Value, Error> {
-	let (ty_id, types) = make_type::<T>();
-	let bytes = val.encode();
-
-	decode_as_type(&mut bytes.as_ref(), ty_id, &types)
-		.map(|v| v.remove_context())
-		.map_err(|e| {
-			Error::DynamicTransaction(format!(
-				"Failed to decode {}: {:?}",
-				std::any::type_name::<T>(),
-				e
-			))
-		})
+	Ok(tx(pallet_api::multi_block_signed::tx::SUBMIT_PAGE, vec![scale_page, scale_solution]))
 }
