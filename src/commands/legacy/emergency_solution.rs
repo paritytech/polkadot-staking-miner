@@ -17,28 +17,20 @@
 //! The emergency-solution command.
 
 use crate::{
-	client::Client, epm, error::Error, helpers::storage_at, opt::Solver, prelude::*, static_types,
+	client::Client,
+	commands::EmergencySolutionConfig,
+	epm,
+	error::Error,
+	helpers::storage_at,
+	prelude::{runtime, AccountId, LOG_TARGET},
+	static_types,
 };
-use clap::Parser;
 use codec::Encode;
-use polkadot_sdk::sp_core::hexdisplay::HexDisplay;
+use polkadot_sdk::{
+	pallet_election_provider_multi_phase::MinerConfig, sp_core::hexdisplay::HexDisplay,
+};
 use std::io::Write;
 use subxt::tx::Payload;
-
-#[derive(Debug, Clone, Parser)]
-#[cfg_attr(test, derive(PartialEq))]
-pub struct EmergencySolutionConfig {
-	/// The block hash at which scraping happens. If none is provided, the latest head is used.
-	#[clap(long)]
-	pub at: Option<Hash>,
-
-	/// The solver algorithm to use.
-	#[clap(subcommand)]
-	pub solver: Solver,
-
-	/// The number of top backed winners to take instead. All are taken, if not provided.
-	pub force_winner_count: Option<u32>,
-}
 
 pub async fn emergency_solution_cmd<T>(
 	client: Client,
@@ -70,10 +62,12 @@ where
 	)
 	.await?;
 
-	let ready_solution = miner_solution.feasibility_check()?;
+	todo!();
+
+	/*let ready_solution = miner_solution.feasibility_check()?;
 	let encoded_size = ready_solution.encoded_size();
 	let score = ready_solution.score;
-	let mut supports: Vec<_> = ready_solution.supports.into_inner();
+	let mut supports: Vec<_> = ready_solution.supports.clone().into_inner();
 
 	// maybe truncate.
 	if let Some(force_winner_count) = config.force_winner_count {
@@ -106,5 +100,5 @@ where
 	log::info!(target: LOG_TARGET, "ReadySolution: size {:?} / score = {:?}", encoded_size, score);
 	log::info!(target: LOG_TARGET, "`set_emergency_result` encoded call written to ./encoded.call");
 
-	Ok(())
+	Ok(())*/
 }

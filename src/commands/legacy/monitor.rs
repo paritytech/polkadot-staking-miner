@@ -16,11 +16,12 @@
 
 use crate::{
 	client::Client,
+	commands::Listen,
 	epm,
 	error::Error,
 	helpers::{kill_main_task_if_critical_err, TimedFuture},
 	opt::Solver,
-	prelude::*,
+	prelude::{runtime, AccountId, ChainClient, Hash, Header, RpcClient, LOG_TARGET},
 	prometheus,
 	signer::Signer,
 	static_types,
@@ -31,7 +32,7 @@ use futures::future::TryFutureExt;
 use jsonrpsee::core::ClientError as JsonRpseeError;
 use polkadot_sdk::{
 	frame_election_provider_support::NposSolution,
-	pallet_election_provider_multi_phase::{RawSolution, SolutionOf},
+	pallet_election_provider_multi_phase::{MinerConfig, RawSolution, SolutionOf},
 	sp_npos_elections,
 	sp_runtime::Perbill,
 };
@@ -102,21 +103,6 @@ pub struct MonitorConfig {
 	/// then the miner will be terminated.
 	#[clap(long)]
 	pub dry_run: bool,
-}
-
-/// The type of event to listen to.
-///
-///
-/// Typically, finalized is safer and there is no chance of anything going wrong, but it can be
-/// slower. It is recommended to use finalized, if the duration of the signed phase is longer
-/// than the the finality delay.
-#[cfg_attr(test, derive(PartialEq))]
-#[derive(clap::ValueEnum, Debug, Copy, Clone)]
-pub enum Listen {
-	/// Latest finalized head of the canonical chain.
-	Finalized,
-	/// Latest head of the canonical chain.
-	Head,
 }
 
 /// Submission strategy to use.
