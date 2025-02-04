@@ -8,7 +8,7 @@ use crate::{
 	error::Error,
 	helpers,
 	prelude::{
-		AccountId, ChainClient, Header, Storage, TargetSnapshotPage, TargetSnapshotPageOf,
+		AccountId, ChainClient, Hash, Header, Storage, TargetSnapshotPage, TargetSnapshotPageOf,
 		VoterSnapshotPage, VoterSnapshotPageOf, LOG_TARGET,
 	},
 	signer::Signer,
@@ -86,18 +86,33 @@ pub(crate) async fn paged_voter_snapshot<T>(
 where
 	T: MinerConfig,
 {
-	let page_idx = vec![Value::from(page)];
-	let addr = storage_addr(pallet_api::multi_block::storage::PAGED_VOTER_SNAPSHOT, page_idx);
+	let snapshot_hash: Hash = {
+		let bytes = storage
+			.fetch(&storage_addr(
+				pallet_api::multi_block::storage::PAGED_VOTER_SNAPSHOT_HASH,
+				vec![Value::from(page)],
+			))
+			.await?
+			.ok_or(Error::EmptySnapshot)?;
 
-	match storage.fetch(&addr).await {
+		Decode::decode(&mut bytes.encoded())?
+	};
+
+	match storage
+		.fetch(&storage_addr(
+			pallet_api::multi_block::storage::PAGED_VOTER_SNAPSHOT,
+			vec![Value::from(page)],
+		))
+		.await
+	{
 		Ok(Some(val)) => match Decode::decode(&mut val.encoded()) {
 			Ok(s) => {
 				let snapshot: VoterSnapshotPage<T> = s;
 				log::trace!(
 					target: LOG_TARGET,
-					"Voter snapshot page {:?} with len {:?}",
-					page,
-					snapshot.len()
+					"Voter snapshot page={page} len={}, hash={:?}",
+					snapshot.len(),
+					snapshot_hash,
 				);
 				Ok(snapshot)
 			},
