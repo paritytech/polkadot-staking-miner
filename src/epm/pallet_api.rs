@@ -75,6 +75,8 @@ pub mod multi_block {
 		pub const PAGES: PalletConstant<u32> = PalletConstant::new(NAME, "Pages");
 		pub const TARGET_SNAPSHOT_PER_BLOCK: PalletConstant<u32> =
 			PalletConstant::new(NAME, "TargetSnapshotPerBlock");
+		pub const VOTER_SNAPSHOT_PER_BLOCK: PalletConstant<u32> =
+			PalletConstant::new(NAME, "VoterSnapshotPerBlock");
 	}
 
 	pub mod storage {

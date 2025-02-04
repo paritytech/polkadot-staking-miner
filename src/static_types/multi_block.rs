@@ -9,7 +9,6 @@ use polkadot_sdk::{
 };
 
 impl_atomic_u32_parameter_types!(pages, Pages);
-impl_atomic_u32_parameter_types!(max_votes_per_voter, MaxVotesPerVoter);
 impl_atomic_u32_parameter_types!(target_snapshot_per_block, TargetSnapshotPerBlock);
 impl_atomic_u32_parameter_types!(voter_snapshot_per_block, VoterSnapshotPerBlock);
 impl_atomic_u32_parameter_types!(max_winners_per_page, MaxWinnersPerPage);
@@ -39,11 +38,12 @@ pub mod polkadot {
 		// TODO: make it configurable via CLI/data from the node.
 		type Solver = SequentialPhragmen<AccountId, Accuracy>;
 		type Pages = Pages;
-		type MaxVotesPerVoter = MaxVotesPerVoter;
+		// TODO: make it configurable via CLI/data from the node.
+		type MaxVotesPerVoter = ConstU32<16>;
 		type MaxWinnersPerPage = MaxWinnersPerPage;
 		type MaxBackersPerWinner = MaxBackersPerWinner;
 		// TODO: make it configurable via CLI/data from the node.
-		type MaxBackersPerWinnerFinal = ();
+		type MaxBackersPerWinnerFinal = ConstU32<{ u32::MAX }>;
 		type VoterSnapshotPerBlock = VoterSnapshotPerBlock;
 		type TargetSnapshotPerBlock = TargetSnapshotPerBlock;
 		type MaxLength = MaxLength;
@@ -61,7 +61,7 @@ pub mod kusama {
 			VoterIndex = u32,
 			TargetIndex = u16,
 			Accuracy = PerU16,
-			MaxVoters = ConstU32::<12500>
+			MaxVoters = ConstU32::<12500> // TODO: fetch/validate
 		>(24)
 	);
 
@@ -74,11 +74,12 @@ pub mod kusama {
 		// TODO: make it configurable via CLI/data from the node.
 		type Solver = SequentialPhragmen<AccountId, Accuracy>;
 		type Pages = Pages;
-		type MaxVotesPerVoter = MaxVotesPerVoter;
+		// TODO: make it configurable via CLI/data from the node.
+		type MaxVotesPerVoter = ConstU32<24>;
 		type MaxWinnersPerPage = MaxWinnersPerPage;
 		type MaxBackersPerWinner = MaxBackersPerWinner;
 		// TODO: make it configurable via CLI/data from the node.
-		type MaxBackersPerWinnerFinal = ();
+		type MaxBackersPerWinnerFinal = ConstU32<{ u32::MAX }>;
 		type VoterSnapshotPerBlock = VoterSnapshotPerBlock;
 		type TargetSnapshotPerBlock = TargetSnapshotPerBlock;
 		type MaxLength = MaxLength;
@@ -96,7 +97,7 @@ pub mod westend {
 			VoterIndex = u32,
 			TargetIndex = u16,
 			Accuracy = PerU16,
-			MaxVoters = ConstU32::<22500>
+			MaxVoters = ConstU32::<22500> // TODO: fetch/validate
 		>(16)
 	);
 
@@ -109,11 +110,12 @@ pub mod westend {
 		// TODO: make it configurable via CLI/data from the node.
 		type Solver = SequentialPhragmen<AccountId, Accuracy>;
 		type Pages = Pages;
-		type MaxVotesPerVoter = MaxVotesPerVoter;
+		// TODO: make it configurable via CLI/data from the node.
+		type MaxVotesPerVoter = ConstU32<16>;
 		type MaxWinnersPerPage = MaxWinnersPerPage;
 		type MaxBackersPerWinner = MaxBackersPerWinner;
 		// TODO: make it configurable via CLI/data from the node.
-		type MaxBackersPerWinnerFinal = ();
+		type MaxBackersPerWinnerFinal = ConstU32<{ u32::MAX }>;
 		type VoterSnapshotPerBlock = VoterSnapshotPerBlock;
 		type TargetSnapshotPerBlock = TargetSnapshotPerBlock;
 		type MaxLength = MaxLength;

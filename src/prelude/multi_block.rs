@@ -1,5 +1,4 @@
 use super::{AccountId, ChainClient, Config};
-use crate::static_types;
 use polkadot_sdk::{
 	frame_election_provider_support, frame_support::BoundedVec,
 	pallet_election_provider_multi_block::unsigned::miner::MinerConfig,
@@ -7,10 +6,12 @@ use polkadot_sdk::{
 
 pub type TargetSnapshotPageOf<T> =
 	BoundedVec<AccountId, <T as MinerConfig>::TargetSnapshotPerBlock>;
-pub type VoterSnapshotPageOf<T> = BoundedVec<Voter, <T as MinerConfig>::VoterSnapshotPerBlock>;
-pub type Voter = frame_election_provider_support::Voter<AccountId, static_types::MaxVotesPerVoter>;
-pub type TargetSnapshotPage = BoundedVec<AccountId, static_types::TargetSnapshotPerBlock>;
-pub type VoterSnapshotPage = BoundedVec<Voter, static_types::VoterSnapshotPerBlock>;
+pub type VoterSnapshotPageOf<T> = BoundedVec<Voter<T>, <T as MinerConfig>::VoterSnapshotPerBlock>;
+pub type Voter<T> =
+	frame_election_provider_support::Voter<AccountId, <T as MinerConfig>::MaxVotesPerVoter>;
+pub type TargetSnapshotPage<T> =
+	BoundedVec<<T as MinerConfig>::AccountId, <T as MinerConfig>::TargetSnapshotPerBlock>;
+pub type VoterSnapshotPage<T> = BoundedVec<Voter<T>, <T as MinerConfig>::VoterSnapshotPerBlock>;
 /// Storage type.
 pub type Storage = subxt::storage::Storage<Config, ChainClient>;
 

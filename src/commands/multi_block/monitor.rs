@@ -41,7 +41,6 @@ pub async fn monitor_cmd<T>(client: Client, config: MonitorConfig) -> Result<(),
 where
 	T: MinerConfig<
 			AccountId = AccountId,
-			MaxVotesPerVoter = static_types::MaxVotesPerVoter,
 			TargetSnapshotPerBlock = static_types::TargetSnapshotPerBlock,
 			VoterSnapshotPerBlock = static_types::VoterSnapshotPerBlock,
 			Pages = static_types::Pages,
@@ -75,8 +74,8 @@ where
 	let (_tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
 	let _submit_lock = Arc::new(Mutex::new(()));
 
-	let mut target_snapshot: TargetSnapshotPage = Default::default();
-	let mut voter_snapshot_paged: BTreeMap<u32, VoterSnapshotPage> = Default::default();
+	let mut target_snapshot: TargetSnapshotPage<T> = Default::default();
+	let mut voter_snapshot_paged: BTreeMap<u32, VoterSnapshotPage<T>> = Default::default();
 
 	let n_pages = static_types::Pages::get();
 	let mut last_round_submitted = None;
@@ -125,7 +124,7 @@ where
 		match phase.0 {
 			Phase::Snapshot(page) => {
 				if page == n_pages - 1 {
-					match epm::target_snapshot(page, &storage).await {
+					match epm::target_snapshot::<T>(page, &storage).await {
 						Ok(snapshot) => {
 							target_snapshot = snapshot;
 						},
@@ -135,7 +134,7 @@ where
 					};
 				}
 
-				match epm::paged_voter_snapshot(page, &storage).await {
+				match epm::paged_voter_snapshot::<T>(page, &storage).await {
 					Ok(snapshot) => {
 						voter_snapshot_paged.insert(page, snapshot);
 					},

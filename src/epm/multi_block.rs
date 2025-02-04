@@ -35,10 +35,9 @@ pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> 
 	static_types::TargetSnapshotPerBlock::set(
 		pallet_api::multi_block::constants::TARGET_SNAPSHOT_PER_BLOCK.fetch(api)?,
 	);
-	// TODO: hard coded.
-	static_types::VoterSnapshotPerBlock::set(22500 / pages);
-	static_types::MaxVotesPerVoter::set(16);
-	static_types::MaxWinnersPerPage::set(100);
+	static_types::VoterSnapshotPerBlock::set(
+		pallet_api::multi_block::constants::VOTER_SNAPSHOT_PER_BLOCK.fetch(api)?,
+	);
 
 	// election provider constants.
 	static_types::MaxBackersPerWinner::set(
@@ -47,6 +46,9 @@ pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> 
 	static_types::MaxLength::set(
 		pallet_api::election_provider_multi_phase::constants::MAX_LENGTH.fetch(api)?,
 	);
+	static_types::MaxWinnersPerPage::set(
+		pallet_api::election_provider_multi_phase::constants::MAX_WINNERS.fetch(api)?,
+	);
 
 	Ok(())
 }
@@ -54,16 +56,16 @@ pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> 
 /// Fetches the target snapshot.
 ///
 /// Note: the target snapshot is single paged.
-pub(crate) async fn target_snapshot(
+pub(crate) async fn target_snapshot<T: MinerConfig>(
 	page: u32,
 	storage: &Storage,
-) -> Result<TargetSnapshotPage, Error> {
+) -> Result<TargetSnapshotPage<T>, Error> {
 	let page_idx = vec![Value::from(page)];
 	let addr = storage_addr(pallet_api::multi_block::storage::PAGED_TARGET_SNAPSHOT, page_idx);
 
 	match storage.fetch(&addr).await {
 		Ok(Some(val)) => {
-			let snapshot: TargetSnapshotPage = Decode::decode(&mut val.encoded())?;
+			let snapshot: TargetSnapshotPage<T> = Decode::decode(&mut val.encoded())?;
 			log::trace!(
 				target: LOG_TARGET,
 				"Target snapshot with len {:?}",
@@ -77,17 +79,20 @@ pub(crate) async fn target_snapshot(
 }
 
 /// Fetches `page` of the voter snapshot.
-pub(crate) async fn paged_voter_snapshot(
+pub(crate) async fn paged_voter_snapshot<T>(
 	page: u32,
 	storage: &Storage,
-) -> Result<VoterSnapshotPage, Error> {
+) -> Result<VoterSnapshotPage<T>, Error>
+where
+	T: MinerConfig,
+{
 	let page_idx = vec![Value::from(page)];
 	let addr = storage_addr(pallet_api::multi_block::storage::PAGED_VOTER_SNAPSHOT, page_idx);
 
 	match storage.fetch(&addr).await {
 		Ok(Some(val)) => match Decode::decode(&mut val.encoded()) {
 			Ok(s) => {
-				let snapshot: VoterSnapshotPage = s;
+				let snapshot: VoterSnapshotPage<T> = s;
 				log::trace!(
 					target: LOG_TARGET,
 					"Voter snapshot page {:?} with len {:?}",
@@ -104,17 +109,17 @@ pub(crate) async fn paged_voter_snapshot(
 }
 
 /// Fetches the full voter and target snapshots.
-pub(crate) async fn fetch_full_snapshots(
+pub(crate) async fn fetch_full_snapshots<T: MinerConfig>(
 	n_pages: u32,
 	storage: &Storage,
-) -> Result<(TargetSnapshotPage, Vec<VoterSnapshotPage>), Error> {
+) -> Result<(TargetSnapshotPage<T>, Vec<VoterSnapshotPage<T>>), Error> {
 	log::trace!(target: LOG_TARGET, "fetch_full_snapshots");
 
 	let mut voters = Vec::with_capacity(n_pages as usize);
-	let targets = target_snapshot(n_pages - 1, storage).await?;
+	let targets = target_snapshot::<T>(n_pages - 1, storage).await?;
 
 	for page in (0..n_pages).rev() {
-		let paged_voters = paged_voter_snapshot(page, storage).await?;
+		let paged_voters = paged_voter_snapshot::<T>(page, storage).await?;
 		voters.push(paged_voters);
 	}
 
@@ -136,15 +141,7 @@ pub(crate) async fn mine_and_submit<T>(
 	desired_targets: u32,
 ) -> Result<(), Error>
 where
-	T: MinerConfig<
-			AccountId = AccountId,
-			MaxVotesPerVoter = static_types::MaxVotesPerVoter,
-			TargetSnapshotPerBlock = static_types::TargetSnapshotPerBlock,
-			VoterSnapshotPerBlock = static_types::VoterSnapshotPerBlock,
-			Pages = static_types::Pages,
-		> + Send
-		+ Sync
-		+ 'static,
+	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
 	T::Solution: Send,
 {
 	log::trace!(
@@ -200,18 +197,11 @@ pub(crate) async fn fetch_mine_and_submit<T>(
 	desired_targets: u32,
 ) -> Result<(), Error>
 where
-	T: MinerConfig<
-			AccountId = AccountId,
-			MaxVotesPerVoter = static_types::MaxVotesPerVoter,
-			TargetSnapshotPerBlock = static_types::TargetSnapshotPerBlock,
-			VoterSnapshotPerBlock = static_types::VoterSnapshotPerBlock,
-			Pages = static_types::Pages,
-		> + Send
-		+ Sync
-		+ 'static,
+	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
 	T::Solution: Send,
 {
-	let (target_snapshot, voter_snapshot_paged) = fetch_full_snapshots(n_pages, storage).await?;
+	let (target_snapshot, voter_snapshot_paged) =
+		fetch_full_snapshots::<T>(n_pages, storage).await?;
 	log::trace!(
 		target: LOG_TARGET,
 		"Fetched, full election target snapshot with {} targets, voter snapshot with {:?} pages.",
