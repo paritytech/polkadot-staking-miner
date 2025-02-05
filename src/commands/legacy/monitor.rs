@@ -19,7 +19,7 @@ use crate::{
 	commands::Listen,
 	epm,
 	error::Error,
-	helpers::{kill_main_task_if_critical_err, TimedFuture},
+	helpers::{kill_main_task_if_critical_err, wait_for_in_block, TimedFuture},
 	opt::Solver,
 	prelude::{runtime, AccountId, ChainClient, Hash, Header, RpcClient, LOG_TARGET},
 	prometheus,
@@ -655,34 +655,6 @@ async fn dry_run_works(rpc: &RpcClient) -> Result<(), Error> {
 		}
 	}
 	Ok(())
-}
-
-/// Wait for the transaction to be in a block.
-///
-/// **Note:** transaction statuses like `Invalid`/`Usurped`/`Dropped` indicate with some
-/// probability that the transaction will not make it into a block but there is no guarantee
-/// that this is true. In those cases the stream is closed however, so you currently have no way to find
-/// out if they finally made it into a block or not.
-async fn wait_for_in_block<T, C>(mut tx: TxProgress<T, C>) -> Result<TxInBlock<T, C>, subxt::Error>
-where
-	T: subxt::Config,
-	C: subxt::client::OnlineClientT<T>,
-{
-	use subxt::{error::TransactionError, tx::TxStatus};
-
-	while let Some(status) = tx.next().await {
-		match status? {
-			// Finalized or otherwise in a block! Return.
-			TxStatus::InBestBlock(s) | TxStatus::InFinalizedBlock(s) => return Ok(s),
-			// Error scenarios; return the error.
-			TxStatus::Error { message } => return Err(TransactionError::Error(message).into()),
-			TxStatus::Invalid { message } => return Err(TransactionError::Invalid(message).into()),
-			TxStatus::Dropped { message } => return Err(TransactionError::Dropped(message).into()),
-			// Ignore anything else and wait for next status event:
-			_ => continue,
-		}
-	}
-	Err(RpcError::SubscriptionDropped.into())
 }
 
 #[cfg(test)]

@@ -41,6 +41,10 @@ pub async fn monitor_cmd<T>(client: Client, config: MonitorConfig) -> Result<(),
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
 	T::Solution: Send,
+	T::Pages: Send,
+	T::TargetSnapshotPerBlock: Send,
+	T::VoterSnapshotPerBlock: Send,
+	T::MaxVotesPerVoter: Send,
 {
 	let signer = Signer::new(&config.seed_or_path)?;
 	let account_info = {
@@ -103,11 +107,6 @@ where
 			.fetch_or_default(&runtime::storage().multi_block().current_phase())
 			.await?;
 		let round = storage.fetch_or_default(&runtime::storage().multi_block().round()).await?;
-		let desired_targets = storage
-			.fetch(&runtime::storage().multi_block().desired_targets())
-			.await
-			.unwrap()
-			.unwrap_or(0);
 		let n_pages = static_types::Pages::get();
 
 		log::trace!(target: LOG_TARGET, "Processing block={} round={}, phase={:?}", at.number, round, phase);
@@ -148,14 +147,18 @@ where
 				// All pages are already fetched, compute the solution.
 				if !target_snapshot.is_empty() && voter_snapshot_paged.len() == n_pages as usize {
 					let v = voter_snapshot_paged.iter().map(|(_, v)| v.clone()).collect::<Vec<_>>();
+					let desired_targets = storage
+						.fetch(&runtime::storage().multi_block().desired_targets())
+						.await?
+						.unwrap_or(0);
 
 					match epm::mine_and_submit::<T>(
 						&at,
 						&client,
 						signer.clone(),
 						config.listen,
-						&target_snapshot,
-						&v,
+						target_snapshot.clone(),
+						v,
 						n_pages,
 						round,
 						desired_targets,
@@ -168,6 +171,11 @@ where
 						}, // continue trying the next block.
 					}
 				} else {
+					let desired_targets = storage
+						.fetch(&runtime::storage().multi_block().desired_targets())
+						.await?
+						.unwrap_or(0);
+
 					// TODO: we can optimize this by fetching only the missing pages
 					// instead of all of them here.
 					match epm::fetch_mine_and_submit::<T>(

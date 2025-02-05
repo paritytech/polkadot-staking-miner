@@ -3,13 +3,13 @@ use crate::{
 	commands::Listen,
 	epm::{
 		pallet_api,
-		utils::{storage_addr, MultiBlockTransaction},
+		utils::{dynamic_decode_error, storage_addr, to_scale_value, tx},
 	},
 	error::Error,
-	helpers,
+	helpers::{self, TimedFuture},
 	prelude::{
-		AccountId, ChainClient, Hash, Header, Storage, TargetSnapshotPage, TargetSnapshotPageOf,
-		VoterSnapshotPage, VoterSnapshotPageOf, LOG_TARGET,
+		runtime, AccountId, ChainClient, Config, Hash, Header, Storage, TargetSnapshotPage,
+		TargetSnapshotPageOf, VoterSnapshotPage, VoterSnapshotPageOf, LOG_TARGET,
 	},
 	signer::Signer,
 	static_types,
@@ -20,11 +20,80 @@ use polkadot_sdk::{
 	pallet_election_provider_multi_block::unsigned::miner::{
 		BaseMiner as Miner, MineInput, MinerConfig,
 	},
+	sp_npos_elections::ElectionScore,
 };
 use subxt::{
+	blocks::ExtrinsicEvents,
 	config::{DefaultExtrinsicParamsBuilder, Header as _},
 	dynamic::Value,
+	tx::DynamicPayload,
 };
+
+/// A multi-block transaction.
+pub enum TransactionKind {
+	RegisterScore,
+	SubmitPage,
+}
+
+impl TransactionKind {
+	pub fn as_str(&self) -> &'static str {
+		match self {
+			Self::RegisterScore => "register score",
+			Self::SubmitPage => "submit page",
+		}
+	}
+
+	/// Check if the transaction is in the given events.
+	pub fn in_events(&self, evs: &ExtrinsicEvents<Config>) -> Result<bool, Error> {
+		match self {
+			Self::RegisterScore =>
+				evs.has::<runtime::multi_block_signed::events::Registered>().map_err(Into::into),
+			Self::SubmitPage =>
+				evs.has::<runtime::multi_block_signed::events::Stored>().map_err(Into::into),
+		}
+	}
+}
+
+pub struct MultiBlockTransaction {
+	kind: TransactionKind,
+	tx: DynamicPayload,
+}
+
+impl MultiBlockTransaction {
+	/// Create a transaction to register a score.
+	pub fn register_score(score: ElectionScore) -> Result<Self, Error> {
+		let scale_score =
+			to_scale_value(score).map_err(|err| dynamic_decode_error::<ElectionScore>(err))?;
+
+		Ok(Self {
+			kind: TransactionKind::RegisterScore,
+			tx: tx(pallet_api::multi_block_signed::tx::REGISTER, vec![scale_score]),
+		})
+	}
+
+	/// Create a new transaction to submit a page.
+	pub fn submit_page<T: MinerConfig + 'static>(
+		page: u32,
+		maybe_solution: Option<T::Solution>,
+	) -> Result<Self, Error> {
+		let scale_page =
+			to_scale_value(page).map_err(|err| dynamic_decode_error::<T::Pages>(err))?;
+		let scale_solution = to_scale_value(maybe_solution)
+			.map_err(|err| dynamic_decode_error::<T::Solution>(err))?;
+
+		Ok(Self {
+			kind: TransactionKind::SubmitPage,
+			tx: tx(
+				pallet_api::multi_block_signed::tx::SUBMIT_PAGE,
+				vec![scale_page, scale_solution],
+			),
+		})
+	}
+
+	pub fn to_parts(self) -> (TransactionKind, DynamicPayload) {
+		(self.kind, self.tx)
+	}
+}
 
 pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
 	// multi block constants.
@@ -147,8 +216,8 @@ pub(crate) async fn mine_and_submit<T>(
 	client: &Client,
 	signer: Signer,
 	listen: Listen,
-	target_snapshot: &TargetSnapshotPageOf<T>,
-	voter_snapshot_paged: &Vec<VoterSnapshotPageOf<T>>,
+	target_snapshot: TargetSnapshotPageOf<T>,
+	voter_snapshot_paged: Vec<VoterSnapshotPageOf<T>>,
 	n_pages: u32,
 	round: u32,
 	desired_targets: u32,
@@ -156,30 +225,51 @@ pub(crate) async fn mine_and_submit<T>(
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
 	T::Solution: Send,
+	T::Pages: Send,
+	T::TargetSnapshotPerBlock: Send,
+	T::VoterSnapshotPerBlock: Send,
+	T::MaxVotesPerVoter: Send,
 {
 	log::trace!(
 		target: LOG_TARGET,
-		"Mine, submit: election target snap size: {:?}, voter snap size: {:?}",
+		"Mine_and_submit: election target snap size: {:?}, voter snap size: {:?}",
 		target_snapshot.len(),
 		voter_snapshot_paged.len()
 	);
 
-	let targets: TargetSnapshotPageOf<T> = target_snapshot.clone();
-	let voters: BoundedVec<VoterSnapshotPageOf<T>, T::Pages> =
-		BoundedVec::truncate_from(voter_snapshot_paged.clone());
+	let voter_pages: BoundedVec<VoterSnapshotPageOf<T>, T::Pages> =
+		BoundedVec::truncate_from(voter_snapshot_paged);
+
+	log::trace!(
+		target: LOG_TARGET,
+		"MineInput: desired_targets={desired_targets},pages={n_pages},target_snapshot_len={},voters_pages_len={},do_reduce=false,round={round}",
+		target_snapshot.len(), voter_pages.len()
+	);
 
 	let input = MineInput {
 		desired_targets,
-		all_targets: targets.clone(),
-		voter_pages: voters.clone(),
+		all_targets: target_snapshot,
+		voter_pages,
 		pages: n_pages,
 		// TODO: get from runtime/configs.
 		do_reduce: false,
 		round,
 	};
 
-	let paged_raw_solution =
-		Miner::<T>::mine_solution(input).map_err(|e| Error::Other(format!("{:?}", e)))?;
+	// Mine solution
+	let paged_raw_solution = match tokio::task::spawn_blocking(move || {
+		Miner::<T>::mine_solution(input).map_err(|e| Error::Other(format!("{:?}", e)))
+	})
+	.timed()
+	.await
+	{
+		(Ok(Ok(s)), dur) => {
+			log::trace!(target: LOG_TARGET, "Mined solution in {}ms", dur.as_millis());
+			s
+		},
+		(Ok(Err(e)), _) => return Err(e),
+		(Err(e), _dur) => return Err(Error::Other(format!("{:?}", e))),
+	};
 
 	// register solution.
 	submit_and_watch::<T>(
@@ -224,6 +314,10 @@ pub(crate) async fn fetch_mine_and_submit<T>(
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
 	T::Solution: Send,
+	T::Pages: Send,
+	T::TargetSnapshotPerBlock: Send,
+	T::VoterSnapshotPerBlock: Send,
+	T::MaxVotesPerVoter: Send,
 {
 	let (target_snapshot, voter_snapshot_paged) =
 		fetch_full_snapshots::<T>(n_pages, storage).await?;
@@ -239,8 +333,8 @@ where
 		client,
 		signer,
 		listen,
-		&target_snapshot,
-		&voter_snapshot_paged,
+		target_snapshot,
+		voter_snapshot_paged,
 		n_pages,
 		round,
 		desired_targets,
