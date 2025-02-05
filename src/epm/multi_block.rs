@@ -3,7 +3,7 @@ use crate::{
 	commands::Listen,
 	epm::{
 		pallet_api,
-		utils::{storage_addr, to_scale_value, tx},
+		utils::{storage_addr, MultiBlockTransaction},
 	},
 	error::Error,
 	helpers,
@@ -20,12 +20,10 @@ use polkadot_sdk::{
 	pallet_election_provider_multi_block::unsigned::miner::{
 		BaseMiner as Miner, MineInput, MinerConfig,
 	},
-	sp_npos_elections::ElectionScore,
 };
 use subxt::{
 	config::{DefaultExtrinsicParamsBuilder, Header as _},
 	dynamic::Value,
-	tx::DynamicPayload,
 };
 
 pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
@@ -184,13 +182,25 @@ where
 		Miner::<T>::mine_solution(input).map_err(|e| Error::Other(format!("{:?}", e)))?;
 
 	// register solution.
-	let register_tx = register_solution(paged_raw_solution.score)?;
-	submit_and_watch::<T>(at, client, signer.clone(), listen, register_tx, "register").await?;
+	submit_and_watch::<T>(
+		at,
+		client,
+		signer.clone(),
+		listen,
+		MultiBlockTransaction::register_score(paged_raw_solution.score)?,
+	)
+	.await?;
 
 	// submit all solution pages.
 	for (page, solution) in paged_raw_solution.solution_pages.into_iter().enumerate() {
-		let submit_tx = submit_page::<T>(page as u32, Some(solution))?;
-		submit_and_watch::<T>(at, client, signer.clone(), listen, submit_tx, "submit page").await?;
+		submit_and_watch::<T>(
+			at,
+			client,
+			signer.clone(),
+			listen,
+			MultiBlockTransaction::submit_page::<T>(page as u32, Some(solution))?,
+		)
+		.await?;
 	}
 
 	Ok(())
@@ -244,59 +254,41 @@ async fn submit_and_watch<T: MinerConfig + Send + Sync + 'static>(
 	client: &Client,
 	signer: Signer,
 	listen: Listen,
-	tx: DynamicPayload,
-	reason: &'static str,
+	tx: MultiBlockTransaction,
 ) -> Result<(), Error> {
+	let (kind, tx) = tx.to_parts();
 	let block_hash = at.hash();
 	let nonce = client.rpc().system_account_next_index(signer.account_id()).await?;
 
-	log::trace!(target: LOG_TARGET, "submit_and_watch for `{:?}` at {:?}", reason, block_hash);
+	log::trace!(target: LOG_TARGET, "submit_and_watch for `{}` at {:?}", kind.as_str(), block_hash);
 
-	// subxt sets mortal extrinsic by default.
+	// NOTE: subxt sets mortal extrinsic by default.
 	let xt_cfg = DefaultExtrinsicParamsBuilder::default().nonce(nonce).build();
 	let xt = client.chain_api().tx().create_signed(&tx, &*signer, xt_cfg).await?;
 
 	let tx_progress = xt.submit_and_watch().await.map_err(|e| {
-		log::error!(target: LOG_TARGET, "submit solution failed: {:?}", e);
+		log::error!(target: LOG_TARGET, "submit tx {} failed: {:?}", kind.as_str(), e);
 		e
 	})?;
 
 	match listen {
 		Listen::Head => {
 			let in_block = helpers::wait_for_in_block(tx_progress).await?;
-			let _events = in_block.fetch_events().await.expect("events should exist");
-			// TODO: check that multi block signed events are emitted.
+			let evs = in_block.fetch_events().await?;
+			// TODO: if we were submitting a page, then we should check for verification event as well
+			if !kind.in_events(&evs)? {
+				return Err(Error::MissingTxEvent(kind.as_str().to_string()));
+			}
 		},
 		Listen::Finalized => {
 			let finalized_block = tx_progress.wait_for_finalized().await?;
 			let _block_hash = finalized_block.block_hash();
-			let _finalized_success = finalized_block.wait_for_success().await?;
-			// TODO: check that multi block signed events are emitted.
+			let evs = finalized_block.wait_for_success().await?;
+			// TODO: if we were submitting a page, then we should check for verification event as well
+			if !kind.in_events(&evs)? {
+				return Err(Error::MissingTxEvent(kind.as_str().to_string()));
+			}
 		},
 	}
 	Ok(())
-}
-
-/// Helper to construct a register solution transaction.
-fn register_solution(election_score: ElectionScore) -> Result<DynamicPayload, Error> {
-	let scale_score = to_scale_value(election_score).map_err(|err| {
-		Error::DynamicTransaction(format!("failed to encode `ElectionScore: {:?}", err))
-	})?;
-
-	Ok(tx(pallet_api::multi_block_signed::tx::REGISTER, vec![scale_score]))
-}
-
-/// Helper to construct a submit page transaction.
-fn submit_page<T: MinerConfig + 'static>(
-	page: u32,
-	maybe_solution: Option<T::Solution>,
-) -> Result<DynamicPayload, Error> {
-	let scale_page = to_scale_value(page)
-		.map_err(|err| Error::DynamicTransaction(format!("failed to encode Page: {:?}", err)))?;
-
-	let scale_solution = to_scale_value(maybe_solution).map_err(|err| {
-		Error::DynamicTransaction(format!("failed to encode Solution: {:?}", err))
-	})?;
-
-	Ok(tx(pallet_api::multi_block_signed::tx::SUBMIT_PAGE, vec![scale_page, scale_solution]))
 }

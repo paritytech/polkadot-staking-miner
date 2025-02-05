@@ -39,14 +39,7 @@ pub struct MonitorConfig {
 ///  2.3. Submit each page separately (1 per block).
 pub async fn monitor_cmd<T>(client: Client, config: MonitorConfig) -> Result<(), Error>
 where
-	T: MinerConfig<
-			AccountId = AccountId,
-			TargetSnapshotPerBlock = static_types::TargetSnapshotPerBlock,
-			VoterSnapshotPerBlock = static_types::VoterSnapshotPerBlock,
-			Pages = static_types::Pages,
-		> + Send
-		+ Sync
-		+ 'static,
+	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
 	T::Solution: Send,
 {
 	let signer = Signer::new(&config.seed_or_path)?;
@@ -73,11 +66,8 @@ where
 	let mut subscription = heads_subscription(client.rpc(), config.listen).await?;
 	let (_tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
 	let _submit_lock = Arc::new(Mutex::new(()));
-
 	let mut target_snapshot: TargetSnapshotPage<T> = Default::default();
 	let mut voter_snapshot_paged: BTreeMap<u32, VoterSnapshotPage<T>> = Default::default();
-
-	let n_pages = static_types::Pages::get();
 	let mut last_round_submitted = None;
 
 	loop {
@@ -118,6 +108,7 @@ where
 			.await
 			.unwrap()
 			.unwrap_or(0);
+		let n_pages = static_types::Pages::get();
 
 		log::trace!(target: LOG_TARGET, "Processing block={} round={}, phase={:?}", at.number, round, phase);
 
@@ -154,10 +145,10 @@ where
 					continue;
 				}
 
+				// All pages are already fetched, compute the solution.
 				if !target_snapshot.is_empty() && voter_snapshot_paged.len() == n_pages as usize {
 					let v = voter_snapshot_paged.iter().map(|(_, v)| v.clone()).collect::<Vec<_>>();
 
-					// all pages in cache, compute election.
 					match epm::mine_and_submit::<T>(
 						&at,
 						&client,
@@ -174,11 +165,11 @@ where
 						Ok(_) => last_round_submitted = Some(round),
 						Err(err) => {
 							log::error!("mine_and_submit: {:?}", err);
-						}, // continue trying.
+						}, // continue trying the next block.
 					}
 				} else {
-					// TODO: check if there are already *some* pageed cached and fetch only missing
-					// ones.
+					// TODO: we can optimize this by fetching only the missing pages
+					// instead of all of them here.
 					match epm::fetch_mine_and_submit::<T>(
 						&at,
 						&client,
@@ -194,7 +185,7 @@ where
 						Ok(_) => last_round_submitted = Some(round),
 						Err(err) => {
 							log::error!("fetch_mine_and_submit: {:?}", err);
-						}, // continue trying.
+						}, // continue trying the next block.
 					}
 					log::trace!(target: LOG_TARGET, "not all snapshots in cache, fetch all and compute.");
 				}

@@ -53,4 +53,6 @@ pub enum Error {
 	Join(#[from] tokio::task::JoinError),
 	#[error("Empty snapshot")]
 	EmptySnapshot,
+	#[error("Missing event for transaction: {0}")]
+	MissingTxEvent(String),
 }
