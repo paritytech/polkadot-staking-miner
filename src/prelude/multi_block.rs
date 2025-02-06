@@ -19,6 +19,10 @@ pub type Storage = subxt::storage::Storage<Config, ChainClient>;
 	runtime_metadata_path = "artifacts/multi_block.scale",
 	derive_for_all_types = "Clone, Debug, Eq, PartialEq",
 	substitute_type(
+		path = "sp_npos_elections::ElectionScore",
+		with = "::subxt::utils::Static<polkadot_sdk::sp_npos_elections::ElectionScore>"
+	),
+	substitute_type(
 		path = "pallet_election_provider_multi_block::types::Phase<Bn>",
 		with = "::subxt::utils::Static<polkadot_sdk::pallet_election_provider_multi_block::types::Phase<Bn>>"
 	)

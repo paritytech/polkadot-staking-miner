@@ -17,8 +17,9 @@ use crate::{
 use codec::Decode;
 use polkadot_sdk::{
 	frame_support::BoundedVec,
-	pallet_election_provider_multi_block::unsigned::miner::{
-		BaseMiner as Miner, MineInput, MinerConfig,
+	pallet_election_provider_multi_block::{
+		types::PagedRawSolution,
+		unsigned::miner::{BaseMiner as Miner, MineInput, MinerConfig},
 	},
 	sp_npos_elections::ElectionScore,
 };
@@ -190,38 +191,60 @@ where
 	}
 }
 
-/// Fetches the full voter and target snapshots.
-pub(crate) async fn fetch_full_snapshots<T: MinerConfig>(
-	n_pages: u32,
-	storage: &Storage,
-) -> Result<(TargetSnapshotPage<T>, Vec<VoterSnapshotPage<T>>), Error> {
-	log::trace!(target: LOG_TARGET, "fetch_full_snapshots");
-
-	let mut voters = Vec::with_capacity(n_pages as usize);
-	let targets = target_snapshot::<T>(n_pages - 1, storage).await?;
-
-	for page in (0..n_pages).rev() {
-		let paged_voters = paged_voter_snapshot::<T>(page, storage).await?;
-		voters.push(paged_voters);
-	}
-
-	log::trace!("Fetched full snapshots: targets: {:?}, voters: {:?}", targets.len(), voters.len());
-
-	Ok((targets, voters))
-}
-
-/// Mines, registers and submits a solution.
-pub(crate) async fn mine_and_submit<T>(
+/// Submits and watches a `DynamicPayload`, ie. an extrinsic.
+pub(crate) async fn submit_and_watch<T: MinerConfig + Send + Sync + 'static>(
 	at: &Header,
 	client: &Client,
 	signer: Signer,
 	listen: Listen,
+	tx: MultiBlockTransaction,
+) -> Result<(), Error> {
+	let (kind, tx) = tx.to_parts();
+	let block_hash = at.hash();
+	let nonce = client.rpc().system_account_next_index(signer.account_id()).await?;
+
+	log::trace!(target: LOG_TARGET, "submit_and_watch for `{}` at {:?}", kind.as_str(), block_hash);
+
+	// NOTE: subxt sets mortal extrinsic by default.
+	let xt_cfg = DefaultExtrinsicParamsBuilder::default().nonce(nonce).build();
+	let xt = client.chain_api().tx().create_signed(&tx, &*signer, xt_cfg).await?;
+
+	let tx_progress = xt.submit_and_watch().await.map_err(|e| {
+		log::error!(target: LOG_TARGET, "submit tx {} failed: {:?}", kind.as_str(), e);
+		e
+	})?;
+
+	match listen {
+		Listen::Head => {
+			let in_block = helpers::wait_for_in_block(tx_progress).await?;
+			let evs = in_block.fetch_events().await?;
+			// TODO: if we were submitting a page, then we should check for verification event as well
+			if !kind.in_events(&evs)? {
+				return Err(Error::MissingTxEvent(kind.as_str().to_string()));
+			}
+		},
+		Listen::Finalized => {
+			let finalized_block = tx_progress.wait_for_finalized().await?;
+			let _block_hash = finalized_block.block_hash();
+			// TODO: This it slow for the sign phase in the substrate-node with the staking-playground feature.
+			//
+			/*let evs = finalized_block.wait_for_success().await?;
+			// TODO: if we were submitting a page, then we should check for verification event as well
+			if !kind.in_events(&evs)? {
+				return Err(Error::MissingTxEvent(kind.as_str().to_string()));
+			}*/
+		},
+	}
+	Ok(())
+}
+
+pub(crate) async fn mine_solution<T>(
 	target_snapshot: TargetSnapshotPageOf<T>,
 	voter_snapshot_paged: Vec<VoterSnapshotPageOf<T>>,
 	n_pages: u32,
 	round: u32,
 	desired_targets: u32,
-) -> Result<(), Error>
+) -> Result<PagedRawSolution<T>, Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
 	T::Solution: Send,
@@ -257,7 +280,7 @@ where
 	};
 
 	// Mine solution
-	let paged_raw_solution = match tokio::task::spawn_blocking(move || {
+	match tokio::task::spawn_blocking(move || {
 		Miner::<T>::mine_solution(input).map_err(|e| Error::Other(format!("{:?}", e)))
 	})
 	.timed()
@@ -265,124 +288,9 @@ where
 	{
 		(Ok(Ok(s)), dur) => {
 			log::trace!(target: LOG_TARGET, "Mined solution in {}ms", dur.as_millis());
-			s
+			Ok(s)
 		},
-		(Ok(Err(e)), _) => return Err(e),
-		(Err(e), _dur) => return Err(Error::Other(format!("{:?}", e))),
-	};
-
-	// register solution.
-	submit_and_watch::<T>(
-		at,
-		client,
-		signer.clone(),
-		listen,
-		MultiBlockTransaction::register_score(paged_raw_solution.score)?,
-	)
-	.await?;
-
-	// submit all solution pages.
-	for (page, solution) in paged_raw_solution.solution_pages.into_iter().enumerate() {
-		submit_and_watch::<T>(
-			at,
-			client,
-			signer.clone(),
-			listen,
-			MultiBlockTransaction::submit_page::<T>(page as u32, Some(solution))?,
-		)
-		.await?;
+		(Ok(Err(e)), _) => Err(e),
+		(Err(e), _dur) => Err(Error::Other(format!("{:?}", e))),
 	}
-
-	Ok(())
-}
-
-/// Performs the whole set of steps to submit a new solution:
-/// 1. Fetches target and voter snapshots;
-/// 2. Mines a solution;
-/// 3. Registers new solution;
-/// 4. Submits the paged solution.
-pub(crate) async fn fetch_mine_and_submit<T>(
-	at: &Header,
-	client: &Client,
-	signer: Signer,
-	listen: Listen,
-	storage: &Storage,
-	n_pages: u32,
-	round: u32,
-	desired_targets: u32,
-) -> Result<(), Error>
-where
-	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
-	T::Solution: Send,
-	T::Pages: Send,
-	T::TargetSnapshotPerBlock: Send,
-	T::VoterSnapshotPerBlock: Send,
-	T::MaxVotesPerVoter: Send,
-{
-	let (target_snapshot, voter_snapshot_paged) =
-		fetch_full_snapshots::<T>(n_pages, storage).await?;
-	log::trace!(
-		target: LOG_TARGET,
-		"Fetched, full election target snapshot with {} targets, voter snapshot with {:?} pages.",
-		target_snapshot.len(),
-		voter_snapshot_paged.len()
-	);
-
-	mine_and_submit::<T>(
-		at,
-		client,
-		signer,
-		listen,
-		target_snapshot,
-		voter_snapshot_paged,
-		n_pages,
-		round,
-		desired_targets,
-	)
-	.await
-}
-
-/// Submits and watches a `DynamicPayload`, ie. an extrinsic.
-async fn submit_and_watch<T: MinerConfig + Send + Sync + 'static>(
-	at: &Header,
-	client: &Client,
-	signer: Signer,
-	listen: Listen,
-	tx: MultiBlockTransaction,
-) -> Result<(), Error> {
-	let (kind, tx) = tx.to_parts();
-	let block_hash = at.hash();
-	let nonce = client.rpc().system_account_next_index(signer.account_id()).await?;
-
-	log::trace!(target: LOG_TARGET, "submit_and_watch for `{}` at {:?}", kind.as_str(), block_hash);
-
-	// NOTE: subxt sets mortal extrinsic by default.
-	let xt_cfg = DefaultExtrinsicParamsBuilder::default().nonce(nonce).build();
-	let xt = client.chain_api().tx().create_signed(&tx, &*signer, xt_cfg).await?;
-
-	let tx_progress = xt.submit_and_watch().await.map_err(|e| {
-		log::error!(target: LOG_TARGET, "submit tx {} failed: {:?}", kind.as_str(), e);
-		e
-	})?;
-
-	match listen {
-		Listen::Head => {
-			let in_block = helpers::wait_for_in_block(tx_progress).await?;
-			let evs = in_block.fetch_events().await?;
-			// TODO: if we were submitting a page, then we should check for verification event as well
-			if !kind.in_events(&evs)? {
-				return Err(Error::MissingTxEvent(kind.as_str().to_string()));
-			}
-		},
-		Listen::Finalized => {
-			let finalized_block = tx_progress.wait_for_finalized().await?;
-			let _block_hash = finalized_block.block_hash();
-			let evs = finalized_block.wait_for_success().await?;
-			// TODO: if we were submitting a page, then we should check for verification event as well
-			if !kind.in_events(&evs)? {
-				return Err(Error::MissingTxEvent(kind.as_str().to_string()));
-			}
-		},
-	}
-	Ok(())
 }

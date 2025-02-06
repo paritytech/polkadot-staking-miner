@@ -1,20 +1,22 @@
 use crate::{
 	client::Client,
-	commands::Listen,
-	epm,
+	commands::{multi_block::types::Snapshot, Listen},
+	epm::{self, submit_and_watch, MultiBlockTransaction},
 	error::Error,
 	helpers,
 	prelude::{
-		runtime, AccountId, Header, RpcClient, TargetSnapshotPage, VoterSnapshotPage, LOG_TARGET,
+		runtime::{self},
+		AccountId, Header, RpcClient, Storage, LOG_TARGET,
 	},
 	signer::Signer,
 	static_types,
 };
 
-use polkadot_sdk::pallet_election_provider_multi_block::{
-	types::Phase, unsigned::miner::MinerConfig,
+use polkadot_sdk::{
+	pallet_election_provider_multi_block::{types::Phase, unsigned::miner::MinerConfig},
+	sp_npos_elections::ElectionScore,
 };
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 use subxt::{backend::rpc::RpcSubscription, config::Header as _};
 use tokio::sync::Mutex;
 
@@ -24,19 +26,36 @@ pub struct MonitorConfig {
 	#[clap(long, short, env = "SEED")]
 	pub seed_or_path: String,
 
-	// TODO: finalized head subscription ends with an error, not signed something.
-	#[clap(long, value_enum, default_value_t = Listen::Head)]
+	#[clap(long, value_enum, default_value_t = Listen::Finalized)]
 	pub listen: Listen,
 }
 
-/// Monitors the current on-chain phase and performs the relevant actions.
-///
-/// Steps:
-/// 1. In `Phase::Snapshot(page)`, fetch the pages of the target and voter snapshot.
-/// 2. In `Phase::Signed`:
-///  2.1. Compute the solution
-///  2.2. Register the solution with the *full* election score of the submission
-///  2.3. Submit each page separately (1 per block).
+enum MonitorState<T: MinerConfig> {
+	Off,
+	Snapshot(Snapshot<T>),
+	Submitted { round: u32, block: u32 },
+}
+
+impl<T: MinerConfig> MonitorState<T> {
+	fn as_snapshot(&mut self) -> Option<&mut Snapshot<T>> {
+		match self {
+			MonitorState::Snapshot(snapshot) => Some(snapshot),
+			_ => None,
+		}
+	}
+}
+
+impl<T: MinerConfig> std::fmt::Debug for MonitorState<T> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			MonitorState::Off => write!(f, "MonitorState::Off"),
+			MonitorState::Snapshot(_) => write!(f, "MonitorState::Snapshot"),
+			MonitorState::Submitted { round, block } =>
+				write!(f, "MonitorState::Submitted {{ round: {}, block: {} }}", round, block),
+		}
+	}
+}
+
 pub async fn monitor_cmd<T>(client: Client, config: MonitorConfig) -> Result<(), Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
@@ -70,9 +89,7 @@ where
 	let mut subscription = heads_subscription(client.rpc(), config.listen).await?;
 	let (_tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
 	let _submit_lock = Arc::new(Mutex::new(()));
-	let mut target_snapshot: TargetSnapshotPage<T> = Default::default();
-	let mut voter_snapshot_paged: BTreeMap<u32, VoterSnapshotPage<T>> = Default::default();
-	let mut last_round_submitted = None;
+	let mut state: MonitorState<T> = MonitorState::Off;
 
 	loop {
 		let at = tokio::select! {
@@ -101,110 +118,147 @@ where
 			}
 		};
 
-		let storage = helpers::storage_at(Some(at.hash()), client.chain_api()).await?;
-		let storage2 = storage.clone();
-		let phase = storage
-			.fetch_or_default(&runtime::storage().multi_block().current_phase())
-			.await?;
-		let round = storage.fetch_or_default(&runtime::storage().multi_block().round()).await?;
-		let n_pages = static_types::Pages::get();
+		if let Err(e) = process_block(&client, &at, &mut state, &signer, config.listen).await {
+			log::error!(target: LOG_TARGET, "Error processing block: {:?}", e);
+		}
 
-		log::trace!(target: LOG_TARGET, "Processing block={} round={}, phase={:?}", at.number, round, phase);
+		log::trace!(target: LOG_TARGET, "block={} {:?}", at.hash(), state);
+	}
+}
 
-		match phase.0 {
-			Phase::Snapshot(page) => {
-				if page == n_pages - 1 {
-					match epm::target_snapshot::<T>(page, &storage).await {
-						Ok(snapshot) => {
-							target_snapshot = snapshot;
-						},
-						Err(err) => {
-							log::error!("fetch snapshot err: {:?}", err);
-						},
-					};
+/// For each block, monitor essentially does the following:
+///
+/// 1. Fetch the current storage.
+/// 2. Check if the phase is signed/snapshot, otherwise continue with the next block.
+/// 3. Check if the solution has already been submitted, if so quit.
+/// 4. Fetch the target and voter snapshots.
+/// 5. Mine the solution.
+/// 6. Check if our score is better according to submit strategy.
+/// 7. Register the solution score.
+/// 8. Submit each page of the solution (one per block)
+/// 9. Finally wait for verification.
+async fn process_block<T>(
+	client: &Client,
+	at: &Header,
+	state: &mut MonitorState<T>,
+	signer: &Signer,
+	listen: Listen,
+) -> Result<(), Error>
+where
+	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
+	T::Solution: Send,
+	T::Pages: Send,
+	T::TargetSnapshotPerBlock: Send,
+	T::VoterSnapshotPerBlock: Send,
+	T::MaxVotesPerVoter: Send,
+{
+	// 1. Fetch the current storage.
+	let storage = helpers::storage_at(Some(at.hash()), client.chain_api()).await?;
+	let round = storage.fetch_or_default(&runtime::storage().multi_block().round()).await?;
+	let n_pages = static_types::Pages::get();
+	let phase = storage
+		.fetch_or_default(&runtime::storage().multi_block().current_phase())
+		.await?;
+	// Target snapshot page (most significant page).
+	let target_snapshot_page = n_pages - 1;
+
+	log::trace!(target: LOG_TARGET, "Processing block={} round={}, phase={:?}", at.number, round, phase.0);
+
+	// 2. Check if the phase is signed/snapshot, otherwise wait for the next block.
+	match phase.0 {
+		Phase::Snapshot(page) => {
+			if page == target_snapshot_page {
+				let mut snapshot = Snapshot::new(n_pages);
+				let target_snapshot = epm::target_snapshot::<T>(page, &storage).await?;
+				snapshot.set_target_snapshot(target_snapshot);
+				*state = MonitorState::Snapshot(snapshot);
+			}
+
+			if let Some(snapshot) = state.as_snapshot() {
+				if snapshot.needs_voter_page(page) {
+					let voter_snapshot = epm::paged_voter_snapshot::<T>(page, &storage).await?;
+					snapshot.set_voter_page(page, voter_snapshot);
 				}
+			}
 
-				match epm::paged_voter_snapshot::<T>(page, &storage).await {
-					Ok(snapshot) => {
-						voter_snapshot_paged.insert(page, snapshot);
-					},
-					Err(err) => {
-						log::error!("fetch voter snapshot err: {:?}", err);
-					},
-				};
-			},
-			Phase::Signed => {
-				if last_round_submitted == Some(round) {
-					// skip mining again, everything submitted.
-					log::trace!(
-						target: LOG_TARGET,
-						"Solution successfully submitted for round {}, do nothing.",
-						round
-					);
-					continue;
-				}
+			return Ok(());
+		},
+		Phase::Signed => {},
+		_ => {
+			return Ok(());
+		},
+	}
 
-				// All pages are already fetched, compute the solution.
-				if !target_snapshot.is_empty() && voter_snapshot_paged.len() == n_pages as usize {
-					let v = voter_snapshot_paged.iter().map(|(_, v)| v.clone()).collect::<Vec<_>>();
-					let desired_targets = storage
-						.fetch(&runtime::storage().multi_block().desired_targets())
-						.await?
-						.unwrap_or(0);
+	// 3. If the solution has already been submitted, nothing to do.
+	let Some(snapshot) = state.as_snapshot() else {
+		return Ok(());
+	};
 
-					match epm::mine_and_submit::<T>(
-						&at,
-						&client,
-						signer.clone(),
-						config.listen,
-						target_snapshot.clone(),
-						v,
-						n_pages,
-						round,
-						desired_targets,
-					)
-					.await
-					{
-						Ok(_) => last_round_submitted = Some(round),
-						Err(err) => {
-							log::error!("mine_and_submit: {:?}", err);
-						}, // continue trying the next block.
-					}
-				} else {
-					let desired_targets = storage
-						.fetch(&runtime::storage().multi_block().desired_targets())
-						.await?
-						.unwrap_or(0);
+	if has_submitted(&storage, n_pages, signer.account_id()).await? {
+		log::trace!(target: LOG_TARGET, "Solution already submitted, skipping..");
+		return Ok(());
+	}
 
-					// TODO: we can optimize this by fetching only the missing pages
-					// instead of all of them here.
-					match epm::fetch_mine_and_submit::<T>(
-						&at,
-						&client,
-						signer.clone(),
-						config.listen,
-						&storage2,
-						n_pages,
-						round,
-						desired_targets,
-					)
-					.await
-					{
-						Ok(_) => last_round_submitted = Some(round),
-						Err(err) => {
-							log::error!("fetch_mine_and_submit: {:?}", err);
-						}, // continue trying the next block.
-					}
-					log::trace!(target: LOG_TARGET, "not all snapshots in cache, fetch all and compute.");
-				}
-			},
-			_ => {
-				voter_snapshot_paged.clear();
-				target_snapshot.clear();
-				continue;
-			},
+	// 4. Fetch the target and voter snapshots if needed.
+	{
+		if snapshot.needs_target_snapshot() {
+			let target_snapshot = epm::target_snapshot::<T>(target_snapshot_page, &storage).await?;
+			snapshot.set_target_snapshot(target_snapshot);
+		}
+
+		if snapshot.needs_voter_pages() {
+			let fetch_voter_pages = snapshot.missing_voter_pages();
+			for page in fetch_voter_pages {
+				let voter_snapshot = epm::paged_voter_snapshot::<T>(page, &storage).await?;
+				snapshot.set_voter_page(page, voter_snapshot);
+			}
 		}
 	}
+
+	let desired_targets = storage
+		.fetch(&runtime::storage().multi_block().desired_targets())
+		.await?
+		.unwrap_or(0);
+
+	let voter_snapshot = snapshot.voter.iter().map(|(_, v)| v.clone()).collect();
+	let target_snapshot = snapshot.target.clone().expect("Target snapshot already checked;qed");
+
+	// 5. Mine solution
+	let paged_raw_solution =
+		epm::mine_solution::<T>(target_snapshot, voter_snapshot, n_pages, round, desired_targets)
+			.await?;
+
+	// 6. Check if our score is better according to submit strategy.
+	if !score_better(&storage, paged_raw_solution.score, n_pages).await? {
+		log::trace!(target: LOG_TARGET, "Better solution already exists, skipping..");
+		return Ok(());
+	}
+
+	// 7. Register score.
+	submit_and_watch::<T>(
+		&at,
+		&client,
+		signer.clone(),
+		listen,
+		MultiBlockTransaction::register_score(paged_raw_solution.score)?,
+	)
+	.await?;
+
+	// 8. Submit all solution pages.
+	for (page, solution) in paged_raw_solution.solution_pages.into_iter().enumerate() {
+		submit_and_watch::<T>(
+			&at,
+			&client,
+			signer.clone(),
+			listen,
+			MultiBlockTransaction::submit_page::<T>(page as u32, Some(solution))?,
+		)
+		.await?;
+	}
+
+	// 9. Wait for verification.
+	*state = MonitorState::Submitted { round: n_pages, block: at.number };
+	Ok(())
 }
 
 async fn heads_subscription(
@@ -216,4 +270,36 @@ async fn heads_subscription(
 		Listen::Finalized => rpc.chain_subscribe_finalized_heads().await,
 	}
 	.map_err(Into::into)
+}
+
+async fn has_submitted(
+	storage: &Storage,
+	round: u32,
+	who: &subxt::config::substrate::AccountId32,
+) -> Result<bool, Error> {
+	let scores = storage
+		.fetch_or_default(&runtime::storage().multi_block_signed().sorted_scores(round))
+		.await?;
+
+	log::trace!(target: LOG_TARGET, "scores: {:?}", scores);
+
+	if scores.0.into_iter().any(|(account_id, _)| &account_id == who) {
+		return Ok(true);
+	}
+
+	Ok(false)
+}
+
+async fn score_better(storage: &Storage, cand: ElectionScore, round: u32) -> Result<bool, Error> {
+	let scores = storage
+		.fetch_or_default(&runtime::storage().multi_block_signed().sorted_scores(round))
+		.await?;
+
+	log::trace!(target: LOG_TARGET, "scores: {:?}", scores);
+
+	if scores.0.into_iter().any(|(_, score)| score.0 > cand) {
+		return Ok(false);
+	}
+
+	Ok(true)
 }
