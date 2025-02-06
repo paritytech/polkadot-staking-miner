@@ -1,7 +1,9 @@
 use crate::{
 	client::Client,
 	commands::{multi_block::types::Snapshot, Listen},
-	epm::{self, submit_and_watch, MultiBlockTransaction},
+	epm::{
+		self, fetch_full_snapshot, fetch_missing_snapshots, submit_and_watch, MultiBlockTransaction,
+	},
 	error::Error,
 	helpers,
 	prelude::{
@@ -31,8 +33,12 @@ pub struct MonitorConfig {
 }
 
 enum MonitorState<T: MinerConfig> {
-	Off,
+	/// Placeholder for uninitialized state, used in the beginning.
+	/// which may be used if the snapshot state is missed.
+	Uninitialized,
+	/// Snapshot state.
 	Snapshot(Snapshot<T>),
+	/// The solution has been submitted.
 	Submitted { round: u32, block: u32 },
 }
 
@@ -48,7 +54,7 @@ impl<T: MinerConfig> MonitorState<T> {
 impl<T: MinerConfig> std::fmt::Debug for MonitorState<T> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			MonitorState::Off => write!(f, "MonitorState::Off"),
+			MonitorState::Uninitialized => write!(f, "MonitorState::Uninitialized"),
 			MonitorState::Snapshot(_) => write!(f, "MonitorState::Snapshot"),
 			MonitorState::Submitted { round, block } =>
 				write!(f, "MonitorState::Submitted {{ round: {}, block: {} }}", round, block),
@@ -89,7 +95,7 @@ where
 	let mut subscription = heads_subscription(client.rpc(), config.listen).await?;
 	let (_tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
 	let _submit_lock = Arc::new(Mutex::new(()));
-	let mut state: MonitorState<T> = MonitorState::Off;
+	let mut state: MonitorState<T> = MonitorState::Uninitialized;
 
 	loop {
 		let at = tokio::select! {
@@ -167,18 +173,27 @@ where
 	// 2. Check if the phase is signed/snapshot, otherwise wait for the next block.
 	match phase.0 {
 		Phase::Snapshot(page) => {
+			// Initial snapshot so initialize the snapshot state.
 			if page == target_snapshot_page {
-				let mut snapshot = Snapshot::new(n_pages);
 				let target_snapshot = epm::target_snapshot::<T>(page, &storage).await?;
-				snapshot.set_target_snapshot(target_snapshot);
-				*state = MonitorState::Snapshot(snapshot);
+				*state = MonitorState::Snapshot(Snapshot::with_target_snapshot(
+					target_snapshot,
+					n_pages,
+				));
 			}
 
+			// Append to the snapshot state or create a new one if we missed the earlier snapshots.
+			let voter_snapshot = epm::paged_voter_snapshot::<T>(page, &storage).await?;
 			if let Some(snapshot) = state.as_snapshot() {
 				if snapshot.needs_voter_page(page) {
-					let voter_snapshot = epm::paged_voter_snapshot::<T>(page, &storage).await?;
 					snapshot.set_voter_page(page, voter_snapshot);
 				}
+			} else {
+				*state = MonitorState::Snapshot(Snapshot::with_voter_page(
+					voter_snapshot,
+					n_pages,
+					page,
+				));
 			}
 
 			return Ok(());
@@ -189,39 +204,29 @@ where
 		},
 	}
 
-	// 3. If the solution has already been submitted, nothing to do.
-	let Some(snapshot) = state.as_snapshot() else {
-		return Ok(());
-	};
-
-	if has_submitted(&storage, n_pages, signer.account_id()).await? {
+	// 3. If the solution has already been submitted, nothing to do
+	if has_submitted::<T>(&storage, n_pages, state, signer.account_id()).await? {
 		log::trace!(target: LOG_TARGET, "Solution already submitted, skipping..");
 		return Ok(());
 	}
 
 	// 4. Fetch the target and voter snapshots if needed.
-	{
-		if snapshot.needs_target_snapshot() {
-			let target_snapshot = epm::target_snapshot::<T>(target_snapshot_page, &storage).await?;
-			snapshot.set_target_snapshot(target_snapshot);
+	let snapshot = {
+		if let Some(snapshot) = state.as_snapshot() {
+			fetch_missing_snapshots(snapshot, &storage).await?;
+			snapshot
+		} else {
+			*state = MonitorState::Snapshot(fetch_full_snapshot(&storage, n_pages).await?);
+			state.as_snapshot().expect("Snapshot state initialized above; qed")
 		}
-
-		if snapshot.needs_voter_pages() {
-			let fetch_voter_pages = snapshot.missing_voter_pages();
-			for page in fetch_voter_pages {
-				let voter_snapshot = epm::paged_voter_snapshot::<T>(page, &storage).await?;
-				snapshot.set_voter_page(page, voter_snapshot);
-			}
-		}
-	}
+	};
 
 	let desired_targets = storage
 		.fetch(&runtime::storage().multi_block().desired_targets())
 		.await?
 		.unwrap_or(0);
-
-	let voter_snapshot = snapshot.voter.iter().map(|(_, v)| v.clone()).collect();
-	let target_snapshot = snapshot.target.clone().expect("Target snapshot already checked;qed");
+	let target_snapshot = snapshot.target.clone().expect("Target snapshot exists; qed");
+	let voter_snapshot = snapshot.voter.iter().map(|(_, v)| v.clone()).collect::<Vec<_>>();
 
 	// 5. Mine solution
 	let paged_raw_solution =
@@ -272,11 +277,16 @@ async fn heads_subscription(
 	.map_err(Into::into)
 }
 
-async fn has_submitted(
+async fn has_submitted<T: MinerConfig>(
 	storage: &Storage,
 	round: u32,
+	state: &mut MonitorState<T>,
 	who: &subxt::config::substrate::AccountId32,
 ) -> Result<bool, Error> {
+	if matches!(state, MonitorState::Submitted { .. }) {
+		return Ok(true);
+	}
+
 	let scores = storage
 		.fetch_or_default(&runtime::storage().multi_block_signed().sorted_scores(round))
 		.await?;

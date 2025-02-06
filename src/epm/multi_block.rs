@@ -1,6 +1,6 @@
 use crate::{
 	client::Client,
-	commands::Listen,
+	commands::{Listen, Snapshot},
 	epm::{
 		pallet_api,
 		utils::{dynamic_decode_error, storage_addr, to_scale_value, tx},
@@ -293,4 +293,39 @@ where
 		(Ok(Err(e)), _) => Err(e),
 		(Err(e), _dur) => Err(Error::Other(format!("{:?}", e))),
 	}
+}
+
+pub(crate) async fn fetch_full_snapshot<T: MinerConfig>(
+	storage: &Storage,
+	n_pages: u32,
+) -> Result<Snapshot<T>, Error> {
+	let mut snapshot = Snapshot::new(n_pages);
+
+	snapshot.set_target_snapshot(target_snapshot::<T>(snapshot.n_pages - 1, &storage).await?);
+
+	for page in 0..n_pages {
+		let voter_snapshot = paged_voter_snapshot::<T>(page, &storage).await?;
+		snapshot.set_voter_page(page, voter_snapshot);
+	}
+
+	Ok(snapshot)
+}
+
+pub(crate) async fn fetch_missing_snapshots<T: MinerConfig>(
+	snapshot: &mut Snapshot<T>,
+	storage: &Storage,
+) -> Result<(), Error> {
+	if snapshot.needs_target_snapshot() {
+		snapshot.set_target_snapshot(target_snapshot::<T>(snapshot.n_pages - 1, storage).await?);
+	}
+
+	if snapshot.needs_voter_pages() {
+		let fetch_voter_pages = snapshot.missing_voter_pages();
+		for page in fetch_voter_pages {
+			let voter_snapshot = paged_voter_snapshot::<T>(page, storage).await?;
+			snapshot.set_voter_page(page, voter_snapshot);
+		}
+	}
+
+	Ok(())
 }
