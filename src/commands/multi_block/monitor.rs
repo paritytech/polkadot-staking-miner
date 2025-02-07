@@ -1,14 +1,13 @@
 use crate::{
 	client::Client,
-	commands::{multi_block::types::Snapshot, Listen},
+	commands::{multi_block::types::SharedSnapshot, Listen},
 	epm::{
 		self, check_and_update_target_snapshot, check_and_update_voter_snapshot, fetch_missing_snapshots, submit_and_watch, MultiBlockTransaction
 	},
 	error::Error,
-	helpers,
+	helpers::{self, kill_main_task_if_critical_err},
 	prelude::{
-		runtime::{self},
-		AccountId, Header, LOG_TARGET,
+		runtime, AccountId, Header, Storage, LOG_TARGET
 	},
 	signer::Signer,
 	static_types,
@@ -36,10 +35,10 @@ pub async fn monitor_cmd<T>(client: Client, config: MonitorConfig) -> Result<(),
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
 	T::Solution: Send,
-	T::Pages: Send,
-	T::TargetSnapshotPerBlock: Send,
-	T::VoterSnapshotPerBlock: Send,
-	T::MaxVotesPerVoter: Send,
+	T::Pages: Send + Sync + 'static,
+	T::TargetSnapshotPerBlock: Send + Sync + 'static,
+	T::VoterSnapshotPerBlock: Send + Sync + 'static,
+	T::MaxVotesPerVoter: Send + Sync + 'static,
 {
 	let signer = Signer::new(&config.seed_or_path)?;
 	let account_info = {
@@ -63,9 +62,9 @@ where
 	);
 
 	let mut subscription = helpers::rpc_block_subscription(client.rpc(), config.listen).await?;
-	let (_tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
-	let _submit_lock = Arc::new(Mutex::new(()));
-	let mut snapshot = Snapshot::<T>::new(static_types::Pages::get());
+	let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
+	let submit_lock = Arc::new(Mutex::new(()));
+	let snapshot = SharedSnapshot::<T>::new(static_types::Pages::get());
 
 	loop {
 		let at = tokio::select! {
@@ -94,9 +93,17 @@ where
 			}
 		};
 
-		if let Err(e) = process_block(&client, &at, &mut snapshot, &signer, config.listen).await {
-			log::error!(target: LOG_TARGET, "Error processing block: {:?}", e);
-		}
+		let snapshot = snapshot.clone();
+		let signer = signer.clone();
+		let client = client.clone();
+		let submit_lock = submit_lock.clone();
+		let tx = tx.clone();
+
+		tokio::spawn(async move {
+			if let Err(e) = process_block(client, at, snapshot, signer, config.listen, submit_lock).await {
+				kill_main_task_if_critical_err(&tx, e);
+			}
+		});
 	}
 }
 
@@ -107,16 +114,18 @@ where
 /// 3. Check if the solution has already been submitted, if so quit.
 /// 4. Fetch the target and voter snapshots.
 /// 5. Mine the solution.
-/// 6. Check if our score is better according to submit strategy.
-/// 7. Register the solution score.
-/// 8. Submit each page of the solution (one per block)
-/// 9. Finally wait for verification.
+/// 6. Lock submissions.
+/// 7. Check if the phase is still signed and score is best.
+/// 8.. Register the solution score.
+/// 9. Submit each page of the solution (one per block)
+/// 10. Finally wait for verification.
 async fn process_block<T>(
-	client: &Client,
-	at: &Header,
-	snapshot: &mut Snapshot<T>,
-	signer: &Signer,
+	client: Client,
+	at: Header,
+	snapshot: SharedSnapshot<T>,
+	signer: Signer,
 	listen: Listen,
+	submit_lock: Arc<Mutex<()>>,
 ) -> Result<(), Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
@@ -140,54 +149,68 @@ where
 
 	// This will only change after runtime upgrades/when the metadata is changed.
 	// but let's be safe and update it every block it's quite cheap.
-	snapshot.set_page_length(n_pages);
+	snapshot.write().set_page_length(n_pages);
 
 	// 2. Check if the phase is signed/snapshot, otherwise wait for the next block.
 	match phase.0 {
 		Phase::Snapshot(page) => {
 			if page == target_snapshot_page {
-				check_and_update_target_snapshot(page, &storage, snapshot).await?;
+				check_and_update_target_snapshot(page, &storage, &snapshot).await?;
 			}
 
-			check_and_update_voter_snapshot(page, &storage, snapshot).await?;
+			check_and_update_voter_snapshot(page, &storage, &snapshot).await?;
 
 			return Ok(());
 		},
 		Phase::Signed => {},
 		// Ignore other phases.
 		_ => {
-			snapshot.clear();
+			snapshot.write().clear();
 			return Ok(());
 		},
 	}
 
 	// 3. If the solution has already been submitted, nothing to do
-	if has_submitted::<T>(&client, round, signer.account_id()).await? {
+	if has_submitted::<T>(&storage, round, signer.account_id()).await? {
 		return Ok(());
 	}
 
 	// 4. Fetch the target and voter snapshots if needed.
-	fetch_missing_snapshots::<T>(snapshot, &storage).await?;
+	fetch_missing_snapshots::<T>(&snapshot, &storage).await?;
 
 	let desired_targets = storage
 		.fetch(&runtime::storage().multi_block().desired_targets())
 		.await?
 		.unwrap_or(0);
-	let target_snapshot = snapshot.target.clone().expect("Target snapshot above; qed").0;
-	let voter_snapshot = snapshot.voter.iter().map(|(_, (v, _))| v.clone()).collect();
+	let target_snapshot = snapshot.read().target.clone().expect("Target snapshot above; qed").0;
+	let voter_snapshot = snapshot.read().voter.iter().map(|(_, (v, _))| v.clone()).collect();
 
-	// 5. Mine solution
+	// 5. Lock mining and submission.
+	let _guard = submit_lock.lock().await;
+
+	// 6. Mine solution
 	let paged_raw_solution =
 		epm::mine_solution::<T>(target_snapshot, voter_snapshot, n_pages, round, desired_targets)
 			.await?;
 
-	// 6. Check if our score is better than what's already on the chain
-	//    according to the submit strategy.
-	if !score_is_best(&client, paged_raw_solution.score, round).await? {
+	// 7. Because mining is a heavy operation, we need to check if the phase is still signed.
+	let storage_head = helpers::storage_at_head(&client, listen).await?;
+
+	if !phase_is_signed(&storage_head).await? {
 		return Ok(());
 	}
 
-	// 7. Register score.
+	// 8. Check if our score is better than what's already on the chain
+	//    according to the submit strategy.
+	if has_submitted::<T>(&storage_head, round, signer.account_id()).await? {
+		return Ok(());
+	}
+		
+	if !score_is_best(&storage_head, paged_raw_solution.score, round).await? {
+		return Ok(());
+	}
+
+	// 9. Register score.
 	submit_and_watch::<T>(
 		&at,
 		&client,
@@ -197,7 +220,7 @@ where
 	)
 	.await?;
 
-	// 8. Submit all solution pages.
+	// 10. Submit all solution pages.
 	for (page, solution) in paged_raw_solution.solution_pages.into_iter().enumerate() {
 		submit_and_watch::<T>(
 			&at,
@@ -209,7 +232,7 @@ where
 		.await?;
 	}
 
-	// 9. Wait for verification.
+	// 11. Wait for verification.
 	// TODO: Implement verification....
 
 	Ok(())
@@ -217,14 +240,12 @@ where
 
 /// Whether the current account has already registered a score for the given round.
 async fn has_submitted<T: MinerConfig>(
-	client: &Client,
+	storage: &Storage,
 	round: u32,
 	who: &subxt::config::substrate::AccountId32,
 ) -> Result<bool, Error> {
-	let scores = client.chain_api().storage().at_latest().await?.fetch_or_default(&runtime::storage().multi_block_signed().sorted_scores(round))
+	let scores = storage.fetch_or_default(&runtime::storage().multi_block_signed().sorted_scores(round))
 		.await?;
-
-	log::trace!(target: LOG_TARGET, "Checking if our miner has already submitted at round={round} {:?}", scores);
 
 	if scores.0.into_iter().any(|(account_id, _)| &account_id == who) {
 		return Ok(true);
@@ -234,15 +255,21 @@ async fn has_submitted<T: MinerConfig>(
 }
 
 /// Whether the computed score is better than what is already in the chain.
-async fn score_is_best(client: &Client, score: ElectionScore, round: u32) -> Result<bool, Error> {
-	let scores = client.chain_api().storage().at_latest().await?.fetch_or_default(&runtime::storage().multi_block_signed().sorted_scores(round))
+async fn score_is_best(storage: &Storage, score: ElectionScore, round: u32) -> Result<bool, Error> {
+	let scores = storage.fetch_or_default(&runtime::storage().multi_block_signed().sorted_scores(round))
 		.await?;
-
-	log::trace!(target: LOG_TARGET, "Checking if score is better at round={round}, {:?}", scores);
 
 	if scores.0.into_iter().any(|(_, other_score)| other_score.0 > score) {
 		return Ok(false);
 	}
 
 	Ok(true)
+}
+
+
+async fn phase_is_signed(storage: &Storage) -> Result<bool, Error> {
+	let phase = storage.fetch_or_default(&runtime::storage().multi_block().current_phase())
+		.await?;
+
+	Ok(phase.0 == Phase::Signed)
 }

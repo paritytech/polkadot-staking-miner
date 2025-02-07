@@ -1,6 +1,6 @@
 use crate::{
 	client::Client,
-	commands::{Listen, Snapshot},
+	commands::{Listen, SharedSnapshot},
 	epm::{
 		pallet_api,
 		utils::{dynamic_decode_error, storage_addr, to_scale_value, tx},
@@ -45,6 +45,7 @@ impl TransactionKind {
 	}
 
 	/// Check if the transaction is in the given events.
+	#[allow(unused, dead_code)]
 	pub fn in_events(&self, evs: &ExtrinsicEvents<Config>) -> Result<bool, Error> {
 		match self {
 			Self::RegisterScore =>
@@ -205,23 +206,15 @@ pub(crate) async fn submit_and_watch<T: MinerConfig + Send + Sync + 'static>(
 
 	match listen {
 		Listen::Head => {
-			let in_block = helpers::wait_for_in_block(tx_progress).await?;
-			let evs = in_block.fetch_events().await?;
-			// TODO: if we were submitting a page, then we should check for verification event as well
-			if !kind.in_events(&evs)? {
-				return Err(Error::MissingTxEvent(kind.as_str().to_string()));
-			}
+			// TODO: check events, this is flaky because we listen to best head.
+			helpers::wait_for_in_block(tx_progress).await?;
+		
 		},
 		Listen::Finalized => {
-			let finalized_block = tx_progress.wait_for_finalized().await?;
-			let _block_hash = finalized_block.block_hash();
-			// TODO: This it slow for the sign phase in the substrate-node with the staking-playground feature.
-			//
-			/*let evs = finalized_block.wait_for_success().await?;
-			// TODO: if we were submitting a page, then we should check for verification event as well
-			if !kind.in_events(&evs)? {
-				return Err(Error::MissingTxEvent(kind.as_str().to_string()));
-			}*/
+			let _finalized_block = tx_progress.wait_for_finalized().await?;
+			// TODO: to slow to wait for events with polkadot-sdk staking-playground feature
+			//let _block_hash = finalized_block.block_hash();
+			// let _evs = finalized_block.wait_for_success().await?
 		},
 	}
 	Ok(())
@@ -285,14 +278,16 @@ where
 }
 
 pub(crate) async fn fetch_missing_snapshots<T: MinerConfig>(
-	snapshot: &mut Snapshot<T>,
+	snapshot: &SharedSnapshot<T>,
 	storage: &Storage,
 ) -> Result<(), Error> {
-	for page in 0..snapshot.n_pages {
+	let n_pages = snapshot.read().n_pages;
+
+	for page in 0..n_pages {
 		check_and_update_voter_snapshot(page, storage, snapshot).await?;
 	}
 
-	check_and_update_target_snapshot(snapshot.n_pages - 1, storage, snapshot).await?;
+	check_and_update_target_snapshot(n_pages - 1, storage, snapshot).await?;
 
 	Ok(())
 }
@@ -320,12 +315,12 @@ pub(crate) async fn target_snapshot_hash(page: u32, storage: &Storage) -> Result
 pub(crate) async fn check_and_update_voter_snapshot<T: MinerConfig>(
 	page: u32,
 	storage: &Storage,
-	snapshot: &mut Snapshot<T>,
+	snapshot: &SharedSnapshot<T>,
 ) -> Result<(), Error> {
 	let snapshot_hash = paged_voter_snapshot_hash(page, storage).await?;
-	if snapshot.needs_voter_page(page, snapshot_hash) {
+	if snapshot.read().needs_voter_page(page, snapshot_hash) {
 		let voter_snapshot = paged_voter_snapshot::<T>(page, storage).await?;
-		snapshot.set_voter_page(page, voter_snapshot, snapshot_hash);
+		snapshot.write().set_voter_page(page, voter_snapshot, snapshot_hash);
 	}
 	Ok(())
 }
@@ -333,12 +328,12 @@ pub(crate) async fn check_and_update_voter_snapshot<T: MinerConfig>(
 pub(crate) async fn check_and_update_target_snapshot<T: MinerConfig>(
 	page: u32,
 	storage: &Storage,
-	snapshot: &mut Snapshot<T>,
+	snapshot: &SharedSnapshot<T>,
 ) -> Result<(), Error> {
 	let snapshot_hash = target_snapshot_hash(page, storage).await?;
-	if snapshot.needs_target_snapshot(snapshot_hash) {
+	if snapshot.read().needs_target_snapshot(snapshot_hash) {
 		let target_snapshot = target_snapshot::<T>(page, storage).await?;
-		snapshot.set_target_snapshot(target_snapshot, snapshot_hash);
+		snapshot.write().set_target_snapshot(target_snapshot, snapshot_hash);
 	}
 	Ok(())
 }

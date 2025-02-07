@@ -1,6 +1,7 @@
 use crate::prelude::{Hash, TargetSnapshotPage, VoterSnapshotPage};
 use polkadot_sdk::pallet_election_provider_multi_block::unsigned::miner::MinerConfig;
 use std::collections::BTreeMap;
+use std::sync::{Arc, RwLock};
 
 type Page = u32;
 
@@ -56,5 +57,28 @@ impl<T: MinerConfig> Snapshot<T> {
 	pub fn clear(&mut self) {
 		self.target = None;
 		self.voter.clear();
+	}
+}
+
+
+pub struct SharedSnapshot<T: MinerConfig>(Arc<RwLock<Snapshot<T>>>);
+
+impl<T: MinerConfig> SharedSnapshot<T> {
+	pub fn new(n_pages: Page) -> Self {
+		SharedSnapshot(Arc::new(RwLock::new(Snapshot::new(n_pages))))
+	}
+
+	pub fn read(&self) -> std::sync::RwLockReadGuard<Snapshot<T>> {
+		self.0.read().expect("Lock is poisoned")
+	}
+
+	pub fn write(&self) -> std::sync::RwLockWriteGuard<Snapshot<T>> {
+		self.0.write().expect("Lock is poisoned")
+	}
+}
+
+impl<T: MinerConfig> Clone for SharedSnapshot<T> {
+	fn clone(&self) -> Self {
+		SharedSnapshot(self.0.clone())
 	}
 }

@@ -19,7 +19,7 @@ use crate::{
 	commands::Listen,
 	epm,
 	error::Error,
-	helpers::{kill_main_task_if_critical_err, wait_for_in_block, TimedFuture},
+	helpers::{kill_main_task_if_critical_err, wait_for_in_block, TimedFuture, rpc_block_subscription},
 	opt::Solver,
 	prelude::{runtime, AccountId, ChainClient, Hash, Header, RpcClient, LOG_TARGET},
 	prometheus,
@@ -187,7 +187,7 @@ where
 		dry_run_works(client.rpc()).await?;
 	}
 
-	let mut subscription = helpers::rpc_block_subscription(client.rpc(), config.listen).await?;
+	let mut subscription = rpc_block_subscription(client.rpc(), config.listen).await?;
 	let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
 	let submit_lock = Arc::new(Mutex::new(()));
 
@@ -205,7 +205,7 @@ where
 					//	- the subscription could not keep up with the server.
 					None => {
 						log::warn!(target: LOG_TARGET, "subscription to `{:?}` terminated. Retrying..", config.listen);
-						subscription = helpers::rpc_block_subscription(client.rpc(), config.listen).await?;
+						subscription = rpc_block_subscription(client.rpc(), config.listen).await?;
 						continue
 					}
 				}
