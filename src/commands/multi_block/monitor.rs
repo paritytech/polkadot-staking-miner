@@ -2,7 +2,7 @@ use crate::{
 	client::Client,
 	commands::{multi_block::types::Snapshot, Listen},
 	epm::{
-		self, fetch_missing_snapshots, submit_and_watch, MultiBlockTransaction,
+		self, check_and_update_target_snapshot, check_and_update_voter_snapshot, fetch_missing_snapshots, submit_and_watch, MultiBlockTransaction
 	},
 	error::Error,
 	helpers,
@@ -138,24 +138,23 @@ where
 
 	log::trace!(target: LOG_TARGET, "Processing block={} round={}, phase={:?}", at.number, round, phase.0);
 
+	// This will only change after runtime upgrades/when the metadata is changed.
+	// but let's be safe and update it every block it's quite cheap.
 	snapshot.set_page_length(n_pages);
 
 	// 2. Check if the phase is signed/snapshot, otherwise wait for the next block.
 	match phase.0 {
 		Phase::Snapshot(page) => {
-			if page == target_snapshot_page && snapshot.needs_target_snapshot() {
-				let target_snapshot = epm::target_snapshot::<T>(page, &storage).await?;
-				snapshot.set_target_snapshot(target_snapshot);
+			if page == target_snapshot_page {
+				check_and_update_target_snapshot(page, &storage, snapshot).await?;
 			}
 
-			if snapshot.needs_voter_page(page) {
-				let voter_snapshot = epm::paged_voter_snapshot::<T>(page, &storage).await?;
-				snapshot.set_voter_page(page, voter_snapshot);
-			}
+			check_and_update_voter_snapshot(page, &storage, snapshot).await?;
 
 			return Ok(());
 		},
 		Phase::Signed => {},
+		// Ignore other phases.
 		_ => {
 			snapshot.clear();
 			return Ok(());
@@ -174,16 +173,17 @@ where
 		.fetch(&runtime::storage().multi_block().desired_targets())
 		.await?
 		.unwrap_or(0);
-	let target_snapshot = snapshot.target.clone().expect("Target snapshot exists; qed");
-	let voter_snapshot = snapshot.voter.iter().map(|(_, v)| v.clone()).collect::<Vec<_>>();
+	let target_snapshot = snapshot.target.clone().expect("Target snapshot above; qed").0;
+	let voter_snapshot = snapshot.voter.iter().map(|(_, (v, _))| v.clone()).collect();
 
 	// 5. Mine solution
 	let paged_raw_solution =
 		epm::mine_solution::<T>(target_snapshot, voter_snapshot, n_pages, round, desired_targets)
 			.await?;
 
-	// 6. Check if our score is better according to submit strategy.
-	if !score_better(&client, paged_raw_solution.score, round).await? {
+	// 6. Check if our score is better than what's already on the chain
+	//    according to the submit strategy.
+	if !score_is_best(&client, paged_raw_solution.score, round).await? {
 		return Ok(());
 	}
 
@@ -215,6 +215,7 @@ where
 	Ok(())
 }
 
+/// Whether the current account has already registered a score for the given round.
 async fn has_submitted<T: MinerConfig>(
 	client: &Client,
 	round: u32,
@@ -232,7 +233,8 @@ async fn has_submitted<T: MinerConfig>(
 	Ok(false)
 }
 
-async fn score_better(client: &Client, score: ElectionScore, round: u32) -> Result<bool, Error> {
+/// Whether the computed score is better than what is already in the chain.
+async fn score_is_best(client: &Client, score: ElectionScore, round: u32) -> Result<bool, Error> {
 	let scores = client.chain_api().storage().at_latest().await?.fetch_or_default(&runtime::storage().multi_block_signed().sorted_scores(round))
 		.await?;
 

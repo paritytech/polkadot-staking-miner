@@ -82,6 +82,7 @@ pub mod multi_block {
 	pub mod storage {
 		use super::{super::*, *};
 		pub const PAGED_TARGET_SNAPSHOT: PalletItem = PalletItem::new(NAME, "PagedTargetSnapshot");
+		pub const PAGED_TARGET_SNAPSHOT_HASH: PalletItem = PalletItem::new(NAME, "PagedTargetSnapshotHash");
 		pub const PAGED_VOTER_SNAPSHOT: PalletItem = PalletItem::new(NAME, "PagedVoterSnapshot");
 		pub const PAGED_VOTER_SNAPSHOT_HASH: PalletItem =
 			PalletItem::new(NAME, "PagedVoterSnapshotHash");
