@@ -2,13 +2,13 @@ use crate::{
 	client::Client,
 	commands::{multi_block::types::Snapshot, Listen},
 	epm::{
-		self, fetch_full_snapshot, fetch_missing_snapshots, submit_and_watch, MultiBlockTransaction,
+		self, fetch_missing_snapshots, submit_and_watch, MultiBlockTransaction,
 	},
 	error::Error,
 	helpers,
 	prelude::{
 		runtime::{self},
-		AccountId, Header, RpcClient, Storage, LOG_TARGET,
+		AccountId, Header, LOG_TARGET,
 	},
 	signer::Signer,
 	static_types,
@@ -19,7 +19,7 @@ use polkadot_sdk::{
 	sp_npos_elections::ElectionScore,
 };
 use std::sync::Arc;
-use subxt::{backend::rpc::RpcSubscription, config::Header as _};
+use subxt::config::Header as _;
 use tokio::sync::Mutex;
 
 /// TODO(niklasad1): Add solver algorithm configuration to the monitor command.
@@ -30,36 +30,6 @@ pub struct MonitorConfig {
 
 	#[clap(long, value_enum, default_value_t = Listen::Finalized)]
 	pub listen: Listen,
-}
-
-enum MonitorState<T: MinerConfig> {
-	/// Placeholder for uninitialized state, used in the beginning.
-	/// which may be used if the snapshot state is missed.
-	Uninitialized,
-	/// Snapshot state.
-	Snapshot(Snapshot<T>),
-	/// The solution has been submitted.
-	Submitted { round: u32, block: u32 },
-}
-
-impl<T: MinerConfig> MonitorState<T> {
-	fn as_snapshot(&mut self) -> Option<&mut Snapshot<T>> {
-		match self {
-			MonitorState::Snapshot(snapshot) => Some(snapshot),
-			_ => None,
-		}
-	}
-}
-
-impl<T: MinerConfig> std::fmt::Debug for MonitorState<T> {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			MonitorState::Uninitialized => write!(f, "MonitorState::Uninitialized"),
-			MonitorState::Snapshot(_) => write!(f, "MonitorState::Snapshot"),
-			MonitorState::Submitted { round, block } =>
-				write!(f, "MonitorState::Submitted {{ round: {}, block: {} }}", round, block),
-		}
-	}
 }
 
 pub async fn monitor_cmd<T>(client: Client, config: MonitorConfig) -> Result<(), Error>
@@ -92,10 +62,10 @@ where
 		account_info.data.frozen,
 	);
 
-	let mut subscription = heads_subscription(client.rpc(), config.listen).await?;
+	let mut subscription = helpers::rpc_block_subscription(client.rpc(), config.listen).await?;
 	let (_tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
 	let _submit_lock = Arc::new(Mutex::new(()));
-	let mut state: MonitorState<T> = MonitorState::Uninitialized;
+	let mut snapshot = Snapshot::<T>::new(static_types::Pages::get());
 
 	loop {
 		let at = tokio::select! {
@@ -111,7 +81,7 @@ where
 					//	- the subscription could not keep up with the server.
 					None => {
 						log::warn!(target: LOG_TARGET, "subscription to `{:?}` terminated. Retrying..", config.listen);
-						subscription = heads_subscription(client.rpc(), config.listen).await?;
+						subscription = helpers::rpc_block_subscription(client.rpc(), config.listen).await?;
 						continue
 					}
 				}
@@ -124,11 +94,9 @@ where
 			}
 		};
 
-		if let Err(e) = process_block(&client, &at, &mut state, &signer, config.listen).await {
+		if let Err(e) = process_block(&client, &at, &mut snapshot, &signer, config.listen).await {
 			log::error!(target: LOG_TARGET, "Error processing block: {:?}", e);
 		}
-
-		log::trace!(target: LOG_TARGET, "block={} {:?}", at.hash(), state);
 	}
 }
 
@@ -146,7 +114,7 @@ where
 async fn process_block<T>(
 	client: &Client,
 	at: &Header,
-	state: &mut MonitorState<T>,
+	snapshot: &mut Snapshot<T>,
 	signer: &Signer,
 	listen: Listen,
 ) -> Result<(), Error>
@@ -170,56 +138,37 @@ where
 
 	log::trace!(target: LOG_TARGET, "Processing block={} round={}, phase={:?}", at.number, round, phase.0);
 
+	snapshot.set_page_length(n_pages);
+
 	// 2. Check if the phase is signed/snapshot, otherwise wait for the next block.
 	match phase.0 {
 		Phase::Snapshot(page) => {
-			// Initial snapshot so initialize the snapshot state.
-			if page == target_snapshot_page {
+			if page == target_snapshot_page && snapshot.needs_target_snapshot() {
 				let target_snapshot = epm::target_snapshot::<T>(page, &storage).await?;
-				*state = MonitorState::Snapshot(Snapshot::with_target_snapshot(
-					target_snapshot,
-					n_pages,
-				));
+				snapshot.set_target_snapshot(target_snapshot);
 			}
 
-			// Append to the snapshot state or create a new one if we missed the earlier snapshots.
-			let voter_snapshot = epm::paged_voter_snapshot::<T>(page, &storage).await?;
-			if let Some(snapshot) = state.as_snapshot() {
-				if snapshot.needs_voter_page(page) {
-					snapshot.set_voter_page(page, voter_snapshot);
-				}
-			} else {
-				*state = MonitorState::Snapshot(Snapshot::with_voter_page(
-					voter_snapshot,
-					n_pages,
-					page,
-				));
+			if snapshot.needs_voter_page(page) {
+				let voter_snapshot = epm::paged_voter_snapshot::<T>(page, &storage).await?;
+				snapshot.set_voter_page(page, voter_snapshot);
 			}
 
 			return Ok(());
 		},
 		Phase::Signed => {},
 		_ => {
+			snapshot.clear();
 			return Ok(());
 		},
 	}
 
 	// 3. If the solution has already been submitted, nothing to do
-	if has_submitted::<T>(&storage, n_pages, state, signer.account_id()).await? {
-		log::trace!(target: LOG_TARGET, "Solution already submitted, skipping..");
+	if has_submitted::<T>(&client, round, signer.account_id()).await? {
 		return Ok(());
 	}
 
 	// 4. Fetch the target and voter snapshots if needed.
-	let snapshot = {
-		if let Some(snapshot) = state.as_snapshot() {
-			fetch_missing_snapshots(snapshot, &storage).await?;
-			snapshot
-		} else {
-			*state = MonitorState::Snapshot(fetch_full_snapshot(&storage, n_pages).await?);
-			state.as_snapshot().expect("Snapshot state initialized above; qed")
-		}
-	};
+	fetch_missing_snapshots::<T>(snapshot, &storage).await?;
 
 	let desired_targets = storage
 		.fetch(&runtime::storage().multi_block().desired_targets())
@@ -234,8 +183,7 @@ where
 			.await?;
 
 	// 6. Check if our score is better according to submit strategy.
-	if !score_better(&storage, paged_raw_solution.score, n_pages).await? {
-		log::trace!(target: LOG_TARGET, "Better solution already exists, skipping..");
+	if !score_better(&client, paged_raw_solution.score, round).await? {
 		return Ok(());
 	}
 
@@ -262,36 +210,20 @@ where
 	}
 
 	// 9. Wait for verification.
-	*state = MonitorState::Submitted { round: n_pages, block: at.number };
+	// TODO: Implement verification....
+
 	Ok(())
 }
 
-async fn heads_subscription(
-	rpc: &RpcClient,
-	listen: Listen,
-) -> Result<RpcSubscription<Header>, Error> {
-	match listen {
-		Listen::Head => rpc.chain_subscribe_new_heads().await,
-		Listen::Finalized => rpc.chain_subscribe_finalized_heads().await,
-	}
-	.map_err(Into::into)
-}
-
 async fn has_submitted<T: MinerConfig>(
-	storage: &Storage,
+	client: &Client,
 	round: u32,
-	state: &mut MonitorState<T>,
 	who: &subxt::config::substrate::AccountId32,
 ) -> Result<bool, Error> {
-	if matches!(state, MonitorState::Submitted { .. }) {
-		return Ok(true);
-	}
-
-	let scores = storage
-		.fetch_or_default(&runtime::storage().multi_block_signed().sorted_scores(round))
+	let scores = client.chain_api().storage().at_latest().await?.fetch_or_default(&runtime::storage().multi_block_signed().sorted_scores(round))
 		.await?;
 
-	log::trace!(target: LOG_TARGET, "scores: {:?}", scores);
+	log::trace!(target: LOG_TARGET, "Checking if our miner has already submitted at round={round} {:?}", scores);
 
 	if scores.0.into_iter().any(|(account_id, _)| &account_id == who) {
 		return Ok(true);
@@ -300,14 +232,13 @@ async fn has_submitted<T: MinerConfig>(
 	Ok(false)
 }
 
-async fn score_better(storage: &Storage, cand: ElectionScore, round: u32) -> Result<bool, Error> {
-	let scores = storage
-		.fetch_or_default(&runtime::storage().multi_block_signed().sorted_scores(round))
+async fn score_better(client: &Client, score: ElectionScore, round: u32) -> Result<bool, Error> {
+	let scores = client.chain_api().storage().at_latest().await?.fetch_or_default(&runtime::storage().multi_block_signed().sorted_scores(round))
 		.await?;
 
-	log::trace!(target: LOG_TARGET, "scores: {:?}", scores);
+	log::trace!(target: LOG_TARGET, "Checking if score is better at round={round}, {:?}", scores);
 
-	if scores.0.into_iter().any(|(_, score)| score.0 > cand) {
+	if scores.0.into_iter().any(|(_, other_score)| other_score.0 > score) {
 		return Ok(false);
 	}
 

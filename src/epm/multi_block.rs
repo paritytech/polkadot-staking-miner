@@ -295,22 +295,6 @@ where
 	}
 }
 
-pub(crate) async fn fetch_full_snapshot<T: MinerConfig>(
-	storage: &Storage,
-	n_pages: u32,
-) -> Result<Snapshot<T>, Error> {
-	let mut snapshot = Snapshot::new(n_pages);
-
-	snapshot.set_target_snapshot(target_snapshot::<T>(snapshot.n_pages - 1, &storage).await?);
-
-	for page in 0..n_pages {
-		let voter_snapshot = paged_voter_snapshot::<T>(page, &storage).await?;
-		snapshot.set_voter_page(page, voter_snapshot);
-	}
-
-	Ok(snapshot)
-}
-
 pub(crate) async fn fetch_missing_snapshots<T: MinerConfig>(
 	snapshot: &mut Snapshot<T>,
 	storage: &Storage,

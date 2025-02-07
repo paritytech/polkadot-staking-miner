@@ -15,8 +15,7 @@
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
 use crate::{
-	error::Error,
-	prelude::{ChainClient, Config, Hash, LOG_TARGET},
+	commands::Listen, error::Error, prelude::{ChainClient, Config, Hash, LOG_TARGET, Header, RpcClient}
 };
 use codec::Decode;
 use jsonrpsee::core::ClientError as JsonRpseeError;
@@ -30,9 +29,10 @@ use std::{
 	time::{Duration, Instant},
 };
 use subxt::{
-	error::{Error as SubxtError, RpcError},
-	storage::Storage,
-	tx::{TxInBlock, TxProgress},
+	backend::rpc::RpcSubscription, 
+	error::{Error as SubxtError, RpcError}, 
+	storage::Storage, 
+	tx::{TxInBlock, TxProgress}
 };
 
 pin_project! {
@@ -185,4 +185,15 @@ where
 		}
 	}
 	Err(RpcError::SubscriptionDropped.into())
+}
+
+pub async fn rpc_block_subscription(
+	rpc: &RpcClient,
+	listen: Listen,
+) -> Result<RpcSubscription<Header>, Error> {
+	match listen {
+		Listen::Head => rpc.chain_subscribe_new_heads().await,
+		Listen::Finalized => rpc.chain_subscribe_finalized_heads().await,
+	}
+	.map_err(Into::into)
 }

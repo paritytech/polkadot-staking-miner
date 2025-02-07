@@ -187,7 +187,7 @@ where
 		dry_run_works(client.rpc()).await?;
 	}
 
-	let mut subscription = heads_subscription(client.rpc(), config.listen).await?;
+	let mut subscription = helpers::rpc_block_subscription(client.rpc(), config.listen).await?;
 	let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
 	let submit_lock = Arc::new(Mutex::new(()));
 
@@ -205,7 +205,7 @@ where
 					//	- the subscription could not keep up with the server.
 					None => {
 						log::warn!(target: LOG_TARGET, "subscription to `{:?}` terminated. Retrying..", config.listen);
-						subscription = heads_subscription(client.rpc(), config.listen).await?;
+						subscription = helpers::rpc_block_subscription(client.rpc(), config.listen).await?;
 						continue
 					}
 				}
@@ -593,17 +593,6 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 	};
 
 	Ok(())
-}
-
-async fn heads_subscription(
-	rpc: &RpcClient,
-	listen: Listen,
-) -> Result<RpcSubscription<Header>, Error> {
-	match listen {
-		Listen::Head => rpc.chain_subscribe_new_heads().await,
-		Listen::Finalized => rpc.chain_subscribe_finalized_heads().await,
-	}
-	.map_err(Into::into)
 }
 
 async fn get_latest_head(rpc: &RpcClient, listen: Listen) -> Result<Hash, Error> {
