@@ -59,6 +59,7 @@ where
 	let submit_lock = Arc::new(Mutex::new(()));
 	let snapshot = SharedSnapshot::<T>::new(static_types::Pages::get());
 	let mut pending_tasks: Vec<AbortHandle> = Vec::new();
+	let mut prev_block_signed_phase = false;
 
 	log::info!(target: LOG_TARGET, "Loaded account {} {{ nonce: {}, free_balance: {}, reserved_balance: {}, frozen_balance: {} }}",
 		signer,
@@ -97,14 +98,22 @@ where
 
 		let state = BlockDetails::new(&client, at).await?;
 
-		// Signal to pending mining task the sign phase has ended.
 		if !state.phase_is_signed() && !state.phase_is_snapshot() {
+			// Signal to pending mining task the sign phase has ended.
 			for stop in pending_tasks.drain(..) {
 				stop.abort();
 			}
+
+			// Clear snapshot cache
+			if prev_block_signed_phase {
+				snapshot.write().clear();
+				prev_block_signed_phase = false;
+			}
+
 			continue;
 		}
 
+		prev_block_signed_phase = true;
 		let snapshot = snapshot.clone();
 		let signer = signer.clone();
 		let client = client.clone();
@@ -170,10 +179,7 @@ where
 		},
 		Phase::Signed => {},
 		// Ignore other phases.
-		_ => {
-			snapshot.write().clear();
-			return Ok(());
-		},
+		_ => return Ok(()),
 	}
 
 	// 2. If the solution has already been submitted, nothing to do

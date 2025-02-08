@@ -163,17 +163,6 @@ where
 
 /// Read the constants from the metadata and updates the static types.
 pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
-	/*const SIGNED_MAX_WEIGHT: EpmConstant = EpmConstant::new("SignedMaxWeight");
-	const MAX_LENGTH: EpmConstant = EpmConstant::new("MinerMaxLength");
-	const MAX_VOTES_PER_VOTER: EpmConstant = EpmConstant::new("MinerMaxVotesPerVoter");
-	// NOTE: `MaxWinners` is used instead of `MinerMaxWinners` to work with older metadata.
-	const MAX_WINNERS: EpmConstant = EpmConstant::new("MaxWinners");
-
-	let max_weight = read_constant::<Weight>(api, SIGNED_MAX_WEIGHT)?;
-	let max_length: u32 = read_constant(api, MAX_LENGTH)?;
-	let max_votes_per_voter: u32 = read_constant(api, MAX_VOTES_PER_VOTER)?;
-	let max_winners: u32 = read_constant(api, MAX_WINNERS)?;*/
-
 	static_types::MaxWeight::set(
 		pallet_api::election_provider_multi_phase::constants::MAX_WEIGHT.fetch(api)?,
 	);

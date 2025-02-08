@@ -77,6 +77,7 @@ pub mod westend {
 		type MaxLength = MaxLength;
 		type MaxWeight = MaxWeight;
 		type MaxVotesPerVoter = MaxVotesPerVoter;
+		// TODO(niklasad1): breaking change...
 		type MaxBackersPerWinner = ();
 		type Solution = NposSolution16;
 		type MaxWinners = MaxWinners;
@@ -136,6 +137,7 @@ pub mod polkadot {
 		type MaxLength = MaxLength;
 		type MaxWeight = MaxWeight;
 		type MaxVotesPerVoter = MaxVotesPerVoter;
+		// TODO(niklasad1): breaking change...
 		type MaxBackersPerWinner = ();
 		type Solution = NposSolution16;
 		type MaxWinners = MaxWinners;
@@ -195,6 +197,7 @@ pub mod kusama {
 		type MaxLength = MaxLength;
 		type MaxWeight = MaxWeight;
 		type MaxVotesPerVoter = MaxVotesPerVoter;
+		// TODO(niklasad1): breaking change...
 		type MaxBackersPerWinner = ();
 		type Solution = NposSolution24;
 		type MaxWinners = MaxWinners;
