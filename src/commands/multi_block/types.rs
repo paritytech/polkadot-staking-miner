@@ -1,12 +1,23 @@
-use crate::prelude::{Hash, TargetSnapshotPage, VoterSnapshotPage};
-use polkadot_sdk::pallet_election_provider_multi_block::unsigned::miner::MinerConfig;
-use std::collections::BTreeMap;
-use std::sync::{Arc, RwLock};
+use crate::{
+	client::Client,
+	error::Error,
+	helpers,
+	prelude::{runtime, Hash, Header, Storage, TargetSnapshotPage, VoterSnapshotPage, LOG_TARGET},
+	static_types,
+};
+use polkadot_sdk::pallet_election_provider_multi_block::{
+	types::Phase, unsigned::miner::MinerConfig,
+};
+use std::{
+	collections::BTreeMap,
+	sync::{Arc, RwLock},
+};
+use subxt::config::Header as _;
 
 type Page = u32;
 
 /// Snapshot of the target and voter pages in the multi-block stuff.
-/// 
+///
 /// This type is used to store the target and voter snapshots in the multi-block
 /// and relies on the hash to verify the snapshot is up-to-date with what's on-chain.
 pub struct Snapshot<T: MinerConfig> {
@@ -60,7 +71,6 @@ impl<T: MinerConfig> Snapshot<T> {
 	}
 }
 
-
 pub struct SharedSnapshot<T: MinerConfig>(Arc<RwLock<Snapshot<T>>>);
 
 impl<T: MinerConfig> SharedSnapshot<T> {
@@ -80,5 +90,50 @@ impl<T: MinerConfig> SharedSnapshot<T> {
 impl<T: MinerConfig> Clone for SharedSnapshot<T> {
 	fn clone(&self) -> Self {
 		SharedSnapshot(self.0.clone())
+	}
+}
+
+/// Block details related to multi-block.
+pub struct BlockDetails {
+	pub storage: Storage,
+	pub phase: Phase<u32>,
+	pub n_pages: u32,
+	pub round: u32,
+	pub target_snapshot_page: u32,
+	pub desired_targets: u32,
+}
+
+impl BlockDetails {
+	pub async fn new(client: &Client, at: Header) -> Result<Self, Error> {
+		let storage = helpers::storage_at(Some(at.hash()), client.chain_api()).await?;
+		let round = storage.fetch_or_default(&runtime::storage().multi_block().round()).await?;
+		let phase = storage
+			.fetch_or_default(&runtime::storage().multi_block().current_phase())
+			.await?;
+		let desired_targets = storage
+			.fetch(&runtime::storage().multi_block().desired_targets())
+			.await?
+			.unwrap_or(0);
+
+		log::trace!(target: LOG_TARGET, "Processing block={} round={}, phase={:?}", at.number, round, phase.0);
+
+		let n_pages = static_types::Pages::get();
+
+		Ok(Self {
+			storage,
+			phase: phase.0,
+			n_pages,
+			round,
+			target_snapshot_page: n_pages - 1,
+			desired_targets,
+		})
+	}
+
+	pub fn phase_is_signed(&self) -> bool {
+		matches!(self.phase, Phase::Signed)
+	}
+
+	pub fn phase_is_snapshot(&self) -> bool {
+		matches!(self.phase, Phase::Snapshot(_))
 	}
 }

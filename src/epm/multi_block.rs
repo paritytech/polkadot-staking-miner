@@ -8,7 +8,7 @@ use crate::{
 	error::Error,
 	helpers::{self, TimedFuture},
 	prelude::{
-		runtime, AccountId, ChainClient, Config, Hash, Header, Storage, TargetSnapshotPage,
+		runtime, AccountId, ChainClient, Config, Hash, Storage, TargetSnapshotPage,
 		TargetSnapshotPageOf, VoterSnapshotPage, VoterSnapshotPageOf, LOG_TARGET,
 	},
 	signer::Signer,
@@ -24,33 +24,33 @@ use polkadot_sdk::{
 	sp_npos_elections::ElectionScore,
 };
 use subxt::{
-	blocks::ExtrinsicEvents,
-	config::{DefaultExtrinsicParamsBuilder, Header as _},
-	dynamic::Value,
+	blocks::ExtrinsicEvents, config::DefaultExtrinsicParamsBuilder, dynamic::Value,
 	tx::DynamicPayload,
 };
 
 /// A multi-block transaction.
 pub enum TransactionKind {
 	RegisterScore,
-	SubmitPage,
+	SubmitPage(u32),
+}
+
+impl std::fmt::Display for TransactionKind {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Self::RegisterScore => f.write_str("register score"),
+			Self::SubmitPage(p) => f.write_fmt(format_args!("submit page {p}")),
+		}
+	}
 }
 
 impl TransactionKind {
-	pub fn as_str(&self) -> &'static str {
-		match self {
-			Self::RegisterScore => "register score",
-			Self::SubmitPage => "submit page",
-		}
-	}
-
 	/// Check if the transaction is in the given events.
 	#[allow(unused, dead_code)]
 	pub fn in_events(&self, evs: &ExtrinsicEvents<Config>) -> Result<bool, Error> {
 		match self {
 			Self::RegisterScore =>
 				evs.has::<runtime::multi_block_signed::events::Registered>().map_err(Into::into),
-			Self::SubmitPage =>
+			Self::SubmitPage(_) =>
 				evs.has::<runtime::multi_block_signed::events::Stored>().map_err(Into::into),
 		}
 	}
@@ -84,7 +84,7 @@ impl MultiBlockTransaction {
 			.map_err(|err| dynamic_decode_error::<T::Solution>(err))?;
 
 		Ok(Self {
-			kind: TransactionKind::SubmitPage,
+			kind: TransactionKind::SubmitPage(page),
 			tx: tx(
 				pallet_api::multi_block_signed::tx::SUBMIT_PAGE,
 				vec![scale_page, scale_solution],
@@ -183,37 +183,35 @@ where
 
 /// Submits and watches a `DynamicPayload`, ie. an extrinsic.
 pub(crate) async fn submit_and_watch<T: MinerConfig + Send + Sync + 'static>(
-	at: &Header,
 	client: &Client,
 	signer: Signer,
 	listen: Listen,
 	tx: MultiBlockTransaction,
 ) -> Result<(), Error> {
 	let (kind, tx) = tx.to_parts();
-	let block_hash = at.hash();
 	let nonce = client.rpc().system_account_next_index(signer.account_id()).await?;
 
-	log::trace!(target: LOG_TARGET, "submit_and_watch for `{}` at {:?}", kind.as_str(), block_hash);
+	log::trace!(target: LOG_TARGET, "submit_and_watch for `{kind}`");
 
 	// NOTE: subxt sets mortal extrinsic by default.
 	let xt_cfg = DefaultExtrinsicParamsBuilder::default().nonce(nonce).build();
 	let xt = client.chain_api().tx().create_signed(&tx, &*signer, xt_cfg).await?;
 
 	let tx_progress = xt.submit_and_watch().await.map_err(|e| {
-		log::error!(target: LOG_TARGET, "submit tx {} failed: {:?}", kind.as_str(), e);
+		log::error!(target: LOG_TARGET, "submit tx {kind} failed: {:?}", e);
 		e
 	})?;
 
 	match listen {
 		Listen::Head => {
+			let best_block = helpers::wait_for_in_block(tx_progress).await?;
+			log::trace!(target: LOG_TARGET, "{kind} included at={:?}", best_block.block_hash());
 			// TODO: check events, this is flaky because we listen to best head.
-			helpers::wait_for_in_block(tx_progress).await?;
-		
 		},
 		Listen::Finalized => {
-			let _finalized_block = tx_progress.wait_for_finalized().await?;
+			let finalized_block = tx_progress.wait_for_finalized().await?;
+			log::trace!(target: LOG_TARGET, "{kind} finalized at={:?}", finalized_block.block_hash());
 			// TODO: to slow to wait for events with polkadot-sdk staking-playground feature
-			//let _block_hash = finalized_block.block_hash();
 			// let _evs = finalized_block.wait_for_success().await?
 		},
 	}
@@ -293,9 +291,10 @@ pub(crate) async fn fetch_missing_snapshots<T: MinerConfig>(
 }
 
 pub(crate) async fn paged_voter_snapshot_hash(page: u32, storage: &Storage) -> Result<Hash, Error> {
-	let bytes = storage.fetch(&storage_addr(
-				pallet_api::multi_block::storage::PAGED_VOTER_SNAPSHOT_HASH,
-				vec![Value::from(page)],
+	let bytes = storage
+		.fetch(&storage_addr(
+			pallet_api::multi_block::storage::PAGED_VOTER_SNAPSHOT_HASH,
+			vec![Value::from(page)],
 		))
 		.await?
 		.ok_or(Error::EmptySnapshot)?;
@@ -305,7 +304,10 @@ pub(crate) async fn paged_voter_snapshot_hash(page: u32, storage: &Storage) -> R
 
 pub(crate) async fn target_snapshot_hash(page: u32, storage: &Storage) -> Result<Hash, Error> {
 	let bytes = storage
-		.fetch(&storage_addr(pallet_api::multi_block::storage::PAGED_TARGET_SNAPSHOT_HASH, vec![Value::from(page)]))
+		.fetch(&storage_addr(
+			pallet_api::multi_block::storage::PAGED_TARGET_SNAPSHOT_HASH,
+			vec![Value::from(page)],
+		))
 		.await?
 		.ok_or(Error::EmptySnapshot)?;
 
