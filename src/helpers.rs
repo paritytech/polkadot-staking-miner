@@ -15,13 +15,15 @@
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
 use crate::{
-	commands::Listen, error::Error, prelude::{ChainClient, Config, Hash, LOG_TARGET, Header, RpcClient},
 	client::Client,
+	commands::{Listen, SubmissionStrategy},
+	error::Error,
+	prelude::{ChainClient, Config, Hash, Header, RpcClient, LOG_TARGET},
 };
 use codec::Decode;
 use jsonrpsee::core::ClientError as JsonRpseeError;
 use pin_project_lite::pin_project;
-use polkadot_sdk::frame_support::weights::Weight;
+use polkadot_sdk::{frame_support::weights::Weight, sp_npos_elections, sp_runtime::Perbill};
 use serde::Deserialize;
 use std::{
 	future::Future,
@@ -30,10 +32,10 @@ use std::{
 	time::{Duration, Instant},
 };
 use subxt::{
-	backend::rpc::RpcSubscription, 
-	error::{Error as SubxtError, RpcError}, 
-	storage::Storage, 
-	tx::{TxInBlock, TxProgress}
+	backend::rpc::RpcSubscription,
+	error::{Error as SubxtError, RpcError},
+	storage::Storage,
+	tx::{TxInBlock, TxProgress},
 };
 
 pin_project! {
@@ -158,7 +160,10 @@ pub async fn storage_at(
 	}
 }
 
-pub async fn storage_at_head(api: &Client, listen: Listen) -> Result<Storage<Config, ChainClient>, Error> {
+pub async fn storage_at_head(
+	api: &Client,
+	listen: Listen,
+) -> Result<Storage<Config, ChainClient>, Error> {
 	let hash = rpc_get_latest_head(api.rpc(), listen).await?;
 	storage_at(Some(hash), api.chain_api()).await
 }
@@ -212,5 +217,75 @@ pub async fn rpc_get_latest_head(rpc: &RpcClient, listen: Listen) -> Result<Hash
 			Err(e) => Err(e.into()),
 		},
 		Listen::Finalized => rpc.chain_get_finalized_head().await.map_err(Into::into),
+	}
+}
+
+/// Returns `true` if `our_score` better the onchain `best_score` according the given strategy.
+pub fn score_passes_strategy(
+	our_score: sp_npos_elections::ElectionScore,
+	best_score: sp_npos_elections::ElectionScore,
+	strategy: SubmissionStrategy,
+) -> bool {
+	match strategy {
+		SubmissionStrategy::Always => true,
+		SubmissionStrategy::IfLeading =>
+			our_score.strict_threshold_better(best_score, Perbill::zero()),
+		SubmissionStrategy::ClaimBetterThan(epsilon) =>
+			our_score.strict_threshold_better(best_score, epsilon),
+		SubmissionStrategy::ClaimNoWorseThan(epsilon) =>
+			!best_score.strict_threshold_better(our_score, epsilon),
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn score_passes_strategy_works() {
+		let s = |x| sp_npos_elections::ElectionScore { minimal_stake: x, ..Default::default() };
+		let two = Perbill::from_percent(2);
+
+		// anything passes Always
+		assert!(score_passes_strategy(s(0), s(0), SubmissionStrategy::Always));
+		assert!(score_passes_strategy(s(5), s(0), SubmissionStrategy::Always));
+		assert!(score_passes_strategy(s(5), s(10), SubmissionStrategy::Always));
+
+		// if leading
+		assert!(!score_passes_strategy(s(0), s(0), SubmissionStrategy::IfLeading));
+		assert!(score_passes_strategy(s(1), s(0), SubmissionStrategy::IfLeading));
+		assert!(score_passes_strategy(s(2), s(0), SubmissionStrategy::IfLeading));
+		assert!(!score_passes_strategy(s(5), s(10), SubmissionStrategy::IfLeading));
+		assert!(!score_passes_strategy(s(9), s(10), SubmissionStrategy::IfLeading));
+		assert!(!score_passes_strategy(s(10), s(10), SubmissionStrategy::IfLeading));
+
+		// if better by 2%
+		assert!(!score_passes_strategy(s(50), s(100), SubmissionStrategy::ClaimBetterThan(two)));
+		assert!(!score_passes_strategy(s(100), s(100), SubmissionStrategy::ClaimBetterThan(two)));
+		assert!(!score_passes_strategy(s(101), s(100), SubmissionStrategy::ClaimBetterThan(two)));
+		assert!(!score_passes_strategy(s(102), s(100), SubmissionStrategy::ClaimBetterThan(two)));
+		assert!(score_passes_strategy(s(103), s(100), SubmissionStrategy::ClaimBetterThan(two)));
+		assert!(score_passes_strategy(s(150), s(100), SubmissionStrategy::ClaimBetterThan(two)));
+
+		// if no less than 2% worse
+		assert!(!score_passes_strategy(s(50), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
+		assert!(!score_passes_strategy(s(97), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
+		assert!(score_passes_strategy(s(98), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
+		assert!(score_passes_strategy(s(99), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
+		assert!(score_passes_strategy(s(100), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
+		assert!(score_passes_strategy(s(101), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
+		assert!(score_passes_strategy(s(102), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
+		assert!(score_passes_strategy(s(103), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
+		assert!(score_passes_strategy(s(150), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
+	}
+
+	#[test]
+	fn submission_strategy_from_str_works() {
+		assert_eq!(SubmissionStrategy::from_str("if-leading"), Ok(SubmissionStrategy::IfLeading));
+		assert_eq!(SubmissionStrategy::from_str("always"), Ok(SubmissionStrategy::Always));
+		assert_eq!(
+			SubmissionStrategy::from_str("  percent-better 99   "),
+			Ok(SubmissionStrategy::ClaimBetterThan(Accuracy::from_percent(99)))
+		);
 	}
 }

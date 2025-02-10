@@ -2,19 +2,18 @@ use crate::{
 	client::Client,
 	commands::{
 		multi_block::types::{BlockDetails, SharedSnapshot},
-		Listen,
+		Listen, SubmissionStrategy,
 	},
 	epm::{
 		self, check_and_update_target_snapshot, check_and_update_voter_snapshot,
 		fetch_missing_snapshots, submit_and_watch, MultiBlockTransaction,
 	},
 	error::Error,
-	helpers::{self, kill_main_task_if_critical_err, storage_at_head},
+	helpers::{self, kill_main_task_if_critical_err, score_passes_strategy, storage_at_head},
 	prelude::{runtime, AccountId, Storage, LOG_TARGET},
 	signer::Signer,
 	static_types,
 };
-
 use futures::future::{abortable, AbortHandle};
 use polkadot_sdk::{
 	pallet_election_provider_multi_block::{types::Phase, unsigned::miner::MinerConfig},
@@ -24,13 +23,16 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 /// TODO(niklasad1): Add solver algorithm configuration to the monitor command.
-#[derive(Debug, Clone, clap::Parser, PartialEq)]
+#[derive(Debug, Clone, clap::Parser)]
 pub struct MonitorConfig {
 	#[clap(long, short, env = "SEED")]
 	pub seed_or_path: String,
 
 	#[clap(long, value_enum, default_value_t = Listen::Finalized)]
 	pub listen: Listen,
+
+	#[clap(long, value_parser, default_value = "if-leading")]
+	pub submission_strategy: SubmissionStrategy,
 }
 
 pub async fn monitor_cmd<T>(client: Client, config: MonitorConfig) -> Result<(), Error>
@@ -120,8 +122,16 @@ where
 		let submit_lock = submit_lock.clone();
 		let tx = tx.clone();
 		let (fut, handle) = abortable(async move {
-			if let Err(e) =
-				process_block(client, state, snapshot, signer, config.listen, submit_lock).await
+			if let Err(e) = process_block(
+				client,
+				state,
+				snapshot,
+				signer,
+				config.listen,
+				submit_lock,
+				config.submission_strategy,
+			)
+			.await
 			{
 				kill_main_task_if_critical_err(&tx, e);
 			}
@@ -149,6 +159,7 @@ async fn process_block<T>(
 	signer: Signer,
 	listen: Listen,
 	submit_lock: Arc<Mutex<()>>,
+	submission_strategy: SubmissionStrategy,
 ) -> Result<(), Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
@@ -212,7 +223,7 @@ where
 	// 6. Check that our score is the best (we could also check if our miner hasn't submitted yet)
 	let storage_head = helpers::storage_at_head(&client, listen).await?;
 
-	if !score_is_best(&storage_head, paged_raw_solution.score, round).await? {
+	if !score_is_best(&storage_head, paged_raw_solution.score, round, submission_strategy).await? {
 		return Ok(());
 	}
 
@@ -259,12 +270,21 @@ async fn has_submitted<T: MinerConfig>(
 }
 
 /// Whether the computed score is better than what is already in the chain.
-async fn score_is_best(storage: &Storage, score: ElectionScore, round: u32) -> Result<bool, Error> {
+async fn score_is_best(
+	storage: &Storage,
+	score: ElectionScore,
+	round: u32,
+	strategy: SubmissionStrategy,
+) -> Result<bool, Error> {
 	let scores = storage
 		.fetch_or_default(&runtime::storage().multi_block_signed().sorted_scores(round))
 		.await?;
 
-	if scores.0.into_iter().any(|(_, other_score)| other_score.0 > score) {
+	if scores
+		.0
+		.into_iter()
+		.any(|(_, other_score)| !score_passes_strategy(score, other_score.0, strategy))
+	{
 		return Ok(false);
 	}
 

@@ -16,10 +16,13 @@
 
 use crate::{
 	client::Client,
-	commands::Listen,
+	commands::{Listen, SubmissionStrategy},
 	epm,
 	error::Error,
-	helpers::{kill_main_task_if_critical_err, wait_for_in_block, TimedFuture, rpc_block_subscription},
+	helpers::{
+		kill_main_task_if_critical_err, rpc_block_subscription, score_passes_strategy,
+		wait_for_in_block, TimedFuture,
+	},
 	opt::Solver,
 	prelude::{runtime, AccountId, ChainClient, Hash, Header, RpcClient, LOG_TARGET},
 	prometheus,
@@ -103,53 +106,6 @@ pub struct MonitorConfig {
 	/// then the miner will be terminated.
 	#[clap(long)]
 	pub dry_run: bool,
-}
-
-/// Submission strategy to use.
-#[derive(Debug, Copy, Clone)]
-#[cfg_attr(test, derive(PartialEq))]
-pub enum SubmissionStrategy {
-	/// Always submit.
-	Always,
-	// Submit if we are leading, or if the solution that's leading is more that the given `Perbill`
-	// better than us. This helps detect obviously fake solutions and still combat them.
-	/// Only submit if at the time, we are the best (or equal to it).
-	IfLeading,
-	/// Submit if we are no worse than `Perbill` worse than the best.
-	ClaimNoWorseThan(Perbill),
-	/// Submit if we are leading, or if the solution that's leading is more that the given `Perbill`
-	/// better than us. This helps detect obviously fake solutions and still combat them.
-	ClaimBetterThan(Perbill),
-}
-
-/// Custom `impl` to parse `SubmissionStrategy` from CLI.
-///
-/// Possible options:
-/// * --submission-strategy if-leading: only submit if leading
-/// * --submission-strategy always: always submit
-/// * --submission-strategy "percent-better <percent>": submit if submission is `n` percent better.
-///
-impl FromStr for SubmissionStrategy {
-	type Err = String;
-
-	fn from_str(s: &str) -> Result<Self, Self::Err> {
-		let s = s.trim();
-
-		let res = if s == "if-leading" {
-			Self::IfLeading
-		} else if s == "always" {
-			Self::Always
-		} else if let Some(percent) = s.strip_prefix("no-worse-than ") {
-			let percent: u32 = percent.parse().map_err(|e| format!("{:?}", e))?;
-			Self::ClaimNoWorseThan(Perbill::from_percent(percent))
-		} else if let Some(percent) = s.strip_prefix("percent-better ") {
-			let percent: u32 = percent.parse().map_err(|e| format!("{:?}", e))?;
-			Self::ClaimBetterThan(Perbill::from_percent(percent))
-		} else {
-			return Err(s.into());
-		};
-		Ok(res)
-	}
 }
 
 pub async fn monitor_cmd<T>(client: Client, config: MonitorConfig) -> Result<(), Error>
@@ -606,23 +562,6 @@ async fn get_latest_head(rpc: &RpcClient, listen: Listen) -> Result<Hash, Error>
 	}
 }
 
-/// Returns `true` if `our_score` better the onchain `best_score` according the given strategy.
-pub(crate) fn score_passes_strategy(
-	our_score: sp_npos_elections::ElectionScore,
-	best_score: sp_npos_elections::ElectionScore,
-	strategy: SubmissionStrategy,
-) -> bool {
-	match strategy {
-		SubmissionStrategy::Always => true,
-		SubmissionStrategy::IfLeading =>
-			our_score.strict_threshold_better(best_score, Perbill::zero()),
-		SubmissionStrategy::ClaimBetterThan(epsilon) =>
-			our_score.strict_threshold_better(best_score, epsilon),
-		SubmissionStrategy::ClaimNoWorseThan(epsilon) =>
-			!best_score.strict_threshold_better(our_score, epsilon),
-	}
-}
-
 async fn dry_run_works(rpc: &RpcClient) -> Result<(), Error> {
 	if let Err(SubxtError::Rpc(RpcError::ClientError(e))) = rpc.dry_run(&[], None).await {
 		let rpc_err = match e.downcast::<JsonRpseeError>() {
@@ -644,57 +583,4 @@ async fn dry_run_works(rpc: &RpcClient) -> Result<(), Error> {
 		}
 	}
 	Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn score_passes_strategy_works() {
-		let s = |x| sp_npos_elections::ElectionScore { minimal_stake: x, ..Default::default() };
-		let two = Perbill::from_percent(2);
-
-		// anything passes Always
-		assert!(score_passes_strategy(s(0), s(0), SubmissionStrategy::Always));
-		assert!(score_passes_strategy(s(5), s(0), SubmissionStrategy::Always));
-		assert!(score_passes_strategy(s(5), s(10), SubmissionStrategy::Always));
-
-		// if leading
-		assert!(!score_passes_strategy(s(0), s(0), SubmissionStrategy::IfLeading));
-		assert!(score_passes_strategy(s(1), s(0), SubmissionStrategy::IfLeading));
-		assert!(score_passes_strategy(s(2), s(0), SubmissionStrategy::IfLeading));
-		assert!(!score_passes_strategy(s(5), s(10), SubmissionStrategy::IfLeading));
-		assert!(!score_passes_strategy(s(9), s(10), SubmissionStrategy::IfLeading));
-		assert!(!score_passes_strategy(s(10), s(10), SubmissionStrategy::IfLeading));
-
-		// if better by 2%
-		assert!(!score_passes_strategy(s(50), s(100), SubmissionStrategy::ClaimBetterThan(two)));
-		assert!(!score_passes_strategy(s(100), s(100), SubmissionStrategy::ClaimBetterThan(two)));
-		assert!(!score_passes_strategy(s(101), s(100), SubmissionStrategy::ClaimBetterThan(two)));
-		assert!(!score_passes_strategy(s(102), s(100), SubmissionStrategy::ClaimBetterThan(two)));
-		assert!(score_passes_strategy(s(103), s(100), SubmissionStrategy::ClaimBetterThan(two)));
-		assert!(score_passes_strategy(s(150), s(100), SubmissionStrategy::ClaimBetterThan(two)));
-
-		// if no less than 2% worse
-		assert!(!score_passes_strategy(s(50), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
-		assert!(!score_passes_strategy(s(97), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
-		assert!(score_passes_strategy(s(98), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
-		assert!(score_passes_strategy(s(99), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
-		assert!(score_passes_strategy(s(100), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
-		assert!(score_passes_strategy(s(101), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
-		assert!(score_passes_strategy(s(102), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
-		assert!(score_passes_strategy(s(103), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
-		assert!(score_passes_strategy(s(150), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
-	}
-
-	#[test]
-	fn submission_strategy_from_str_works() {
-		assert_eq!(SubmissionStrategy::from_str("if-leading"), Ok(SubmissionStrategy::IfLeading));
-		assert_eq!(SubmissionStrategy::from_str("always"), Ok(SubmissionStrategy::Always));
-		assert_eq!(
-			SubmissionStrategy::from_str("  percent-better 99   "),
-			Ok(SubmissionStrategy::ClaimBetterThan(Accuracy::from_percent(99)))
-		);
-	}
 }
