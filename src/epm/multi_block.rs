@@ -251,8 +251,8 @@ where
 
 	let input = MineInput {
 		desired_targets,
-		all_targets: target_snapshot,
-		voter_pages,
+		all_targets: target_snapshot.clone(),
+		voter_pages: voter_pages.clone(),
 		pages: n_pages,
 		// TODO: get from runtime/configs.
 		do_reduce: false,
@@ -260,7 +260,7 @@ where
 	};
 
 	// Mine solution
-	match tokio::task::spawn_blocking(move || {
+	let paged_raw_solution = match tokio::task::spawn_blocking(move || {
 		Miner::<T>::mine_solution(input).map_err(|e| Error::Other(format!("{:?}", e)))
 	})
 	.timed()
@@ -268,11 +268,22 @@ where
 	{
 		(Ok(Ok(s)), dur) => {
 			log::trace!(target: LOG_TARGET, "Mined solution in {}ms", dur.as_millis());
-			Ok(s)
+			s
 		},
-		(Ok(Err(e)), _) => Err(e),
-		(Err(e), _dur) => Err(Error::Other(format!("{:?}", e))),
-	}
+		(Ok(Err(e)), _) => return Err(e),
+		(Err(e), _dur) => return Err(Error::Other(format!("{:?}", e))),
+	};
+
+	Miner::<T>::check_feasibility(
+		&paged_raw_solution,
+		&voter_pages,
+		&target_snapshot,
+		desired_targets,
+		"multi-block-solution",
+	)
+	.map_err(|e| Error::Feasibility(format!("{:?}", e)))?;
+
+	Ok(paged_raw_solution)
 }
 
 pub(crate) async fn fetch_missing_snapshots<T: MinerConfig>(
