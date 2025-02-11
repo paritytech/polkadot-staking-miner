@@ -119,6 +119,11 @@ macro_rules! any_runtime {
 				use $crate::static_types::westend::MinerConfig;
 				$($code)*
 			},
+			$crate::opt::Chain::SubstrateNode => {
+				#[allow(unused)]
+				use $crate::static_types::node::MinerConfig;
+				$($code)*
+			},
 		}
 	};
 }
