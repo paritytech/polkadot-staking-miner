@@ -2992,7 +2992,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.87",
- "unicode-xid",
 ]
 
 [[package]]
@@ -10633,7 +10632,7 @@ dependencies = [
  "prometheus",
  "regex",
  "scale-info",
- "scale-value 0.17.0",
+ "scale-value 0.18.0",
  "serde",
  "serde_json",
  "subxt",
@@ -11871,19 +11870,6 @@ dependencies = [
 
 [[package]]
 name = "scale-decode"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8ae9cc099ae85ff28820210732b00f019546f36f33225f509fe25d5816864a0"
-dependencies = [
- "derive_more 1.0.0",
- "parity-scale-codec",
- "scale-bits 0.6.0",
- "scale-type-resolver",
- "smallvec",
-]
-
-[[package]]
-name = "scale-decode"
 version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4d78196772d25b90a98046794ce0fe2588b39ebdfbdc1e45b4c6c85dd43bebad"
@@ -11932,19 +11918,6 @@ dependencies = [
  "primitive-types 0.12.2",
  "scale-bits 0.6.0",
  "scale-encode-derive 0.7.2",
- "scale-type-resolver",
- "smallvec",
-]
-
-[[package]]
-name = "scale-encode"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f9271284d05d0749c40771c46180ce89905fd95aa72a2a2fddb4b7c0aa424db"
-dependencies = [
- "derive_more 1.0.0",
- "parity-scale-codec",
- "scale-bits 0.6.0",
  "scale-type-resolver",
  "smallvec",
 ]
@@ -12058,26 +12031,6 @@ dependencies = [
 
 [[package]]
 name = "scale-value"
-version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5e0ef2a0ee1e02a69ada37feb87ea1616ce9808aca072befe2d3131bf28576e"
-dependencies = [
- "base58",
- "blake2",
- "derive_more 1.0.0",
- "either",
- "parity-scale-codec",
- "scale-bits 0.6.0",
- "scale-decode 0.14.0",
- "scale-encode 0.8.0",
- "scale-info",
- "scale-type-resolver",
- "serde",
- "yap 0.11.0",
-]
-
-[[package]]
-name = "scale-value"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ca8b26b451ecb7fd7b62b259fa28add63d12ec49bbcac0e01fcb4b5ae0c09aa"
@@ -12092,7 +12045,7 @@ dependencies = [
  "scale-type-resolver",
  "serde",
  "thiserror 2.0.11",
- "yap 0.12.0",
+ "yap",
 ]
 
 [[package]]
@@ -16690,12 +16643,6 @@ dependencies = [
  "staging-xcm-builder 18.0.0",
  "staging-xcm-executor 18.0.0",
 ]
-
-[[package]]
-name = "yap"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff4524214bc4629eba08d78ceb1d6507070cc0bcbbed23af74e19e6e924a24cf"
 
 [[package]]
 name = "yap"
