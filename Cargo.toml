@@ -24,8 +24,8 @@ tokio = { version = "1.43", features = ["macros", "rt-multi-thread", "sync", "si
 pin-project-lite = "0.2"
 
 # subxt
-scale-value = "0.17"
-subxt = "0.38.1"
+scale-value = "0.18"
+subxt = "0.39.0"
 
 # polkadot-sdk
 polkadot-sdk = { version = "0.12", features = ["frame-election-provider-support", "frame-support", "sp-npos-elections", "sp-core", "sp-runtime", "pallet-election-provider-multi-phase"] }
