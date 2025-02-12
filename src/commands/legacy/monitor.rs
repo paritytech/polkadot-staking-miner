@@ -17,7 +17,7 @@
 use crate::{
 	client::Client,
 	commands::{Listen, SubmissionStrategy},
-	epm,
+	dynamic,
 	error::Error,
 	helpers::{
 		kill_main_task_if_critical_err, rpc_block_subscription, score_passes_strategy,
@@ -37,14 +37,12 @@ use polkadot_sdk::{
 	frame_election_provider_support::NposSolution,
 	pallet_election_provider_multi_phase::{MinerConfig, RawSolution, SolutionOf},
 	sp_npos_elections,
-	sp_runtime::Perbill,
 };
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 use subxt::{
-	backend::{legacy::rpc_methods::DryRunResult, rpc::RpcSubscription},
+	backend::legacy::rpc_methods::DryRunResult,
 	config::{DefaultExtrinsicParamsBuilder, Header as _},
 	error::RpcError,
-	tx::{TxInBlock, TxProgress},
 	Error as SubxtError,
 };
 use tokio::sync::Mutex;
@@ -267,7 +265,7 @@ where
 	tokio::time::sleep(std::time::Duration::from_secs(config.delay as u64)).await;
 	let _lock = submit_lock.lock().await;
 
-	let (solution, score) = match epm::fetch_snapshot_and_mine_solution::<T>(
+	let (solution, score) = match dynamic::fetch_snapshot_and_mine_solution::<T>(
 		client.chain_api(),
 		Some(block_hash),
 		config.solver,
@@ -428,7 +426,7 @@ where
 	let indices = api.storage().at(block_hash).fetch_or_default(&addr).await?;
 
 	for (_score, _, idx) in indices.0 {
-		let submission = epm::signed_submission_at::<T>(idx, Some(block_hash), api).await?;
+		let submission = dynamic::signed_submission_at::<T>(idx, Some(block_hash), api).await?;
 
 		if let Some(submission) = submission {
 			if &submission.who == us {
@@ -476,7 +474,7 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
 	dry_run: bool,
 	at: &Header,
 ) -> Result<(), Error> {
-	let tx = epm::signed_solution(RawSolution { solution, score, round })?;
+	let tx = dynamic::signed_solution(RawSolution { solution, score, round })?;
 
 	// By default we are using the epoch length as the mortality length.
 	// If that doesn't is available then we just use the default mortality provided by subxt.

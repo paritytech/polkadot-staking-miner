@@ -1,18 +1,19 @@
+//! Utils to interact with multi-block election system.
+
 use crate::{
 	client::Client,
 	commands::{Listen, SharedSnapshot},
-	epm::{
+	dynamic::{
 		pallet_api,
 		utils::{dynamic_decode_error, storage_addr, to_scale_value, tx},
 	},
 	error::Error,
 	helpers::{self, TimedFuture},
 	prelude::{
-		runtime, AccountId, ChainClient, Config, Hash, Storage, TargetSnapshotPage,
-		TargetSnapshotPageOf, VoterSnapshotPage, VoterSnapshotPageOf, LOG_TARGET,
+		runtime, AccountId, Config, Hash, Storage, TargetSnapshotPage, TargetSnapshotPageOf,
+		VoterSnapshotPage, VoterSnapshotPageOf, LOG_TARGET,
 	},
 	signer::Signer,
-	static_types,
 };
 use codec::Decode;
 use polkadot_sdk::{
@@ -95,31 +96,6 @@ impl MultiBlockTransaction {
 	pub fn to_parts(self) -> (TransactionKind, DynamicPayload) {
 		(self.kind, self.tx)
 	}
-}
-
-pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
-	// multi block constants.
-	let pages: u32 = pallet_api::multi_block::constants::PAGES.fetch(api)?;
-	static_types::Pages::set(pages);
-	static_types::TargetSnapshotPerBlock::set(
-		pallet_api::multi_block::constants::TARGET_SNAPSHOT_PER_BLOCK.fetch(api)?,
-	);
-	static_types::VoterSnapshotPerBlock::set(
-		pallet_api::multi_block::constants::VOTER_SNAPSHOT_PER_BLOCK.fetch(api)?,
-	);
-
-	// election provider constants.
-	static_types::MaxBackersPerWinner::set(
-		pallet_api::election_provider_multi_phase::constants::MAX_VOTES_PER_VOTER.fetch(api)?,
-	);
-	static_types::MaxLength::set(
-		pallet_api::election_provider_multi_phase::constants::MAX_LENGTH.fetch(api)?,
-	);
-	static_types::MaxWinnersPerPage::set(
-		pallet_api::election_provider_multi_phase::constants::MAX_WINNERS.fetch(api)?,
-	);
-
-	Ok(())
 }
 
 /// Fetches the target snapshot.
@@ -260,30 +236,29 @@ where
 	};
 
 	// Mine solution
-	let paged_raw_solution = match tokio::task::spawn_blocking(move || {
-		Miner::<T>::mine_solution(input).map_err(|e| Error::Other(format!("{:?}", e)))
+	match tokio::task::spawn_blocking(move || {
+		let paged_raw_solution =
+			Miner::<T>::mine_solution(input).map_err(|e| Error::Other(format!("{:?}", e)))?;
+		Miner::<T>::check_feasibility(
+			&paged_raw_solution,
+			&voter_pages,
+			&target_snapshot,
+			desired_targets,
+			"multi-block-solution",
+		)
+		.map_err(|e| Error::Feasibility(format!("{:?}", e)))?;
+		Ok(paged_raw_solution)
 	})
 	.timed()
 	.await
 	{
 		(Ok(Ok(s)), dur) => {
 			log::trace!(target: LOG_TARGET, "Mined solution in {}ms", dur.as_millis());
-			s
+			Ok(s)
 		},
-		(Ok(Err(e)), _) => return Err(e),
-		(Err(e), _dur) => return Err(Error::Other(format!("{:?}", e))),
-	};
-
-	Miner::<T>::check_feasibility(
-		&paged_raw_solution,
-		&voter_pages,
-		&target_snapshot,
-		desired_targets,
-		"multi-block-solution",
-	)
-	.map_err(|e| Error::Feasibility(format!("{:?}", e)))?;
-
-	Ok(paged_raw_solution)
+		(Ok(Err(e)), _) => Err(e),
+		(Err(e), _dur) => Err(Error::Other(format!("{:?}", e))),
+	}
 }
 
 pub(crate) async fn fetch_missing_snapshots<T: MinerConfig>(

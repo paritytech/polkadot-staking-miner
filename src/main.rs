@@ -38,7 +38,7 @@ std::compile_error!(
 
 mod client;
 mod commands;
-mod epm;
+mod dynamic;
 mod error;
 // TODO(niklasad1): feature-gate this module to avoid unused code.
 #[allow(unused, dead_code)]
@@ -141,7 +141,7 @@ async fn main() -> Result<(), Error> {
 	let _prometheus_handle = prometheus::run(prometheus_port)
 		.map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
 	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
-	epm::update_metadata_constants(client.chain_api())?;
+	dynamic::update_metadata_constants(client.chain_api())?;
 
 	SHARED_CLIENT.set(client.clone()).expect("shared client only set once; qed");
 
@@ -258,7 +258,7 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 		let version = update.runtime_version().spec_version;
 		match updater.apply_update(update) {
 			Ok(()) => {
-				if let Err(e) = epm::update_metadata_constants(&client) {
+				if let Err(e) = dynamic::update_metadata_constants(&client) {
 					let _ = tx.send(e);
 					return;
 				}

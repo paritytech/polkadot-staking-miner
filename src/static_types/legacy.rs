@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::{epm, impl_atomic_u32_parameter_types, prelude::AccountId};
+use crate::{dynamic, impl_atomic_u32_parameter_types, prelude::AccountId};
 use polkadot_sdk::{
 	frame_election_provider_support::{self, traits::NposSolution},
 	frame_support::{self, traits::ConstU32, weights::Weight},
@@ -87,7 +87,7 @@ pub mod node {
 			active_voters: u32,
 			desired_targets: u32,
 		) -> Weight {
-			let Some(votes) = epm::mock_votes(
+			let Some(votes) = dynamic::mock_votes(
 				active_voters,
 				desired_targets.try_into().expect("Desired targets < u16::MAX"),
 			) else {
@@ -106,7 +106,7 @@ pub mod node {
 				return Weight::MAX;
 			}
 
-			futures::executor::block_on(epm::runtime_api_solution_weight(
+			futures::executor::block_on(dynamic::runtime_api_solution_weight(
 				raw,
 				SolutionOrSnapshotSize { voters, targets },
 			))
@@ -146,7 +146,7 @@ pub mod westend {
 			active_voters: u32,
 			desired_targets: u32,
 		) -> Weight {
-			let Some(votes) = epm::mock_votes(
+			let Some(votes) = dynamic::mock_votes(
 				active_voters,
 				desired_targets.try_into().expect("Desired targets < u16::MAX"),
 			) else {
@@ -165,7 +165,7 @@ pub mod westend {
 				return Weight::MAX;
 			}
 
-			futures::executor::block_on(epm::runtime_api_solution_weight(
+			futures::executor::block_on(dynamic::runtime_api_solution_weight(
 				raw,
 				SolutionOrSnapshotSize { voters, targets },
 			))
@@ -205,7 +205,7 @@ pub mod polkadot {
 			active_voters: u32,
 			desired_targets: u32,
 		) -> Weight {
-			let Some(votes) = epm::mock_votes(
+			let Some(votes) = dynamic::mock_votes(
 				active_voters,
 				desired_targets.try_into().expect("Desired targets < u16::MAX"),
 			) else {
@@ -224,7 +224,7 @@ pub mod polkadot {
 				return Weight::MAX;
 			}
 
-			futures::executor::block_on(epm::runtime_api_solution_weight(
+			futures::executor::block_on(dynamic::runtime_api_solution_weight(
 				raw,
 				SolutionOrSnapshotSize { voters, targets },
 			))
@@ -264,7 +264,7 @@ pub mod kusama {
 			active_voters: u32,
 			desired_targets: u32,
 		) -> Weight {
-			let Some(votes) = epm::mock_votes(
+			let Some(votes) = dynamic::mock_votes(
 				active_voters,
 				desired_targets.try_into().expect("Desired targets < u16::MAX"),
 			) else {
@@ -283,7 +283,7 @@ pub mod kusama {
 				return Weight::MAX;
 			}
 
-			futures::executor::block_on(epm::runtime_api_solution_weight(
+			futures::executor::block_on(dynamic::runtime_api_solution_weight(
 				raw,
 				SolutionOrSnapshotSize { voters, targets },
 			))

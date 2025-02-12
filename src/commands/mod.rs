@@ -1,3 +1,5 @@
+//! Supported commands for the polkadot-staking-miner and related types.
+
 mod types;
 
 #[cfg(legacy)]

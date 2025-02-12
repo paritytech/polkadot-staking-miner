@@ -22,7 +22,7 @@ use subxt::config::DefaultExtrinsicParamsBuilder;
 use crate::{
 	client::Client,
 	commands::DryRunConfig,
-	epm,
+	dynamic,
 	error::Error,
 	helpers::storage_at,
 	prelude::{runtime, AccountId, LOG_TARGET},
@@ -44,7 +44,7 @@ where
 		.fetch_or_default(&runtime::storage().election_provider_multi_phase().round())
 		.await?;
 
-	let miner_solution = epm::fetch_snapshot_and_mine_solution::<T>(
+	let miner_solution = dynamic::fetch_snapshot_and_mine_solution::<T>(
 		client.chain_api(),
 		config.at,
 		config.solver,
@@ -88,7 +88,7 @@ where
 		);
 
 		let nonce = client.rpc().system_account_next_index(signer.account_id()).await?;
-		let tx = epm::signed_solution(raw_solution)?;
+		let tx = dynamic::signed_solution(raw_solution)?;
 		let params = DefaultExtrinsicParamsBuilder::new().nonce(nonce).build();
 		let xt = client.chain_api().tx().create_signed(&tx, &*signer, params).await?;
 		let dry_run_bytes = client.rpc().dry_run(xt.encoded(), config.at).await?;

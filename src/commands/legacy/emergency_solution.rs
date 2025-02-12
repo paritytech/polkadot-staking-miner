@@ -19,7 +19,7 @@
 use crate::{
 	client::Client,
 	commands::EmergencySolutionConfig,
-	epm,
+	dynamic,
 	error::Error,
 	helpers::storage_at,
 	prelude::{runtime, AccountId, LOG_TARGET},
@@ -53,7 +53,7 @@ where
 		.fetch_or_default(&runtime::storage().election_provider_multi_phase().round())
 		.await?;
 
-	let miner_solution = epm::fetch_snapshot_and_mine_solution::<T>(
+	let miner_solution = dynamic::fetch_snapshot_and_mine_solution::<T>(
 		client.chain_api(),
 		config.at,
 		config.solver,
@@ -81,7 +81,7 @@ where
 		supports.truncate(force_winner_count as usize);
 	}
 
-	let call = epm::set_emergency_result(supports.clone())?;
+	let call = dynamic::set_emergency_result(supports.clone())?;
 	let encoded_call = call
 		.encode_call_data(&client.chain_api().metadata())
 		.map_err(|e| Error::Subxt(e.into()))?;

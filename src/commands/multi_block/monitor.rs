@@ -4,10 +4,7 @@ use crate::{
 		multi_block::types::{BlockDetails, SharedSnapshot},
 		Listen, SubmissionStrategy,
 	},
-	epm::{
-		self, check_and_update_target_snapshot, check_and_update_voter_snapshot,
-		fetch_missing_snapshots, submit_and_watch, MultiBlockTransaction,
-	},
+	dynamic,
 	error::Error,
 	helpers::{self, kill_main_task_if_critical_err, score_passes_strategy, storage_at_head},
 	prelude::{runtime, AccountId, Storage, LOG_TARGET},
@@ -181,10 +178,10 @@ where
 	match phase {
 		Phase::Snapshot(page) => {
 			if page == target_snapshot_page {
-				check_and_update_target_snapshot(page, &storage, &snapshot).await?;
+				dynamic::check_and_update_target_snapshot(page, &storage, &snapshot).await?;
 			}
 
-			check_and_update_voter_snapshot(page, &storage, &snapshot).await?;
+			dynamic::check_and_update_voter_snapshot(page, &storage, &snapshot).await?;
 
 			return Ok(());
 		},
@@ -199,7 +196,7 @@ where
 	}
 
 	// 3. Fetch the target and voter snapshots if needed.
-	fetch_missing_snapshots::<T>(&snapshot, &storage).await?;
+	dynamic::fetch_missing_snapshots::<T>(&snapshot, &storage).await?;
 
 	let target_snapshot = snapshot.read().target.clone().expect("Target snapshot above; qed").0;
 	let voter_snapshot = snapshot.read().voter.iter().map(|(_, (v, _))| v.clone()).collect();
@@ -216,9 +213,14 @@ where
 	}
 
 	// 5. Mine solution
-	let paged_raw_solution =
-		epm::mine_solution::<T>(target_snapshot, voter_snapshot, n_pages, round, desired_targets)
-			.await?;
+	let paged_raw_solution = dynamic::mine_solution::<T>(
+		target_snapshot,
+		voter_snapshot,
+		n_pages,
+		round,
+		desired_targets,
+	)
+	.await?;
 
 	// 6. Check that our score is the best (we could also check if our miner hasn't submitted yet)
 	let storage_head = helpers::storage_at_head(&client, listen).await?;
@@ -228,21 +230,21 @@ where
 	}
 
 	// 7. Register score.
-	submit_and_watch::<T>(
+	dynamic::submit_and_watch::<T>(
 		&client,
 		signer.clone(),
 		listen,
-		MultiBlockTransaction::register_score(paged_raw_solution.score)?,
+		dynamic::MultiBlockTransaction::register_score(paged_raw_solution.score)?,
 	)
 	.await?;
 
 	// 8. Submit all solution pages.
 	for (page, solution) in paged_raw_solution.solution_pages.into_iter().enumerate() {
-		submit_and_watch::<T>(
+		dynamic::submit_and_watch::<T>(
 			&client,
 			signer.clone(),
 			listen,
-			MultiBlockTransaction::submit_page::<T>(page as u32, Some(solution))?,
+			dynamic::MultiBlockTransaction::submit_page::<T>(page as u32, Some(solution))?,
 		)
 		.await?;
 	}

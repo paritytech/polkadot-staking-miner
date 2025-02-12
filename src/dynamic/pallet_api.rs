@@ -1,5 +1,5 @@
 use crate::{
-	epm::utils::invalid_metadata_error,
+	dynamic::utils::invalid_metadata_error,
 	error::Error,
 	prelude::{ChainClient, LOG_TARGET},
 };

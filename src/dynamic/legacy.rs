@@ -14,11 +14,11 @@
 // You should have received a copy of the GNU General Public License
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Wrappers or helpers for [`pallet_election_provider_multi_phase`].
+//! Utils to interact with single block election system.
 
 use super::utils::{storage_addr, tx};
 use crate::{
-	epm::{pallet_api, utils::to_scale_value},
+	dynamic::{pallet_api, utils::to_scale_value},
 	error::Error,
 	helpers::{storage_at, RuntimeDispatchInfo},
 	opt::{BalanceIterations, Balancing, Solver},
@@ -159,24 +159,6 @@ where
 	pub fn len(&self) -> usize {
 		self.state.len()
 	}
-}
-
-/// Read the constants from the metadata and updates the static types.
-pub(crate) fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
-	static_types::MaxWeight::set(
-		pallet_api::election_provider_multi_phase::constants::MAX_WEIGHT.fetch(api)?,
-	);
-	static_types::MaxLength::set(
-		pallet_api::election_provider_multi_phase::constants::MAX_LENGTH.fetch(api)?,
-	);
-	static_types::MaxVotesPerVoter::set(
-		pallet_api::election_provider_multi_phase::constants::MAX_VOTES.fetch(api)?,
-	);
-	static_types::MaxWinners::set(
-		pallet_api::election_provider_multi_phase::constants::MAX_WINNERS.fetch(api)?,
-	);
-
-	Ok(())
 }
 
 /// Helper to construct a set emergency solution transaction.
