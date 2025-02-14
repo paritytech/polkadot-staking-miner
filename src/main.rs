@@ -47,16 +47,16 @@ mod commands;
 mod dynamic;
 mod error;
 // TODO(niklasad1): feature-gate this module to avoid unused code.
+mod macros;
 mod opt;
 mod prelude;
-#[allow(unused, dead_code)]
-mod utils;
 // TODO(niklasad1): prometheus not enabled yet in the multi-block monitor command.
-mod macros;
 #[allow(unused, dead_code)]
 mod prometheus;
 mod signer;
 mod static_types;
+#[allow(unused, dead_code)]
+mod utils;
 
 use clap::Parser;
 use error::Error;
