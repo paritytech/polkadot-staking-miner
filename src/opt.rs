@@ -72,7 +72,7 @@ impl std::str::FromStr for Chain {
         match s {
             "polkadot" => Ok(Self::Polkadot),
             "kusama" => Ok(Self::Kusama),
-            // TODO: Add support for westmint and rococo
+            // TODO: Add "proper" support for westmint and rococo
             "westend" | "rococo" | "westmint" => Ok(Self::Westend),
             "node" => Ok(Self::SubstrateNode),
             chain => Err(Error::InvalidChain(chain.to_string())),

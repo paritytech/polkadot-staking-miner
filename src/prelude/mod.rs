@@ -1,11 +1,14 @@
-#[cfg(legacy)]
-mod legacy;
-#[cfg(legacy)]
-pub use legacy::*;
-#[cfg(experimental_multi_block)]
-mod multi_block;
-#[cfg(experimental_multi_block)]
-pub use multi_block::*;
+use crate::macros::{cfg_experimental_multi_block, cfg_legacy};
+
+cfg_legacy! {
+    mod legacy;
+    pub use legacy::*;
+}
+
+cfg_experimental_multi_block! {
+    mod multi_block;
+    pub use multi_block::*;
+}
 
 /// The header type. We re-export it here, but we can easily get it from block as well.
 pub type Header =

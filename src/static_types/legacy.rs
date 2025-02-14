@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::{dynamic, impl_atomic_u32_parameter_types, prelude::AccountId};
+use crate::{dynamic, macros::impl_u32_parameter_type, prelude::AccountId};
 use polkadot_sdk::{
     frame_election_provider_support::{self, traits::NposSolution},
     frame_support::{self, traits::ConstU32, weights::Weight},
@@ -54,9 +54,9 @@ mod max_weight {
     }
 }
 
-impl_atomic_u32_parameter_types!(max_length, MaxLength);
-impl_atomic_u32_parameter_types!(max_votes, MaxVotesPerVoter);
-impl_atomic_u32_parameter_types!(max_winners, MaxWinners);
+impl_u32_parameter_type!(max_length, MaxLength);
+impl_u32_parameter_type!(max_votes, MaxVotesPerVoter);
+impl_u32_parameter_type!(max_winners, MaxWinners);
 pub use max_weight::MaxWeight;
 
 pub mod node {

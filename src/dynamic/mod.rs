@@ -3,25 +3,20 @@
 //!
 //! These are built on top of the dynamic APIs in subxt to read storage, submit transactions, read events and read constants.
 
-#[cfg(legacy)]
-mod legacy;
-#[cfg(experimental_multi_block)]
-mod multi_block;
+use crate::macros::{cfg_experimental_multi_block, cfg_legacy};
+use crate::{error::Error, prelude::ChainClient, static_types};
+
 #[allow(dead_code, unused)]
 pub(crate) mod pallet_api;
 pub(crate) mod utils;
 
-#[cfg(legacy)]
-pub(crate) use legacy::*;
-#[cfg(experimental_multi_block)]
-pub(crate) use multi_block::*;
+cfg_legacy! {
+    mod legacy;
+    pub use legacy::*;
 
-use crate::{error::Error, prelude::ChainClient, static_types};
+    /// Read the constants from the metadata and updates the static types.
+    pub fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
 
-/// Read the constants from the metadata and updates the static types.
-pub fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
-    #[cfg(legacy)]
-    {
         static_types::MaxWeight::set(
             pallet_api::election_provider_multi_phase::constants::MAX_WEIGHT.fetch(api)?,
         );
@@ -34,10 +29,17 @@ pub fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
         static_types::MaxWinners::set(
             pallet_api::election_provider_multi_phase::constants::MAX_WINNERS.fetch(api)?,
         );
-    }
 
-    #[cfg(experimental_multi_block)]
-    {
+        Ok(())
+    }
+}
+
+cfg_experimental_multi_block! {
+    mod multi_block;
+    pub use multi_block::*;
+
+    /// Read the constants from the metadata and updates the static types.
+    pub fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
         // multi block constants.
         let pages: u32 = pallet_api::multi_block::constants::PAGES.fetch(api)?;
         static_types::Pages::set(pages);
@@ -58,7 +60,7 @@ pub fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
         static_types::MaxWinnersPerPage::set(
             pallet_api::election_provider_multi_phase::constants::MAX_WINNERS.fetch(api)?,
         );
-    }
 
-    Ok(())
+        Ok(())
+    }
 }

@@ -1,5 +1,5 @@
 use crate::{
-    impl_atomic_u32_parameter_types,
+    macros::impl_u32_parameter_type,
     prelude::{AccountId, Accuracy, Hash},
 };
 use polkadot_sdk::{
@@ -8,12 +8,12 @@ use polkadot_sdk::{
     sp_runtime::{traits::ConstU32, PerU16, Percent},
 };
 
-impl_atomic_u32_parameter_types!(pages, Pages);
-impl_atomic_u32_parameter_types!(target_snapshot_per_block, TargetSnapshotPerBlock);
-impl_atomic_u32_parameter_types!(voter_snapshot_per_block, VoterSnapshotPerBlock);
-impl_atomic_u32_parameter_types!(max_winners_per_page, MaxWinnersPerPage);
-impl_atomic_u32_parameter_types!(max_backers_per_winner, MaxBackersPerWinner);
-impl_atomic_u32_parameter_types!(max_length, MaxLength);
+impl_u32_parameter_type!(pages, Pages);
+impl_u32_parameter_type!(target_snapshot_per_block, TargetSnapshotPerBlock);
+impl_u32_parameter_type!(voter_snapshot_per_block, VoterSnapshotPerBlock);
+impl_u32_parameter_type!(max_winners_per_page, MaxWinnersPerPage);
+impl_u32_parameter_type!(max_backers_per_winner, MaxBackersPerWinner);
+impl_u32_parameter_type!(max_length, MaxLength);
 
 pub mod node {
     use super::*;

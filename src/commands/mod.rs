@@ -1,16 +1,17 @@
 //! Supported commands for the polkadot-staking-miner and related types.
 
+use crate::macros::{cfg_experimental_multi_block, cfg_legacy};
+
 mod types;
 
-#[cfg(legacy)]
-pub mod legacy;
-#[cfg(experimental_multi_block)]
-pub mod multi_block;
+cfg_legacy! {
+    mod legacy;
+    pub use legacy::*;
+}
 
-#[cfg(legacy)]
-pub use legacy::*;
-
-#[cfg(experimental_multi_block)]
-pub use multi_block::*;
+cfg_experimental_multi_block! {
+    mod multi_block;
+    pub use multi_block::*;
+}
 
 pub use types::*;

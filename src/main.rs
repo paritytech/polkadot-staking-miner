@@ -19,6 +19,12 @@
 //! Simple bot capable of monitoring a polkadot (and cousins) chain and submitting solutions to the
 //! `pallet-election-provider-multi-phase`. See `--help` for more details.
 //!
+//! The binary itself comes with two build features:
+//! - `legacy`: This is the default build feature. It is the original implementation of the miner
+//!             to submit single block solutions which are still supported by the chain.
+//! - `experimental-multi-block`: This is the new implementation of the miner. It is still in
+//!                               development and not yet supported any chain but it is intended
+//!                               to be live in the future.
 //! # Implementation Notes:
 //!
 //! - First draft: Be aware that this is the first draft and there might be bugs, or undefined
@@ -46,10 +52,10 @@ mod prelude;
 #[allow(unused, dead_code)]
 mod utils;
 // TODO(niklasad1): prometheus not enabled yet in the multi-block monitor command.
+mod macros;
 #[allow(unused, dead_code)]
 mod prometheus;
 mod signer;
-#[macro_use]
 mod static_types;
 
 use clap::Parser;
@@ -284,7 +290,7 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 mod tests {
     use super::*;
     use crate::commands::{
-        self, DryRunConfig, EmergencySolutionConfig, Listen, MonitorConfig, SubmissionStrategy,
+        DryRunConfig, EmergencySolutionConfig, Listen, MonitorConfig, SubmissionStrategy,
     };
 
     #[test]

@@ -2,14 +2,14 @@ use crate::{
     client::Client,
     commands::{
         multi_block::types::{BlockDetails, SharedSnapshot},
-        Listen, SubmissionStrategy,
+        types::{Listen, SubmissionStrategy},
     },
     dynamic,
     error::Error,
-    utils::{self, kill_main_task_if_critical_err, score_passes_strategy, storage_at_head},
     prelude::{runtime, AccountId, Storage, LOG_TARGET},
     signer::Signer,
     static_types,
+    utils::{self, kill_main_task_if_critical_err, score_passes_strategy, storage_at_head},
 };
 use futures::future::{abortable, AbortHandle};
 use polkadot_sdk::{
@@ -21,6 +21,7 @@ use tokio::sync::Mutex;
 
 /// TODO(niklasad1): Add solver algorithm configuration to the monitor command.
 #[derive(Debug, Clone, clap::Parser)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct MonitorConfig {
     #[clap(long, short, env = "SEED")]
     pub seed_or_path: String,

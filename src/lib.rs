@@ -20,10 +20,10 @@ pub mod client;
 pub mod commands;
 pub mod dynamic;
 pub mod error;
-pub mod utils;
+pub mod macros;
 pub mod opt;
 pub mod prelude;
 pub mod prometheus;
 pub mod signer;
-#[macro_use]
 pub mod static_types;
+pub mod utils;
