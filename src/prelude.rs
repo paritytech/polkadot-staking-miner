@@ -22,14 +22,14 @@
 
 // re-exports.
 pub use polkadot_sdk::{
-	pallet_election_provider_multi_phase::{Miner, MinerConfig},
-	sp_runtime::traits::{Block as BlockT, Header as HeaderT},
+    pallet_election_provider_multi_phase::{Miner, MinerConfig},
+    sp_runtime::traits::{Block as BlockT, Header as HeaderT},
 };
 /// The account id type.
 pub type AccountId = polkadot_sdk::sp_runtime::AccountId32;
 /// The header type. We re-export it here, but we can easily get it from block as well.
 pub type Header =
-	subxt::config::substrate::SubstrateHeader<u32, subxt::config::substrate::BlakeTwo256>;
+    subxt::config::substrate::SubstrateHeader<u32, subxt::config::substrate::BlakeTwo256>;
 /// The header type. We re-export it here, but we can easily get it from block as well.
 pub type Hash = subxt::utils::H256;
 /// Balance type
@@ -55,25 +55,25 @@ pub type ChainClient = subxt::OnlineClient<subxt::PolkadotConfig>;
 pub type Config = subxt::PolkadotConfig;
 /// Submission type used by the staking miner.
 pub type SignedSubmission<S> =
-	polkadot_sdk::pallet_election_provider_multi_phase::SignedSubmission<AccountId, Balance, S>;
+    polkadot_sdk::pallet_election_provider_multi_phase::SignedSubmission<AccountId, Balance, S>;
 
 #[subxt::subxt(
-	runtime_metadata_path = "artifacts/metadata.scale",
-	derive_for_all_types = "Clone, Debug, Eq, PartialEq",
-	derive_for_type(
-		path = "pallet_election_provider_multi_phase::RoundSnapshot",
-		derive = "Default"
-	),
-	substitute_type(
-		path = "sp_npos_elections::ElectionScore",
-		with = "::subxt::utils::Static<polkadot_sdk::sp_npos_elections::ElectionScore>"
-	),
-	substitute_type(
-		path = "pallet_election_provider_multi_phase::Phase<Bn>",
-		with = "::subxt::utils::Static<polkadot_sdk::pallet_election_provider_multi_phase::Phase<Bn>>"
-	)
+    runtime_metadata_path = "artifacts/metadata.scale",
+    derive_for_all_types = "Clone, Debug, Eq, PartialEq",
+    derive_for_type(
+        path = "pallet_election_provider_multi_phase::RoundSnapshot",
+        derive = "Default"
+    ),
+    substitute_type(
+        path = "sp_npos_elections::ElectionScore",
+        with = "::subxt::utils::Static<polkadot_sdk::sp_npos_elections::ElectionScore>"
+    ),
+    substitute_type(
+        path = "pallet_election_provider_multi_phase::Phase<Bn>",
+        with = "::subxt::utils::Static<polkadot_sdk::pallet_election_provider_multi_phase::Phase<Bn>>"
+    )
 )]
 pub mod runtime {}
 
 pub static SHARED_CLIENT: once_cell::sync::OnceCell<crate::client::Client> =
-	once_cell::sync::OnceCell::new();
+    once_cell::sync::OnceCell::new();

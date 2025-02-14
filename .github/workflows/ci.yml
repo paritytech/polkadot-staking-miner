@@ -11,7 +11,7 @@ on:
       - main
 
 env:
-  IMAGE: paritytech/ci-unified:bullseye-1.81.0-2024-09-11
+  IMAGE: paritytech/ci-unified:bullseye-1.84.1-2025-01-28
   IMAGE_NAME: paritytech/polkadot-staking-miner
   RUST_INFO: rustup show && cargo --version && rustup +nightly show && cargo +nightly --version
 
@@ -42,7 +42,7 @@ jobs:
       - name: Check formatting
         run: |
           ${{ env.RUST_INFO }}
-          cargo +nightly fmt --all -- --check
+          cargo fmt --all -- --check
 
   check-clippy:
     name: Clippy
