@@ -42,7 +42,7 @@ jobs:
       - name: Check formatting
         run: |
           ${{ env.RUST_INFO }}
-          cargo +nightly fmt --all -- --check
+          cargo fmt --all -- --check
 
   check-clippy:
     name: Clippy

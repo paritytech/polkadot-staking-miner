@@ -17,88 +17,88 @@
 //! The emergency-solution command.
 
 use crate::{
-	client::Client,
-	commands::EmergencySolutionConfig,
-	dynamic,
-	error::Error,
-	helpers::storage_at,
-	prelude::{runtime, AccountId, LOG_TARGET},
-	static_types,
+    client::Client,
+    commands::EmergencySolutionConfig,
+    dynamic,
+    error::Error,
+    helpers::storage_at,
+    prelude::{runtime, AccountId, LOG_TARGET},
+    static_types,
 };
 use codec::Encode;
 use polkadot_sdk::{
-	pallet_election_provider_multi_phase::MinerConfig, sp_core::hexdisplay::HexDisplay,
+    pallet_election_provider_multi_phase::MinerConfig, sp_core::hexdisplay::HexDisplay,
 };
 use std::io::Write;
 use subxt::tx::Payload;
 
 pub async fn emergency_solution_cmd<T>(
-	client: Client,
-	config: EmergencySolutionConfig,
+    client: Client,
+    config: EmergencySolutionConfig,
 ) -> Result<(), Error>
 where
-	T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
-		+ Send
-		+ Sync
-		+ 'static,
-	T::Solution: Send,
+    T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
+        + Send
+        + Sync
+        + 'static,
+    T::Solution: Send,
 {
-	if let Some(max_winners) = config.force_winner_count {
-		static_types::MaxWinners::set(max_winners);
-	}
+    if let Some(max_winners) = config.force_winner_count {
+        static_types::MaxWinners::set(max_winners);
+    }
 
-	let storage = storage_at(config.at, client.chain_api()).await?;
+    let storage = storage_at(config.at, client.chain_api()).await?;
 
-	let round = storage
-		.fetch_or_default(&runtime::storage().election_provider_multi_phase().round())
-		.await?;
+    let round = storage
+        .fetch_or_default(&runtime::storage().election_provider_multi_phase().round())
+        .await?;
 
-	let miner_solution = dynamic::fetch_snapshot_and_mine_solution::<T>(
-		client.chain_api(),
-		config.at,
-		config.solver,
-		round,
-		config.force_winner_count,
-	)
-	.await?;
+    let miner_solution = dynamic::fetch_snapshot_and_mine_solution::<T>(
+        client.chain_api(),
+        config.at,
+        config.solver,
+        round,
+        config.force_winner_count,
+    )
+    .await?;
 
-	todo!();
+    todo!();
 
-	/*let ready_solution = miner_solution.feasibility_check()?;
-	let encoded_size = ready_solution.encoded_size();
-	let score = ready_solution.score;
-	let mut supports: Vec<_> = ready_solution.supports.clone().into_inner();
+    /*let ready_solution = miner_solution.feasibility_check()?;
+    let encoded_size = ready_solution.encoded_size();
+    let score = ready_solution.score;
+    let mut supports: Vec<_> = ready_solution.supports.clone().into_inner();
 
-	// maybe truncate.
-	if let Some(force_winner_count) = config.force_winner_count {
-		log::info!(
-			target: LOG_TARGET,
-			"truncating {} winners to {}",
-			supports.len(),
-			force_winner_count
-		);
-		supports.sort_unstable_by_key(|(_, s)| s.total);
-		supports.truncate(force_winner_count as usize);
-	}
+    // maybe truncate.
+    if let Some(force_winner_count) = config.force_winner_count {
+        log::info!(
+            target: LOG_TARGET,
+            "truncating {} winners to {}",
+            supports.len(),
+            force_winner_count
+        );
+        supports.sort_unstable_by_key(|(_, s)| s.total);
+        supports.truncate(force_winner_count as usize);
+    }
 
-	let call = dynamic::set_emergency_result(supports.clone())?;
-	let encoded_call = call
-		.encode_call_data(&client.chain_api().metadata())
-		.map_err(|e| Error::Subxt(e.into()))?;
-	let encoded_supports = supports.encode();
+    let call = dynamic::set_emergency_result(supports.clone())?;
+    let encoded_call = call
+        .encode_call_data(&client.chain_api().metadata())
+        .map_err(|e| Error::Subxt(e.into()))?;
+    let encoded_supports = supports.encode();
 
-	// write results to files.
-	let mut supports_file = std::fs::File::create("solution.supports.bin")?;
-	let mut encoded_call_file = std::fs::File::create("encoded.call")?;
-	supports_file.write_all(&encoded_supports)?;
-	encoded_call_file.write_all(&encoded_call)?;
+    // write results to files.
+    let mut supports_file = std::fs::File::create("solution.supports.bin")?;
+    let mut encoded_call_file = std::fs::File::create("encoded.call")?;
+    supports_file.write_all(&encoded_supports)?;
+    encoded_call_file.write_all(&encoded_call)?;
 
-	let hex = HexDisplay::from(&encoded_call);
-	log::info!(target: LOG_TARGET, "Hex call:\n {:?}", hex);
+    let hex = HexDisplay::from(&encoded_call);
+    log::info!(target: LOG_TARGET, "Hex call:\n {:?}", hex);
 
-	log::info!(target: LOG_TARGET, "Use the hex encoded call above to construct the governance proposal or the extrinsic to submit.");
-	log::info!(target: LOG_TARGET, "ReadySolution: size {:?} / score = {:?}", encoded_size, score);
-	log::info!(target: LOG_TARGET, "`set_emergency_result` encoded call written to ./encoded.call");
+    log::info!(target: LOG_TARGET, "Use the hex encoded call above to construct the governance proposal or the extrinsic to submit.");
+    log::info!(target: LOG_TARGET, "ReadySolution: size {:?} / score = {:?}", encoded_size, score);
+    log::info!(target: LOG_TARGET, "`set_emergency_result` encoded call written to ./encoded.call");
 
-	Ok(())*/
+    Ok(())*/
 }
