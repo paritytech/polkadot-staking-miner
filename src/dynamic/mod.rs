@@ -2,6 +2,9 @@
 //! interact with the runtime related to submitting solutions to the validator set in polkadot-sdk.
 //!
 //! These are built on top of the dynamic APIs in subxt to read storage, submit transactions, read events and read constants.
+//!
+//! The reason behind this is that subxt's static codegen generates a concrete type for NposSolution and we want to be
+//! generic over the solution type to work across different runtimes.
 
 use crate::macros::{cfg_experimental_multi_block, cfg_legacy};
 use crate::{error::Error, prelude::ChainClient, static_types};

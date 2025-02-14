@@ -178,7 +178,7 @@ where
     } = state;
 
     // This will only change after runtime upgrades/when the metadata is changed.
-    // but let's be safe and update it every block it's quite cheap.
+    // but let's be on the safe-side and update it every block.
     snapshot.write().set_page_length(n_pages);
 
     // 1. Check if the phase is signed/snapshot, otherwise wait for the next block.
@@ -204,19 +204,7 @@ where
 
     // 3. Fetch the target and voter snapshots if needed.
     dynamic::fetch_missing_snapshots::<T>(&snapshot, &storage).await?;
-
-    let target_snapshot = snapshot
-        .read()
-        .target
-        .clone()
-        .expect("Target snapshot above; qed")
-        .0;
-    let voter_snapshot = snapshot
-        .read()
-        .voter
-        .iter()
-        .map(|(_, (v, _))| v.clone())
-        .collect();
+    let (target_snapshot, voter_snapshot) = snapshot.read().get();
 
     // 4. Lock mining and submission.
     let _guard = submit_lock.lock().await;
@@ -277,7 +265,12 @@ where
         .await?;
     }
 
-    // TODO: maybe check the verification events.
+    // TODO(niklasad1): check if the solution was accepted and log it.
+    // technically it doesn't matter that much because the miner will try
+    // again next block if nothing was accepted on the chain.
+    //
+    // But if it failed to submit the pages after the score was accepted, the miner
+    // should try re-submitting the pages which isn't implemented yet.
 
     Ok(())
 }

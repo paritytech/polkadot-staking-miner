@@ -1,9 +1,11 @@
 use crate::{
     client::Client,
     error::Error,
-    utils,
-    prelude::{runtime, Hash, Header, Storage, TargetSnapshotPage, VoterSnapshotPage, LOG_TARGET},
-    static_types,
+    prelude::{
+        runtime, Hash, Header, Storage, TargetSnapshotPage, VoterSnapshotPage, VoterSnapshotPageOf,
+        LOG_TARGET,
+    },
+    static_types, utils,
 };
 use polkadot_sdk::pallet_election_provider_multi_block::{
     types::Phase, unsigned::miner::MinerConfig,
@@ -76,6 +78,26 @@ impl<T: MinerConfig> Snapshot<T> {
         self.target = None;
         self.voter.clear();
     }
+
+    /// Get the target snapshot and voter snapshots.
+    ///
+    /// # Panics
+    ///
+    /// It's the caller's responsibility to ensure the target snapshot and voter snapshots are fetched.
+    pub fn get(&self) -> (TargetSnapshotPage<T>, Vec<VoterSnapshotPageOf<T>>) {
+        let target = self
+            .target
+            .as_ref()
+            .expect("Target snapshot not fetched")
+            .0
+            .clone();
+        let voter = self
+            .voter
+            .iter()
+            .map(|(_, (snapshot, _))| snapshot.clone().into())
+            .collect();
+        (target, voter)
+    }
 }
 
 pub struct SharedSnapshot<T: MinerConfig>(Arc<RwLock<Snapshot<T>>>);
@@ -86,11 +108,11 @@ impl<T: MinerConfig> SharedSnapshot<T> {
     }
 
     pub fn read(&self) -> std::sync::RwLockReadGuard<Snapshot<T>> {
-        self.0.read().expect("Lock is poisoned")
+        self.0.read().expect("Lock is not poisoned; qed")
     }
 
     pub fn write(&self) -> std::sync::RwLockWriteGuard<Snapshot<T>> {
-        self.0.write().expect("Lock is poisoned")
+        self.0.write().expect("Lock is not poisoned; qed")
     }
 }
 
