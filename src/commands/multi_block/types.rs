@@ -1,7 +1,7 @@
 use crate::{
     client::Client,
     error::Error,
-    helpers,
+    utils,
     prelude::{runtime, Hash, Header, Storage, TargetSnapshotPage, VoterSnapshotPage, LOG_TARGET},
     static_types,
 };
@@ -112,7 +112,7 @@ pub struct BlockDetails {
 
 impl BlockDetails {
     pub async fn new(client: &Client, at: Header) -> Result<Self, Error> {
-        let storage = helpers::storage_at(Some(at.hash()), client.chain_api()).await?;
+        let storage = utils::storage_at(Some(at.hash()), client.chain_api()).await?;
         let round = storage
             .fetch_or_default(&runtime::storage().multi_block().round())
             .await?;

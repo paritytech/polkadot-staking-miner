@@ -8,7 +8,7 @@ use crate::{
         utils::{dynamic_decode_error, storage_addr, to_scale_value, tx},
     },
     error::Error,
-    helpers::{self, TimedFuture},
+    utils::{self, TimedFuture},
     prelude::{
         runtime, AccountId, Config, Hash, Storage, TargetSnapshotPage, TargetSnapshotPageOf,
         VoterSnapshotPage, VoterSnapshotPageOf, LOG_TARGET,
@@ -197,7 +197,7 @@ pub(crate) async fn submit_and_watch<T: MinerConfig + Send + Sync + 'static>(
 
     match listen {
         Listen::Head => {
-            let best_block = helpers::wait_for_in_block(tx_progress).await?;
+            let best_block = utils::wait_for_in_block(tx_progress).await?;
             log::trace!(target: LOG_TARGET, "{kind} included at={:?}", best_block.block_hash());
             // TODO: check events, this is flaky because we listen to best head.
         }

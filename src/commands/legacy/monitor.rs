@@ -19,15 +19,15 @@ use crate::{
     commands::{Listen, SubmissionStrategy},
     dynamic,
     error::Error,
-    helpers::{
-        kill_main_task_if_critical_err, rpc_block_subscription, score_passes_strategy,
-        wait_for_in_block, TimedFuture,
-    },
     opt::Solver,
     prelude::{runtime, AccountId, ChainClient, Hash, Header, RpcClient, LOG_TARGET},
     prometheus,
     signer::Signer,
     static_types,
+    utils::{
+        kill_main_task_if_critical_err, rpc_block_subscription, score_passes_strategy,
+        wait_for_in_block, TimedFuture,
+    },
 };
 use clap::Parser;
 use codec::{Decode, Encode};

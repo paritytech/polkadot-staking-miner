@@ -20,7 +20,7 @@ pub mod client;
 pub mod commands;
 pub mod dynamic;
 pub mod error;
-pub mod helpers;
+pub mod utils;
 pub mod opt;
 pub mod prelude;
 pub mod prometheus;

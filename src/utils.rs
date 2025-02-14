@@ -246,6 +246,8 @@ pub fn score_passes_strategy(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::prelude::Accuracy;
+    use std::str::FromStr;
 
     #[test]
     fn score_passes_strategy_works() {

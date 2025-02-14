@@ -6,7 +6,7 @@ use crate::{
     },
     dynamic,
     error::Error,
-    helpers::{self, kill_main_task_if_critical_err, score_passes_strategy, storage_at_head},
+    utils::{self, kill_main_task_if_critical_err, score_passes_strategy, storage_at_head},
     prelude::{runtime, AccountId, Storage, LOG_TARGET},
     signer::Signer,
     static_types,
@@ -53,7 +53,7 @@ where
             .await?
             .ok_or(Error::AccountDoesNotExists)?
     };
-    let mut subscription = helpers::rpc_block_subscription(client.rpc(), config.listen).await?;
+    let mut subscription = utils::rpc_block_subscription(client.rpc(), config.listen).await?;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
     let submit_lock = Arc::new(Mutex::new(()));
     let snapshot = SharedSnapshot::<T>::new(static_types::Pages::get());
@@ -82,7 +82,7 @@ where
                     //	- the subscription could not keep up with the server.
                     None => {
                         log::warn!(target: LOG_TARGET, "subscription to `{:?}` terminated. Retrying..", config.listen);
-                        subscription = helpers::rpc_block_subscription(client.rpc(), config.listen).await?;
+                        subscription = utils::rpc_block_subscription(client.rpc(), config.listen).await?;
                         continue
                     }
                 }
@@ -243,7 +243,7 @@ where
     .await?;
 
     // 6. Check that our score is the best (we could also check if our miner hasn't submitted yet)
-    let storage_head = helpers::storage_at_head(&client, listen).await?;
+    let storage_head = utils::storage_at_head(&client, listen).await?;
 
     if !score_is_best(
         &storage_head,

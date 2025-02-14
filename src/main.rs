@@ -41,10 +41,10 @@ mod commands;
 mod dynamic;
 mod error;
 // TODO(niklasad1): feature-gate this module to avoid unused code.
-#[allow(unused, dead_code)]
-mod helpers;
 mod opt;
 mod prelude;
+#[allow(unused, dead_code)]
+mod utils;
 // TODO(niklasad1): prometheus not enabled yet in the multi-block monitor command.
 #[allow(unused, dead_code)]
 mod prometheus;
@@ -283,7 +283,9 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 #[cfg(all(test, legacy))]
 mod tests {
     use super::*;
-    use commands::monitor;
+    use crate::commands::{
+        self, DryRunConfig, EmergencySolutionConfig, Listen, MonitorConfig, SubmissionStrategy,
+    };
 
     #[test]
     fn cli_monitor_works() {
@@ -310,10 +312,10 @@ mod tests {
                 uri: "hi".to_string(),
                 prometheus_port: 9999,
                 log: "info".to_string(),
-                command: Command::Monitor(commands::MonitorConfig {
-                    listen: monitor::Listen::Head,
+                command: Command::Monitor(MonitorConfig {
+                    listen: Listen::Head,
                     solver: opt::Solver::SeqPhragmen { iterations: 10 },
-                    submission_strategy: monitor::SubmissionStrategy::IfLeading,
+                    submission_strategy: SubmissionStrategy::IfLeading,
                     seed_or_path: "//Alice".to_string(),
                     delay: 12,
                     dry_run: false,
@@ -341,7 +343,7 @@ mod tests {
                 uri: "hi".to_string(),
                 prometheus_port: 9999,
                 log: "info".to_string(),
-                command: Command::DryRun(commands::DryRunConfig {
+                command: Command::DryRun(DryRunConfig {
                     at: None,
                     solver: opt::Solver::PhragMMS { iterations: 10 },
                     force_snapshot: false,
@@ -372,7 +374,7 @@ mod tests {
                 uri: "hi".to_string(),
                 prometheus_port: 9999,
                 log: "info".to_string(),
-                command: Command::EmergencySolution(commands::EmergencySolutionConfig {
+                command: Command::EmergencySolution(EmergencySolutionConfig {
                     at: None,
                     force_winner_count: Some(99),
                     solver: opt::Solver::PhragMMS { iterations: 1337 },
