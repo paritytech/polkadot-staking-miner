@@ -140,7 +140,7 @@ where
     }
 }
 
-/// For each block, monitor essentially does the following:
+/// For each block, the monitor essentially does the following:
 ///
 /// 1. Check if the phase is signed/snapshot, otherwise continue with the next block.
 /// 2. Check if the solution has already been submitted, if so quit.
