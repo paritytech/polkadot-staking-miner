@@ -7,9 +7,12 @@ use crate::{
     dynamic,
     error::Error,
     prelude::{runtime, AccountId, Storage, LOG_TARGET},
+    prometheus,
     signer::Signer,
     static_types,
-    utils::{self, kill_main_task_if_critical_err, score_passes_strategy, storage_at_head},
+    utils::{
+        self, kill_main_task_if_critical_err, score_passes_strategy, storage_at_head, TimedFuture,
+    },
 };
 use futures::future::{abortable, AbortHandle};
 use polkadot_sdk::{
@@ -43,31 +46,31 @@ where
     T::MaxVotesPerVoter: Send + Sync + 'static,
 {
     let signer = Signer::new(&config.seed_or_path)?;
-    let account_info = {
-        let addr = runtime::storage().system().account(signer.account_id());
-        client
-            .chain_api()
-            .storage()
-            .at_latest()
-            .await?
-            .fetch(&addr)
-            .await?
-            .ok_or(Error::AccountDoesNotExists)?
-    };
+
+    // Emit the account info at the start.
+    {
+        let storage = client.chain_api().storage().at_latest().await?;
+        let account_info = utils::account_info(&storage, signer.account_id()).await?;
+
+        prometheus::set_balance(account_info.data.free as f64);
+
+        log::info!(
+            target: LOG_TARGET,
+            "Loaded account {} {{ nonce: {}, free_balance: {}, reserved_balance: {}, frozen_balance: {} }}",
+            signer,
+            account_info.nonce,
+            account_info.data.free,
+            account_info.data.reserved,
+            account_info.data.frozen,
+        );
+    }
+
     let mut subscription = utils::rpc_block_subscription(client.rpc(), config.listen).await?;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
     let submit_lock = Arc::new(Mutex::new(()));
     let snapshot = SharedSnapshot::<T>::new(static_types::Pages::get());
     let mut pending_tasks: Vec<AbortHandle> = Vec::new();
     let mut prev_block_signed_phase = false;
-
-    log::info!(target: LOG_TARGET, "Loaded account {} {{ nonce: {}, free_balance: {}, reserved_balance: {}, frozen_balance: {} }}",
-        signer,
-        account_info.nonce,
-        account_info.data.free,
-        account_info.data.reserved,
-        account_info.data.frozen,
-    );
 
     loop {
         let at = tokio::select! {
@@ -97,6 +100,9 @@ where
         };
 
         let state = BlockDetails::new(&client, at).await?;
+
+        let account_info = utils::account_info(&state.storage, signer.account_id()).await?;
+        prometheus::set_balance(account_info.data.free as f64);
 
         if !state.phase_is_signed() && !state.phase_is_snapshot() {
             // Signal to pending mining task the sign phase has ended.
@@ -148,8 +154,7 @@ where
 /// 4. Mine the solution.
 /// 5. Lock submissions.
 /// 6. Check if that our score is the best.
-/// 7. Register the solution score.
-/// 8. Submit each page of the solution (one per block)
+/// 7. Register the solution score and submit each page of the solution (one per block)
 async fn process_block<T>(
     client: Client,
     state: BlockDetails,
@@ -222,14 +227,25 @@ where
     }
 
     // 5. Mine solution
-    let paged_raw_solution = dynamic::mine_solution::<T>(
+    let paged_raw_solution = match dynamic::mine_solution::<T>(
         target_snapshot,
         voter_snapshot,
         n_pages,
         round,
         desired_targets,
     )
-    .await?;
+    .timed()
+    .await
+    {
+        (Ok(sol), dur) => {
+            log::trace!(target: LOG_TARGET, "Mining solution took {}ms", dur.as_millis());
+            prometheus::observe_mined_solution_duration(dur.as_millis() as f64);
+            sol
+        }
+        (Err(e), _) => {
+            return Err(e);
+        }
+    };
 
     // 6. Check that our score is the best (we could also check if our miner hasn't submitted yet)
     let storage_head = utils::storage_at_head(&client, listen).await?;
@@ -245,25 +261,25 @@ where
         return Ok(());
     }
 
-    // 7. Register score.
-    dynamic::submit_and_watch::<T>(
-        &client,
-        signer.clone(),
-        listen,
-        dynamic::MultiBlockTransaction::register_score(paged_raw_solution.score)?,
-    )
-    .await?;
+    prometheus::set_score(paged_raw_solution.score);
 
-    // 8. Submit all solution pages.
-    for (page, solution) in paged_raw_solution.solution_pages.into_iter().enumerate() {
-        dynamic::submit_and_watch::<T>(
-            &client,
-            signer.clone(),
-            listen,
-            dynamic::MultiBlockTransaction::submit_page::<T>(page as u32, Some(solution))?,
-        )
-        .await?;
-    }
+    // 7. Submit the score and solution to the chain.
+    match dynamic::submit(&client, &signer, paged_raw_solution, listen)
+        .timed()
+        .await
+    {
+        (Ok(_), dur) => {
+            log::trace!(
+                target: LOG_TARGET,
+                "Register score and solution pages took {}ms",
+                dur.as_millis()
+            );
+            prometheus::observe_submit_and_watch_duration(dur.as_millis() as f64);
+        }
+        (Err(e), _) => {
+            return Err(e);
+        }
+    };
 
     // TODO(niklasad1): check if the solution was accepted and log it.
     // technically it doesn't matter that much because the miner will try

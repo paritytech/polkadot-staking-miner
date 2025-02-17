@@ -18,7 +18,7 @@ use crate::{
     client::Client,
     commands::{Listen, SubmissionStrategy},
     error::Error,
-    prelude::{ChainClient, Config, Hash, Header, RpcClient, LOG_TARGET},
+    prelude::{runtime, AccountInfo, ChainClient, Hash, Header, RpcClient, Storage, LOG_TARGET},
 };
 use codec::Decode;
 use jsonrpsee::core::ClientError as JsonRpseeError;
@@ -34,7 +34,6 @@ use std::{
 use subxt::{
     backend::rpc::RpcSubscription,
     error::{Error as SubxtError, RpcError},
-    storage::Storage,
     tx::{TxInBlock, TxProgress},
 };
 
@@ -152,10 +151,7 @@ pub fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Er
 }
 
 /// Helper to get storage at block.
-pub async fn storage_at(
-    block: Option<Hash>,
-    api: &ChainClient,
-) -> Result<Storage<Config, ChainClient>, Error> {
+pub async fn storage_at(block: Option<Hash>, api: &ChainClient) -> Result<Storage, Error> {
     if let Some(block_hash) = block {
         Ok(api.storage().at(block_hash))
     } else {
@@ -163,10 +159,7 @@ pub async fn storage_at(
     }
 }
 
-pub async fn storage_at_head(
-    api: &Client,
-    listen: Listen,
-) -> Result<Storage<Config, ChainClient>, Error> {
+pub async fn storage_at_head(api: &Client, listen: Listen) -> Result<Storage, Error> {
     let hash = rpc_get_latest_head(api.rpc(), listen).await?;
     storage_at(Some(hash), api.chain_api()).await
 }
@@ -241,6 +234,18 @@ pub fn score_passes_strategy(
             !best_score.strict_threshold_better(our_score, epsilon)
         }
     }
+}
+
+/// Get the account data of the given `account_id` from the storage
+/// which can be used to get free balance, reserved balance, etc.
+pub async fn account_info(
+    storage: &Storage,
+    who: &subxt::config::substrate::AccountId32,
+) -> Result<AccountInfo, Error> {
+    storage
+        .fetch(&runtime::storage().system().account(who))
+        .await?
+        .ok_or(Error::AccountDoesNotExists)
 }
 
 #[cfg(test)]

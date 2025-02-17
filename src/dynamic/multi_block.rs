@@ -8,12 +8,12 @@ use crate::{
         utils::{dynamic_decode_error, storage_addr, to_scale_value, tx},
     },
     error::Error,
-    utils::{self, TimedFuture},
     prelude::{
         runtime, AccountId, Config, Hash, Storage, TargetSnapshotPage, TargetSnapshotPageOf,
         VoterSnapshotPage, VoterSnapshotPageOf, LOG_TARGET,
     },
     signer::Signer,
+    utils,
 };
 use codec::Decode;
 use polkadot_sdk::{
@@ -198,12 +198,12 @@ pub(crate) async fn submit_and_watch<T: MinerConfig + Send + Sync + 'static>(
     match listen {
         Listen::Head => {
             let best_block = utils::wait_for_in_block(tx_progress).await?;
-            log::trace!(target: LOG_TARGET, "{kind} included at={:?}", best_block.block_hash());
+            log::info!(target: LOG_TARGET, "{kind} included at={:?}", best_block.block_hash());
             // TODO: check events, this is flaky because we listen to best head.
         }
         Listen::Finalized => {
             let finalized_block = tx_progress.wait_for_finalized().await?;
-            log::trace!(target: LOG_TARGET, "{kind} finalized at={:?}", finalized_block.block_hash());
+            log::info!(target: LOG_TARGET, "{kind} finalized at={:?}", finalized_block.block_hash());
             // TODO: to slow to wait for events with polkadot-sdk staking-playground feature
             // let _evs = finalized_block.wait_for_success().await?
         }
@@ -253,7 +253,7 @@ where
     };
 
     // Mine solution
-    match tokio::task::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
         let paged_raw_solution =
             Miner::<T>::mine_solution(input).map_err(|e| Error::Other(format!("{:?}", e)))?;
         Miner::<T>::check_feasibility(
@@ -266,16 +266,8 @@ where
         .map_err(|e| Error::Feasibility(format!("{:?}", e)))?;
         Ok(paged_raw_solution)
     })
-    .timed()
     .await
-    {
-        (Ok(Ok(s)), dur) => {
-            log::trace!(target: LOG_TARGET, "Mined solution in {}ms", dur.as_millis());
-            Ok(s)
-        }
-        (Ok(Err(e)), _) => Err(e),
-        (Err(e), _dur) => Err(Error::Other(format!("{:?}", e))),
-    }
+    .map_err(|e| Error::Other(format!("{:?}", e)))?
 }
 
 pub(crate) async fn fetch_missing_snapshots<T: MinerConfig>(
@@ -344,5 +336,37 @@ pub(crate) async fn check_and_update_target_snapshot<T: MinerConfig>(
             .write()
             .set_target_snapshot(target_snapshot, snapshot_hash);
     }
+    Ok(())
+}
+
+/// Submit a multi-block solution.
+///
+/// It registers the score and submits all solution pages.
+pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
+    client: &Client,
+    signer: &Signer,
+    paged_raw_solution: PagedRawSolution<T>,
+    listen: Listen,
+) -> Result<(), Error> {
+    // Register score.
+    submit_and_watch::<T>(
+        client,
+        signer.clone(),
+        listen,
+        MultiBlockTransaction::register_score(paged_raw_solution.score)?,
+    )
+    .await?;
+
+    // Submit all solution pages.
+    for (page, solution) in paged_raw_solution.solution_pages.into_iter().enumerate() {
+        submit_and_watch::<T>(
+            client,
+            signer.clone(),
+            listen,
+            MultiBlockTransaction::submit_page::<T>(page as u32, Some(solution))?,
+        )
+        .await?;
+    }
+
     Ok(())
 }

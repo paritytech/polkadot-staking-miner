@@ -15,6 +15,8 @@ pub type Header =
     subxt::config::substrate::SubstrateHeader<u32, subxt::config::substrate::BlakeTwo256>;
 /// The header type. We re-export it here, but we can easily get it from block as well.
 pub type Hash = subxt::utils::H256;
+/// Nonce
+pub type Nonce = u32;
 /// Default URI to connect to.
 ///
 /// This will never work on a remote node, so we might as well try a local node.
@@ -39,3 +41,11 @@ pub type AccountId = polkadot_sdk::sp_runtime::AccountId32;
 pub type Pair = polkadot_sdk::sp_core::sr25519::Pair;
 /// The accuracy that we use for election computations.
 pub type Accuracy = polkadot_sdk::sp_runtime::Perbill;
+/// Storage type.
+pub type Storage = subxt::storage::Storage<Config, ChainClient>;
+/// Account data.
+pub type AccountData =
+    crate::prelude::runtime::runtime_types::pallet_balances::types::AccountData<u128>;
+/// Account info.
+pub type AccountInfo =
+    crate::prelude::runtime::runtime_types::frame_system::AccountInfo<Nonce, AccountData>;

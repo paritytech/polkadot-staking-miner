@@ -1,4 +1,4 @@
-use super::{AccountId, ChainClient, Config};
+use super::AccountId;
 use polkadot_sdk::{
     frame_election_provider_support, frame_support::BoundedVec,
     pallet_election_provider_multi_block::unsigned::miner::MinerConfig,
@@ -12,8 +12,6 @@ pub type Voter<T> =
 pub type TargetSnapshotPage<T> =
     BoundedVec<<T as MinerConfig>::AccountId, <T as MinerConfig>::TargetSnapshotPerBlock>;
 pub type VoterSnapshotPage<T> = BoundedVec<Voter<T>, <T as MinerConfig>::VoterSnapshotPerBlock>;
-/// Storage type.
-pub type Storage = subxt::storage::Storage<Config, ChainClient>;
 
 #[subxt::subxt(
     runtime_metadata_path = "artifacts/multi_block.scale",
