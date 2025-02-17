@@ -21,13 +21,14 @@ use crate::{
     commands::EmergencySolutionConfig,
     dynamic,
     error::Error,
-    utils::storage_at,
     prelude::{runtime, AccountId, LOG_TARGET},
     static_types,
+    utils::storage_at,
 };
 use codec::Encode;
 use polkadot_sdk::{
     pallet_election_provider_multi_phase::MinerConfig, sp_core::hexdisplay::HexDisplay,
+    sp_npos_elections::Supports,
 };
 use std::io::Write;
 use subxt::tx::Payload;
@@ -52,8 +53,7 @@ where
     let round = storage
         .fetch_or_default(&runtime::storage().election_provider_multi_phase().round())
         .await?;
-
-    let miner_solution = dynamic::fetch_snapshot_and_mine_solution::<T>(
+    let solution = dynamic::fetch_snapshot_and_mine_solution::<T>(
         client.chain_api(),
         config.at,
         config.solver,
@@ -62,14 +62,12 @@ where
     )
     .await?;
 
-    todo!();
-
-    /*let ready_solution = miner_solution.feasibility_check()?;
+    let ready_solution = solution.feasibility_check()?;
     let encoded_size = ready_solution.encoded_size();
     let score = ready_solution.score;
-    let mut supports: Vec<_> = ready_solution.supports.clone().into_inner();
+    let mut supports: Supports<_> = ready_solution.supports.into();
 
-    // maybe truncate.
+    // Truncate if necessary.
     if let Some(force_winner_count) = config.force_winner_count {
         log::info!(
             target: LOG_TARGET,
@@ -100,5 +98,5 @@ where
     log::info!(target: LOG_TARGET, "ReadySolution: size {:?} / score = {:?}", encoded_size, score);
     log::info!(target: LOG_TARGET, "`set_emergency_result` encoded call written to ./encoded.call");
 
-    Ok(())*/
+    Ok(())
 }

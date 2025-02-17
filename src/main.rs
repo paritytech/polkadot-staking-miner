@@ -46,7 +46,6 @@ mod client;
 mod commands;
 mod dynamic;
 mod error;
-// TODO(niklasad1): feature-gate this module to avoid unused code.
 mod macros;
 mod opt;
 mod prelude;
@@ -55,6 +54,8 @@ mod prelude;
 mod prometheus;
 mod signer;
 mod static_types;
+// The `utils` module is shared between the legacy and the experimental multi-block implementation.
+// and just disable unsued warnings for now to avoid conditionally compiling it.
 #[allow(unused, dead_code)]
 mod utils;
 
