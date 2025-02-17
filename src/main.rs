@@ -34,6 +34,8 @@
 //!   development. It is intended to run this bot with a `restart = true` way, so that it reports it
 //!   crash, but resumes work thereafter.
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 #[cfg(all(experimental_multi_block, legacy))]
 std::compile_error!("feature `legacy` and `experimental-multi-block` are mutually exclusive. You can only enable one of them.");
 

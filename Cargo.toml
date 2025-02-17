@@ -49,3 +49,7 @@ cfg_aliases = "0.2.0"
 default = ["experimental-multi-block"]
 legacy = []
 experimental-multi-block = ["polkadot-sdk/pallet-election-provider-multi-block"]
+
+[package.metadata.docs.rs]
+default-features = true
+rustdoc-args = ["--cfg", "docsrs"]
