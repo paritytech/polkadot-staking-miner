@@ -27,7 +27,7 @@ cfg_legacy! {
             pallet_api::election_provider_multi_phase::constants::MAX_LENGTH.fetch(api)?,
         );
         static_types::MaxVotesPerVoter::set(
-            pallet_api::election_provider_multi_phase::constants::MAX_VOTES.fetch(api)?,
+            pallet_api::election_provider_multi_phase::constants::MAX_VOTES_PER_VOTER.fetch(api)?,
         );
         static_types::MaxWinners::set(
             pallet_api::election_provider_multi_phase::constants::MAX_WINNERS.fetch(api)?,

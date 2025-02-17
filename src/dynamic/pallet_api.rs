@@ -106,7 +106,6 @@ pub mod election_provider_multi_phase {
         pub const MAX_BACKERS_PER_WINNER: PalletConstant<u32> =
             PalletConstant::new(NAME, "MaxBackersPerWinner");
         pub const MAX_WEIGHT: PalletConstant<Weight> = PalletConstant::new(NAME, "SignedMaxWeight");
-        pub const MAX_VOTES: PalletConstant<u32> = PalletConstant::new(NAME, "SignedMaxVotes");
         // NOTE: `MaxWinners` is used instead of `MinerMaxWinners` to work with older metadata.
         pub const MAX_WINNERS: PalletConstant<u32> = PalletConstant::new(NAME, "MaxWinners");
     }
