@@ -5,7 +5,7 @@ use crate::{
     commands::{Listen, SharedSnapshot},
     dynamic::{
         pallet_api,
-        utils::{dynamic_decode_error, storage_addr, to_scale_value, tx},
+        utils::{decode_error, storage_addr, to_scale_value, tx},
     },
     error::Error,
     prelude::{
@@ -68,7 +68,7 @@ impl MultiBlockTransaction {
     /// Create a transaction to register a score.
     pub fn register_score(score: ElectionScore) -> Result<Self, Error> {
         let scale_score =
-            to_scale_value(score).map_err(|err| dynamic_decode_error::<ElectionScore>(err))?;
+            to_scale_value(score).map_err(|err| decode_error::<ElectionScore>(err))?;
 
         Ok(Self {
             kind: TransactionKind::RegisterScore,
@@ -84,10 +84,9 @@ impl MultiBlockTransaction {
         page: u32,
         maybe_solution: Option<T::Solution>,
     ) -> Result<Self, Error> {
-        let scale_page =
-            to_scale_value(page).map_err(|err| dynamic_decode_error::<T::Pages>(err))?;
-        let scale_solution = to_scale_value(maybe_solution)
-            .map_err(|err| dynamic_decode_error::<T::Solution>(err))?;
+        let scale_page = to_scale_value(page).map_err(|err| decode_error::<T::Pages>(err))?;
+        let scale_solution =
+            to_scale_value(maybe_solution).map_err(|err| decode_error::<T::Solution>(err))?;
 
         Ok(Self {
             kind: TransactionKind::SubmitPage(page),
@@ -199,13 +198,12 @@ pub(crate) async fn submit_and_watch<T: MinerConfig + Send + Sync + 'static>(
         Listen::Head => {
             let best_block = utils::wait_for_in_block(tx_progress).await?;
             log::info!(target: LOG_TARGET, "{kind} included at={:?}", best_block.block_hash());
-            // TODO: check events, this is flaky because we listen to best head.
+            // TODO: check events.
         }
         Listen::Finalized => {
             let finalized_block = tx_progress.wait_for_finalized().await?;
             log::info!(target: LOG_TARGET, "{kind} finalized at={:?}", finalized_block.block_hash());
-            // TODO: to slow to wait for events with polkadot-sdk staking-playground feature
-            // let _evs = finalized_block.wait_for_success().await?
+            // TODO: check events which is slow.
         }
     }
     Ok(())

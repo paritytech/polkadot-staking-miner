@@ -26,7 +26,7 @@ pub fn to_scale_value<T: scale_info::TypeInfo + 'static + Encode>(val: T) -> Res
 
     decode_as_type(&mut bytes.as_ref(), ty_id, &types)
         .map(|v| v.remove_context())
-        .map_err(|e| dynamic_decode_error::<T>(e))
+        .map_err(|e| decode_error::<T>(e))
 }
 
 pub fn storage_addr<P: subxt::storage::StorageKey>(
@@ -45,7 +45,7 @@ pub fn tx(
     subxt::dynamic::tx(pallet, variant, call_data)
 }
 
-pub fn dynamic_decode_error<T>(err: impl std::error::Error) -> Error {
+pub fn decode_error<T>(err: impl std::error::Error) -> Error {
     Error::DynamicTransaction(format!(
         "Failed to decode {}: {:?}",
         std::any::type_name::<T>(),

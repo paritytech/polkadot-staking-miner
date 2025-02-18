@@ -100,7 +100,6 @@ where
         };
 
         let state = BlockDetails::new(&client, at).await?;
-
         let account_info = utils::account_info(&state.storage, signer.account_id()).await?;
         prometheus::set_balance(account_info.data.free as f64);
 
@@ -203,7 +202,7 @@ where
     }
 
     // 2. If the solution has already been submitted, nothing to do
-    if has_submitted::<T>(&storage, round, signer.account_id()).await? {
+    if has_submitted::<T>(&storage, round, signer.account_id(), n_pages).await? {
         return Ok(());
     }
 
@@ -220,6 +219,7 @@ where
         &storage_at_head(&client, listen).await?,
         round,
         signer.account_id(),
+        n_pages,
     )
     .await?
     {
@@ -247,14 +247,22 @@ where
         }
     };
 
-    // 6. Check that our score is the best (we could also check if our miner hasn't submitted yet)
     let storage_head = utils::storage_at_head(&client, listen).await?;
 
-    if !score_is_best(
+    // 6. Check if the score is better than the current best score.
+    //
+    // We allow overwriting the score if the "our account" has the best score but hasn't submitted
+    // the solution. This is to allow the miner to re-submit the score and solution if the miner crashed
+    // or the RPC connection was lost.
+    //
+    // This to ensure that the miner doesn't miss out on submitting the solution if the miner crashed
+    // and to prevent to be slashed.
+    if !own_score_or_better(
         &storage_head,
         paged_raw_solution.score,
         round,
         submission_strategy,
+        signer.account_id(),
     )
     .await?
     {
@@ -281,18 +289,14 @@ where
         }
     };
 
-    // TODO(niklasad1): check if the solution was accepted and log it.
-    // technically it doesn't matter that much because the miner will try
-    // again next block if nothing was accepted on the chain.
-    //
-    // But if it failed to submit the pages after the score was accepted, the miner
-    // should try re-submitting the pages which isn't implemented yet.
+    // TODO(niklasad1): check events that the submissions were successful and
+    // the verification was successful.
 
     Ok(())
 }
 
 /// Whether the current account has already registered a score for the given round.
-async fn has_submitted<T: MinerConfig>(
+async fn has_submitted_score<T: MinerConfig>(
     storage: &Storage,
     round: u32,
     who: &subxt::config::substrate::AccountId32,
@@ -312,12 +316,14 @@ async fn has_submitted<T: MinerConfig>(
     Ok(false)
 }
 
-/// Whether the computed score is better than what is already in the chain.
-async fn score_is_best(
+/// Whether the computed score is better than the current best score
+/// or that the current account has the best score.
+async fn own_score_or_better(
     storage: &Storage,
     score: ElectionScore,
     round: u32,
     strategy: SubmissionStrategy,
+    who: &subxt::config::substrate::AccountId32,
 ) -> Result<bool, Error> {
     let scores = storage
         .fetch_or_default(&runtime::storage().multi_block_signed().sorted_scores(round))
@@ -326,8 +332,51 @@ async fn score_is_best(
     if scores
         .0
         .into_iter()
+        .filter(|(account_id, _)| account_id != who)
         .any(|(_, other_score)| !score_passes_strategy(score, other_score.0, strategy))
     {
+        return Ok(false);
+    }
+
+    Ok(true)
+}
+
+/// Whether the current account has submitted all pages for the given round.
+async fn all_solution_pages_submitted<T: MinerConfig>(
+    storage: &Storage,
+    round: u32,
+    who: &subxt::config::substrate::AccountId32,
+    n_pages: u32,
+) -> Result<bool, Error> {
+    for page in 0..n_pages {
+        let page = storage
+            .fetch(
+                &runtime::storage()
+                    .multi_block_signed()
+                    .submission_storage(round, who, page),
+            )
+            .await?;
+
+        if page.is_none() {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
+}
+
+/// Whether the current account has registered the score and submitted all pages for the given round.
+async fn has_submitted<T: MinerConfig>(
+    storage: &Storage,
+    round: u32,
+    who: &subxt::config::substrate::AccountId32,
+    n_pages: u32,
+) -> Result<bool, Error> {
+    if !has_submitted_score::<T>(storage, round, who).await? {
+        return Ok(false);
+    }
+
+    if !all_solution_pages_submitted::<T>(storage, round, who, n_pages).await? {
         return Ok(false);
     }
 
