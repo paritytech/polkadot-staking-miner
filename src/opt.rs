@@ -50,6 +50,7 @@ pub enum Chain {
     Westend,
     Kusama,
     Polkadot,
+    SubstrateNode,
 }
 
 impl fmt::Display for Chain {
@@ -58,6 +59,7 @@ impl fmt::Display for Chain {
             Self::Polkadot => "polkadot",
             Self::Kusama => "kusama",
             Self::Westend => "westend",
+            Self::SubstrateNode => "node",
         };
         write!(f, "{}", chain)
     }
@@ -68,9 +70,10 @@ impl std::str::FromStr for Chain {
 
     fn from_str(s: &str) -> Result<Self, Error> {
         match s {
-            "polkadot" => Ok(Self::Polkadot),
-            "kusama" => Ok(Self::Kusama),
-            "westend" | "node" => Ok(Self::Westend),
+            "polkadot" | "statemint" => Ok(Self::Polkadot),
+            "kusama" | "statemine" => Ok(Self::Kusama),
+            "westend" | "westmint" => Ok(Self::Westend),
+            "node" => Ok(Self::SubstrateNode),
             chain => Err(Error::InvalidChain(chain.to_string())),
         }
     }

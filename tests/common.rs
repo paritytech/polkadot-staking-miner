@@ -86,6 +86,7 @@ pub fn run_polkadot_node(chain: Chain) -> (KillChildOnDrop, String) {
         Chain::Polkadot => "chainspecs/polkadot-dev.json",
         Chain::Kusama => "chainspecs/kusama-dev.json",
         Chain::Westend => "westend-dev",
+        Chain::SubstrateNode => "dev",
     };
 
     let mut node_cmd = KillChildOnDrop(

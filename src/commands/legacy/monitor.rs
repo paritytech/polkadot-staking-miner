@@ -16,14 +16,18 @@
 
 use crate::{
     client::Client,
-    epm,
+    commands::{Listen, SubmissionStrategy},
+    dynamic,
     error::Error,
-    helpers::{kill_main_task_if_critical_err, TimedFuture},
     opt::Solver,
-    prelude::*,
+    prelude::{runtime, AccountId, ChainClient, Hash, Header, RpcClient, LOG_TARGET},
     prometheus,
     signer::Signer,
     static_types,
+    utils::{
+        kill_main_task_if_critical_err, rpc_block_subscription, score_passes_strategy,
+        wait_for_in_block, TimedFuture,
+    },
 };
 use clap::Parser;
 use codec::{Decode, Encode};
@@ -31,16 +35,14 @@ use futures::future::TryFutureExt;
 use jsonrpsee::core::ClientError as JsonRpseeError;
 use polkadot_sdk::{
     frame_election_provider_support::NposSolution,
-    pallet_election_provider_multi_phase::{RawSolution, SolutionOf},
+    pallet_election_provider_multi_phase::{MinerConfig, RawSolution, SolutionOf},
     sp_npos_elections,
-    sp_runtime::Perbill,
 };
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 use subxt::{
-    backend::{legacy::rpc_methods::DryRunResult, rpc::RpcSubscription},
+    backend::legacy::rpc_methods::DryRunResult,
     config::{DefaultExtrinsicParamsBuilder, Header as _},
     error::RpcError,
-    tx::{TxInBlock, TxProgress},
     Error as SubxtError,
 };
 use tokio::sync::Mutex;
@@ -104,68 +106,6 @@ pub struct MonitorConfig {
     pub dry_run: bool,
 }
 
-/// The type of event to listen to.
-///
-///
-/// Typically, finalized is safer and there is no chance of anything going wrong, but it can be
-/// slower. It is recommended to use finalized, if the duration of the signed phase is longer
-/// than the the finality delay.
-#[cfg_attr(test, derive(PartialEq))]
-#[derive(clap::ValueEnum, Debug, Copy, Clone)]
-pub enum Listen {
-    /// Latest finalized head of the canonical chain.
-    Finalized,
-    /// Latest head of the canonical chain.
-    Head,
-}
-
-/// Submission strategy to use.
-#[derive(Debug, Copy, Clone)]
-#[cfg_attr(test, derive(PartialEq))]
-pub enum SubmissionStrategy {
-    /// Always submit.
-    Always,
-    // Submit if we are leading, or if the solution that's leading is more that the given `Perbill`
-    // better than us. This helps detect obviously fake solutions and still combat them.
-    /// Only submit if at the time, we are the best (or equal to it).
-    IfLeading,
-    /// Submit if we are no worse than `Perbill` worse than the best.
-    ClaimNoWorseThan(Perbill),
-    /// Submit if we are leading, or if the solution that's leading is more that the given `Perbill`
-    /// better than us. This helps detect obviously fake solutions and still combat them.
-    ClaimBetterThan(Perbill),
-}
-
-/// Custom `impl` to parse `SubmissionStrategy` from CLI.
-///
-/// Possible options:
-/// * --submission-strategy if-leading: only submit if leading
-/// * --submission-strategy always: always submit
-/// * --submission-strategy "percent-better <percent>": submit if submission is `n` percent better.
-///
-impl FromStr for SubmissionStrategy {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let s = s.trim();
-
-        let res = if s == "if-leading" {
-            Self::IfLeading
-        } else if s == "always" {
-            Self::Always
-        } else if let Some(percent) = s.strip_prefix("no-worse-than ") {
-            let percent: u32 = percent.parse().map_err(|e| format!("{:?}", e))?;
-            Self::ClaimNoWorseThan(Perbill::from_percent(percent))
-        } else if let Some(percent) = s.strip_prefix("percent-better ") {
-            let percent: u32 = percent.parse().map_err(|e| format!("{:?}", e))?;
-            Self::ClaimBetterThan(Perbill::from_percent(percent))
-        } else {
-            return Err(s.into());
-        };
-        Ok(res)
-    }
-}
-
 pub async fn monitor_cmd<T>(client: Client, config: MonitorConfig) -> Result<(), Error>
 where
     T: MinerConfig<AccountId = AccountId, MaxVotesPerVoter = static_types::MaxVotesPerVoter>
@@ -201,7 +141,7 @@ where
         dry_run_works(client.rpc()).await?;
     }
 
-    let mut subscription = heads_subscription(client.rpc(), config.listen).await?;
+    let mut subscription = rpc_block_subscription(client.rpc(), config.listen).await?;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
     let submit_lock = Arc::new(Mutex::new(()));
 
@@ -219,7 +159,7 @@ where
                     //	- the subscription could not keep up with the server.
                     None => {
                         log::warn!(target: LOG_TARGET, "subscription to `{:?}` terminated. Retrying..", config.listen);
-                        subscription = heads_subscription(client.rpc(), config.listen).await?;
+                        subscription = rpc_block_subscription(client.rpc(), config.listen).await?;
                         continue
                     }
                 }
@@ -328,7 +268,7 @@ where
     tokio::time::sleep(std::time::Duration::from_secs(config.delay as u64)).await;
     let _lock = submit_lock.lock().await;
 
-    let (solution, score) = match epm::fetch_snapshot_and_mine_solution::<T>(
+    let (solution, score) = match dynamic::fetch_snapshot_and_mine_solution::<T>(
         client.chain_api(),
         Some(block_hash),
         config.solver,
@@ -493,7 +433,7 @@ where
     let indices = api.storage().at(block_hash).fetch_or_default(&addr).await?;
 
     for (_score, _, idx) in indices.0 {
-        let submission = epm::signed_submission_at::<T>(idx, Some(block_hash), api).await?;
+        let submission = dynamic::signed_submission_at::<T>(idx, Some(block_hash), api).await?;
 
         if let Some(submission) = submission {
             if &submission.who == us {
@@ -541,7 +481,7 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
     dry_run: bool,
     at: &Header,
 ) -> Result<(), Error> {
-    let tx = epm::signed_solution(RawSolution {
+    let tx = dynamic::signed_solution(RawSolution {
         solution,
         score,
         round,
@@ -636,17 +576,6 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
     Ok(())
 }
 
-async fn heads_subscription(
-    rpc: &RpcClient,
-    listen: Listen,
-) -> Result<RpcSubscription<Header>, Error> {
-    match listen {
-        Listen::Head => rpc.chain_subscribe_new_heads().await,
-        Listen::Finalized => rpc.chain_subscribe_finalized_heads().await,
-    }
-    .map_err(Into::into)
-}
-
 async fn get_latest_head(rpc: &RpcClient, listen: Listen) -> Result<Hash, Error> {
     match listen {
         Listen::Head => match rpc.chain_get_block_hash(None).await {
@@ -655,26 +584,6 @@ async fn get_latest_head(rpc: &RpcClient, listen: Listen) -> Result<Hash, Error>
             Err(e) => Err(e.into()),
         },
         Listen::Finalized => rpc.chain_get_finalized_head().await.map_err(Into::into),
-    }
-}
-
-/// Returns `true` if `our_score` better the onchain `best_score` according the given strategy.
-pub(crate) fn score_passes_strategy(
-    our_score: sp_npos_elections::ElectionScore,
-    best_score: sp_npos_elections::ElectionScore,
-    strategy: SubmissionStrategy,
-) -> bool {
-    match strategy {
-        SubmissionStrategy::Always => true,
-        SubmissionStrategy::IfLeading => {
-            our_score.strict_threshold_better(best_score, Perbill::zero())
-        }
-        SubmissionStrategy::ClaimBetterThan(epsilon) => {
-            our_score.strict_threshold_better(best_score, epsilon)
-        }
-        SubmissionStrategy::ClaimNoWorseThan(epsilon) => {
-            !best_score.strict_threshold_better(our_score, epsilon)
-        }
     }
 }
 
@@ -700,192 +609,4 @@ async fn dry_run_works(rpc: &RpcClient) -> Result<(), Error> {
         }
     }
     Ok(())
-}
-
-/// Wait for the transaction to be in a block.
-///
-/// **Note:** transaction statuses like `Invalid`/`Usurped`/`Dropped` indicate with some
-/// probability that the transaction will not make it into a block but there is no guarantee
-/// that this is true. In those cases the stream is closed however, so you currently have no way to find
-/// out if they finally made it into a block or not.
-async fn wait_for_in_block<T, C>(mut tx: TxProgress<T, C>) -> Result<TxInBlock<T, C>, subxt::Error>
-where
-    T: subxt::Config,
-    C: subxt::client::OnlineClientT<T>,
-{
-    use subxt::{error::TransactionError, tx::TxStatus};
-
-    while let Some(status) = tx.next().await {
-        match status? {
-            // Finalized or otherwise in a block! Return.
-            TxStatus::InBestBlock(s) | TxStatus::InFinalizedBlock(s) => return Ok(s),
-            // Error scenarios; return the error.
-            TxStatus::Error { message } => return Err(TransactionError::Error(message).into()),
-            TxStatus::Invalid { message } => return Err(TransactionError::Invalid(message).into()),
-            TxStatus::Dropped { message } => return Err(TransactionError::Dropped(message).into()),
-            // Ignore anything else and wait for next status event:
-            _ => continue,
-        }
-    }
-    Err(RpcError::SubscriptionDropped.into())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn score_passes_strategy_works() {
-        let s = |x| sp_npos_elections::ElectionScore {
-            minimal_stake: x,
-            ..Default::default()
-        };
-        let two = Perbill::from_percent(2);
-
-        // anything passes Always
-        assert!(score_passes_strategy(
-            s(0),
-            s(0),
-            SubmissionStrategy::Always
-        ));
-        assert!(score_passes_strategy(
-            s(5),
-            s(0),
-            SubmissionStrategy::Always
-        ));
-        assert!(score_passes_strategy(
-            s(5),
-            s(10),
-            SubmissionStrategy::Always
-        ));
-
-        // if leading
-        assert!(!score_passes_strategy(
-            s(0),
-            s(0),
-            SubmissionStrategy::IfLeading
-        ));
-        assert!(score_passes_strategy(
-            s(1),
-            s(0),
-            SubmissionStrategy::IfLeading
-        ));
-        assert!(score_passes_strategy(
-            s(2),
-            s(0),
-            SubmissionStrategy::IfLeading
-        ));
-        assert!(!score_passes_strategy(
-            s(5),
-            s(10),
-            SubmissionStrategy::IfLeading
-        ));
-        assert!(!score_passes_strategy(
-            s(9),
-            s(10),
-            SubmissionStrategy::IfLeading
-        ));
-        assert!(!score_passes_strategy(
-            s(10),
-            s(10),
-            SubmissionStrategy::IfLeading
-        ));
-
-        // if better by 2%
-        assert!(!score_passes_strategy(
-            s(50),
-            s(100),
-            SubmissionStrategy::ClaimBetterThan(two)
-        ));
-        assert!(!score_passes_strategy(
-            s(100),
-            s(100),
-            SubmissionStrategy::ClaimBetterThan(two)
-        ));
-        assert!(!score_passes_strategy(
-            s(101),
-            s(100),
-            SubmissionStrategy::ClaimBetterThan(two)
-        ));
-        assert!(!score_passes_strategy(
-            s(102),
-            s(100),
-            SubmissionStrategy::ClaimBetterThan(two)
-        ));
-        assert!(score_passes_strategy(
-            s(103),
-            s(100),
-            SubmissionStrategy::ClaimBetterThan(two)
-        ));
-        assert!(score_passes_strategy(
-            s(150),
-            s(100),
-            SubmissionStrategy::ClaimBetterThan(two)
-        ));
-
-        // if no less than 2% worse
-        assert!(!score_passes_strategy(
-            s(50),
-            s(100),
-            SubmissionStrategy::ClaimNoWorseThan(two)
-        ));
-        assert!(!score_passes_strategy(
-            s(97),
-            s(100),
-            SubmissionStrategy::ClaimNoWorseThan(two)
-        ));
-        assert!(score_passes_strategy(
-            s(98),
-            s(100),
-            SubmissionStrategy::ClaimNoWorseThan(two)
-        ));
-        assert!(score_passes_strategy(
-            s(99),
-            s(100),
-            SubmissionStrategy::ClaimNoWorseThan(two)
-        ));
-        assert!(score_passes_strategy(
-            s(100),
-            s(100),
-            SubmissionStrategy::ClaimNoWorseThan(two)
-        ));
-        assert!(score_passes_strategy(
-            s(101),
-            s(100),
-            SubmissionStrategy::ClaimNoWorseThan(two)
-        ));
-        assert!(score_passes_strategy(
-            s(102),
-            s(100),
-            SubmissionStrategy::ClaimNoWorseThan(two)
-        ));
-        assert!(score_passes_strategy(
-            s(103),
-            s(100),
-            SubmissionStrategy::ClaimNoWorseThan(two)
-        ));
-        assert!(score_passes_strategy(
-            s(150),
-            s(100),
-            SubmissionStrategy::ClaimNoWorseThan(two)
-        ));
-    }
-
-    #[test]
-    fn submission_strategy_from_str_works() {
-        assert_eq!(
-            SubmissionStrategy::from_str("if-leading"),
-            Ok(SubmissionStrategy::IfLeading)
-        );
-        assert_eq!(
-            SubmissionStrategy::from_str("always"),
-            Ok(SubmissionStrategy::Always)
-        );
-        assert_eq!(
-            SubmissionStrategy::from_str("  percent-better 99   "),
-            Ok(SubmissionStrategy::ClaimBetterThan(Accuracy::from_percent(
-                99
-            )))
-        );
-    }
 }
