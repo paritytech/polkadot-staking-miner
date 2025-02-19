@@ -22,7 +22,6 @@ async fn submit_monitor_works_basic() {
     test_submit_solution(Target::Node(Chain::Westend)).await;
 }
 
-
 #[tokio::test]
 #[ignore]
 async fn default_trimming_works() {
