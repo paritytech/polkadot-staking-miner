@@ -652,12 +652,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "adf178ddd5abf9737d79070f048d3849ed35b49eb9f9793b7871a9f7c5238e4f"
 dependencies = [
  "cumulus-pallet-parachain-system 0.18.0",
- "cumulus-pallet-xcmp-queue 0.18.0",
+ "cumulus-pallet-xcmp-queue 0.18.1",
  "cumulus-primitives-core 0.17.0",
  "frame-support 39.0.0",
  "frame-system 39.1.0",
  "pallet-assets 41.0.0",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "pallet-collator-selection 20.0.0",
  "pallet-session 39.0.0",
  "pallet-timestamp 38.0.0",
@@ -670,8 +670,8 @@ dependencies = [
  "sp-runtime 40.1.0",
  "staging-parachain-info 0.18.0",
  "staging-xcm 15.0.1",
- "staging-xcm-builder 18.0.0",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-builder 18.0.1",
+ "staging-xcm-executor 18.0.1",
  "substrate-wasm-builder 25.0.0",
 ]
 
@@ -718,8 +718,8 @@ dependencies = [
  "sp-api 35.0.0",
  "sp-runtime 40.1.0",
  "staging-xcm 15.0.1",
- "staging-xcm-builder 18.0.0",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-builder 18.0.1",
+ "staging-xcm-executor 18.0.1",
  "substrate-wasm-builder 25.0.0",
 ]
 
@@ -1571,9 +1571,9 @@ dependencies = [
 
 [[package]]
 name = "bridge-hub-test-utils"
-version = "0.21.0"
+version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f789aec9fa54da3ad275b44592026d5522ebea653055b2bfbb47a3fe5575c62"
+checksum = "7bc8fc20a146f2fcb47ae11fa578f4447d8c1c54c31028f08768b2b86a262537"
 dependencies = [
  "asset-test-utils 21.0.0",
  "bp-header-chain 0.19.0",
@@ -1583,15 +1583,13 @@ dependencies = [
  "bp-relayers 0.19.0",
  "bp-runtime 0.19.0",
  "bp-test-utils 0.19.0",
- "bp-xcm-bridge-hub 0.5.0",
- "bridge-runtime-common 0.19.0",
  "cumulus-pallet-parachain-system 0.18.0",
- "cumulus-pallet-xcmp-queue 0.18.0",
+ "cumulus-pallet-xcmp-queue 0.18.1",
  "frame-support 39.0.0",
  "frame-system 39.1.0",
  "impl-trait-for-tuples",
  "log",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "pallet-bridge-grandpa 0.19.0",
  "pallet-bridge-messages 0.19.0",
  "pallet-bridge-parachains 0.19.0",
@@ -1599,7 +1597,7 @@ dependencies = [
  "pallet-timestamp 38.0.0",
  "pallet-utility 39.0.0",
  "pallet-xcm 18.0.0",
- "pallet-xcm-bridge-hub 0.14.0",
+ "pallet-xcm-bridge-hub 0.14.1",
  "parachains-common 19.0.0",
  "parachains-runtimes-test-utils 20.0.0",
  "parity-scale-codec",
@@ -1607,10 +1605,11 @@ dependencies = [
  "sp-io 39.0.0",
  "sp-keyring 40.0.0",
  "sp-runtime 40.1.0",
+ "sp-std",
  "sp-tracing",
  "staging-xcm 15.0.1",
- "staging-xcm-builder 18.0.0",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-builder 18.0.1",
+ "staging-xcm-executor 18.0.1",
 ]
 
 [[package]]
@@ -1647,9 +1646,9 @@ dependencies = [
 
 [[package]]
 name = "bridge-runtime-common"
-version = "0.19.0"
+version = "0.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0669e1c3845b9c8e5358275288ed844c53e0dfd194d1684b364d90c2a543fa1b"
+checksum = "6b3c06f20c040ade880c0925a0cdc83dd88a46b7e28ceebd3adb6b2caa8b7024"
 dependencies = [
  "bp-header-chain 0.19.0",
  "bp-messages 0.19.0",
@@ -1657,7 +1656,6 @@ dependencies = [
  "bp-polkadot-core 0.19.0",
  "bp-relayers 0.19.0",
  "bp-runtime 0.19.0",
- "bp-xcm-bridge-hub 0.5.0",
  "frame-support 39.0.0",
  "frame-system 39.1.0",
  "log",
@@ -2345,7 +2343,7 @@ dependencies = [
  "sp-trie 38.0.0",
  "sp-version 38.0.0",
  "staging-xcm 15.0.1",
- "staging-xcm-builder 18.0.0",
+ "staging-xcm-builder 18.0.1",
  "trie-db",
 ]
 
@@ -2481,9 +2479,9 @@ dependencies = [
 
 [[package]]
 name = "cumulus-pallet-xcmp-queue"
-version = "0.18.0"
+version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b1f3d0e7e430ddcd86b0a9cda56a4bbe3222774ba5c9a29b427dc773c0aa1fc"
+checksum = "9dcd28e856c7667eac03df9ef162aaaba6521b9500f209979581d27c9ac36a07"
 dependencies = [
  "bounded-collections",
  "bp-xcm-bridge-hub-router 0.15.0",
@@ -2501,8 +2499,8 @@ dependencies = [
  "sp-io 39.0.0",
  "sp-runtime 40.1.0",
  "staging-xcm 15.0.1",
- "staging-xcm-builder 18.0.0",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-builder 18.0.1",
+ "staging-xcm-executor 18.0.1",
 ]
 
 [[package]]
@@ -2736,8 +2734,8 @@ dependencies = [
  "polkadot-runtime-common 18.0.0",
  "sp-runtime 40.1.0",
  "staging-xcm 15.0.1",
- "staging-xcm-builder 18.0.0",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-builder 18.0.1",
+ "staging-xcm-executor 18.0.1",
 ]
 
 [[package]]
@@ -6051,7 +6049,7 @@ dependencies = [
  "frame-support 39.0.0",
  "frame-system 39.1.0",
  "log",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "parity-scale-codec",
  "scale-info",
  "sp-core 35.0.0",
@@ -6078,9 +6076,9 @@ dependencies = [
 
 [[package]]
 name = "pallet-balances"
-version = "40.0.0"
+version = "40.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5800e106650e41577d852e003a212b82998bb2fd1e348ed08436ef620fd094f"
+checksum = "8b3d18caaae72674d6536d339c1ae5b5063b55de5813a43ee045847d28c0a128"
 dependencies = [
  "docify",
  "frame-benchmarking 39.0.0",
@@ -6499,7 +6497,7 @@ dependencies = [
  "frame-system 39.1.0",
  "log",
  "pallet-authorship 39.0.0",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "pallet-session 39.0.0",
  "parity-scale-codec",
  "rand",
@@ -6619,7 +6617,7 @@ dependencies = [
  "frame-system 39.1.0",
  "impl-trait-for-tuples",
  "log",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "pallet-contracts-proc-macro",
  "pallet-contracts-uapi",
  "parity-scale-codec",
@@ -6634,7 +6632,7 @@ dependencies = [
  "sp-runtime 40.1.0",
  "sp-std",
  "staging-xcm 15.0.1",
- "staging-xcm-builder 18.0.0",
+ "staging-xcm-builder 18.0.1",
  "wasm-instrument",
  "wasmi",
 ]
@@ -6684,7 +6682,7 @@ dependencies = [
  "frame-support 39.0.0",
  "frame-system 39.1.0",
  "pallet-assets 41.0.0",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "pallet-contracts 39.0.0",
  "pallet-contracts-proc-macro",
  "pallet-contracts-uapi",
@@ -6706,8 +6704,8 @@ dependencies = [
  "sp-runtime 40.1.0",
  "sp-tracing",
  "staging-xcm 15.0.1",
- "staging-xcm-builder 18.0.0",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-builder 18.0.1",
+ "staging-xcm-executor 18.0.1",
  "xcm-simulator 18.0.0",
 ]
 
@@ -6899,7 +6897,7 @@ dependencies = [
  "frame-support 39.0.0",
  "frame-system 39.1.0",
  "log",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "parity-scale-codec",
  "scale-info",
  "sp-io 39.0.0",
@@ -7703,7 +7701,7 @@ dependencies = [
  "frame-support 39.0.0",
  "frame-system 39.1.0",
  "log",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "parity-scale-codec",
  "scale-info",
  "sp-core 35.0.0",
@@ -7803,7 +7801,7 @@ dependencies = [
  "frame-support 39.0.0",
  "frame-system 39.1.0",
  "log",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "parity-scale-codec",
  "scale-info",
  "serde",
@@ -7847,7 +7845,7 @@ dependencies = [
  "frame-system 39.1.0",
  "log",
  "pallet-babe 39.0.0",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "pallet-grandpa 39.0.0",
  "pallet-im-online 38.0.0",
  "pallet-offences 38.0.0",
@@ -8162,9 +8160,9 @@ dependencies = [
 
 [[package]]
 name = "pallet-revive"
-version = "0.4.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b10ac8ebf3b548b2fcb0d6b848eed0b0824bb857db99e12275338d674e565d06"
+checksum = "9af226b2b988725708ae7771fa53a2a1cfbc57a0e7f02f65d570d26cb4c95791"
 dependencies = [
  "bitflags 1.3.2",
  "derive_more 0.99.18",
@@ -8177,7 +8175,7 @@ dependencies = [
  "impl-trait-for-tuples",
  "jsonrpsee",
  "log",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "pallet-revive-proc-macro",
  "pallet-revive-uapi 0.2.0",
  "pallet-transaction-payment 39.0.0",
@@ -8195,7 +8193,7 @@ dependencies = [
  "sp-std",
  "sp-weights",
  "staging-xcm 15.0.1",
- "staging-xcm-builder 18.0.0",
+ "staging-xcm-builder 18.0.1",
  "subxt-signer",
 ]
 
@@ -8377,7 +8375,7 @@ dependencies = [
  "frame-benchmarking 39.0.0",
  "frame-support 39.0.0",
  "frame-system 39.1.0",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "pallet-proxy 39.0.0",
  "pallet-utility 39.0.0",
  "parity-scale-codec",
@@ -8973,7 +8971,7 @@ dependencies = [
  "frame-support 39.0.0",
  "frame-system 39.1.0",
  "log",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "parity-scale-codec",
  "scale-info",
  "serde",
@@ -9014,7 +9012,7 @@ dependencies = [
  "frame-system 39.1.0",
  "impl-trait-for-tuples",
  "log",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "parity-scale-codec",
  "scale-info",
  "serde",
@@ -9050,7 +9048,7 @@ dependencies = [
  "frame-benchmarking 39.0.0",
  "frame-support 39.0.0",
  "frame-system 39.1.0",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "pallet-proxy 39.0.0",
  "pallet-utility 39.0.0",
  "parity-scale-codec",
@@ -9232,7 +9230,7 @@ dependencies = [
  "frame-benchmarking 39.0.0",
  "frame-support 39.0.0",
  "frame-system 39.1.0",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "parity-scale-codec",
  "scale-info",
  "serde",
@@ -9240,8 +9238,8 @@ dependencies = [
  "sp-io 39.0.0",
  "sp-runtime 40.1.0",
  "staging-xcm 15.0.1",
- "staging-xcm-builder 18.0.0",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-builder 18.0.1",
+ "staging-xcm-executor 18.0.1",
  "tracing",
  "xcm-runtime-apis 0.5.0",
 ]
@@ -9280,8 +9278,8 @@ dependencies = [
  "sp-io 39.0.0",
  "sp-runtime 40.1.0",
  "staging-xcm 15.0.1",
- "staging-xcm-builder 18.0.0",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-builder 18.0.1",
+ "staging-xcm-executor 18.0.1",
 ]
 
 [[package]]
@@ -9309,9 +9307,9 @@ dependencies = [
 
 [[package]]
 name = "pallet-xcm-bridge-hub"
-version = "0.14.0"
+version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87e357424e6d3d82bd43869ec52812bc9781efcc712ea17d03d570df68544ef7"
+checksum = "9a3236ca0889b36ceee8382293ddbcf739215732346539a16a90aee78c4e3c7e"
 dependencies = [
  "bp-messages 0.19.0",
  "bp-runtime 0.19.0",
@@ -9326,8 +9324,8 @@ dependencies = [
  "sp-runtime 40.1.0",
  "sp-std",
  "staging-xcm 15.0.1",
- "staging-xcm-builder 18.0.0",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-builder 18.0.1",
+ "staging-xcm-executor 18.0.1",
 ]
 
 [[package]]
@@ -9367,7 +9365,7 @@ dependencies = [
  "sp-runtime 40.1.0",
  "sp-std",
  "staging-xcm 15.0.1",
- "staging-xcm-builder 18.0.0",
+ "staging-xcm-builder 18.0.1",
 ]
 
 [[package]]
@@ -9415,7 +9413,7 @@ dependencies = [
  "pallet-asset-tx-payment 39.0.0",
  "pallet-assets 41.0.0",
  "pallet-authorship 39.0.0",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "pallet-collator-selection 20.0.0",
  "pallet-message-queue 42.0.0",
  "pallet-xcm 18.0.0",
@@ -9428,7 +9426,7 @@ dependencies = [
  "sp-runtime 40.1.0",
  "staging-parachain-info 0.18.0",
  "staging-xcm 15.0.1",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-executor 18.0.1",
  "substrate-wasm-builder 25.0.0",
 ]
 
@@ -9470,13 +9468,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b7c112cab71412710254d500ee2d180dc257a56fb71eafefe5d1d6d2c6517451"
 dependencies = [
  "cumulus-pallet-parachain-system 0.18.0",
- "cumulus-pallet-xcmp-queue 0.18.0",
+ "cumulus-pallet-xcmp-queue 0.18.1",
  "cumulus-primitives-core 0.17.0",
  "cumulus-primitives-parachain-inherent 0.17.0",
  "cumulus-test-relay-sproof-builder 0.17.0",
  "frame-support 39.0.0",
  "frame-system 39.1.0",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "pallet-collator-selection 20.0.0",
  "pallet-session 39.0.0",
  "pallet-timestamp 38.0.0",
@@ -9490,7 +9488,7 @@ dependencies = [
  "sp-tracing",
  "staging-parachain-info 0.18.0",
  "staging-xcm 15.0.1",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-executor 18.0.1",
  "substrate-wasm-builder 25.0.0",
 ]
 
@@ -9924,7 +9922,7 @@ dependencies = [
  "log",
  "pallet-asset-rate 18.0.0",
  "pallet-authorship 39.0.0",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "pallet-broker 0.18.0",
  "pallet-election-provider-multi-phase 38.0.0",
  "pallet-fast-unstake 38.0.0",
@@ -9954,8 +9952,8 @@ dependencies = [
  "sp-session 37.0.0",
  "sp-staking 37.0.0",
  "staging-xcm 15.0.1",
- "staging-xcm-builder 18.0.0",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-builder 18.0.1",
+ "staging-xcm-executor 18.0.1",
  "static_assertions",
 ]
 
@@ -10051,7 +10049,7 @@ dependencies = [
  "pallet-authority-discovery 39.0.0",
  "pallet-authorship 39.0.0",
  "pallet-babe 39.0.0",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "pallet-broker 0.18.0",
  "pallet-message-queue 42.0.0",
  "pallet-mmr 39.0.0",
@@ -10080,7 +10078,7 @@ dependencies = [
  "sp-staking 37.0.0",
  "sp-std",
  "staging-xcm 15.0.1",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-executor 18.0.1",
 ]
 
 [[package]]
@@ -10317,9 +10315,9 @@ dependencies = [
 
 [[package]]
 name = "polkadot-sdk"
-version = "0.12.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "973dbc3e2dc6f29c23ab023a30f51b4a63478b714646f1d19c728cc44cc2938f"
+checksum = "5d543f06a00f390bb863c441fe48460a12e2efb26eedf931144416aa934e45c1"
 dependencies = [
  "asset-test-utils 21.0.0",
  "assets-common 0.19.0",
@@ -10335,8 +10333,8 @@ dependencies = [
  "bp-xcm-bridge-hub 0.5.0",
  "bp-xcm-bridge-hub-router 0.15.0",
  "bridge-hub-common 0.12.0",
- "bridge-hub-test-utils 0.21.0",
- "bridge-runtime-common 0.19.0",
+ "bridge-hub-test-utils 0.21.1",
+ "bridge-runtime-common 0.19.1",
  "cumulus-pallet-aura-ext 0.18.0",
  "cumulus-pallet-dmp-queue 0.18.0",
  "cumulus-pallet-parachain-system 0.18.0",
@@ -10344,7 +10342,7 @@ dependencies = [
  "cumulus-pallet-session-benchmarking 20.0.0",
  "cumulus-pallet-solo-to-para 0.18.0",
  "cumulus-pallet-xcm 0.18.0",
- "cumulus-pallet-xcmp-queue 0.18.0",
+ "cumulus-pallet-xcmp-queue 0.18.1",
  "cumulus-ping 0.18.0",
  "cumulus-primitives-aura 0.16.0",
  "cumulus-primitives-core 0.17.0",
@@ -10379,7 +10377,7 @@ dependencies = [
  "pallet-authorship 39.0.0",
  "pallet-babe 39.0.0",
  "pallet-bags-list 38.0.0",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "pallet-beefy 40.0.0",
  "pallet-beefy-mmr 40.0.0",
  "pallet-bounties 38.0.1",
@@ -10434,7 +10432,7 @@ dependencies = [
  "pallet-recovery 39.0.0",
  "pallet-referenda 39.0.0",
  "pallet-remark 39.0.0",
- "pallet-revive 0.4.0",
+ "pallet-revive 0.3.1",
  "pallet-root-offences 36.0.0",
  "pallet-root-testing 15.0.0",
  "pallet-safe-mode 20.0.0",
@@ -10465,7 +10463,7 @@ dependencies = [
  "pallet-whitelist 38.0.0",
  "pallet-xcm 18.0.0",
  "pallet-xcm-benchmarks 18.0.0",
- "pallet-xcm-bridge-hub 0.14.0",
+ "pallet-xcm-bridge-hub 0.14.1",
  "pallet-xcm-bridge-hub-router 0.16.0",
  "parachains-common 19.0.0",
  "parachains-runtimes-test-utils 20.0.0",
@@ -10539,8 +10537,8 @@ dependencies = [
  "sp-weights",
  "staging-parachain-info 0.18.0",
  "staging-xcm 15.0.1",
- "staging-xcm-builder 18.0.0",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-builder 18.0.1",
+ "staging-xcm-executor 18.0.1",
  "substrate-bip39",
  "testnet-parachains-constants 11.0.0",
  "xcm-runtime-apis 0.5.0",
@@ -10628,7 +10626,7 @@ dependencies = [
  "once_cell",
  "parity-scale-codec",
  "pin-project-lite",
- "polkadot-sdk 0.12.0",
+ "polkadot-sdk 0.12.1",
  "prometheus",
  "regex",
  "scale-info",
@@ -11407,7 +11405,7 @@ dependencies = [
  "sp-runtime 40.1.0",
  "sp-weights",
  "staging-xcm 15.0.1",
- "staging-xcm-builder 18.0.0",
+ "staging-xcm-builder 18.0.1",
 ]
 
 [[package]]
@@ -12666,7 +12664,7 @@ dependencies = [
  "sp-runtime 40.1.0",
  "sp-std",
  "staging-xcm 15.0.1",
- "staging-xcm-builder 18.0.0",
+ "staging-xcm-builder 18.0.1",
 ]
 
 [[package]]
@@ -12894,7 +12892,7 @@ dependencies = [
  "frame-support 39.0.0",
  "frame-system 39.1.0",
  "log",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "parity-scale-codec",
  "scale-info",
  "serde",
@@ -12907,7 +12905,7 @@ dependencies = [
  "sp-runtime 40.1.0",
  "sp-std",
  "staging-xcm 15.0.1",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-executor 18.0.1",
 ]
 
 [[package]]
@@ -13021,7 +13019,7 @@ dependencies = [
  "sp-runtime 40.1.0",
  "sp-std",
  "staging-xcm 15.0.1",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-executor 18.0.1",
 ]
 
 [[package]]
@@ -13061,7 +13059,7 @@ dependencies = [
  "sp-runtime 40.1.0",
  "sp-std",
  "staging-xcm 15.0.1",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-executor 18.0.1",
 ]
 
 [[package]]
@@ -13094,8 +13092,8 @@ dependencies = [
  "sp-arithmetic",
  "sp-std",
  "staging-xcm 15.0.1",
- "staging-xcm-builder 18.0.0",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-builder 18.0.1",
+ "staging-xcm-executor 18.0.1",
 ]
 
 [[package]]
@@ -13139,7 +13137,7 @@ dependencies = [
  "cumulus-pallet-parachain-system 0.18.0",
  "frame-support 39.0.0",
  "frame-system 39.1.0",
- "pallet-balances 40.0.0",
+ "pallet-balances 40.0.1",
  "pallet-collator-selection 20.0.0",
  "pallet-message-queue 42.0.0",
  "pallet-session 39.0.0",
@@ -13159,7 +13157,7 @@ dependencies = [
  "sp-runtime 40.1.0",
  "staging-parachain-info 0.18.0",
  "staging-xcm 15.0.1",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-executor 18.0.1",
 ]
 
 [[package]]
@@ -14774,9 +14772,9 @@ dependencies = [
 
 [[package]]
 name = "staging-xcm-builder"
-version = "18.0.0"
+version = "18.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1cce13bf3abbda42464069f92c21c8cd64eeb089b43cde3c3aca5f90cf485d7b"
+checksum = "49c313f08759d0b0185eb2f889b516aa6a694b31c1032e587eedf29fc98e46e0"
 dependencies = [
  "frame-support 39.0.0",
  "frame-system 39.1.0",
@@ -14792,7 +14790,7 @@ dependencies = [
  "sp-runtime 40.1.0",
  "sp-weights",
  "staging-xcm 15.0.1",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-executor 18.0.1",
 ]
 
 [[package]]
@@ -14818,9 +14816,9 @@ dependencies = [
 
 [[package]]
 name = "staging-xcm-executor"
-version = "18.0.0"
+version = "18.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e07e7020a321d74513c3d6e4015008de56e2a362758fd9615f6837b29b01a9ee"
+checksum = "dc0d0e7f1456b35413a910b3198d72eff2276ecd9d64b51288a0da44e82084d9"
 dependencies = [
  "environmental",
  "frame-benchmarking 39.0.0",
@@ -16256,7 +16254,7 @@ dependencies = [
  "sp-runtime 40.1.0",
  "sp-weights",
  "staging-xcm 15.0.1",
- "staging-xcm-builder 18.0.0",
+ "staging-xcm-builder 18.0.1",
 ]
 
 [[package]]
@@ -16595,7 +16593,7 @@ dependencies = [
  "sp-api 35.0.0",
  "sp-weights",
  "staging-xcm 15.0.1",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-executor 18.0.1",
 ]
 
 [[package]]
@@ -16640,8 +16638,8 @@ dependencies = [
  "sp-runtime 40.1.0",
  "sp-std",
  "staging-xcm 15.0.1",
- "staging-xcm-builder 18.0.0",
- "staging-xcm-executor 18.0.0",
+ "staging-xcm-builder 18.0.1",
+ "staging-xcm-executor 18.0.1",
 ]
 
 [[package]]
