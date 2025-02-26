@@ -133,6 +133,12 @@ macro_rules! any_runtime {
 				use $crate::static_types::node::MinerConfig;
 				$($code)*
 			},
+            $crate::opt::Chain::AssetHubNext => {
+                #[allow(unused)]
+                use $crate::static_types::westend::MinerConfig;
+                log::warn!(target: LOG_TARGET, "`asset-hub-next` is not tested and might not work as expected; it's experimental and is using the same runtime as westend");
+                $($code)*
+            },
 		}
 	};
 }
@@ -155,6 +161,7 @@ async fn main() -> Result<(), Error> {
     let _prometheus_handle = prometheus::run(prometheus_port)
         .map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
     log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
+
     dynamic::update_metadata_constants(client.chain_api())?;
 
     SHARED_CLIENT

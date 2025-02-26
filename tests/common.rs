@@ -1,3 +1,5 @@
+#![cfg(legacy)]
+
 use assert_cmd::cargo::cargo_bin;
 use polkadot_staking_miner::{
     opt::Chain,

@@ -40,10 +40,10 @@ cfg_legacy! {
 cfg_experimental_multi_block! {
     mod multi_block;
     pub use multi_block::*;
+    use polkadot_sdk::sp_runtime::Percent;
 
     /// Read the constants from the metadata and updates the static types.
     pub fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
-        // multi block constants.
         let pages: u32 = pallet_api::multi_block::constants::PAGES.fetch(api)?;
         static_types::Pages::set(pages);
         static_types::TargetSnapshotPerBlock::set(
@@ -53,15 +53,15 @@ cfg_experimental_multi_block! {
             pallet_api::multi_block::constants::VOTER_SNAPSHOT_PER_BLOCK.fetch(api)?,
         );
 
-        // election provider constants.
-        static_types::MaxBackersPerWinner::set(
-            pallet_api::election_provider_multi_phase::constants::MAX_VOTES_PER_VOTER.fetch(api)?,
-        );
-        static_types::MaxLength::set(
-            pallet_api::election_provider_multi_phase::constants::MAX_LENGTH.fetch(api)?,
-        );
+        let block_len = pallet_api::system::constants::BLOCK_LENGTH.fetch(api)?;
+
+        // As instructed, a reasonable default max length is 75% of the total block length.
+        static_types::MaxLength::set(Percent::from_percent(75) * block_len.total());
         static_types::MaxWinnersPerPage::set(
-            pallet_api::election_provider_multi_phase::constants::MAX_WINNERS.fetch(api)?,
+            pallet_api::multi_block_verifier::constants::MAX_WINNERS_PER_PAGE.fetch(api)?,
+        );
+        static_types::MaxBackersPerWinner::set(
+            pallet_api::multi_block_verifier::constants::MAX_BACKERS_PER_WINNER.fetch(api)?,
         );
 
         Ok(())

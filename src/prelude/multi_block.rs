@@ -21,8 +21,8 @@ pub type VoterSnapshotPage<T> = BoundedVec<Voter<T>, <T as MinerConfig>::VoterSn
         with = "::subxt::utils::Static<polkadot_sdk::sp_npos_elections::ElectionScore>"
     ),
     substitute_type(
-        path = "pallet_election_provider_multi_block::types::Phase<Bn>",
-        with = "::subxt::utils::Static<polkadot_sdk::pallet_election_provider_multi_block::types::Phase<Bn>>"
+        path = "pallet_election_provider_multi_block::types::Phase",
+        with = "::subxt::utils::Static<polkadot_sdk::pallet_election_provider_multi_block::types::Phase<u32>>"
     )
 )]
 pub mod runtime {}

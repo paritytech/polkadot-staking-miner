@@ -54,6 +54,7 @@ pub mod polkadot {
     use super::*;
     use frame_election_provider_support::SequentialPhragmen;
 
+    // TODO: not tested, not sure whether the accuracy will be changed to percent as well.
     frame_election_provider_support::generate_solution_type!(
         #[compact]
         pub struct NposSolution16::<
@@ -90,6 +91,7 @@ pub mod kusama {
     use super::*;
     use frame_election_provider_support::SequentialPhragmen;
 
+    // TODO: not tested, not sure whether the accuracy will be changed to percent as well.
     frame_election_provider_support::generate_solution_type!(
         #[compact]
         pub struct NposSolution24::<
@@ -126,6 +128,7 @@ pub mod westend {
     use super::*;
     use frame_election_provider_support::SequentialPhragmen;
 
+    // TODO: not tested, not sure whether the accuracy will be changed to percent as well.
     frame_election_provider_support::generate_solution_type!(
         #[compact]
         pub struct NposSolution16::<

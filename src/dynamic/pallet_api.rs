@@ -59,7 +59,7 @@ impl<T: DeserializeOwned + std::fmt::Display> PalletConstant<T> {
 
         let val = scale_value::serde::from_value::<_, T>(val).map_err(|e| {
             Error::InvalidMetadata(format!(
-                "Decoding `{}` failed {}",
+                "Decoding constant {pallet}:{variant} type: `{}` couldn't be decoded {}",
                 std::any::type_name::<T>(),
                 e
             ))
@@ -92,6 +92,19 @@ pub mod multi_block {
             PalletItem::new(NAME, "PagedVoterSnapshotHash");
     }
 }
+
+pub mod multi_block_verifier {
+    pub const NAME: &str = "MultiBlockVerifier";
+
+    pub mod constants {
+        use super::{super::*, *};
+        pub const MAX_WINNERS_PER_PAGE: PalletConstant<u32> = PalletConstant::new(NAME, "MaxWinnersPerPage");
+        pub const MAX_BACKERS_PER_WINNER: PalletConstant<u32> = PalletConstant::new(NAME, "MaxBackersPerWinner");
+        pub const MAX_BACKERS_PER_WINNER_FINAL: PalletConstant<u32> = PalletConstant::new(NAME, "MaxBackersPerWinnerFinal");
+    }
+}
+
+
 
 pub mod election_provider_multi_phase {
     pub const NAME: &str = "ElectionProviderMultiPhase";
@@ -132,5 +145,46 @@ pub mod multi_block_signed {
         use super::{super::*, *};
         pub const SUBMIT_PAGE: PalletItem = PalletItem::new(NAME, "submit_page");
         pub const REGISTER: PalletItem = PalletItem::new(NAME, "register");
+    }
+}
+
+pub mod system {
+    use serde::Deserialize;
+    use codec::Decode;
+
+    const NAME: &str = "System";
+
+    /// Simplified version of the `BlockLength` type to get the total block length.
+    #[derive(Decode, Deserialize, Debug)]
+    pub struct BlockLength {
+        max: PerDispatchClass,
+    }
+
+    impl BlockLength {
+        pub fn total(&self) -> u32 {
+            let mut total = 0_u32;
+            total = total.saturating_add(self.max.normal);
+            total = total.saturating_add(self.max.operational);
+            total = total.saturating_add(self.max.mandatory);
+            total
+        }
+    }
+
+    impl std::fmt::Display for BlockLength {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.total())
+        }
+    }
+
+    #[derive(Decode, Deserialize, Debug)]
+    pub struct PerDispatchClass {
+        normal: u32,
+        operational: u32,
+        mandatory: u32,
+    }
+
+    pub mod constants {
+        use super::{super::*, *};
+        pub const BLOCK_LENGTH: PalletConstant<BlockLength> = PalletConstant::new(NAME, "BlockLength");
     }
 }
