@@ -196,13 +196,13 @@ pub(crate) async fn submit_and_watch<T: MinerConfig + Send + Sync + 'static>(
 
     match listen {
         Listen::Head => {
-            let best_block = utils::wait_for_in_block(tx_progress).await?;
-            log::info!(target: LOG_TARGET, "{kind} included at={:?}", best_block.block_hash());
+            //let best_block = utils::wait_for_in_block(tx_progress).await?;
+            //log::info!(target: LOG_TARGET, "{kind} included at={:?}", best_block.block_hash());
             // TODO: check events.
         }
         Listen::Finalized => {
-            let finalized_block = tx_progress.wait_for_finalized().await?;
-            log::info!(target: LOG_TARGET, "{kind} finalized at={:?}", finalized_block.block_hash());
+            //let finalized_block = tx_progress.wait_for_finalized().await?;
+            //log::info!(target: LOG_TARGET, "{kind} finalized at={:?}", finalized_block.block_hash());
             // TODO: check events which is slow.
         }
     }
