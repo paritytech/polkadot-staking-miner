@@ -18,7 +18,9 @@ use crate::{
     client::Client,
     commands::{Listen, SubmissionStrategy},
     error::Error,
-    prelude::{runtime, AccountInfo, ChainClient, Hash, Header, RpcClient, Storage, LOG_TARGET},
+    prelude::{
+        runtime, AccountInfo, ChainClient, Config, Hash, Header, RpcClient, Storage, LOG_TARGET,
+    },
 };
 use codec::Decode;
 use jsonrpsee::core::ClientError as JsonRpseeError;
@@ -246,6 +248,18 @@ pub async fn account_info(
         .fetch(&runtime::storage().system().account(who))
         .await?
         .ok_or(Error::AccountDoesNotExists)
+}
+
+/// Wait for the transaction to be included in a block according to the listen strategy
+/// which can be either `Listen::Finalized` or `Listen::Head`.
+pub async fn wait_tx_in_block_for_strategy(
+    tx: TxProgress<Config, ChainClient>,
+    listen: Listen,
+) -> Result<TxInBlock<Config, ChainClient>, Error> {
+    match listen {
+        Listen::Finalized => tx.wait_for_finalized().await.map_err(Into::into),
+        Listen::Head => wait_for_in_block(tx).await.map_err(Into::into),
+    }
 }
 
 #[cfg(test)]

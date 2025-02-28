@@ -9,13 +9,14 @@ use crate::{
     },
     error::Error,
     prelude::{
-        runtime, AccountId, Config, Hash, Storage, TargetSnapshotPage, TargetSnapshotPageOf,
-        VoterSnapshotPage, VoterSnapshotPageOf, LOG_TARGET,
+        runtime, AccountId, ChainClient, Config, Hash, Storage, TargetSnapshotPage,
+        TargetSnapshotPageOf, VoterSnapshotPage, VoterSnapshotPageOf, LOG_TARGET,
     },
     signer::Signer,
     utils,
 };
 use codec::Decode;
+use futures::{stream::FuturesUnordered, StreamExt};
 use polkadot_sdk::{
     frame_support::BoundedVec,
     pallet_election_provider_multi_block::{
@@ -25,8 +26,9 @@ use polkadot_sdk::{
     sp_npos_elections::ElectionScore,
 };
 use subxt::{
-    blocks::ExtrinsicEvents, config::DefaultExtrinsicParamsBuilder, dynamic::Value,
-    tx::DynamicPayload,
+    config::DefaultExtrinsicParamsBuilder,
+    dynamic::Value,
+    tx::{DynamicPayload, TxProgress},
 };
 
 /// A multi-block transaction.
@@ -43,22 +45,6 @@ impl std::fmt::Display for TransactionKind {
         }
     }
 }
-
-impl TransactionKind {
-    /// Check if the transaction is in the given events.
-    #[allow(unused, dead_code)]
-    pub fn in_events(&self, evs: &ExtrinsicEvents<Config>) -> Result<bool, Error> {
-        match self {
-            Self::RegisterScore => evs
-                .has::<runtime::multi_block_signed::events::Registered>()
-                .map_err(Into::into),
-            Self::SubmitPage(_) => evs
-                .has::<runtime::multi_block_signed::events::Stored>()
-                .map_err(Into::into),
-        }
-    }
-}
-
 pub struct MultiBlockTransaction {
     kind: TransactionKind,
     tx: DynamicPayload,
@@ -164,20 +150,16 @@ where
     }
 }
 
-/// Submits and watches a `DynamicPayload`, ie. an extrinsic.
-pub(crate) async fn submit_and_watch<T: MinerConfig + Send + Sync + 'static>(
+/// Submits a transaction and returns the progress.
+pub(crate) async fn submit_inner(
     client: &Client,
     signer: Signer,
-    listen: Listen,
     tx: MultiBlockTransaction,
-) -> Result<(), Error> {
+    nonce: u64,
+) -> Result<TxProgress<Config, ChainClient>, Error> {
     let (kind, tx) = tx.to_parts();
-    let nonce = client
-        .rpc()
-        .system_account_next_index(signer.account_id())
-        .await?;
 
-    log::trace!(target: LOG_TARGET, "submit_and_watch for `{kind}`");
+    log::trace!(target: LOG_TARGET, "submit_and_watch for `{kind}` nonce={nonce}");
 
     // NOTE: subxt sets mortal extrinsic by default.
     let xt_cfg = DefaultExtrinsicParamsBuilder::default()
@@ -189,24 +171,13 @@ pub(crate) async fn submit_and_watch<T: MinerConfig + Send + Sync + 'static>(
         .create_signed(&tx, &*signer, xt_cfg)
         .await?;
 
-    let tx_progress = xt.submit_and_watch().await.map_err(|e| {
-        log::error!(target: LOG_TARGET, "submit tx {kind} failed: {:?}", e);
-        e
-    })?;
-
-    match listen {
-        Listen::Head => {
-            //let best_block = utils::wait_for_in_block(tx_progress).await?;
-            //log::info!(target: LOG_TARGET, "{kind} included at={:?}", best_block.block_hash());
-            // TODO: check events.
-        }
-        Listen::Finalized => {
-            //let finalized_block = tx_progress.wait_for_finalized().await?;
-            //log::info!(target: LOG_TARGET, "{kind} finalized at={:?}", finalized_block.block_hash());
-            // TODO: check events which is slow.
-        }
-    }
-    Ok(())
+    xt.submit_and_watch()
+        .await
+        .map_err(|e| {
+            log::error!(target: LOG_TARGET, "submit tx {kind} failed: {:?}", e);
+            e
+        })
+        .map_err(Into::into)
 }
 
 pub(crate) async fn mine_solution<T>(
@@ -346,24 +317,93 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
     paged_raw_solution: PagedRawSolution<T>,
     listen: Listen,
 ) -> Result<(), Error> {
+    let mut nonce = client
+        .rpc()
+        .system_account_next_index(signer.account_id())
+        .await?;
+
     // Register score.
-    submit_and_watch::<T>(
+    let tx_status = submit_inner(
         client,
         signer.clone(),
-        listen,
         MultiBlockTransaction::register_score(paged_raw_solution.score)?,
+        nonce,
     )
     .await?;
 
-    // Submit all solution pages.
-    for (page, solution) in paged_raw_solution.solution_pages.into_iter().enumerate() {
-        submit_and_watch::<T>(
+    nonce += 1;
+
+    // 1. Wait for the `register_score tx` to be included in a block.
+    //
+    // NOTE: It's slow to iterate over the events to check if the score was registered
+    // but it's performed for registering the score only once.
+    let tx = utils::wait_tx_in_block_for_strategy(tx_status, listen).await?;
+    let events = tx.wait_for_success().await?;
+    if !events.has::<runtime::multi_block_signed::events::Registered>()? {
+        return Err(Error::Other("Score registration failed".to_string()));
+    };
+
+    log::info!(target: LOG_TARGET, "Score registered at block {:?}", tx.block_hash());
+
+    let mut txs = FuturesUnordered::new();
+
+    // 2. Submit all solution pages.
+    for (page, solution) in paged_raw_solution
+        .solution_pages
+        .clone()
+        .into_iter()
+        .enumerate()
+    {
+        let tx_status = submit_inner(
             client,
             signer.clone(),
-            listen,
             MultiBlockTransaction::submit_page::<T>(page as u32, Some(solution))?,
+            nonce,
         )
         .await?;
+
+        txs.push(async move {
+            match utils::wait_tx_in_block_for_strategy(tx_status, listen).await {
+                Ok(tx) => {
+                    log::info!(target: LOG_TARGET, "page={page} included in block: {:?}", tx.block_hash());
+                    Ok(())
+                }
+                Err(e) => {
+                    log::error!(target: LOG_TARGET, "page={page} failed: {:?}", e, page = page);
+                    Err(page)
+                }
+            }
+        });
+
+        nonce += 1;
+    }
+
+    // 3. Wait for all pages to be included in a block.
+    let mut failed_pages = Vec::new();
+
+    while let Some(page) = txs.next().await {
+        if let Err(page) = page {
+            failed_pages.push(page);
+        }
+    }
+
+    // 4. Re-submit failed pages.
+    for page in failed_pages {
+        let solution = paged_raw_solution.solution_pages[page].clone();
+        let nonce = client
+            .rpc()
+            .system_account_next_index(signer.account_id())
+            .await?;
+
+        let tx_status = submit_inner(
+            client,
+            signer.clone(),
+            MultiBlockTransaction::submit_page::<T>(page as u32, Some(solution))?,
+            nonce,
+        )
+        .await?;
+
+        utils::wait_tx_in_block_for_strategy(tx_status, listen).await?;
     }
 
     Ok(())

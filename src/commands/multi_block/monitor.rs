@@ -6,7 +6,7 @@ use crate::{
     },
     dynamic,
     error::Error,
-    prelude::{runtime, AccountId, Storage, LOG_TARGET},
+    prelude::{runtime, AccountId, ExtrinsicParamsBuilder, Storage, LOG_TARGET},
     prometheus,
     signer::Signer,
     static_types,
@@ -202,7 +202,7 @@ where
     }
 
     // 2. If the solution has already been submitted, nothing to do
-    if has_submitted::<T>(&storage, round, signer.account_id(), n_pages).await? {
+    if has_submitted(&storage, round, signer.account_id(), n_pages).await? {
         return Ok(());
     }
 
@@ -215,7 +215,7 @@ where
 
     // After the submission lock has been acquired, check again
     // that no submissions has been submitted.
-    if has_submitted::<T>(
+    if has_submitted(
         &storage_at_head(&client, listen).await?,
         round,
         signer.account_id(),
@@ -271,6 +271,11 @@ where
 
     prometheus::set_score(paged_raw_solution.score);
 
+    // De-register the score and solution if the miner has already submitted the score.
+    if has_submitted_score(&storage_head, round, signer.account_id()).await? {
+        bail(listen, &client, signer.clone()).await?;
+    }
+
     // 7. Submit the score and solution to the chain.
     match dynamic::submit(&client, &signer, paged_raw_solution, listen)
         .timed()
@@ -296,7 +301,7 @@ where
 }
 
 /// Whether the current account has already registered a score for the given round.
-async fn has_submitted_score<T: MinerConfig>(
+async fn has_submitted_score(
     storage: &Storage,
     round: u32,
     who: &subxt::config::substrate::AccountId32,
@@ -342,7 +347,7 @@ async fn own_score_or_better(
 }
 
 /// Whether the current account has submitted all pages for the given round.
-async fn all_solution_pages_submitted<T: MinerConfig>(
+async fn all_solution_pages_submitted(
     storage: &Storage,
     round: u32,
     who: &subxt::config::substrate::AccountId32,
@@ -366,19 +371,41 @@ async fn all_solution_pages_submitted<T: MinerConfig>(
 }
 
 /// Whether the current account has registered the score and submitted all pages for the given round.
-async fn has_submitted<T: MinerConfig>(
+async fn has_submitted(
     storage: &Storage,
     round: u32,
     who: &subxt::config::substrate::AccountId32,
     n_pages: u32,
 ) -> Result<bool, Error> {
-    if !has_submitted_score::<T>(storage, round, who).await? {
+    if !has_submitted_score(storage, round, who).await? {
         return Ok(false);
     }
 
-    if !all_solution_pages_submitted::<T>(storage, round, who, n_pages).await? {
+    if !all_solution_pages_submitted(storage, round, who, n_pages).await? {
         return Ok(false);
     }
 
     Ok(true)
+}
+
+async fn bail(listen: Listen, client: &Client, signer: Signer) -> Result<(), Error> {
+    let tx = runtime::tx().multi_block_signed().bail();
+
+    let nonce = client
+        .rpc()
+        .system_account_next_index(signer.account_id())
+        .await?;
+
+    let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
+    let xt = client
+        .chain_api()
+        .tx()
+        .create_signed(&tx, &*signer, xt_cfg)
+        .await?;
+
+    let tx = xt.submit_and_watch().await?;
+
+    utils::wait_tx_in_block_for_strategy(tx, listen).await?;
+
+    Ok(())
 }

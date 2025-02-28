@@ -49,3 +49,5 @@ pub type AccountData =
 /// Account info.
 pub type AccountInfo =
     crate::prelude::runtime::runtime_types::frame_system::AccountInfo<Nonce, AccountData>;
+/// Extrinsic params builder.
+pub type ExtrinsicParamsBuilder = subxt::config::DefaultExtrinsicParamsBuilder<Config>;
