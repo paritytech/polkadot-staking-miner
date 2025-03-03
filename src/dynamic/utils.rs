@@ -33,7 +33,7 @@ pub fn storage_addr<P: subxt::storage::StorageKey>(
     storage: PalletItem,
     params: P,
 ) -> subxt::storage::DynamicAddress<P> {
-    let (pallet, variant) = storage.to_parts();
+    let (pallet, variant) = storage.into_parts();
     subxt::dynamic::storage(pallet, variant, params)
 }
 
@@ -41,7 +41,7 @@ pub fn tx(
     tx: PalletItem,
     call_data: impl Into<scale_value::Composite<()>>,
 ) -> subxt::tx::DynamicPayload {
-    let (pallet, variant) = tx.to_parts();
+    let (pallet, variant) = tx.into_parts();
     subxt::dynamic::tx(pallet, variant, call_data)
 }
 

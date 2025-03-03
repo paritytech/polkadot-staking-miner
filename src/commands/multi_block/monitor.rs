@@ -153,7 +153,7 @@ where
 /// 4. Mine the solution.
 /// 5. Lock submissions.
 /// 6. Check if that our score is the best.
-/// 7. Register the solution score and submit each page of the solution (one per block)
+/// 7. Register the solution score and submit each page of the solution.
 async fn process_block<T>(
     client: Client,
     state: BlockDetails,
@@ -293,9 +293,6 @@ where
             return Err(e);
         }
     };
-
-    // TODO(niklasad1): check events that the submissions were successful and
-    // the verification was successful.
 
     Ok(())
 }

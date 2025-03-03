@@ -23,7 +23,7 @@ impl PalletItem {
     pub const fn new(pallet: &'static str, variant: &'static str) -> Self {
         Self { pallet, variant }
     }
-    pub const fn to_parts(&self) -> (&'static str, &'static str) {
+    pub const fn into_parts(self) -> (&'static str, &'static str) {
         (self.pallet, self.variant)
     }
 }
@@ -43,12 +43,12 @@ impl<T: DeserializeOwned + std::fmt::Display> PalletConstant<T> {
         }
     }
 
-    pub const fn to_parts(&self) -> (&'static str, &'static str) {
-        self.inner.to_parts()
+    pub const fn into_parts(self) -> (&'static str, &'static str) {
+        self.inner.into_parts()
     }
 
     pub fn fetch(&self, api: &ChainClient) -> Result<T, Error> {
-        let (pallet, variant) = self.inner.to_parts();
+        let (pallet, variant) = self.inner.into_parts();
 
         let val = api
             .constants()

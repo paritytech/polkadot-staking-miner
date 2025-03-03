@@ -94,7 +94,7 @@ impl<T: MinerConfig> Snapshot<T> {
         let voter = self
             .voter
             .iter()
-            .map(|(_, (snapshot, _))| snapshot.clone().into())
+            .map(|(_, (snapshot, _))| snapshot.clone())
             .collect();
         (target, voter)
     }

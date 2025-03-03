@@ -1,7 +1,5 @@
 //! Utils to interact with multi-block election system.
 
-use std::collections::HashSet;
-
 use crate::{
     client::Client,
     commands::{Listen, SharedSnapshot},
@@ -11,8 +9,9 @@ use crate::{
     },
     error::Error,
     prelude::{
-        runtime, AccountId, ChainClient, Config, Hash, Storage, TargetSnapshotPage,
-        TargetSnapshotPageOf, VoterSnapshotPage, VoterSnapshotPageOf, LOG_TARGET,
+        runtime, AccountId, ChainClient, Config, ExtrinsicParamsBuilder, Hash, Storage,
+        TargetSnapshotPage, TargetSnapshotPageOf, VoterSnapshotPage, VoterSnapshotPageOf,
+        LOG_TARGET,
     },
     signer::Signer,
     utils,
@@ -27,8 +26,8 @@ use polkadot_sdk::{
     },
     sp_npos_elections::ElectionScore,
 };
+use std::collections::HashSet;
 use subxt::{
-    config::DefaultExtrinsicParamsBuilder,
     dynamic::Value,
     tx::{DynamicPayload, TxProgress},
 };
@@ -55,8 +54,7 @@ pub struct MultiBlockTransaction {
 impl MultiBlockTransaction {
     /// Create a transaction to register a score.
     pub fn register_score(score: ElectionScore) -> Result<Self, Error> {
-        let scale_score =
-            to_scale_value(score).map_err(|err| decode_error::<ElectionScore>(err))?;
+        let scale_score = to_scale_value(score).map_err(decode_error::<ElectionScore>)?;
 
         Ok(Self {
             kind: TransactionKind::RegisterScore,
@@ -72,9 +70,8 @@ impl MultiBlockTransaction {
         page: u32,
         maybe_solution: Option<T::Solution>,
     ) -> Result<Self, Error> {
-        let scale_page = to_scale_value(page).map_err(|err| decode_error::<T::Pages>(err))?;
-        let scale_solution =
-            to_scale_value(maybe_solution).map_err(|err| decode_error::<T::Solution>(err))?;
+        let scale_page = to_scale_value(page).map_err(decode_error::<T::Pages>)?;
+        let scale_solution = to_scale_value(maybe_solution).map_err(decode_error::<T::Solution>)?;
 
         Ok(Self {
             kind: TransactionKind::SubmitPage(page),
@@ -85,7 +82,7 @@ impl MultiBlockTransaction {
         })
     }
 
-    pub fn to_parts(self) -> (TransactionKind, DynamicPayload) {
+    pub fn into_parts(self) -> (TransactionKind, DynamicPayload) {
         (self.kind, self.tx)
     }
 }
@@ -159,14 +156,12 @@ pub(crate) async fn submit_inner(
     tx: MultiBlockTransaction,
     nonce: u64,
 ) -> Result<TxProgress<Config, ChainClient>, Error> {
-    let (kind, tx) = tx.to_parts();
+    let (kind, tx) = tx.into_parts();
 
-    log::trace!(target: LOG_TARGET, "submit_and_watch for `{kind}` nonce={nonce}");
+    log::trace!(target: LOG_TARGET, "submit `{kind}` nonce={nonce}");
 
     // NOTE: subxt sets mortal extrinsic by default.
-    let xt_cfg = DefaultExtrinsicParamsBuilder::default()
-        .nonce(nonce)
-        .build();
+    let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
     let xt = client
         .chain_api()
         .tx()
@@ -316,7 +311,7 @@ pub(crate) async fn check_and_update_target_snapshot<T: MinerConfig>(
 pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
     client: &Client,
     signer: &Signer,
-    paged_raw_solution: PagedRawSolution<T>,
+    mut paged_raw_solution: PagedRawSolution<T>,
     listen: Listen,
 ) -> Result<(), Error> {
     let mut i = 0;
@@ -384,19 +379,19 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
     // 4. Retry failed pages, one time.
     let mut solutions = Vec::new();
     for page in failed_pages {
-        let solution = paged_raw_solution.solution_pages[page as usize].clone();
+        let solution = std::mem::take(&mut paged_raw_solution.solution_pages[page as usize]);
         solutions.push((page, solution));
     }
 
     let failed_pages = inner_submit_pages::<T>(client, signer, solutions, listen).await?;
 
     if failed_pages.is_empty() {
-        return Ok(());
+        Ok(())
     } else {
-        return Err(Error::Other(format!(
+        Err(Error::Other(format!(
             "Failed to submit pages: {:?}",
             failed_pages.len()
-        )));
+        )))
     }
 }
 
@@ -420,7 +415,7 @@ pub(crate) async fn inner_submit_pages<T: MinerConfig + Send + Sync + 'static>(
         let tx_status = submit_inner(
             client,
             signer.clone(),
-            MultiBlockTransaction::submit_page::<T>(page as u32, Some(solution))?,
+            MultiBlockTransaction::submit_page::<T>(page, Some(solution))?,
             nonce,
         )
         .await?;
@@ -444,6 +439,8 @@ pub(crate) async fn inner_submit_pages<T: MinerConfig + Send + Sync + 'static>(
             Ok(tx) => {
                 let hash = tx.block_hash();
 
+                // NOTE: It's slow to iterate over the events and that's we are
+                // submitting all pages "at once" and several pages are submitted in the same block.
                 let events = tx.wait_for_success().await?;
                 for event in events.iter() {
                     let event = event?;
