@@ -45,8 +45,7 @@ regex = "1"
 cfg_aliases = "0.2.0"
 
 [features]
-# TODO: make legacy default when ready for merge.
-default = ["experimental-multi-block"]
+default = ["legacy"]
 legacy = []
 experimental-multi-block = ["polkadot-sdk/pallet-election-provider-multi-block"]
 
