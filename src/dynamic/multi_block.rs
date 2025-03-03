@@ -1,5 +1,7 @@
 //! Utils to interact with multi-block election system.
 
+use std::collections::HashSet;
+
 use crate::{
     client::Client,
     commands::{Listen, SharedSnapshot},
@@ -317,7 +319,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
     paged_raw_solution: PagedRawSolution<T>,
     listen: Listen,
 ) -> Result<(), Error> {
-    let mut nonce = client
+    let nonce = client
         .rpc()
         .system_account_next_index(signer.account_id())
         .await?;
@@ -331,8 +333,6 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
     )
     .await?;
 
-    nonce += 1;
-
     // 1. Wait for the `register_score tx` to be included in a block.
     //
     // NOTE: It's slow to iterate over the events to check if the score was registered
@@ -345,15 +345,63 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 
     log::info!(target: LOG_TARGET, "Score registered at block {:?}", tx.block_hash());
 
-    let mut txs = FuturesUnordered::new();
+    let solutions: Vec<(u32, T::Solution)> = paged_raw_solution
+        .solution_pages
+        .iter()
+        .enumerate()
+        .map(|(page, solution)| (page as u32, solution.clone()))
+        .collect::<Vec<_>>();
 
     // 2. Submit all solution pages.
-    for (page, solution) in paged_raw_solution
-        .solution_pages
-        .clone()
-        .into_iter()
-        .enumerate()
-    {
+    let failed_pages = inner_submit_pages::<T>(client, signer, solutions, listen).await?;
+
+    // 3. All pages were submitted successfully, we are done.
+    if failed_pages.is_empty() {
+        return Ok(());
+    }
+
+    log::info!(
+        target: LOG_TARGET,
+        "Failed to submit pages: {:?}; retrying",
+        failed_pages.len()
+    );
+
+    // 4. Retry failed pages, one time.
+    let mut solutions = Vec::new();
+    for page in failed_pages {
+        let solution = paged_raw_solution.solution_pages[page as usize].clone();
+        solutions.push((page, solution));
+    }
+
+    let failed_pages = inner_submit_pages::<T>(client, signer, solutions, listen).await?;
+
+    if failed_pages.is_empty() {
+        return Ok(());
+    } else {
+        return Err(Error::Other(format!(
+            "Failed to submit pages: {:?}",
+            failed_pages.len()
+        )));
+    }
+}
+
+pub(crate) async fn inner_submit_pages<T: MinerConfig + Send + Sync + 'static>(
+    client: &Client,
+    signer: &Signer,
+    paged_raw_solution: Vec<(u32, T::Solution)>,
+    listen: Listen,
+) -> Result<Vec<u32>, Error> {
+    let mut txs = FuturesUnordered::new();
+
+    let mut nonce = client
+        .rpc()
+        .system_account_next_index(signer.account_id())
+        .await?;
+
+    let len = paged_raw_solution.len();
+
+    // 2. Submit all solution pages.
+    for (page, solution) in paged_raw_solution.into_iter() {
         let tx_status = submit_inner(
             client,
             signer.clone(),
@@ -364,14 +412,8 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 
         txs.push(async move {
             match utils::wait_tx_in_block_for_strategy(tx_status, listen).await {
-                Ok(tx) => {
-                    log::info!(target: LOG_TARGET, "page={page} included in block: {:?}", tx.block_hash());
-                    Ok(())
-                }
-                Err(e) => {
-                    log::error!(target: LOG_TARGET, "page={page} failed: {:?}", e, page = page);
-                    Err(page)
-                }
+                Ok(tx) => Ok(tx),
+                Err(_) => Err(page),
             }
         });
 
@@ -380,31 +422,42 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 
     // 3. Wait for all pages to be included in a block.
     let mut failed_pages = Vec::new();
+    let mut submitted_pages = HashSet::new();
 
     while let Some(page) = txs.next().await {
-        if let Err(page) = page {
-            failed_pages.push(page);
+        match page {
+            Ok(tx) => {
+                let hash = tx.block_hash();
+
+                let events = tx.wait_for_success().await?;
+                for event in events.iter() {
+                    let event = event?;
+
+                    if let Some(solution_stored) = event
+                        .as_event::<runtime::multi_block_signed::events::Stored>()
+                        .map_err(|e| Error::MissingTxEvent(format!("{:?}", e)))?
+                    {
+                        let page = solution_stored.2;
+
+                        log::info!(
+                            target: LOG_TARGET,
+                            "Page {page} included in block {:?}",
+                            hash
+                        );
+
+                        submitted_pages.insert(solution_stored.2);
+                    }
+                }
+            }
+            Err(p) => {
+                failed_pages.push(p);
+            }
+        }
+
+        if submitted_pages.len() == len {
+            return Ok(vec![]);
         }
     }
 
-    // 4. Re-submit failed pages.
-    for page in failed_pages {
-        let solution = paged_raw_solution.solution_pages[page].clone();
-        let nonce = client
-            .rpc()
-            .system_account_next_index(signer.account_id())
-            .await?;
-
-        let tx_status = submit_inner(
-            client,
-            signer.clone(),
-            MultiBlockTransaction::submit_page::<T>(page as u32, Some(solution))?,
-            nonce,
-        )
-        .await?;
-
-        utils::wait_tx_in_block_for_strategy(tx_status, listen).await?;
-    }
-
-    Ok(())
+    Ok(failed_pages)
 }

@@ -20,7 +20,10 @@ use crate::{
     dynamic,
     error::Error,
     opt::Solver,
-    prelude::{runtime, AccountId, ChainClient, Hash, Header, RpcClient, LOG_TARGET},
+    prelude::{
+        runtime, AccountId, ChainClient, ExtrinsicParamsBuilder, Hash, Header, RpcClient,
+        LOG_TARGET,
+    },
     prometheus,
     signer::Signer,
     static_types,
@@ -40,9 +43,7 @@ use polkadot_sdk::{
 };
 use std::sync::Arc;
 use subxt::{
-    backend::legacy::rpc_methods::DryRunResult,
-    config::{DefaultExtrinsicParamsBuilder, Header as _},
-    error::RpcError,
+    backend::legacy::rpc_methods::DryRunResult, config::Header as _, error::RpcError,
     Error as SubxtError,
 };
 use tokio::sync::Mutex;
@@ -498,14 +499,12 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
         .constants()
         .at(&runtime::constants().babe().epoch_duration())
     {
-        DefaultExtrinsicParamsBuilder::default()
+        ExtrinsicParamsBuilder::default()
             .nonce(nonce)
             .mortal(at, len)
             .build()
     } else {
-        DefaultExtrinsicParamsBuilder::default()
-            .nonce(nonce)
-            .build()
+        ExtrinsicParamsBuilder::default().nonce(nonce).build()
     };
 
     let xt = client
