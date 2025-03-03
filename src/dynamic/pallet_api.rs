@@ -98,13 +98,14 @@ pub mod multi_block_verifier {
 
     pub mod constants {
         use super::{super::*, *};
-        pub const MAX_WINNERS_PER_PAGE: PalletConstant<u32> = PalletConstant::new(NAME, "MaxWinnersPerPage");
-        pub const MAX_BACKERS_PER_WINNER: PalletConstant<u32> = PalletConstant::new(NAME, "MaxBackersPerWinner");
-        pub const MAX_BACKERS_PER_WINNER_FINAL: PalletConstant<u32> = PalletConstant::new(NAME, "MaxBackersPerWinnerFinal");
+        pub const MAX_WINNERS_PER_PAGE: PalletConstant<u32> =
+            PalletConstant::new(NAME, "MaxWinnersPerPage");
+        pub const MAX_BACKERS_PER_WINNER: PalletConstant<u32> =
+            PalletConstant::new(NAME, "MaxBackersPerWinner");
+        pub const MAX_BACKERS_PER_WINNER_FINAL: PalletConstant<u32> =
+            PalletConstant::new(NAME, "MaxBackersPerWinnerFinal");
     }
 }
-
-
 
 pub mod election_provider_multi_phase {
     pub const NAME: &str = "ElectionProviderMultiPhase";
@@ -149,8 +150,8 @@ pub mod multi_block_signed {
 }
 
 pub mod system {
-    use serde::Deserialize;
     use codec::Decode;
+    use serde::Deserialize;
 
     const NAME: &str = "System";
 
@@ -185,6 +186,7 @@ pub mod system {
 
     pub mod constants {
         use super::{super::*, *};
-        pub const BLOCK_LENGTH: PalletConstant<BlockLength> = PalletConstant::new(NAME, "BlockLength");
+        pub const BLOCK_LENGTH: PalletConstant<BlockLength> =
+            PalletConstant::new(NAME, "BlockLength");
     }
 }

@@ -319,19 +319,34 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
     paged_raw_solution: PagedRawSolution<T>,
     listen: Listen,
 ) -> Result<(), Error> {
-    let nonce = client
-        .rpc()
-        .system_account_next_index(signer.account_id())
-        .await?;
+    let mut i = 0;
+    let tx_status = loop {
+        let nonce = client
+            .rpc()
+            .system_account_next_index(signer.account_id())
+            .await?;
 
-    // Register score.
-    let tx_status = submit_inner(
-        client,
-        signer.clone(),
-        MultiBlockTransaction::register_score(paged_raw_solution.score)?,
-        nonce,
-    )
-    .await?;
+        // Register score.
+        match submit_inner(
+            client,
+            signer.clone(),
+            MultiBlockTransaction::register_score(paged_raw_solution.score)?,
+            nonce,
+        )
+        .await
+        {
+            Ok(tx) => break tx,
+            Err(Error::Subxt(subxt::Error::Transaction(e))) => {
+                i += 1;
+                if i >= 10 {
+                    return Err(Error::Subxt(subxt::Error::Transaction(e)));
+                }
+                log::debug!(target: LOG_TARGET, "Failed to register score: {:?}; retrying", e);
+                tokio::time::sleep(std::time::Duration::from_secs(6)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    };
 
     // 1. Wait for the `register_score tx` to be included in a block.
     //
@@ -340,7 +355,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
     let tx = utils::wait_tx_in_block_for_strategy(tx_status, listen).await?;
     let events = tx.wait_for_success().await?;
     if !events.has::<runtime::multi_block_signed::events::Registered>()? {
-        return Err(Error::Other("Score registration failed".to_string()));
+        return Err(Error::MissingTxEvent("Register score".to_string()));
     };
 
     log::info!(target: LOG_TARGET, "Score registered at block {:?}", tx.block_hash());
