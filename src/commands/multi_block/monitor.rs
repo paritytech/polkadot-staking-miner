@@ -6,7 +6,10 @@ use crate::{
     },
     dynamic,
     error::Error,
-    prelude::{runtime, AccountId, ExtrinsicParamsBuilder, Storage, LOG_TARGET},
+    prelude::{
+        runtime, runtime::runtime_types::pallet_election_provider_multi_block::types::Phase,
+        AccountId, ExtrinsicParamsBuilder, Storage, LOG_TARGET,
+    },
     prometheus,
     signer::Signer,
     static_types,
@@ -16,7 +19,7 @@ use crate::{
 };
 use futures::future::{abortable, AbortHandle};
 use polkadot_sdk::{
-    pallet_election_provider_multi_block::{types::Phase, unsigned::miner::MinerConfig},
+    pallet_election_provider_multi_block::unsigned::miner::MinerConfig,
     sp_npos_elections::ElectionScore,
 };
 use std::sync::Arc;
@@ -196,7 +199,7 @@ where
 
             return Ok(());
         }
-        Phase::Signed => {}
+        Phase::Signed(_) => {}
         // Ignore other phases.
         _ => return Ok(()),
     }

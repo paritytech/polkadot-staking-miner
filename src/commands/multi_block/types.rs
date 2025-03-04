@@ -2,14 +2,12 @@ use crate::{
     client::Client,
     error::Error,
     prelude::{
-        runtime, Hash, Header, Storage, TargetSnapshotPage, VoterSnapshotPage, VoterSnapshotPageOf,
-        LOG_TARGET,
+        runtime, runtime::runtime_types::pallet_election_provider_multi_block::types::Phase, Hash,
+        Header, Storage, TargetSnapshotPage, VoterSnapshotPage, VoterSnapshotPageOf, LOG_TARGET,
     },
     static_types, utils,
 };
-use polkadot_sdk::pallet_election_provider_multi_block::{
-    types::Phase, unsigned::miner::MinerConfig,
-};
+use polkadot_sdk::pallet_election_provider_multi_block::unsigned::miner::MinerConfig;
 use std::{
     collections::BTreeMap,
     sync::{Arc, RwLock},
@@ -125,7 +123,7 @@ impl<T: MinerConfig> Clone for SharedSnapshot<T> {
 /// Block details related to multi-block.
 pub struct BlockDetails {
     pub storage: Storage,
-    pub phase: Phase<u32>,
+    pub phase: Phase,
     pub n_pages: u32,
     pub round: u32,
     pub target_snapshot_page: u32,
@@ -146,13 +144,13 @@ impl BlockDetails {
             .await?
             .unwrap_or(0);
 
-        log::trace!(target: LOG_TARGET, "Processing block={} round={}, phase={:?}", at.number, round, phase.0);
+        log::trace!(target: LOG_TARGET, "Processing block={} round={}, phase={:?}", at.number, round, phase);
 
         let n_pages = static_types::Pages::get();
 
         Ok(Self {
             storage,
-            phase: phase.0,
+            phase,
             n_pages,
             round,
             target_snapshot_page: n_pages - 1,
@@ -161,7 +159,7 @@ impl BlockDetails {
     }
 
     pub fn phase_is_signed(&self) -> bool {
-        matches!(self.phase, Phase::Signed)
+        matches!(self.phase, Phase::Signed(_))
     }
 
     pub fn phase_is_snapshot(&self) -> bool {
