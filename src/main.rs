@@ -19,6 +19,12 @@
 //! Simple bot capable of monitoring a polkadot (and cousins) chain and submitting solutions to the
 //! `pallet-election-provider-multi-phase`. See `--help` for more details.
 //!
+//! The binary itself comes with two build features:
+//! - `legacy`: This is the default build feature. It is the original implementation of the miner
+//!             to submit single block solutions which are still supported by the chain.
+//! - `experimental-multi-block`: This is the new implementation of the miner. It is still in
+//!                               development and not yet supported any chain but it is intended
+//!                               to be live in the future.
 //! # Implementation Notes:
 //!
 //! - First draft: Be aware that this is the first draft and there might be bugs, or undefined
@@ -28,21 +34,39 @@
 //!   development. It is intended to run this bot with a `restart = true` way, so that it reports it
 //!   crash, but resumes work thereafter.
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
+#[cfg(all(experimental_multi_block, legacy))]
+std::compile_error!("feature `legacy` and `experimental-multi-block` are mutually exclusive. You can only enable one of them.");
+
+#[cfg(not(any(experimental_multi_block, legacy)))]
+std::compile_error!(
+    "Exactly one of the features `legacy` and `experimental-multi-block` must be enabled."
+);
+
 mod client;
 mod commands;
-mod epm;
+mod dynamic;
 mod error;
-mod helpers;
+mod macros;
 mod opt;
 mod prelude;
+// TODO(niklasad1): prometheus not enabled yet in the multi-block monitor command.
+#[allow(unused, dead_code)]
 mod prometheus;
 mod signer;
 mod static_types;
+// The `utils` module is shared between the legacy and the experimental multi-block implementation.
+// and just disable unsued warnings for now to avoid conditionally compiling it.
+#[allow(unused, dead_code)]
+mod utils;
 
 use clap::Parser;
 use error::Error;
 use futures::future::{BoxFuture, FutureExt};
-use prelude::*;
+use prelude::{
+    runtime, ChainClient, DEFAULT_PROMETHEUS_PORT, DEFAULT_URI, LOG_TARGET, SHARED_CLIENT,
+};
 use std::str::FromStr;
 use tokio::sync::oneshot;
 use tracing_subscriber::EnvFilter;
@@ -104,6 +128,17 @@ macro_rules! any_runtime {
 				use $crate::static_types::westend::MinerConfig;
 				$($code)*
 			},
+			$crate::opt::Chain::SubstrateNode => {
+				#[allow(unused)]
+				use $crate::static_types::node::MinerConfig;
+				$($code)*
+			},
+            $crate::opt::Chain::AssetHubNext => {
+                #[allow(unused)]
+                use $crate::static_types::westend::MinerConfig;
+                log::warn!(target: LOG_TARGET, "`asset-hub-next` is not tested and might not work as expected; it's experimental and is using the same runtime as westend");
+                $($code)*
+            },
 		}
 	};
 }
@@ -126,7 +161,8 @@ async fn main() -> Result<(), Error> {
     let _prometheus_handle = prometheus::run(prometheus_port)
         .map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
     log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
-    epm::update_metadata_constants(client.chain_api())?;
+
+    dynamic::update_metadata_constants(client.chain_api())?;
 
     SHARED_CLIENT
         .set(client.clone())
@@ -246,7 +282,7 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
         let version = update.runtime_version().spec_version;
         match updater.apply_update(update) {
             Ok(()) => {
-                if let Err(e) = epm::update_metadata_constants(&client) {
+                if let Err(e) = dynamic::update_metadata_constants(&client) {
                     let _ = tx.send(e);
                     return;
                 }
@@ -260,10 +296,12 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, legacy))]
 mod tests {
     use super::*;
-    use commands::monitor;
+    use crate::commands::{
+        DryRunConfig, EmergencySolutionConfig, Listen, MonitorConfig, SubmissionStrategy,
+    };
 
     #[test]
     fn cli_monitor_works() {
@@ -290,10 +328,10 @@ mod tests {
                 uri: "hi".to_string(),
                 prometheus_port: 9999,
                 log: "info".to_string(),
-                command: Command::Monitor(commands::MonitorConfig {
-                    listen: monitor::Listen::Head,
+                command: Command::Monitor(MonitorConfig {
+                    listen: Listen::Head,
                     solver: opt::Solver::SeqPhragmen { iterations: 10 },
-                    submission_strategy: monitor::SubmissionStrategy::IfLeading,
+                    submission_strategy: SubmissionStrategy::IfLeading,
                     seed_or_path: "//Alice".to_string(),
                     delay: 12,
                     dry_run: false,
@@ -321,7 +359,7 @@ mod tests {
                 uri: "hi".to_string(),
                 prometheus_port: 9999,
                 log: "info".to_string(),
-                command: Command::DryRun(commands::DryRunConfig {
+                command: Command::DryRun(DryRunConfig {
                     at: None,
                     solver: opt::Solver::PhragMMS { iterations: 10 },
                     force_snapshot: false,
@@ -352,7 +390,7 @@ mod tests {
                 uri: "hi".to_string(),
                 prometheus_port: 9999,
                 log: "info".to_string(),
-                command: Command::EmergencySolution(commands::EmergencySolutionConfig {
+                command: Command::EmergencySolution(EmergencySolutionConfig {
                     at: None,
                     force_winner_count: Some(99),
                     solver: opt::Solver::PhragMMS { iterations: 1337 },

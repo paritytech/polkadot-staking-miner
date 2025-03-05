@@ -15,6 +15,7 @@
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
 #[derive(thiserror::Error, Debug)]
+#[allow(unused)]
 pub enum Error {
     #[error("Failed to parse log directive: `{0}´")]
     LogParse(#[from] tracing_subscriber::filter::ParseError),
@@ -52,4 +53,14 @@ pub enum Error {
     Join(#[from] tokio::task::JoinError),
     #[error("Empty snapshot")]
     EmptySnapshot,
+    #[error("Missing event for transaction: {0}")]
+    MissingTxEvent(String),
+    #[error("Failed to submit {0} pages")]
+    FailedToSubmitPages(usize),
+}
+
+impl From<subxt_core::Error> for Error {
+    fn from(e: subxt_core::Error) -> Self {
+        Self::Subxt(e.into())
+    }
 }

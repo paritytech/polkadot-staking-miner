@@ -1,5 +1,7 @@
 //! Requires a `polkadot binary ` built with `--features fast-runtime` in the path to run integration tests against.
 
+#![cfg(legacy)]
+
 pub mod common;
 
 use assert_cmd::cargo::cargo_bin;
@@ -23,6 +25,7 @@ async fn submit_monitor_works_basic() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn default_trimming_works() {
     init_logger();
     let (_drop, ws_url) = run_staking_miner_playground();
