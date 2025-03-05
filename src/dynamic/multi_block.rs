@@ -183,6 +183,7 @@ pub(crate) async fn mine_solution<T>(
     n_pages: u32,
     round: u32,
     desired_targets: u32,
+    block_number: u32,
 ) -> Result<PagedRawSolution<T>, Error>
 where
     T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
@@ -204,7 +205,7 @@ where
 
     log::trace!(
         target: LOG_TARGET,
-        "MineInput: desired_targets={desired_targets},pages={n_pages},target_snapshot_len={},voters_pages_len={},do_reduce=false,round={round}",
+        "MineInput: desired_targets={desired_targets},pages={n_pages},target_snapshot_len={},voters_pages_len={},do_reduce=false,round={round},at={block_number}",
         target_snapshot.len(), voter_pages.len()
     );
 
@@ -427,7 +428,7 @@ pub(crate) async fn inner_submit_pages<T: MinerConfig + Send + Sync + 'static>(
 
     let len = paged_raw_solution.len();
 
-    // 2. Submit all solution pages.
+    // 1. Submit all solution pages.
     for (page, solution) in paged_raw_solution.into_iter() {
         let tx_status = submit_inner(
             client,
@@ -447,7 +448,7 @@ pub(crate) async fn inner_submit_pages<T: MinerConfig + Send + Sync + 'static>(
         nonce += 1;
     }
 
-    // 3. Wait for all pages to be included in a block.
+    // 2. Wait for all pages to be included in a block.
     let mut failed_pages = Vec::new();
     let mut submitted_pages = HashSet::new();
 

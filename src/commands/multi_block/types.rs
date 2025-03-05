@@ -2,14 +2,18 @@ use crate::{
     client::Client,
     error::Error,
     prelude::{
-        runtime, runtime::runtime_types::pallet_election_provider_multi_block::types::Phase, Hash,
-        Header, Storage, TargetSnapshotPage, VoterSnapshotPage, VoterSnapshotPageOf, LOG_TARGET,
+        runtime::{self, runtime_types::pallet_election_provider_multi_block::types::Phase},
+        Hash, Header, Storage, TargetSnapshotPage, VoterSnapshotPage, VoterSnapshotPageOf,
+        LOG_TARGET,
     },
     static_types, utils,
 };
-use polkadot_sdk::pallet_election_provider_multi_block::unsigned::miner::MinerConfig;
+use polkadot_sdk::{
+    pallet_election_provider_multi_block::unsigned::miner::MinerConfig,
+    sp_npos_elections::ElectionScore,
+};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     sync::{Arc, RwLock},
 };
 use subxt::config::Header as _;
@@ -127,6 +131,7 @@ pub struct BlockDetails {
     pub n_pages: u32,
     pub round: u32,
     pub desired_targets: u32,
+    pub block_number: u32,
 }
 
 impl BlockDetails {
@@ -153,6 +158,7 @@ impl BlockDetails {
             n_pages,
             round,
             desired_targets,
+            block_number: at.number,
         })
     }
 
@@ -162,5 +168,38 @@ impl BlockDetails {
 
     pub fn phase_is_snapshot(&self) -> bool {
         matches!(self.phase, Phase::Snapshot(_))
+    }
+}
+
+pub enum CurrentSubmission {
+    /// Submission is completed.
+    Done(ElectionScore),
+    /// Submission is started but incomplete.
+    Incomplete(IncompleteSubmission),
+    /// Submission is not started.
+    NotStarted,
+}
+
+pub struct IncompleteSubmission {
+    score: ElectionScore,
+    pages: HashSet<u32>,
+    n_pages: u32,
+}
+
+impl IncompleteSubmission {
+    pub fn new(score: ElectionScore, pages: HashSet<u32>, n_pages: u32) -> Self {
+        Self {
+            score,
+            pages,
+            n_pages,
+        }
+    }
+
+    pub fn score(&self) -> ElectionScore {
+        self.score
+    }
+
+    pub fn get_missing_pages(&self) -> impl Iterator<Item = u32> + '_ {
+        (0..self.n_pages).filter(|page| !self.pages.contains(page))
     }
 }

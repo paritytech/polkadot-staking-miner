@@ -1,10 +1,12 @@
 use crate::{
     client::Client,
     commands::{
-        multi_block::types::{BlockDetails, SharedSnapshot},
+        multi_block::types::{
+            BlockDetails, CurrentSubmission, IncompleteSubmission, SharedSnapshot,
+        },
         types::{Listen, SubmissionStrategy},
     },
-    dynamic,
+    dynamic::{self, inner_submit_pages},
     error::Error,
     prelude::{
         runtime::{self, runtime_types::pallet_election_provider_multi_block::types::Phase},
@@ -13,16 +15,14 @@ use crate::{
     prometheus,
     signer::Signer,
     static_types,
-    utils::{
-        self, kill_main_task_if_critical_err, score_passes_strategy, storage_at_head, TimedFuture,
-    },
+    utils::{self, kill_main_task_if_critical_err, score_passes_strategy, TimedFuture},
 };
 use futures::future::{abortable, AbortHandle};
 use polkadot_sdk::{
     pallet_election_provider_multi_block::unsigned::miner::MinerConfig,
     sp_npos_elections::ElectionScore,
 };
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 use tokio::sync::Mutex;
 
 /// TODO(niklasad1): Add solver algorithm configuration to the monitor command.
@@ -180,6 +180,7 @@ where
         round,
         n_pages,
         desired_targets,
+        block_number,
         ..
     } = state;
 
@@ -213,7 +214,7 @@ where
     // After the submission lock has been acquired, check again
     // that no submissions has been submitted.
     if has_submitted(
-        &storage_at_head(&client, listen).await?,
+        &utils::storage_at_head(&client, listen).await?,
         round,
         signer.account_id(),
         n_pages,
@@ -230,6 +231,7 @@ where
         n_pages,
         round,
         desired_targets,
+        block_number,
     )
     .timed()
     .await
@@ -246,6 +248,35 @@ where
 
     let storage_head = utils::storage_at_head(&client, listen).await?;
 
+    match get_submission(&storage_head, round, signer.account_id(), n_pages).await? {
+        CurrentSubmission::Done(score) => {
+            // We have already submitted the solution with a better score or equal score
+            if !score_passes_strategy(paged_raw_solution.score, score, submission_strategy) {
+                return Ok(());
+            }
+            // Revert previous submission and submit the new one.
+            bail(listen, &client, signer.clone()).await?;
+        }
+        CurrentSubmission::Incomplete(s) => {
+            // Submit the missing pages.
+            if s.score() == paged_raw_solution.score {
+                let mut missing_pages = Vec::new();
+
+                for page in s.get_missing_pages() {
+                    let solution = paged_raw_solution.solution_pages[page as usize].clone();
+                    missing_pages.push((page, solution));
+                }
+
+                inner_submit_pages::<T>(&client, &signer, missing_pages, listen).await?;
+                return Ok(());
+            }
+
+            // Revert previous submission and submit a new one.
+            bail(listen, &client, signer.clone()).await?;
+        }
+        CurrentSubmission::NotStarted => (),
+    };
+
     // 6. Check if the score is better than the current best score.
     //
     // We allow overwriting the score if the "our account" has the best score but hasn't submitted
@@ -254,12 +285,12 @@ where
     //
     // This to ensure that the miner doesn't miss out on submitting the solution if the miner crashed
     // and to prevent to be slashed.
-    if !own_score_or_better(
+
+    if !score_better(
         &storage_head,
         paged_raw_solution.score,
         round,
         submission_strategy,
-        signer.account_id(),
     )
     .await?
     {
@@ -267,11 +298,6 @@ where
     }
 
     prometheus::set_score(paged_raw_solution.score);
-
-    // De-register the score and solution if the miner has already submitted the score.
-    if has_submitted_score(&storage_head, round, signer.account_id()).await? {
-        bail(listen, &client, signer.clone()).await?;
-    }
 
     // 7. Submit the score and solution to the chain.
     match dynamic::submit(&client, &signer, paged_raw_solution, listen)
@@ -294,35 +320,12 @@ where
     Ok(())
 }
 
-/// Whether the current account has already registered a score for the given round.
-async fn has_submitted_score(
-    storage: &Storage,
-    round: u32,
-    who: &subxt::config::substrate::AccountId32,
-) -> Result<bool, Error> {
-    let scores = storage
-        .fetch_or_default(&runtime::storage().multi_block_signed().sorted_scores(round))
-        .await?;
-
-    if scores
-        .0
-        .into_iter()
-        .any(|(account_id, _)| &account_id == who)
-    {
-        return Ok(true);
-    }
-
-    Ok(false)
-}
-
 /// Whether the computed score is better than the current best score
-/// or that the current account has the best score.
-async fn own_score_or_better(
+async fn score_better(
     storage: &Storage,
     score: ElectionScore,
     round: u32,
     strategy: SubmissionStrategy,
-    who: &subxt::config::substrate::AccountId32,
 ) -> Result<bool, Error> {
     let scores = storage
         .fetch_or_default(&runtime::storage().multi_block_signed().sorted_scores(round))
@@ -331,7 +334,6 @@ async fn own_score_or_better(
     if scores
         .0
         .into_iter()
-        .filter(|(account_id, _)| account_id != who)
         .any(|(_, other_score)| !score_passes_strategy(score, other_score.0, strategy))
     {
         return Ok(false);
@@ -340,28 +342,50 @@ async fn own_score_or_better(
     Ok(true)
 }
 
-/// Whether the current account has submitted all pages for the given round.
-async fn all_solution_pages_submitted(
+/// Whether the current account has registered the score and submitted all pages for the given round.
+async fn get_submission(
     storage: &Storage,
     round: u32,
     who: &subxt::config::substrate::AccountId32,
     n_pages: u32,
-) -> Result<bool, Error> {
-    for page in 0..n_pages {
-        let page = storage
-            .fetch(
-                &runtime::storage()
-                    .multi_block_signed()
-                    .submission_storage(round, who, page),
-            )
-            .await?;
+) -> Result<CurrentSubmission, Error> {
+    let maybe_submission = storage
+        .fetch(
+            &runtime::storage()
+                .multi_block_signed()
+                .submission_metadata_storage(round, who),
+        )
+        .await?;
 
-        if page.is_none() {
-            return Ok(false);
-        }
+    let Some(submission) = maybe_submission else {
+        return Ok(CurrentSubmission::NotStarted);
+    };
+
+    let pages: HashSet<u32> = submission
+        .pages
+        .0
+        .into_iter()
+        .enumerate()
+        .filter_map(
+            |(i, submitted)| {
+                if submitted {
+                    Some(i as u32)
+                } else {
+                    None
+                }
+            },
+        )
+        .collect();
+
+    if pages.len() == n_pages as usize {
+        Ok(CurrentSubmission::Done(submission.claimed_score.0))
+    } else {
+        Ok(CurrentSubmission::Incomplete(IncompleteSubmission::new(
+            submission.claimed_score.0,
+            pages,
+            n_pages,
+        )))
     }
-
-    Ok(true)
 }
 
 /// Whether the current account has registered the score and submitted all pages for the given round.
@@ -371,15 +395,10 @@ async fn has_submitted(
     who: &subxt::config::substrate::AccountId32,
     n_pages: u32,
 ) -> Result<bool, Error> {
-    if !has_submitted_score(storage, round, who).await? {
-        return Ok(false);
+    match get_submission(storage, round, who, n_pages).await? {
+        CurrentSubmission::Done(_) => Ok(true),
+        _ => Ok(false),
     }
-
-    if !all_solution_pages_submitted(storage, round, who, n_pages).await? {
-        return Ok(false);
-    }
-
-    Ok(true)
 }
 
 async fn bail(listen: Listen, client: &Client, signer: Signer) -> Result<(), Error> {
