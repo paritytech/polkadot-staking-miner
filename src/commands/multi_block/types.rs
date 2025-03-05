@@ -126,7 +126,6 @@ pub struct BlockDetails {
     pub phase: Phase,
     pub n_pages: u32,
     pub round: u32,
-    pub target_snapshot_page: u32,
     pub desired_targets: u32,
 }
 
@@ -153,7 +152,6 @@ impl BlockDetails {
             phase,
             n_pages,
             round,
-            target_snapshot_page: n_pages - 1,
             desired_targets,
         })
     }

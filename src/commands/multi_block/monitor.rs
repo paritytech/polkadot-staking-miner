@@ -7,7 +7,7 @@ use crate::{
     dynamic,
     error::Error,
     prelude::{
-        runtime, runtime::runtime_types::pallet_election_provider_multi_block::types::Phase,
+        runtime::{self, runtime_types::pallet_election_provider_multi_block::types::Phase},
         AccountId, ExtrinsicParamsBuilder, Storage, LOG_TARGET,
     },
     prometheus,
@@ -179,7 +179,6 @@ where
         phase,
         round,
         n_pages,
-        target_snapshot_page,
         desired_targets,
         ..
     } = state;
@@ -190,13 +189,8 @@ where
 
     // 1. Check if the phase is signed/snapshot, otherwise wait for the next block.
     match phase {
-        Phase::Snapshot(page) => {
-            if page == target_snapshot_page {
-                dynamic::check_and_update_target_snapshot(page, &storage, &snapshot).await?;
-            }
-
-            dynamic::check_and_update_voter_snapshot(page, &storage, &snapshot).await?;
-
+        Phase::Snapshot(_) => {
+            dynamic::fetch_missing_snapshots_lossy::<T>(&snapshot, &storage).await?;
             return Ok(());
         }
         Phase::Signed(_) => {}

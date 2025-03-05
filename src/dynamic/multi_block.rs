@@ -236,6 +236,28 @@ where
     .map_err(|e| Error::Other(format!("{:?}", e)))?
 }
 
+/// Fetches the target snapshot and all voter snapshots which are missing
+/// but some snapshots may not exist yet which is just ignored.
+pub(crate) async fn fetch_missing_snapshots_lossy<T: MinerConfig>(
+    snapshot: &SharedSnapshot<T>,
+    storage: &Storage,
+) -> Result<(), Error> {
+    let n_pages = snapshot.read().n_pages;
+
+    for page in 0..n_pages {
+        match check_and_update_voter_snapshot(page, storage, snapshot).await {
+            Ok(_) => {}
+            Err(Error::EmptySnapshot) => {}
+            Err(e) => return Err(e),
+        };
+    }
+
+    let _ = check_and_update_target_snapshot(n_pages - 1, storage, snapshot).await;
+
+    Ok(())
+}
+
+/// Similar to `fetch_missing_snapshots_lossy` but it returns an error if any snapshot is missing.
 pub(crate) async fn fetch_missing_snapshots<T: MinerConfig>(
     snapshot: &SharedSnapshot<T>,
     storage: &Storage,
@@ -246,9 +268,7 @@ pub(crate) async fn fetch_missing_snapshots<T: MinerConfig>(
         check_and_update_voter_snapshot(page, storage, snapshot).await?;
     }
 
-    check_and_update_target_snapshot(n_pages - 1, storage, snapshot).await?;
-
-    Ok(())
+    check_and_update_target_snapshot(n_pages - 1, storage, snapshot).await
 }
 
 pub(crate) async fn paged_voter_snapshot_hash(page: u32, storage: &Storage) -> Result<Hash, Error> {
