@@ -55,4 +55,12 @@ pub enum Error {
     EmptySnapshot,
     #[error("Missing event for transaction: {0}")]
     MissingTxEvent(String),
+    #[error("Failed to submit {0} pages")]
+    FailedToSubmitPages(usize),
+}
+
+impl From<subxt_core::Error> for Error {
+    fn from(e: subxt_core::Error) -> Self {
+        Self::Subxt(e.into())
+    }
 }

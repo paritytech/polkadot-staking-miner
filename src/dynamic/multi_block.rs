@@ -388,10 +388,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
     if failed_pages.is_empty() {
         Ok(())
     } else {
-        Err(Error::Other(format!(
-            "Failed to submit pages: {:?}",
-            failed_pages.len()
-        )))
+        Err(Error::FailedToSubmitPages(failed_pages.len()))
     }
 }
 
@@ -445,9 +442,8 @@ pub(crate) async fn inner_submit_pages<T: MinerConfig + Send + Sync + 'static>(
                 for event in events.iter() {
                     let event = event?;
 
-                    if let Some(solution_stored) = event
-                        .as_event::<runtime::multi_block_signed::events::Stored>()
-                        .map_err(|e| Error::MissingTxEvent(format!("{:?}", e)))?
+                    if let Some(solution_stored) =
+                        event.as_event::<runtime::multi_block_signed::events::Stored>()?
                     {
                         let page = solution_stored.2;
 

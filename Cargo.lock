@@ -10971,6 +10971,7 @@ dependencies = [
  "serde",
  "serde_json",
  "subxt",
+ "subxt-core 0.39.0",
  "thiserror 2.0.12",
  "tokio",
  "tracing-subscriber",

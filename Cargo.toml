@@ -27,6 +27,7 @@ pin-project-lite = "0.2"
 # subxt
 scale-value = "0.18"
 subxt = "0.39.0"
+subxt-core = "0.39.0"
 
 # polkadot-sdk
 polkadot-sdk = { git = "https://github.com/paritytech/polkadot-sdk", features = ["frame-election-provider-support", "frame-support", "sp-npos-elections", "sp-core", "sp-runtime", "pallet-election-provider-multi-phase"], branch = "na-ah-next-westend" }
