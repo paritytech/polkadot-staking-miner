@@ -23,7 +23,6 @@ futures = "0.3"
 thiserror = "2.0"
 tokio = { version = "1.43", features = ["macros", "rt-multi-thread", "sync", "signal"] }
 pin-project-lite = "0.2"
-paste = "1"
 
 # subxt
 scale-value = "0.18"
