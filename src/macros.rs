@@ -53,16 +53,16 @@ macro_rules! for_legacy_runtime {
 				use $crate::static_types::legacy::westend::MinerConfig;
 				$($code)*
 			},
-			$crate::opt::Chain::AssetHubNext => {
-				#[allow(unused)]
-				use $crate::static_types::legacy::westend::MinerConfig;
-				$($code)*
-			}
-			$crate::opt::Chain::SubstrateNode => {
-				#[allow(unused)]
-				use $crate::static_types::legacy::node::MinerConfig;
-				$($code)*
-			}
+            $crate::opt::Chain::AssetHubNext => {
+                #[allow(unused)]
+                use $crate::static_types::legacy::westend::MinerConfig;
+                $($code)*
+            }
+            $crate::opt::Chain::SubstrateNode => {
+                #[allow(unused)]
+                use $crate::static_types::legacy::node::MinerConfig;
+                $($code)*
+            }
 		}
 	};
 }
@@ -87,16 +87,16 @@ macro_rules! for_multi_block_runtime {
 				use $crate::static_types::multi_block::westend::MinerConfig;
 				$($code)*
 			},
-			$crate::opt::Chain::AssetHubNext => {
-				#[allow(unused)]
-				use $crate::static_types::multi_block::westend::MinerConfig;
-				$($code)*
-			}
-			$crate::opt::Chain::SubstrateNode => {
-				#[allow(unused)]
-				use $crate::static_types::multi_block::node::MinerConfig;
-				$($code)*
-			}
+            $crate::opt::Chain::AssetHubNext => {
+                #[allow(unused)]
+                use $crate::static_types::multi_block::westend::MinerConfig;
+                $($code)*
+            }
+            $crate::opt::Chain::SubstrateNode => {
+                #[allow(unused)]
+                use $crate::static_types::multi_block::node::MinerConfig;
+                $($code)*
+            }
 		}
 	};
 }

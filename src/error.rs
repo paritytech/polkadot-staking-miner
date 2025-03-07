@@ -15,7 +15,6 @@
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
 #[derive(thiserror::Error, Debug)]
-#[allow(unused)]
 pub enum Error {
     #[error("Failed to parse log directive: `{0}´")]
     LogParse(#[from] tracing_subscriber::filter::ParseError),
@@ -37,7 +36,7 @@ pub enum Error {
     AccountDoesNotExists,
     #[error("Submission with better score already exist")]
     BetterScoreExist,
-    #[error("Invalid chain: `{0}`, staking-miner supports only polkadot, kusama and westend")]
+    #[error("Invalid chain: `{0}`, staking-miner supports only polkadot, kusama, westend, node and asset-hub-next")]
     InvalidChain(String),
     #[error("Other error: `{0}`")]
     Other(String),
