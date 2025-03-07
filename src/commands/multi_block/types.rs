@@ -1,14 +1,15 @@
 use crate::{
     client::Client,
     error::Error,
-    prelude::{
-        runtime::{self, runtime_types::pallet_election_provider_multi_block::types::Phase},
-        Hash, Header, Storage, TargetSnapshotPage, VoterSnapshotPage, VoterSnapshotPageOf,
-        LOG_TARGET,
+    prelude::{AccountId, Hash, Header, Storage, LOG_TARGET},
+    runtime::multi_block::{
+        self as runtime, runtime_types::pallet_election_provider_multi_block::types::Phase,
     },
-    static_types, utils,
+    static_types::multi_block as static_types,
+    utils,
 };
 use polkadot_sdk::{
+    frame_election_provider_support, frame_support::BoundedVec,
     pallet_election_provider_multi_block::unsigned::miner::MinerConfig,
     sp_npos_elections::ElectionScore,
 };
@@ -17,6 +18,15 @@ use std::{
     sync::{Arc, RwLock},
 };
 use subxt::config::Header as _;
+
+pub type TargetSnapshotPageOf<T> =
+    BoundedVec<AccountId, <T as MinerConfig>::TargetSnapshotPerBlock>;
+pub type VoterSnapshotPageOf<T> = BoundedVec<Voter<T>, <T as MinerConfig>::VoterSnapshotPerBlock>;
+pub type Voter<T> =
+    frame_election_provider_support::Voter<AccountId, <T as MinerConfig>::MaxVotesPerVoter>;
+pub type TargetSnapshotPage<T> =
+    BoundedVec<<T as MinerConfig>::AccountId, <T as MinerConfig>::TargetSnapshotPerBlock>;
+pub type VoterSnapshotPage<T> = BoundedVec<Voter<T>, <T as MinerConfig>::VoterSnapshotPerBlock>;
 
 type Page = u32;
 

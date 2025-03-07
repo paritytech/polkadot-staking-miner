@@ -16,11 +16,9 @@
 
 use crate::{
     client::Client,
-    commands::{Listen, SubmissionStrategy},
+    commands::types::{Listen, SubmissionStrategy},
     error::Error,
-    prelude::{
-        runtime, AccountInfo, ChainClient, Config, Hash, Header, RpcClient, Storage, LOG_TARGET,
-    },
+    prelude::{ChainClient, Config, Hash, Header, RpcClient, Storage, LOG_TARGET},
 };
 use codec::Decode;
 use jsonrpsee::core::ClientError as JsonRpseeError;
@@ -236,18 +234,6 @@ pub fn score_passes_strategy(
             !best_score.strict_threshold_better(our_score, epsilon)
         }
     }
-}
-
-/// Get the account data of the given `account_id` from the storage
-/// which can be used to get free balance, reserved balance, etc.
-pub async fn account_info(
-    storage: &Storage,
-    who: &subxt::config::substrate::AccountId32,
-) -> Result<AccountInfo, Error> {
-    storage
-        .fetch(&runtime::storage().system().account(who))
-        .await?
-        .ok_or(Error::AccountDoesNotExists)
 }
 
 /// Wait for the transaction to be included in a block according to the listen strategy

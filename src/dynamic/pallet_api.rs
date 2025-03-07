@@ -43,10 +43,6 @@ impl<T: DeserializeOwned + std::fmt::Display> PalletConstant<T> {
         }
     }
 
-    pub const fn into_parts(self) -> (&'static str, &'static str) {
-        self.inner.into_parts()
-    }
-
     pub fn fetch(&self, api: &ChainClient) -> Result<T, Error> {
         let (pallet, variant) = self.inner.into_parts();
 
@@ -102,8 +98,6 @@ pub mod multi_block_verifier {
             PalletConstant::new(NAME, "MaxWinnersPerPage");
         pub const MAX_BACKERS_PER_WINNER: PalletConstant<u32> =
             PalletConstant::new(NAME, "MaxBackersPerWinner");
-        pub const MAX_BACKERS_PER_WINNER_FINAL: PalletConstant<u32> =
-            PalletConstant::new(NAME, "MaxBackersPerWinnerFinal");
     }
 }
 
@@ -117,8 +111,6 @@ pub mod election_provider_multi_phase {
         pub const MAX_VOTES_PER_VOTER: PalletConstant<u32> =
             PalletConstant::new(NAME, "MinerMaxVotesPerVoter");
         pub const MAX_LENGTH: PalletConstant<u32> = PalletConstant::new(NAME, "MinerMaxLength");
-        pub const MAX_BACKERS_PER_WINNER: PalletConstant<u32> =
-            PalletConstant::new(NAME, "MaxBackersPerWinner");
         pub const MAX_WEIGHT: PalletConstant<Weight> = PalletConstant::new(NAME, "SignedMaxWeight");
         // NOTE: `MaxWinners` is used instead of `MinerMaxWinners` to work with older metadata.
         pub const MAX_WINNERS: PalletConstant<u32> = PalletConstant::new(NAME, "MaxWinners");

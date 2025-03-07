@@ -16,23 +16,21 @@
 
 use crate::{
     client::Client,
-    commands::{Listen, SubmissionStrategy},
-    dynamic,
+    commands::types::{Listen, MonitorConfig, SubmissionStrategy},
+    dynamic::legacy as dynamic,
     error::Error,
-    opt::Solver,
     prelude::{
-        runtime, AccountId, ChainClient, ExtrinsicParamsBuilder, Hash, Header, RpcClient,
-        LOG_TARGET,
+        AccountId, ChainClient, ExtrinsicParamsBuilder, Hash, Header, RpcClient, LOG_TARGET,
     },
     prometheus,
+    runtime::legacy as runtime,
     signer::Signer,
-    static_types,
+    static_types::legacy as static_types,
     utils::{
         kill_main_task_if_critical_err, rpc_block_subscription, score_passes_strategy,
         wait_for_in_block, TimedFuture,
     },
 };
-use clap::Parser;
 use codec::{Decode, Encode};
 use futures::future::TryFutureExt;
 use jsonrpsee::core::ClientError as JsonRpseeError;
@@ -47,65 +45,6 @@ use subxt::{
     Error as SubxtError,
 };
 use tokio::sync::Mutex;
-
-#[derive(Debug, Clone, Parser)]
-#[cfg_attr(test, derive(PartialEq))]
-pub struct MonitorConfig {
-    /// They type of event to listen to.
-    ///
-    /// Typically, finalized is safer and there is no chance of anything going wrong, but it can be
-    /// slower. It is recommended to use finalized, if the duration of the signed phase is longer
-    /// than the the finality delay.
-    #[clap(long, value_enum, default_value_t = Listen::Finalized)]
-    pub listen: Listen,
-
-    /// The solver algorithm to use.
-    #[clap(subcommand)]
-    pub solver: Solver,
-
-    /// Submission strategy to use.
-    ///
-    /// Possible options:
-    ///
-    /// `--submission-strategy if-leading`: only submit if leading.
-    ///
-    /// `--submission-strategy always`: always submit.
-    ///
-    /// `--submission-strategy "percent-better <percent>"`: submit if the submission is `n` percent better.
-    ///
-    /// `--submission-strategy "no-worse-than  <percent>"`: submit if submission is no more than `n` percent worse.
-    #[clap(long, value_parser, default_value = "if-leading")]
-    pub submission_strategy: SubmissionStrategy,
-
-    /// The path to a file containing the seed of the account. If the file is not found, the seed is
-    /// used as-is.
-    ///
-    /// Can also be provided via the `SEED` environment variable.
-    ///
-    /// WARNING: Don't use an account with a large stash for this. Based on how the bot is
-    /// configured, it might re-try and lose funds through transaction fees/deposits.
-    #[clap(long, short, env = "SEED")]
-    pub seed_or_path: String,
-
-    /// Delay in number seconds to wait until starting mining a solution.
-    ///
-    /// At every block when a solution is attempted
-    /// a delay can be enforced to avoid submitting at
-    /// "same time" and risk potential races with other miners.
-    ///
-    /// When this is enabled and there are competing solutions, your solution might not be submitted
-    /// if the scores are equal.
-    #[clap(long, default_value_t = 0)]
-    pub delay: usize,
-
-    /// Verify the submission by `dry-run` the extrinsic to check the validity.
-    /// If the extrinsic is invalid then the submission is ignored and the next block will attempted again.
-    ///
-    /// This requires a RPC endpoint that exposes unsafe RPC methods, if the RPC endpoint doesn't expose unsafe RPC methods
-    /// then the miner will be terminated.
-    #[clap(long)]
-    pub dry_run: bool,
-}
 
 pub async fn monitor_cmd<T>(client: Client, config: MonitorConfig) -> Result<(), Error>
 where

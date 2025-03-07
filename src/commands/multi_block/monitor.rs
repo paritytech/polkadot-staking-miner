@@ -4,17 +4,17 @@ use crate::{
         multi_block::types::{
             BlockDetails, CurrentSubmission, IncompleteSubmission, SharedSnapshot,
         },
-        types::{Listen, SubmissionStrategy},
+        types::{ExperimentalMultiBlockMonitorConfig, Listen, SubmissionStrategy},
     },
-    dynamic::{self, inner_submit_pages},
+    dynamic::multi_block as dynamic,
     error::Error,
-    prelude::{
-        runtime::{self, runtime_types::pallet_election_provider_multi_block::types::Phase},
-        AccountId, ExtrinsicParamsBuilder, Storage, LOG_TARGET,
-    },
+    prelude::{AccountId, ExtrinsicParamsBuilder, Storage, LOG_TARGET},
     prometheus,
+    runtime::multi_block::{
+        self as runtime, runtime_types::pallet_election_provider_multi_block::types::Phase,
+    },
     signer::Signer,
-    static_types,
+    static_types::multi_block as static_types,
     utils::{self, kill_main_task_if_critical_err, score_passes_strategy, TimedFuture},
 };
 use futures::future::{abortable, AbortHandle};
@@ -25,21 +25,10 @@ use polkadot_sdk::{
 use std::{collections::HashSet, sync::Arc};
 use tokio::sync::Mutex;
 
-/// TODO(niklasad1): Add solver algorithm configuration to the monitor command.
-#[derive(Debug, Clone, clap::Parser)]
-#[cfg_attr(test, derive(PartialEq))]
-pub struct MonitorConfig {
-    #[clap(long, short, env = "SEED")]
-    pub seed_or_path: String,
-
-    #[clap(long, value_enum, default_value_t = Listen::Finalized)]
-    pub listen: Listen,
-
-    #[clap(long, value_parser, default_value = "if-leading")]
-    pub submission_strategy: SubmissionStrategy,
-}
-
-pub async fn monitor_cmd<T>(client: Client, config: MonitorConfig) -> Result<(), Error>
+pub async fn monitor_cmd<T>(
+    client: Client,
+    config: ExperimentalMultiBlockMonitorConfig,
+) -> Result<(), Error>
 where
     T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
     T::Solution: Send,
@@ -52,9 +41,14 @@ where
 
     // Emit the account info at the start.
     {
-        let storage = client.chain_api().storage().at_latest().await?;
-        let account_info = utils::account_info(&storage, signer.account_id()).await?;
-
+        let account_info = client
+            .chain_api()
+            .storage()
+            .at_latest()
+            .await?
+            .fetch(&runtime::storage().system().account(signer.account_id()))
+            .await?
+            .ok_or(Error::AccountDoesNotExists)?;
         prometheus::set_balance(account_info.data.free as f64);
 
         log::info!(
@@ -103,7 +97,11 @@ where
         };
 
         let state = BlockDetails::new(&client, at).await?;
-        let account_info = utils::account_info(&state.storage, signer.account_id()).await?;
+        let account_info = state
+            .storage
+            .fetch(&runtime::storage().system().account(signer.account_id()))
+            .await?
+            .ok_or(Error::AccountDoesNotExists)?;
         prometheus::set_balance(account_info.data.free as f64);
 
         if !state.phase_is_signed() && !state.phase_is_snapshot() {
@@ -267,7 +265,7 @@ where
                     missing_pages.push((page, solution));
                 }
 
-                inner_submit_pages::<T>(&client, &signer, missing_pages, listen).await?;
+                dynamic::inner_submit_pages::<T>(&client, &signer, missing_pages, listen).await?;
                 return Ok(());
             }
 

@@ -6,14 +6,5 @@
 //!
 //! In most cases, these will be detected by the integration tests.
 
-use crate::macros::{cfg_experimental_multi_block, cfg_legacy};
-
-cfg_legacy! {
-    mod legacy;
-    pub use legacy::*;
-}
-
-cfg_experimental_multi_block! {
-    mod multi_block;
-    pub use multi_block::*;
-}
+pub mod legacy;
+pub mod multi_block;

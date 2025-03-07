@@ -18,11 +18,12 @@
 
 use crate::{
     client::Client,
-    commands::EmergencySolutionConfig,
-    dynamic,
+    commands::types::EmergencySolutionConfig,
+    dynamic::legacy as dynamic,
     error::Error,
-    prelude::{runtime, AccountId, LOG_TARGET},
-    static_types,
+    prelude::{AccountId, LOG_TARGET},
+    runtime::legacy as runtime,
+    static_types::legacy as static_types,
     utils::storage_at,
 };
 use codec::Encode;

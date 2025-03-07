@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::{dynamic, macros::impl_u32_parameter_type, prelude::AccountId};
+use crate::{dynamic::legacy as dynamic, macros::impl_u32_parameter_type, prelude::AccountId};
 use polkadot_sdk::{
     frame_election_provider_support::{self, traits::NposSolution},
     frame_support::{self, traits::ConstU32, weights::Weight},

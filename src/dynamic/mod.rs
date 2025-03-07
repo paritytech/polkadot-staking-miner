@@ -6,64 +6,57 @@
 //! The reason behind this is that subxt's static codegen generates a concrete type for NposSolution and we want to be
 //! generic over the solution type to work across different runtimes.
 
-use crate::macros::{cfg_experimental_multi_block, cfg_legacy};
 use crate::{error::Error, prelude::ChainClient, static_types};
 
-#[allow(dead_code, unused)]
-pub(crate) mod pallet_api;
-pub(crate) mod utils;
+pub mod legacy;
+pub mod multi_block;
+pub mod pallet_api;
+pub mod utils;
 
-cfg_legacy! {
-    mod legacy;
-    pub use legacy::*;
+/// Read the constants from the metadata and updates the static types.
+pub fn update_metadata_constants(api: &ChainClient, legacy: bool) -> Result<(), Error> {
+    if legacy {
+        use static_types::legacy::{MaxLength, MaxVotesPerVoter, MaxWeight, MaxWinners};
 
-    /// Read the constants from the metadata and updates the static types.
-    pub fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
-
-        static_types::MaxWeight::set(
+        MaxWeight::set(
             pallet_api::election_provider_multi_phase::constants::MAX_WEIGHT.fetch(api)?,
         );
-        static_types::MaxLength::set(
+        MaxLength::set(
             pallet_api::election_provider_multi_phase::constants::MAX_LENGTH.fetch(api)?,
         );
-        static_types::MaxVotesPerVoter::set(
+        MaxVotesPerVoter::set(
             pallet_api::election_provider_multi_phase::constants::MAX_VOTES_PER_VOTER.fetch(api)?,
         );
-        static_types::MaxWinners::set(
+        MaxWinners::set(
             pallet_api::election_provider_multi_phase::constants::MAX_WINNERS.fetch(api)?,
         );
+    } else {
+        use polkadot_sdk::sp_runtime::Percent;
+        use static_types::multi_block::{
+            MaxBackersPerWinner, MaxLength, MaxWinnersPerPage, Pages, TargetSnapshotPerBlock,
+            VoterSnapshotPerBlock,
+        };
 
-        Ok(())
-    }
-}
-
-cfg_experimental_multi_block! {
-    mod multi_block;
-    pub use multi_block::*;
-    use polkadot_sdk::sp_runtime::Percent;
-
-    /// Read the constants from the metadata and updates the static types.
-    pub fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
         let pages: u32 = pallet_api::multi_block::constants::PAGES.fetch(api)?;
-        static_types::Pages::set(pages);
-        static_types::TargetSnapshotPerBlock::set(
+        Pages::set(pages);
+        TargetSnapshotPerBlock::set(
             pallet_api::multi_block::constants::TARGET_SNAPSHOT_PER_BLOCK.fetch(api)?,
         );
-        static_types::VoterSnapshotPerBlock::set(
+        VoterSnapshotPerBlock::set(
             pallet_api::multi_block::constants::VOTER_SNAPSHOT_PER_BLOCK.fetch(api)?,
         );
 
         let block_len = pallet_api::system::constants::BLOCK_LENGTH.fetch(api)?;
 
         // As instructed, a reasonable default max length is 75% of the total block length.
-        static_types::MaxLength::set(Percent::from_percent(75) * block_len.total());
-        static_types::MaxWinnersPerPage::set(
+        MaxLength::set(Percent::from_percent(75) * block_len.total());
+        MaxWinnersPerPage::set(
             pallet_api::multi_block_verifier::constants::MAX_WINNERS_PER_PAGE.fetch(api)?,
         );
-        static_types::MaxBackersPerWinner::set(
+        MaxBackersPerWinner::set(
             pallet_api::multi_block_verifier::constants::MAX_BACKERS_PER_WINNER.fetch(api)?,
         );
-
-        Ok(())
     }
+
+    Ok(())
 }

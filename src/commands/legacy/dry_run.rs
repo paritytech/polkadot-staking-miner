@@ -16,20 +16,19 @@
 
 //! The dry-run command.
 
-use polkadot_sdk::pallet_election_provider_multi_phase::{MinerConfig, RawSolution};
-use subxt::config::DefaultExtrinsicParamsBuilder;
-
 use crate::{
     client::Client,
-    commands::DryRunConfig,
-    dynamic,
+    commands::types::DryRunConfig,
+    dynamic::legacy as dynamic,
     error::Error,
-    prelude::{runtime, AccountId, LOG_TARGET},
+    prelude::{AccountId, ExtrinsicParamsBuilder, LOG_TARGET},
+    runtime::legacy as runtime,
     signer::Signer,
-    static_types,
+    static_types::legacy as static_types,
     utils::storage_at,
 };
 use codec::Encode;
+use polkadot_sdk::pallet_election_provider_multi_phase::{MinerConfig, RawSolution};
 
 pub async fn dry_run_cmd<T>(client: Client, config: DryRunConfig) -> Result<(), Error>
 where
@@ -96,7 +95,7 @@ where
             .system_account_next_index(signer.account_id())
             .await?;
         let tx = dynamic::signed_solution(raw_solution)?;
-        let params = DefaultExtrinsicParamsBuilder::new().nonce(nonce).build();
+        let params = ExtrinsicParamsBuilder::new().nonce(nonce).build();
         let xt = client
             .chain_api()
             .tx()

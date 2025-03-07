@@ -17,14 +17,9 @@
 //! # Polkadot Staking Miner.
 //!
 //! Simple bot capable of monitoring a polkadot (and cousins) chain and submitting solutions to the
-//! `pallet-election-provider-multi-phase`. See `--help` for more details.
+//! `pallet-election-provider-multi-phase` and `experimental support for pallet-election-provider-multi-block`.
+//! See `help` for more information.
 //!
-//! The binary itself comes with two build features:
-//! - `legacy`: This is the default build feature. It is the original implementation of the miner
-//!             to submit single block solutions which are still supported by the chain.
-//! - `experimental-multi-block`: This is the new implementation of the miner. It is still in
-//!                               development and not yet supported any chain but it is intended
-//!                               to be live in the future.
 //! # Implementation Notes:
 //!
 //! - First draft: Be aware that this is the first draft and there might be bugs, or undefined
@@ -36,14 +31,6 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-#[cfg(all(experimental_multi_block, legacy))]
-std::compile_error!("feature `legacy` and `experimental-multi-block` are mutually exclusive. You can only enable one of them.");
-
-#[cfg(not(any(experimental_multi_block, legacy)))]
-std::compile_error!(
-    "Exactly one of the features `legacy` and `experimental-multi-block` must be enabled."
-);
-
 mod client;
 mod commands;
 mod dynamic;
@@ -51,22 +38,18 @@ mod error;
 mod macros;
 mod opt;
 mod prelude;
-// TODO(niklasad1): prometheus not enabled yet in the multi-block monitor command.
-#[allow(unused, dead_code)]
 mod prometheus;
+mod runtime;
 mod signer;
 mod static_types;
-// The `utils` module is shared between the legacy and the experimental multi-block implementation.
-// and just disable unsued warnings for now to avoid conditionally compiling it.
-#[allow(unused, dead_code)]
 mod utils;
 
 use clap::Parser;
+use dynamic::update_metadata_constants;
 use error::Error;
 use futures::future::{BoxFuture, FutureExt};
-use prelude::{
-    runtime, ChainClient, DEFAULT_PROMETHEUS_PORT, DEFAULT_URI, LOG_TARGET, SHARED_CLIENT,
-};
+use opt::Chain;
+use prelude::{ChainClient, DEFAULT_PROMETHEUS_PORT, DEFAULT_URI, LOG_TARGET, SHARED_CLIENT};
 use std::str::FromStr;
 use tokio::sync::oneshot;
 use tracing_subscriber::EnvFilter;
@@ -100,47 +83,15 @@ pub struct Opt {
 #[cfg_attr(test, derive(PartialEq))]
 pub enum Command {
     /// Monitor for the phase being signed, then compute.
-    Monitor(commands::MonitorConfig),
+    Monitor(commands::types::MonitorConfig),
     /// Just compute a solution now, and don't submit it.
-    DryRun(commands::DryRunConfig),
+    DryRun(commands::types::DryRunConfig),
     /// Provide a solution that can be submitted to the chain as an emergency response.
-    EmergencySolution(commands::EmergencySolutionConfig),
+    EmergencySolution(commands::types::EmergencySolutionConfig),
     /// Check if the staking-miner metadata is compatible to a remote node.
     Info,
-}
-
-// A helper to use different MinerConfig depending on chain.
-macro_rules! any_runtime {
-	($chain:tt, $($code:tt)*) => {
-		match $chain {
-			$crate::opt::Chain::Polkadot => {
-				#[allow(unused)]
-				use $crate::static_types::polkadot::MinerConfig;
-				$($code)*
-			},
-			$crate::opt::Chain::Kusama => {
-				#[allow(unused)]
-				use $crate::static_types::kusama::MinerConfig;
-				$($code)*
-			},
-			$crate::opt::Chain::Westend => {
-				#[allow(unused)]
-				use $crate::static_types::westend::MinerConfig;
-				$($code)*
-			},
-			$crate::opt::Chain::SubstrateNode => {
-				#[allow(unused)]
-				use $crate::static_types::node::MinerConfig;
-				$($code)*
-			},
-            $crate::opt::Chain::AssetHubNext => {
-                #[allow(unused)]
-                use $crate::static_types::westend::MinerConfig;
-                log::warn!(target: LOG_TARGET, "`asset-hub-next` is not tested and might not work as expected; it's experimental and is using the same runtime as westend");
-                $($code)*
-            },
-		}
-	};
+    /// Experimental multi-block monitor command.
+    ExperimentalMonitorMultiBlock(commands::types::ExperimentalMultiBlockMonitorConfig),
 }
 
 #[tokio::main]
@@ -162,7 +113,7 @@ async fn main() -> Result<(), Error> {
         .map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
     log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
 
-    dynamic::update_metadata_constants(client.chain_api())?;
+    let is_legacy = !matches!(command, Command::ExperimentalMonitorMultiBlock(_));
 
     SHARED_CLIENT
         .set(client.clone())
@@ -171,35 +122,115 @@ async fn main() -> Result<(), Error> {
     // Start a new tokio task to perform the runtime updates in the background.
     // if this fails then the miner will be stopped and has to be re-started.
     let (tx_upgrade, rx_upgrade) = oneshot::channel::<Error>();
-    tokio::spawn(runtime_upgrade_task(client.chain_api().clone(), tx_upgrade));
+    tokio::spawn(runtime_upgrade_task(
+        client.chain_api().clone(),
+        tx_upgrade,
+        is_legacy,
+    ));
 
-    let res = any_runtime!(chain, {
-        let fut = match command {
-            Command::Monitor(cfg) => commands::monitor_cmd::<MinerConfig>(client, cfg).boxed(),
-            Command::DryRun(cfg) => commands::dry_run_cmd::<MinerConfig>(client, cfg).boxed(),
-            Command::EmergencySolution(cfg) => {
-                commands::emergency_solution_cmd::<MinerConfig>(client, cfg).boxed()
-            }
-            Command::Info => async {
-                let is_compat = if runtime::is_codegen_valid_for(&client.chain_api().metadata()) {
-                    "YES"
-                } else {
-                    "NO"
-                };
+    update_metadata_constants(client.chain_api(), is_legacy)?;
 
-                let remote_node = serde_json::to_string_pretty(&runtime_version)
-                    .expect("Serialize is infallible; qed");
+    let fut = match (command, chain) {
+        (Command::Info, _) => async {
+            let is_compat = if runtime::legacy::is_codegen_valid_for(&client.chain_api().metadata())
+            {
+                "YES"
+            } else {
+                "NO"
+            };
 
-                eprintln!("Remote_node:\n{remote_node}");
-                eprintln!("Compatible: {is_compat}");
+            let remote_node = serde_json::to_string_pretty(&runtime_version)
+                .expect("Serialize is infallible; qed");
 
-                Ok(())
-            }
-            .boxed(),
-        };
+            eprintln!("Remote_node:\n{remote_node}");
+            eprintln!("Compatible: {is_compat}");
 
-        run_command(fut, rx_upgrade).await
-    });
+            Ok(())
+        }
+        .boxed(),
+        (Command::Monitor(cfg), Chain::Westend | Chain::AssetHubNext) => {
+            commands::legacy::monitor_cmd::<static_types::legacy::westend::MinerConfig>(client, cfg)
+                .boxed()
+        }
+        (Command::Monitor(cfg), Chain::Kusama) => {
+            commands::legacy::monitor_cmd::<static_types::legacy::kusama::MinerConfig>(client, cfg)
+                .boxed()
+        }
+        (Command::Monitor(cfg), Chain::Polkadot) => commands::legacy::monitor_cmd::<
+            static_types::legacy::polkadot::MinerConfig,
+        >(client, cfg)
+        .boxed(),
+        (Command::Monitor(cfg), Chain::SubstrateNode) => {
+            commands::legacy::monitor_cmd::<static_types::legacy::node::MinerConfig>(client, cfg)
+                .boxed()
+        }
+        (Command::DryRun(cfg), Chain::Westend | Chain::AssetHubNext) => {
+            commands::legacy::dry_run_cmd::<static_types::legacy::westend::MinerConfig>(client, cfg)
+                .boxed()
+        }
+        (Command::DryRun(cfg), Chain::Kusama) => {
+            commands::legacy::dry_run_cmd::<static_types::legacy::kusama::MinerConfig>(client, cfg)
+                .boxed()
+        }
+        (Command::DryRun(cfg), Chain::Polkadot) => commands::legacy::dry_run_cmd::<
+            static_types::legacy::polkadot::MinerConfig,
+        >(client, cfg)
+        .boxed(),
+        (Command::DryRun(cfg), Chain::SubstrateNode) => {
+            commands::legacy::dry_run_cmd::<static_types::legacy::node::MinerConfig>(client, cfg)
+                .boxed()
+        }
+        (Command::EmergencySolution(cfg), Chain::Westend | Chain::AssetHubNext) => {
+            commands::legacy::emergency_solution_cmd::<static_types::legacy::westend::MinerConfig>(
+                client, cfg,
+            )
+            .boxed()
+        }
+        (Command::EmergencySolution(cfg), Chain::Kusama) => {
+            commands::legacy::emergency_solution_cmd::<static_types::legacy::kusama::MinerConfig>(
+                client, cfg,
+            )
+            .boxed()
+        }
+        (Command::EmergencySolution(cfg), Chain::Polkadot) => {
+            commands::legacy::emergency_solution_cmd::<static_types::legacy::polkadot::MinerConfig>(
+                client, cfg,
+            )
+            .boxed()
+        }
+        (Command::EmergencySolution(cfg), Chain::SubstrateNode) => {
+            commands::legacy::emergency_solution_cmd::<static_types::legacy::node::MinerConfig>(
+                client, cfg,
+            )
+            .boxed()
+        }
+        (Command::ExperimentalMonitorMultiBlock(cfg), Chain::AssetHubNext | Chain::Westend) => {
+            commands::multi_block::monitor_cmd::<static_types::multi_block::westend::MinerConfig>(
+                client, cfg,
+            )
+            .boxed()
+        }
+        (Command::ExperimentalMonitorMultiBlock(cfg), Chain::Kusama) => {
+            commands::multi_block::monitor_cmd::<static_types::multi_block::kusama::MinerConfig>(
+                client, cfg,
+            )
+            .boxed()
+        }
+        (Command::ExperimentalMonitorMultiBlock(cfg), Chain::Polkadot) => {
+            commands::multi_block::monitor_cmd::<static_types::multi_block::polkadot::MinerConfig>(
+                client, cfg,
+            )
+            .boxed()
+        }
+        (Command::ExperimentalMonitorMultiBlock(cfg), Chain::SubstrateNode) => {
+            commands::multi_block::monitor_cmd::<static_types::multi_block::node::MinerConfig>(
+                client, cfg,
+            )
+            .boxed()
+        }
+    };
+
+    let res = run_command(fut, rx_upgrade).await;
 
     log::debug!(target: LOG_TARGET, "round of execution finished. outcome = {:?}", res);
     res
@@ -251,7 +282,7 @@ async fn run_command(
 }
 
 /// Runs until the RPC connection fails or updating the metadata failed.
-async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
+async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>, is_legacy: bool) {
     let updater = client.updater();
 
     let mut update_stream = match updater.runtime_updates().await {
@@ -282,7 +313,7 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
         let version = update.runtime_version().spec_version;
         match updater.apply_update(update) {
             Ok(()) => {
-                if let Err(e) = dynamic::update_metadata_constants(&client) {
+                if let Err(e) = dynamic::update_metadata_constants(&client, is_legacy) {
                     let _ = tx.send(e);
                     return;
                 }

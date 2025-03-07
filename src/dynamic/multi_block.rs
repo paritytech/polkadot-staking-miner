@@ -2,22 +2,24 @@
 
 use crate::{
     client::Client,
-    commands::{Listen, SharedSnapshot},
+    commands::multi_block::types::{
+        SharedSnapshot, TargetSnapshotPage, TargetSnapshotPageOf, VoterSnapshotPage,
+        VoterSnapshotPageOf,
+    },
+    commands::types::Listen,
     dynamic::{
         pallet_api,
         utils::{decode_error, storage_addr, to_scale_value, tx},
     },
     error::Error,
-    prelude::{
-        runtime, AccountId, ChainClient, Config, ExtrinsicParamsBuilder, Hash, Storage,
-        TargetSnapshotPage, TargetSnapshotPageOf, VoterSnapshotPage, VoterSnapshotPageOf,
-        LOG_TARGET,
-    },
+    prelude::{AccountId, ChainClient, Config, ExtrinsicParamsBuilder, Hash, Storage, LOG_TARGET},
+    runtime::multi_block as runtime,
     signer::Signer,
     utils,
 };
 use codec::Decode;
-use futures::{stream::FuturesUnordered, StreamExt};
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
 use polkadot_sdk::{
     frame_support::BoundedVec,
     pallet_election_provider_multi_block::{

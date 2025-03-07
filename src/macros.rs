@@ -33,28 +33,4 @@ macro_rules! impl_u32_parameter_type {
     };
 }
 
-macro_rules! cfg_feature {
-	($feature:literal, $($item:item)*) => {
-		$(
-			#[cfg(feature = $feature)]
-			#[cfg_attr(docsrs, doc(cfg(feature = $feature)))]
-			$item
-		)*
-	}
-}
-
-/// Macro to conditionally include items based on the `legacy` feature.
-macro_rules! cfg_legacy {
-	($($item:item)*) => {
-		crate::macros::cfg_feature!("legacy", $($item)*);
-	};
-}
-
-/// Macro to conditionally include items based on the `experimental-multi-block` feature.
-macro_rules! cfg_experimental_multi_block {
-    ($($item:item)*) => {
-        crate::macros::cfg_feature!("experimental-multi-block", $($item)*);
-    };
-}
-
-pub(crate) use {cfg_experimental_multi_block, cfg_feature, cfg_legacy, impl_u32_parameter_type};
+pub(crate) use impl_u32_parameter_type;

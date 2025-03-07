@@ -23,14 +23,15 @@ futures = "0.3"
 thiserror = "2.0"
 tokio = { version = "1.43", features = ["macros", "rt-multi-thread", "sync", "signal"] }
 pin-project-lite = "0.2"
+paste = "1"
 
 # subxt
 scale-value = "0.18"
-subxt = "0.39.0"
-subxt-core = "0.39.0"
+subxt = "0.40.0"
+subxt-core = "0.40.0"
 
 # polkadot-sdk
-polkadot-sdk = { git = "https://github.com/paritytech/polkadot-sdk", features = ["frame-election-provider-support", "frame-support", "sp-npos-elections", "sp-core", "sp-runtime", "pallet-election-provider-multi-phase"], branch = "na-ah-next-westend" }
+polkadot-sdk = { git = "https://github.com/paritytech/polkadot-sdk", features = ["frame-election-provider-support", "frame-support", "sp-npos-elections", "sp-core", "sp-runtime", "pallet-election-provider-multi-phase", "pallet-election-provider-multi-block"], branch = "na-ah-next-westend" }
 
 # prometheus
 prometheus = "0.13"
@@ -46,9 +47,6 @@ regex = "1"
 cfg_aliases = "0.2.0"
 
 [features]
-default = ["experimental-multi-block"]
-legacy = []
-experimental-multi-block = ["polkadot-sdk/pallet-election-provider-multi-block"]
 
 [package.metadata.docs.rs]
 default-features = true

@@ -21,12 +21,10 @@ use crate::{
     dynamic::{pallet_api, utils::to_scale_value},
     error::Error,
     opt::{BalanceIterations, Balancing, Solver},
-    prelude::{
-        runtime, AccountId, Accuracy, ChainClient, Hash, SignedSubmission, LOG_TARGET,
-        SHARED_CLIENT,
-    },
+    prelude::{AccountId, Accuracy, Balance, ChainClient, Hash, LOG_TARGET, SHARED_CLIENT},
     prometheus,
-    static_types::{self},
+    runtime::legacy as runtime,
+    static_types::legacy as static_types,
     utils::{storage_at, RuntimeDispatchInfo},
 };
 use codec::{Decode, Encode};
@@ -48,13 +46,16 @@ use std::{
 use subxt::{dynamic::Value, tx::DynamicPayload};
 
 type MinerVoterOf =
-    frame_election_provider_support::Voter<AccountId, crate::static_types::MaxVotesPerVoter>;
+    frame_election_provider_support::Voter<AccountId, static_types::MaxVotesPerVoter>;
 type RoundSnapshot = pallet_election_provider_multi_phase::RoundSnapshot<AccountId, MinerVoterOf>;
 type Voters = Vec<(
     AccountId,
     VoteWeight,
-    BoundedVec<AccountId, crate::static_types::MaxVotesPerVoter>,
+    BoundedVec<AccountId, static_types::MaxVotesPerVoter>,
 )>;
+/// Signed submission type.
+type SignedSubmission<S> =
+    polkadot_sdk::pallet_election_provider_multi_phase::SignedSubmission<AccountId, Balance, S>;
 
 #[derive(Debug)]
 pub struct State {
