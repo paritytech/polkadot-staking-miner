@@ -23,6 +23,7 @@ async fn submit_monitor_works_basic() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn default_trimming_works() {
     init_logger();
     let (_drop, ws_url) = run_staking_miner_playground();

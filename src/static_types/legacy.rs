@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::{epm, prelude::*};
+use crate::{dynamic::legacy as dynamic, macros::impl_u32_parameter_type, prelude::AccountId};
 use polkadot_sdk::{
     frame_election_provider_support::{self, traits::NposSolution},
     frame_support::{self, traits::ConstU32, weights::Weight},
@@ -22,40 +22,8 @@ use polkadot_sdk::{
     sp_runtime,
 };
 
-macro_rules! impl_atomic_u32_parameter_types {
-    ($mod:ident, $name:ident) => {
-        mod $mod {
-            use std::sync::atomic::{AtomicU32, Ordering};
-
-            static VAL: AtomicU32 = AtomicU32::new(0);
-
-            pub struct $name;
-
-            impl $name {
-                pub fn get() -> u32 {
-                    VAL.load(Ordering::SeqCst)
-                }
-            }
-
-            impl<I: From<u32>> polkadot_sdk::frame_support::traits::Get<I> for $name {
-                fn get() -> I {
-                    I::from(Self::get())
-                }
-            }
-
-            impl $name {
-                pub fn set(val: u32) {
-                    VAL.store(val, std::sync::atomic::Ordering::SeqCst);
-                }
-            }
-        }
-
-        pub use $mod::$name;
-    };
-}
-
 mod max_weight {
-    use polkadot_sdk::frame_support::{self, weights::Weight};
+    use polkadot_sdk::frame_support::weights::Weight;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static REF_TIME: AtomicU64 = AtomicU64::new(0);
@@ -72,7 +40,7 @@ mod max_weight {
         }
     }
 
-    impl frame_support::traits::Get<Weight> for MaxWeight {
+    impl polkadot_sdk::frame_support::traits::Get<Weight> for MaxWeight {
         fn get() -> Weight {
             Self::get()
         }
@@ -86,12 +54,12 @@ mod max_weight {
     }
 }
 
-impl_atomic_u32_parameter_types!(max_length, MaxLength);
-impl_atomic_u32_parameter_types!(max_votes, MaxVotesPerVoter);
-impl_atomic_u32_parameter_types!(max_winners, MaxWinners);
+impl_u32_parameter_type!(max_length, MaxLength);
+impl_u32_parameter_type!(max_votes, MaxVotesPerVoter);
+impl_u32_parameter_type!(max_winners, MaxWinners);
 pub use max_weight::MaxWeight;
 
-pub mod westend {
+pub mod node {
     use super::*;
 
     // SYNC
@@ -112,6 +80,7 @@ pub mod westend {
         type MaxLength = MaxLength;
         type MaxWeight = MaxWeight;
         type MaxVotesPerVoter = MaxVotesPerVoter;
+        type MaxBackersPerWinner = ConstU32<22500>;
         type Solution = NposSolution16;
         type MaxWinners = MaxWinners;
 
@@ -121,7 +90,7 @@ pub mod westend {
             active_voters: u32,
             desired_targets: u32,
         ) -> Weight {
-            let Some(votes) = epm::mock_votes(
+            let Some(votes) = dynamic::mock_votes(
                 active_voters,
                 desired_targets
                     .try_into()
@@ -145,7 +114,71 @@ pub mod westend {
                 return Weight::MAX;
             }
 
-            futures::executor::block_on(epm::runtime_api_solution_weight(
+            futures::executor::block_on(dynamic::runtime_api_solution_weight(
+                raw,
+                SolutionOrSnapshotSize { voters, targets },
+            ))
+            .expect("solution_weight should work")
+        }
+    }
+}
+
+pub mod westend {
+    use super::*;
+
+    // SYNC
+    frame_election_provider_support::generate_solution_type!(
+        #[compact]
+        pub struct NposSolution16::<
+            VoterIndex = u32,
+            TargetIndex = u16,
+            Accuracy = sp_runtime::PerU16,
+            MaxVoters = ConstU32::<22500>
+        >(16)
+    );
+
+    #[derive(Debug)]
+    pub struct MinerConfig;
+    impl pallet_election_provider_multi_phase::unsigned::MinerConfig for MinerConfig {
+        type AccountId = AccountId;
+        type MaxLength = MaxLength;
+        type MaxWeight = MaxWeight;
+        type MaxVotesPerVoter = MaxVotesPerVoter;
+        type MaxBackersPerWinner = ConstU32<22500>;
+        type Solution = NposSolution16;
+        type MaxWinners = MaxWinners;
+
+        fn solution_weight(
+            voters: u32,
+            targets: u32,
+            active_voters: u32,
+            desired_targets: u32,
+        ) -> Weight {
+            let Some(votes) = dynamic::mock_votes(
+                active_voters,
+                desired_targets
+                    .try_into()
+                    .expect("Desired targets < u16::MAX"),
+            ) else {
+                return Weight::MAX;
+            };
+
+            // Mock a RawSolution to get the correct weight without having to do the heavy work.
+            let raw = RawSolution {
+                solution: NposSolution16 {
+                    votes1: votes,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            if raw.solution.voter_count() != active_voters as usize
+                || raw.solution.unique_targets().len() != desired_targets as usize
+            {
+                return Weight::MAX;
+            }
+
+            futures::executor::block_on(dynamic::runtime_api_solution_weight(
                 raw,
                 SolutionOrSnapshotSize { voters, targets },
             ))
@@ -175,6 +208,7 @@ pub mod polkadot {
         type MaxLength = MaxLength;
         type MaxWeight = MaxWeight;
         type MaxVotesPerVoter = MaxVotesPerVoter;
+        type MaxBackersPerWinner = ConstU32<22500>;
         type Solution = NposSolution16;
         type MaxWinners = MaxWinners;
 
@@ -184,7 +218,7 @@ pub mod polkadot {
             active_voters: u32,
             desired_targets: u32,
         ) -> Weight {
-            let Some(votes) = epm::mock_votes(
+            let Some(votes) = dynamic::mock_votes(
                 active_voters,
                 desired_targets
                     .try_into()
@@ -208,7 +242,7 @@ pub mod polkadot {
                 return Weight::MAX;
             }
 
-            futures::executor::block_on(epm::runtime_api_solution_weight(
+            futures::executor::block_on(dynamic::runtime_api_solution_weight(
                 raw,
                 SolutionOrSnapshotSize { voters, targets },
             ))
@@ -238,6 +272,7 @@ pub mod kusama {
         type MaxLength = MaxLength;
         type MaxWeight = MaxWeight;
         type MaxVotesPerVoter = MaxVotesPerVoter;
+        type MaxBackersPerWinner = ConstU32<22500>;
         type Solution = NposSolution24;
         type MaxWinners = MaxWinners;
 
@@ -247,7 +282,7 @@ pub mod kusama {
             active_voters: u32,
             desired_targets: u32,
         ) -> Weight {
-            let Some(votes) = epm::mock_votes(
+            let Some(votes) = dynamic::mock_votes(
                 active_voters,
                 desired_targets
                     .try_into()
@@ -271,7 +306,7 @@ pub mod kusama {
                 return Weight::MAX;
             }
 
-            futures::executor::block_on(epm::runtime_api_solution_weight(
+            futures::executor::block_on(dynamic::runtime_api_solution_weight(
                 raw,
                 SolutionOrSnapshotSize { voters, targets },
             ))

@@ -1,8 +1,5 @@
 use assert_cmd::cargo::cargo_bin;
-use polkadot_staking_miner::{
-    opt::Chain,
-    prelude::{runtime, ChainClient},
-};
+use polkadot_staking_miner::{opt::Chain, prelude::ChainClient, runtime::legacy as runtime};
 use std::{
     io::{BufRead, BufReader, Read},
     net::SocketAddr,
@@ -86,6 +83,8 @@ pub fn run_polkadot_node(chain: Chain) -> (KillChildOnDrop, String) {
         Chain::Polkadot => "chainspecs/polkadot-dev.json",
         Chain::Kusama => "chainspecs/kusama-dev.json",
         Chain::Westend => "westend-dev",
+        Chain::SubstrateNode => "dev",
+        Chain::AssetHubNext => panic!("AssetHubNext is not supported"),
     };
 
     let mut node_cmd = KillChildOnDrop(

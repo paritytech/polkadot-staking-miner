@@ -17,28 +17,22 @@
 //! The emergency-solution command.
 
 use crate::{
-    client::Client, epm, error::Error, helpers::storage_at, opt::Solver, prelude::*, static_types,
+    client::Client,
+    commands::types::EmergencySolutionConfig,
+    dynamic::legacy as dynamic,
+    error::Error,
+    prelude::{AccountId, LOG_TARGET},
+    runtime::legacy as runtime,
+    static_types::legacy as static_types,
+    utils::storage_at,
 };
-use clap::Parser;
 use codec::Encode;
-use polkadot_sdk::sp_core::hexdisplay::HexDisplay;
+use polkadot_sdk::{
+    pallet_election_provider_multi_phase::MinerConfig, sp_core::hexdisplay::HexDisplay,
+    sp_npos_elections::Supports,
+};
 use std::io::Write;
 use subxt::tx::Payload;
-
-#[derive(Debug, Clone, Parser)]
-#[cfg_attr(test, derive(PartialEq))]
-pub struct EmergencySolutionConfig {
-    /// The block hash at which scraping happens. If none is provided, the latest head is used.
-    #[clap(long)]
-    pub at: Option<Hash>,
-
-    /// The solver algorithm to use.
-    #[clap(subcommand)]
-    pub solver: Solver,
-
-    /// The number of top backed winners to take instead. All are taken, if not provided.
-    pub force_winner_count: Option<u32>,
-}
 
 pub async fn emergency_solution_cmd<T>(
     client: Client,
@@ -60,8 +54,7 @@ where
     let round = storage
         .fetch_or_default(&runtime::storage().election_provider_multi_phase().round())
         .await?;
-
-    let miner_solution = epm::fetch_snapshot_and_mine_solution::<T>(
+    let solution = dynamic::fetch_snapshot_and_mine_solution::<T>(
         client.chain_api(),
         config.at,
         config.solver,
@@ -70,12 +63,12 @@ where
     )
     .await?;
 
-    let ready_solution = miner_solution.feasibility_check()?;
+    let ready_solution = solution.feasibility_check()?;
     let encoded_size = ready_solution.encoded_size();
     let score = ready_solution.score;
-    let mut supports: Vec<_> = ready_solution.supports.into_inner();
+    let mut supports: Supports<_> = ready_solution.supports.into();
 
-    // maybe truncate.
+    // Truncate if necessary.
     if let Some(force_winner_count) = config.force_winner_count {
         log::info!(
             target: LOG_TARGET,
@@ -87,7 +80,7 @@ where
         supports.truncate(force_winner_count as usize);
     }
 
-    let call = epm::set_emergency_result(supports.clone())?;
+    let call = dynamic::set_emergency_result(supports.clone())?;
     let encoded_call = call
         .encode_call_data(&client.chain_api().metadata())
         .map_err(|e| Error::Subxt(e.into()))?;

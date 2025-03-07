@@ -17,7 +17,8 @@
 //! # Polkadot Staking Miner.
 //!
 //! Simple bot capable of monitoring a polkadot (and cousins) chain and submitting solutions to the
-//! `pallet-election-provider-multi-phase`. See `--help` for more details.
+//! `pallet-election-provider-multi-phase` and `experimental support for pallet-election-provider-multi-block`.
+//! See `help` for more information.
 //!
 //! # Implementation Notes:
 //!
@@ -28,21 +29,26 @@
 //!   development. It is intended to run this bot with a `restart = true` way, so that it reports it
 //!   crash, but resumes work thereafter.
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 mod client;
 mod commands;
-mod epm;
+mod dynamic;
 mod error;
-mod helpers;
+mod macros;
 mod opt;
 mod prelude;
 mod prometheus;
+mod runtime;
 mod signer;
 mod static_types;
+mod utils;
 
 use clap::Parser;
+use dynamic::update_metadata_constants;
 use error::Error;
 use futures::future::{BoxFuture, FutureExt};
-use prelude::*;
+use prelude::{ChainClient, DEFAULT_PROMETHEUS_PORT, DEFAULT_URI, LOG_TARGET, SHARED_CLIENT};
 use std::str::FromStr;
 use tokio::sync::oneshot;
 use tracing_subscriber::EnvFilter;
@@ -76,36 +82,15 @@ pub struct Opt {
 #[cfg_attr(test, derive(PartialEq))]
 pub enum Command {
     /// Monitor for the phase being signed, then compute.
-    Monitor(commands::MonitorConfig),
+    Monitor(commands::types::MonitorConfig),
     /// Just compute a solution now, and don't submit it.
-    DryRun(commands::DryRunConfig),
+    DryRun(commands::types::DryRunConfig),
     /// Provide a solution that can be submitted to the chain as an emergency response.
-    EmergencySolution(commands::EmergencySolutionConfig),
+    EmergencySolution(commands::types::EmergencySolutionConfig),
     /// Check if the staking-miner metadata is compatible to a remote node.
     Info,
-}
-
-// A helper to use different MinerConfig depending on chain.
-macro_rules! any_runtime {
-	($chain:tt, $($code:tt)*) => {
-		match $chain {
-			$crate::opt::Chain::Polkadot => {
-				#[allow(unused)]
-				use $crate::static_types::polkadot::MinerConfig;
-				$($code)*
-			},
-			$crate::opt::Chain::Kusama => {
-				#[allow(unused)]
-				use $crate::static_types::kusama::MinerConfig;
-				$($code)*
-			},
-			$crate::opt::Chain::Westend => {
-				#[allow(unused)]
-				use $crate::static_types::westend::MinerConfig;
-				$($code)*
-			},
-		}
-	};
+    /// Experimental multi-block monitor command.
+    ExperimentalMonitorMultiBlock(commands::types::ExperimentalMultiBlockMonitorConfig),
 }
 
 #[tokio::main]
@@ -126,7 +111,8 @@ async fn main() -> Result<(), Error> {
     let _prometheus_handle = prometheus::run(prometheus_port)
         .map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
     log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
-    epm::update_metadata_constants(client.chain_api())?;
+
+    let is_legacy = !matches!(command, Command::ExperimentalMonitorMultiBlock(_));
 
     SHARED_CLIENT
         .set(client.clone())
@@ -135,35 +121,55 @@ async fn main() -> Result<(), Error> {
     // Start a new tokio task to perform the runtime updates in the background.
     // if this fails then the miner will be stopped and has to be re-started.
     let (tx_upgrade, rx_upgrade) = oneshot::channel::<Error>();
-    tokio::spawn(runtime_upgrade_task(client.chain_api().clone(), tx_upgrade));
+    tokio::spawn(runtime_upgrade_task(
+        client.chain_api().clone(),
+        tx_upgrade,
+        is_legacy,
+    ));
 
-    let res = any_runtime!(chain, {
-        let fut = match command {
-            Command::Monitor(cfg) => commands::monitor_cmd::<MinerConfig>(client, cfg).boxed(),
-            Command::DryRun(cfg) => commands::dry_run_cmd::<MinerConfig>(client, cfg).boxed(),
-            Command::EmergencySolution(cfg) => {
-                commands::emergency_solution_cmd::<MinerConfig>(client, cfg).boxed()
-            }
-            Command::Info => async {
-                let is_compat = if runtime::is_codegen_valid_for(&client.chain_api().metadata()) {
-                    "YES"
-                } else {
-                    "NO"
-                };
+    update_metadata_constants(client.chain_api(), is_legacy)?;
 
-                let remote_node = serde_json::to_string_pretty(&runtime_version)
-                    .expect("Serialize is infallible; qed");
+    let fut = match command {
+        Command::Info => async {
+            let is_compat = if runtime::legacy::is_codegen_valid_for(&client.chain_api().metadata())
+            {
+                "YES"
+            } else {
+                "NO"
+            };
 
-                eprintln!("Remote_node:\n{remote_node}");
-                eprintln!("Compatible: {is_compat}");
+            let remote_node = serde_json::to_string_pretty(&runtime_version)
+                .expect("Serialize is infallible; qed");
 
-                Ok(())
-            }
-            .boxed(),
-        };
+            eprintln!("Remote_node:\n{remote_node}");
+            eprintln!("Compatible: {is_compat}");
 
-        run_command(fut, rx_upgrade).await
-    });
+            Ok(())
+        }
+        .boxed(),
+        Command::Monitor(cfg) => {
+            macros::for_legacy_runtime!(chain, {
+                commands::legacy::monitor_cmd::<MinerConfig>(client, cfg).boxed()
+            })
+        }
+        Command::DryRun(cfg) => {
+            macros::for_legacy_runtime!(chain, {
+                commands::legacy::dry_run_cmd::<MinerConfig>(client, cfg).boxed()
+            })
+        }
+        Command::EmergencySolution(cfg) => {
+            macros::for_legacy_runtime!(chain, {
+                commands::legacy::emergency_solution_cmd::<MinerConfig>(client, cfg).boxed()
+            })
+        }
+        Command::ExperimentalMonitorMultiBlock(cfg) => {
+            macros::for_multi_block_runtime!(chain, {
+                commands::multi_block::monitor_cmd::<MinerConfig>(client, cfg).boxed()
+            })
+        }
+    };
+
+    let res = run_command(fut, rx_upgrade).await;
 
     log::debug!(target: LOG_TARGET, "round of execution finished. outcome = {:?}", res);
     res
@@ -215,7 +221,7 @@ async fn run_command(
 }
 
 /// Runs until the RPC connection fails or updating the metadata failed.
-async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
+async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>, is_legacy: bool) {
     let updater = client.updater();
 
     let mut update_stream = match updater.runtime_updates().await {
@@ -246,7 +252,7 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
         let version = update.runtime_version().spec_version;
         match updater.apply_update(update) {
             Ok(()) => {
-                if let Err(e) = epm::update_metadata_constants(&client) {
+                if let Err(e) = dynamic::update_metadata_constants(&client, is_legacy) {
                     let _ = tx.send(e);
                     return;
                 }
@@ -263,7 +269,9 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use commands::monitor;
+    use crate::commands::types::{
+        DryRunConfig, EmergencySolutionConfig, Listen, MonitorConfig, SubmissionStrategy,
+    };
 
     #[test]
     fn cli_monitor_works() {
@@ -290,10 +298,10 @@ mod tests {
                 uri: "hi".to_string(),
                 prometheus_port: 9999,
                 log: "info".to_string(),
-                command: Command::Monitor(commands::MonitorConfig {
-                    listen: monitor::Listen::Head,
+                command: Command::Monitor(MonitorConfig {
+                    listen: Listen::Head,
                     solver: opt::Solver::SeqPhragmen { iterations: 10 },
-                    submission_strategy: monitor::SubmissionStrategy::IfLeading,
+                    submission_strategy: SubmissionStrategy::IfLeading,
                     seed_or_path: "//Alice".to_string(),
                     delay: 12,
                     dry_run: false,
@@ -321,7 +329,7 @@ mod tests {
                 uri: "hi".to_string(),
                 prometheus_port: 9999,
                 log: "info".to_string(),
-                command: Command::DryRun(commands::DryRunConfig {
+                command: Command::DryRun(DryRunConfig {
                     at: None,
                     solver: opt::Solver::PhragMMS { iterations: 10 },
                     force_snapshot: false,
@@ -352,7 +360,7 @@ mod tests {
                 uri: "hi".to_string(),
                 prometheus_port: 9999,
                 log: "info".to_string(),
-                command: Command::EmergencySolution(commands::EmergencySolutionConfig {
+                command: Command::EmergencySolution(EmergencySolutionConfig {
                     at: None,
                     force_winner_count: Some(99),
                     solver: opt::Solver::PhragMMS { iterations: 1337 },

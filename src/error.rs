@@ -36,7 +36,7 @@ pub enum Error {
     AccountDoesNotExists,
     #[error("Submission with better score already exist")]
     BetterScoreExist,
-    #[error("Invalid chain: `{0}`, staking-miner supports only polkadot, kusama and westend")]
+    #[error("Invalid chain: `{0}`, staking-miner supports only polkadot, kusama, westend, node and asset-hub-next")]
     InvalidChain(String),
     #[error("Other error: `{0}`")]
     Other(String),
@@ -52,4 +52,14 @@ pub enum Error {
     Join(#[from] tokio::task::JoinError),
     #[error("Empty snapshot")]
     EmptySnapshot,
+    #[error("Missing event for transaction: {0}")]
+    MissingTxEvent(String),
+    #[error("Failed to submit {0} pages")]
+    FailedToSubmitPages(usize),
+}
+
+impl From<subxt_core::Error> for Error {
+    fn from(e: subxt_core::Error) -> Self {
+        Self::Subxt(e.into())
+    }
 }
