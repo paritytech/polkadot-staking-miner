@@ -89,6 +89,14 @@ Remote_node:
 Compatible: YES
 ```
 
+### Experimental monitor multi-block
+
+This command is similar to the stable `monitor command` but targets the new pallet `pallet-election-provider-multi-block` which is currently only supported on asset-hub-next.
+
+```bash
+polkadot-staking-miner --uri ws://127.0.0.1:9966 experimental-monitor-multi-block --seed-or-path //Alice
+```
+
 ### Prepare your SEED
 
 While you could pass your seed directly to the cli or Docker, this is highly **NOT** recommended. Instead, you should use an ENV variable.

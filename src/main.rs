@@ -48,7 +48,6 @@ use clap::Parser;
 use dynamic::update_metadata_constants;
 use error::Error;
 use futures::future::{BoxFuture, FutureExt};
-use opt::Chain;
 use prelude::{ChainClient, DEFAULT_PROMETHEUS_PORT, DEFAULT_URI, LOG_TARGET, SHARED_CLIENT};
 use std::str::FromStr;
 use tokio::sync::oneshot;
@@ -130,8 +129,8 @@ async fn main() -> Result<(), Error> {
 
     update_metadata_constants(client.chain_api(), is_legacy)?;
 
-    let fut = match (command, chain) {
-        (Command::Info, _) => async {
+    let fut = match command {
+        Command::Info => async {
             let is_compat = if runtime::legacy::is_codegen_valid_for(&client.chain_api().metadata())
             {
                 "YES"
@@ -148,85 +147,25 @@ async fn main() -> Result<(), Error> {
             Ok(())
         }
         .boxed(),
-        (Command::Monitor(cfg), Chain::Westend | Chain::AssetHubNext) => {
-            commands::legacy::monitor_cmd::<static_types::legacy::westend::MinerConfig>(client, cfg)
-                .boxed()
+        Command::Monitor(cfg) => {
+            macros::for_legacy_runtime!(chain, {
+                commands::legacy::monitor_cmd::<MinerConfig>(client, cfg).boxed()
+            })
         }
-        (Command::Monitor(cfg), Chain::Kusama) => {
-            commands::legacy::monitor_cmd::<static_types::legacy::kusama::MinerConfig>(client, cfg)
-                .boxed()
+        Command::DryRun(cfg) => {
+            macros::for_legacy_runtime!(chain, {
+                commands::legacy::dry_run_cmd::<MinerConfig>(client, cfg).boxed()
+            })
         }
-        (Command::Monitor(cfg), Chain::Polkadot) => commands::legacy::monitor_cmd::<
-            static_types::legacy::polkadot::MinerConfig,
-        >(client, cfg)
-        .boxed(),
-        (Command::Monitor(cfg), Chain::SubstrateNode) => {
-            commands::legacy::monitor_cmd::<static_types::legacy::node::MinerConfig>(client, cfg)
-                .boxed()
+        Command::EmergencySolution(cfg) => {
+            macros::for_legacy_runtime!(chain, {
+                commands::legacy::emergency_solution_cmd::<MinerConfig>(client, cfg).boxed()
+            })
         }
-        (Command::DryRun(cfg), Chain::Westend | Chain::AssetHubNext) => {
-            commands::legacy::dry_run_cmd::<static_types::legacy::westend::MinerConfig>(client, cfg)
-                .boxed()
-        }
-        (Command::DryRun(cfg), Chain::Kusama) => {
-            commands::legacy::dry_run_cmd::<static_types::legacy::kusama::MinerConfig>(client, cfg)
-                .boxed()
-        }
-        (Command::DryRun(cfg), Chain::Polkadot) => commands::legacy::dry_run_cmd::<
-            static_types::legacy::polkadot::MinerConfig,
-        >(client, cfg)
-        .boxed(),
-        (Command::DryRun(cfg), Chain::SubstrateNode) => {
-            commands::legacy::dry_run_cmd::<static_types::legacy::node::MinerConfig>(client, cfg)
-                .boxed()
-        }
-        (Command::EmergencySolution(cfg), Chain::Westend | Chain::AssetHubNext) => {
-            commands::legacy::emergency_solution_cmd::<static_types::legacy::westend::MinerConfig>(
-                client, cfg,
-            )
-            .boxed()
-        }
-        (Command::EmergencySolution(cfg), Chain::Kusama) => {
-            commands::legacy::emergency_solution_cmd::<static_types::legacy::kusama::MinerConfig>(
-                client, cfg,
-            )
-            .boxed()
-        }
-        (Command::EmergencySolution(cfg), Chain::Polkadot) => {
-            commands::legacy::emergency_solution_cmd::<static_types::legacy::polkadot::MinerConfig>(
-                client, cfg,
-            )
-            .boxed()
-        }
-        (Command::EmergencySolution(cfg), Chain::SubstrateNode) => {
-            commands::legacy::emergency_solution_cmd::<static_types::legacy::node::MinerConfig>(
-                client, cfg,
-            )
-            .boxed()
-        }
-        (Command::ExperimentalMonitorMultiBlock(cfg), Chain::AssetHubNext | Chain::Westend) => {
-            commands::multi_block::monitor_cmd::<static_types::multi_block::westend::MinerConfig>(
-                client, cfg,
-            )
-            .boxed()
-        }
-        (Command::ExperimentalMonitorMultiBlock(cfg), Chain::Kusama) => {
-            commands::multi_block::monitor_cmd::<static_types::multi_block::kusama::MinerConfig>(
-                client, cfg,
-            )
-            .boxed()
-        }
-        (Command::ExperimentalMonitorMultiBlock(cfg), Chain::Polkadot) => {
-            commands::multi_block::monitor_cmd::<static_types::multi_block::polkadot::MinerConfig>(
-                client, cfg,
-            )
-            .boxed()
-        }
-        (Command::ExperimentalMonitorMultiBlock(cfg), Chain::SubstrateNode) => {
-            commands::multi_block::monitor_cmd::<static_types::multi_block::node::MinerConfig>(
-                client, cfg,
-            )
-            .boxed()
+        Command::ExperimentalMonitorMultiBlock(cfg) => {
+            macros::for_multi_block_runtime!(chain, {
+                commands::multi_block::monitor_cmd::<MinerConfig>(client, cfg).boxed()
+            })
         }
     };
 
@@ -327,10 +266,10 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>, i
     }
 }
 
-#[cfg(all(test, legacy))]
+#[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::{
+    use crate::commands::types::{
         DryRunConfig, EmergencySolutionConfig, Listen, MonitorConfig, SubmissionStrategy,
     };
 

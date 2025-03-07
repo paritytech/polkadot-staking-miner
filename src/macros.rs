@@ -33,4 +33,73 @@ macro_rules! impl_u32_parameter_type {
     };
 }
 
-pub(crate) use impl_u32_parameter_type;
+// A helper to configure to correct MinerConfig depending on chain.
+#[allow(unused_macros)]
+macro_rules! for_legacy_runtime {
+	($chain:tt, $($code:tt)*) => {
+		match $chain {
+			$crate::opt::Chain::Polkadot => {
+				#[allow(unused)]
+				use $crate::static_types::legacy::polkadot::MinerConfig;
+				$($code)*
+			},
+			$crate::opt::Chain::Kusama => {
+				#[allow(unused)]
+				use $crate::static_types::legacy::kusama::MinerConfig;
+				$($code)*
+			},
+			$crate::opt::Chain::Westend => {
+				#[allow(unused)]
+				use $crate::static_types::legacy::westend::MinerConfig;
+				$($code)*
+			},
+			$crate::opt::Chain::AssetHubNext => {
+				#[allow(unused)]
+				use $crate::static_types::legacy::westend::MinerConfig;
+				$($code)*
+			}
+			$crate::opt::Chain::SubstrateNode => {
+				#[allow(unused)]
+				use $crate::static_types::legacy::node::MinerConfig;
+				$($code)*
+			}
+		}
+	};
+}
+
+// A helper to configure to correct MinerConfig depending on chain.
+#[allow(unused_macros)]
+macro_rules! for_multi_block_runtime {
+	($chain:tt, $($code:tt)*) => {
+		match $chain {
+			$crate::opt::Chain::Polkadot => {
+				#[allow(unused)]
+				use $crate::static_types::multi_block::polkadot::MinerConfig;
+				$($code)*
+			},
+			$crate::opt::Chain::Kusama => {
+				#[allow(unused)]
+				use $crate::static_types::multi_block::kusama::MinerConfig;
+				$($code)*
+			},
+			$crate::opt::Chain::Westend => {
+				#[allow(unused)]
+				use $crate::static_types::multi_block::westend::MinerConfig;
+				$($code)*
+			},
+			$crate::opt::Chain::AssetHubNext => {
+				#[allow(unused)]
+				use $crate::static_types::multi_block::westend::MinerConfig;
+				$($code)*
+			}
+			$crate::opt::Chain::SubstrateNode => {
+				#[allow(unused)]
+				use $crate::static_types::multi_block::node::MinerConfig;
+				$($code)*
+			}
+		}
+	};
+}
+
+#[allow(unused)]
+pub(crate) use {for_legacy_runtime, for_multi_block_runtime, impl_u32_parameter_type};

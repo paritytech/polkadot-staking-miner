@@ -1,10 +1,5 @@
-#![cfg(legacy)]
-
 use assert_cmd::cargo::cargo_bin;
-use polkadot_staking_miner::{
-    opt::Chain,
-    prelude::{runtime, ChainClient},
-};
+use polkadot_staking_miner::{opt::Chain, prelude::ChainClient, runtime::legacy as runtime};
 use std::{
     io::{BufRead, BufReader, Read},
     net::SocketAddr,

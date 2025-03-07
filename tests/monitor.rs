@@ -1,7 +1,5 @@
 //! Requires a `polkadot binary ` built with `--features fast-runtime` in the path to run integration tests against.
 
-#![cfg(legacy)]
-
 pub mod common;
 
 use assert_cmd::cargo::cargo_bin;
