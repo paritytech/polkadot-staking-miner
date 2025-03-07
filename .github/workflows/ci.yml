@@ -100,8 +100,7 @@ jobs:
       - name: Check code
         run: |
           ${{ env.RUST_INFO }}
-          cargo check --workspace --all-targets --no-default-features --features legacy
-          cargo check --workspace --all-targets --no-default-features --features experimental-multi-block 
+          cargo check --workspace --all-targets
 
   test:
     name: Run tests
@@ -123,7 +122,7 @@ jobs:
       - name: Run tests on Ubuntu
         run: |
           ${{ env.RUST_INFO }}
-          RUST_LOG=info cargo +stable test --workspace --no-default-features --features legacy -- --nocapture
+          RUST_LOG=info cargo +stable test --workspace -- --nocapture
 
   build:
     name: Build polkadot-staking-miner binary
