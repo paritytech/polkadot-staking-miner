@@ -216,7 +216,7 @@ where
         all_targets: target_snapshot.clone(),
         voter_pages: voter_pages.clone(),
         pages: n_pages,
-        // TODO: get from runtime/configs.
+        // TODO: https://github.com/paritytech/polkadot-staking-miner/issues/995
         do_reduce: false,
         round,
     };
