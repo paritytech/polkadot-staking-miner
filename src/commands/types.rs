@@ -169,7 +169,7 @@ pub struct MonitorConfig {
     pub dry_run: bool,
 }
 
-/// TODO(niklasad1): Add solver algorithm configuration to the monitor command.
+/// TODO: make `solver algorithm` configurable https://github.com/paritytech/polkadot-staking-miner/issues/989
 #[derive(Debug, Clone, clap::Parser)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct ExperimentalMultiBlockMonitorConfig {
