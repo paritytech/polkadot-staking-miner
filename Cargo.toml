@@ -33,7 +33,7 @@ subxt-core = "0.40.0"
 polkadot-sdk = { git = "https://github.com/paritytech/polkadot-sdk", features = ["frame-election-provider-support", "frame-support", "sp-npos-elections", "sp-core", "sp-runtime", "pallet-election-provider-multi-phase", "pallet-election-provider-multi-block"], branch = "na-ah-next-westend" }
 
 # prometheus
-prometheus = "0.13"
+prometheus = "0.14"
 hyper = { version = "0.14.32", features = ["server", "http1", "http2", "tcp"] }
 once_cell = "1.21"
 
