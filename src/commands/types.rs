@@ -182,6 +182,7 @@ pub struct ExperimentalMultiBlockMonitorConfig {
     #[clap(long, value_parser, default_value = "if-leading")]
     pub submission_strategy: SubmissionStrategy,
 
+    /// Reduce the solution to prevent further trimming.
     #[clap(long, default_value_t = false)]
     pub do_reduce: bool,
 }
