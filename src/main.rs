@@ -368,4 +368,61 @@ mod tests {
             }
         );
     }
+
+    #[test]
+    fn cli_experimental_monitor_multi_block_works() {
+        let opt = Opt::try_parse_from([
+            env!("CARGO_PKG_NAME"),
+            "--uri",
+            "hi",
+            "experimental-monitor-multi-block",
+            "--seed-or-path",
+            "//Alice",
+            "--do-reduce",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            opt,
+            Opt {
+                uri: "hi".to_string(),
+                prometheus_port: 9999,   // Assuming default
+                log: "info".to_string(), // Assuming default
+                command: Command::ExperimentalMonitorMultiBlock(
+                    commands::types::ExperimentalMultiBlockMonitorConfig {
+                        seed_or_path: "//Alice".to_string(),
+                        listen: Listen::Finalized, // Assuming default
+                        submission_strategy: SubmissionStrategy::IfLeading, // Assuming default
+                        do_reduce: true,           // Expect true because flag was present
+                    }
+                ),
+            }
+        );
+    }
+
+    #[test]
+    fn cli_experimental_monitor_multi_block_default_works() {
+        let opt = Opt::try_parse_from([
+            env!("CARGO_PKG_NAME"),
+            "--uri",
+            "hi",
+            "experimental-monitor-multi-block",
+            "--seed-or-path",
+            "//Alice",
+            // No --do-reduce flag
+        ])
+        .unwrap();
+
+        assert_eq!(
+            opt.command,
+            Command::ExperimentalMonitorMultiBlock(
+                commands::types::ExperimentalMultiBlockMonitorConfig {
+                    seed_or_path: "//Alice".to_string(),
+                    listen: Listen::Finalized,
+                    submission_strategy: SubmissionStrategy::IfLeading,
+                    do_reduce: false, // Expect false (default)
+                }
+            )
+        );
+    }
 }

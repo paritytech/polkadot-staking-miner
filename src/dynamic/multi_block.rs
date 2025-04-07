@@ -186,6 +186,7 @@ pub(crate) async fn mine_solution<T>(
     round: u32,
     desired_targets: u32,
     block_number: u32,
+    do_reduce: bool,
 ) -> Result<PagedRawSolution<T>, Error>
 where
     T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
@@ -207,7 +208,7 @@ where
 
     log::trace!(
         target: LOG_TARGET,
-        "MineInput: desired_targets={desired_targets},pages={n_pages},target_snapshot_len={},voters_pages_len={},do_reduce=false,round={round},at={block_number}",
+        "MineInput: desired_targets={desired_targets},pages={n_pages},target_snapshot_len={},voters_pages_len={},do_reduce={do_reduce},round={round},at={block_number}",
         target_snapshot.len(), voter_pages.len()
     );
 
@@ -216,8 +217,7 @@ where
         all_targets: target_snapshot.clone(),
         voter_pages: voter_pages.clone(),
         pages: n_pages,
-        // TODO: https://github.com/paritytech/polkadot-staking-miner/issues/995
-        do_reduce: false,
+        do_reduce,
         round,
     };
 

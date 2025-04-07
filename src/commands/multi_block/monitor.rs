@@ -134,6 +134,7 @@ where
                 config.listen,
                 submit_lock,
                 config.submission_strategy,
+                config.do_reduce,
             )
             .await
             {
@@ -163,6 +164,7 @@ async fn process_block<T>(
     listen: Listen,
     submit_lock: Arc<Mutex<()>>,
     submission_strategy: SubmissionStrategy,
+    do_reduce: bool,
 ) -> Result<(), Error>
 where
     T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
@@ -230,6 +232,7 @@ where
         round,
         desired_targets,
         block_number,
+        do_reduce,
     )
     .timed()
     .await
