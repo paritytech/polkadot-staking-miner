@@ -14,44 +14,52 @@
 // You should have received a copy of the GNU General Public License
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::prelude::*;
-
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-	#[error("Failed to parse log directive: `{0}´")]
-	LogParse(#[from] tracing_subscriber::filter::ParseError),
-	#[error("I/O error: `{0}`")]
-	Io(#[from] std::io::Error),
-	#[error("RPC error: `{0}`")]
-	Rpc(#[from] jsonrpsee::core::ClientError),
-	#[error("subxt error: `{0}`")]
-	Subxt(#[from] subxt::Error),
-	#[error("Crypto error: `{0:?}`")]
-	Crypto(sp_core::crypto::SecretStringError),
-	#[error("Codec error: `{0}`")]
-	Codec(#[from] codec::Error),
-	#[error("Incorrect phase")]
-	IncorrectPhase,
-	#[error("Submission is already submitted")]
-	AlreadySubmitted,
-	#[error("The account does not exist")]
-	AccountDoesNotExists,
-	#[error("Submission with better score already exist")]
-	BetterScoreExist,
-	#[error("Invalid chain: `{0}`, staking-miner supports only polkadot, kusama and westend")]
-	InvalidChain(String),
-	#[error("Other error: `{0}`")]
-	Other(String),
-	#[error("Invalid metadata: {0}")]
-	InvalidMetadata(String),
-	#[error("Transaction rejected: {0}")]
-	TransactionRejected(String),
-	#[error("Dynamic transaction error: {0}")]
-	DynamicTransaction(String),
-	#[error("Feasibility error: {0}")]
-	Feasibility(String),
-	#[error("{0}")]
-	Join(#[from] tokio::task::JoinError),
-	#[error("Empty snapshot")]
-	EmptySnapshot,
+    #[error("Failed to parse log directive: `{0}´")]
+    LogParse(#[from] tracing_subscriber::filter::ParseError),
+    #[error("I/O error: `{0}`")]
+    Io(#[from] std::io::Error),
+    #[error("RPC error: `{0}`")]
+    Rpc(#[from] jsonrpsee::core::ClientError),
+    #[error("subxt error: `{0}`")]
+    Subxt(#[from] subxt::Error),
+    #[error("Crypto error: `{0:?}`")]
+    Crypto(polkadot_sdk::sp_core::crypto::SecretStringError),
+    #[error("Codec error: `{0}`")]
+    Codec(#[from] codec::Error),
+    #[error("Incorrect phase")]
+    IncorrectPhase,
+    #[error("Submission is already submitted")]
+    AlreadySubmitted,
+    #[error("The account does not exist")]
+    AccountDoesNotExists,
+    #[error("Submission with better score already exist")]
+    BetterScoreExist,
+    #[error("Invalid chain: `{0}`, staking-miner supports only polkadot, kusama, westend, node and asset-hub-next")]
+    InvalidChain(String),
+    #[error("Other error: `{0}`")]
+    Other(String),
+    #[error("Invalid metadata: {0}")]
+    InvalidMetadata(String),
+    #[error("Transaction rejected: {0}")]
+    TransactionRejected(String),
+    #[error("Dynamic transaction error: {0}")]
+    DynamicTransaction(String),
+    #[error("Feasibility error: {0}")]
+    Feasibility(String),
+    #[error("{0}")]
+    Join(#[from] tokio::task::JoinError),
+    #[error("Empty snapshot")]
+    EmptySnapshot,
+    #[error("Missing event for transaction: {0}")]
+    MissingTxEvent(String),
+    #[error("Failed to submit {0} pages")]
+    FailedToSubmitPages(usize),
+}
+
+impl From<subxt_core::Error> for Error {
+    fn from(e: subxt_core::Error) -> Self {
+        Self::Subxt(e.into())
+    }
 }

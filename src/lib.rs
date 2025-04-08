@@ -14,15 +14,17 @@
 // You should have received a copy of the GNU General Public License
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
-#![allow(dead_code)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 pub mod client;
 pub mod commands;
-pub mod epm;
+pub mod dynamic;
 pub mod error;
-pub mod helpers;
+pub mod macros;
 pub mod opt;
 pub mod prelude;
 pub mod prometheus;
+pub mod runtime;
 pub mod signer;
 pub mod static_types;
+pub mod utils;
