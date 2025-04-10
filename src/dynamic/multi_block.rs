@@ -230,7 +230,6 @@ where
             &voter_pages,
             &target_snapshot,
             desired_targets,
-            "multi-block-solution",
         )
         .map_err(|e| Error::Feasibility(format!("{:?}", e)))?;
         Ok(paged_raw_solution)

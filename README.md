@@ -4,12 +4,19 @@
 
 This is a re-write of the [staking miner](https://github.com/paritytech/polkadot/tree/master/utils/staking-miner) using [subxt](https://github.com/paritytech/subxt) to avoid hard dependency to each runtime version.
 
-The binary itself embeds [static metadata](./artifacts/metadata.scale) to
+The miner can work with two kinds of nodes:
+
+- **multi-phase (legacy)** , targeting the multi-phase, single paged election provider pallet
+- **multi-block (experimental) **, targeting the multi-phase, multi-block election provider pallet.
+
+The legacy path is intended to be temporary until all chains are migrated to multi-page staking (`asset-hub`).
+Once that occurs, we can remove the legacy components and rename the experimental monitor command to `monitor`.
+
+The binary itself embeds [legacy](./artifacts/metadata.scale) and [multi-block static metadata](./artifacts/multi_block.scale) to
 generate a rust codegen at compile-time that [subxt provides](https://github.com/paritytech/subxt).
 
 Runtime upgrades are handled by the polkadot-staking-miner by upgrading storage constants
-and that will work unless there is a breaking change in the pallets `pallet-election-provider-multi-phase`
-or `frame_system`.
+and that will work unless there is a breaking change in the pallets `pallet-election-provider-multi-phase`, `pallet-election-provider-multi-block` or `frame_system`.
 
 Because detecting breaking changes when connecting to a RPC node when using
 `polkadot-staking-miner` is hard, this repo performs daily integration tests
@@ -33,9 +40,9 @@ You can check the help with:
 $ polkadot-staking-miner --help
 ```
 
-### Monitor
+### Monitor (multi-phase, single-paged - legacy)
 
-To "mine solutions" and earn rewards, use a command like the following.
+To "mine solutions" and earn rewards, use a command like the following for a multi-phase (legacy) node.
 Please try this on a dev-chain before using real funds because it's
 possible to lose money.
 
@@ -102,6 +109,7 @@ polkadot-staking-miner --uri ws://127.0.0.1:9966 experimental-monitor-multi-bloc
 While you could pass your seed directly to the cli or Docker, this is highly **NOT** recommended. Instead, you should use an ENV variable.
 
 You can set it manually using:
+
 ```bash
 # The following line starts with an extra space on purpose, make sure to include it:
  SEED=0x1234...
@@ -111,10 +119,12 @@ Alternatively, for development, you may store your seed in a `.env` file that
 can be loaded to make your seed available:
 
 `.env`:
+
 ```bash
 SEED=0x1234...
 RUST_LOG=polkadot-staking-miner=debug
 ```
+
 You can load it using `source .env`.
 
 ### Docker
@@ -135,18 +145,21 @@ docker run --rm -it \
 
 ## Update metadata
 
-The static metadata file is stored at [artifacts/metadata.scale](artifacts/metadata.scale)
+The static metadata files are stored at [artifacts/metadata.scale](artifacts/metadata.scale) and [artifacts/multi_block.scale](artifacts/multi_block.scale).
 
 To update the metadata you need to connect to a polkadot, kusama or westend node.
 
 ```bash
 # Install subxt-cli
 $ cargo install --locked subxt-cli
-# Download the metadata from a local node and replace the current metadata
+# Download the metadata from a local node running a compatible runtime and replace the current metadata
 # See `https://github.com/paritytech/subxt/tree/master/cli` for further documentation of the `subxt-cli` tool.
-$ subxt metadata --pallets "ElectionProviderMultiPhase,System" -f bytes > artifacts/metadata.scale
+# For a legacy node (note that trimming pallets is not strictly needed):
+$ subxt metadata --pallets "ElectionProviderMultiPhase,System"  > artifacts/metadata.scale
 # Inspect the generated code
 $ subxt codegen --file artifacts/metadata.scale | rustfmt > code.rs
+# Similarly, for a multi-block node (again, be sure to connect with a proper node, specify --url ws://... if needed e.g. --url ws://localhost:9966)
+$ subxt metadata  > artifacts/multi_block.scale
 ```
 
 ## Test locally
@@ -169,7 +182,6 @@ be fetched by:
 ```bash
 $ curl localhost:9999/metrics
 ```
-
 
 ```bash
 # HELP staking_miner_balance The balance of the staking miner account
