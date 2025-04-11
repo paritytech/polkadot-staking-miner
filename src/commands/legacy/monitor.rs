@@ -40,10 +40,7 @@ use polkadot_sdk::{
     sp_npos_elections,
 };
 use std::sync::Arc;
-use subxt::{
-    backend::legacy::rpc_methods::DryRunResult, config::Header as _, error::RpcError,
-    Error as SubxtError,
-};
+use subxt::{backend::legacy::rpc_methods::DryRunResult, config::Header as _};
 use tokio::sync::Mutex;
 
 pub async fn monitor_cmd<T>(client: Client, config: MonitorConfig) -> Result<(), Error>
@@ -156,7 +153,7 @@ where
     T::Solution: Send,
 {
     let block_hash = at.hash();
-    log::trace!(target: LOG_TARGET, "new event at #{:?} ({:?})", at.number, block_hash);
+    log::trace!(target: LOG_TARGET, "new event at #{:?} ({:?})", at.number(), block_hash);
 
     // NOTE: as we try to send at each block then the nonce is used guard against
     // submitting twice. Because once a solution has been accepted on chain
@@ -172,7 +169,7 @@ where
                 target: LOG_TARGET,
                 "ensure_signed_phase failed: {:?}; skipping block: {}",
                 e,
-                at.number
+                at.number()
             )
         })
         .await?;
@@ -200,7 +197,7 @@ where
             target: LOG_TARGET,
             "ensure_no_previous_solution failed: {:?}; skipping block: {}",
             e,
-            at.number
+            at.number()
         )
     })
     .await?;
@@ -267,7 +264,7 @@ where
                 target: LOG_TARGET,
                 "ensure_signed_phase failed: {:?}; skipping block: {}",
                 e,
-                at.number
+                at.number()
             )
         })
         .await?;
@@ -308,7 +305,7 @@ where
                 target: LOG_TARGET,
                 "ensure_no_better_solution failed: {:?}; skipping block: {}",
                 e,
-                at.number
+                at.number()
             );
             return Err(e);
         }
@@ -335,7 +332,7 @@ where
             log::warn!(
                 target: LOG_TARGET,
                 "submit_and_watch_solution failed: {e}; skipping block: {}",
-                at.number
+                at.number()
             );
         }
     };
@@ -433,14 +430,14 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
     // TODO: https://github.com/paritytech/polkadot-staking-miner/issues/730
     //
     // The extrinsic mortality length is static and it doesn't know when the signed phase ends.
-    let xt_cfg = if let Ok(len) = client
+    let xt_cfg = if let Ok(_) = client
         .chain_api()
         .constants()
         .at(&runtime::constants().babe().epoch_duration())
     {
         ExtrinsicParamsBuilder::default()
             .nonce(nonce)
-            .mortal(at, len)
+            .mortal(at.number() as u64)
             .build()
     } else {
         ExtrinsicParamsBuilder::default().nonce(nonce).build()
@@ -455,10 +452,12 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
     if dry_run {
         let dry_run_bytes = client.rpc().dry_run(xt.encoded(), None).await?;
 
-        match dry_run_bytes.into_dry_run_result(&client.chain_api().metadata())? {
+        match dry_run_bytes.into_dry_run_result()? {
             DryRunResult::Success => (),
             DryRunResult::DispatchError(e) => {
-                return Err(Error::TransactionRejected(e.to_string()))
+                return Err(Error::TransactionRejected(
+                    String::from_utf8_lossy(e).to_string(),
+                ))
             }
             DryRunResult::TransactionValidityError => {
                 return Err(Error::TransactionRejected(
@@ -526,25 +525,29 @@ async fn get_latest_head(rpc: &RpcClient, listen: Listen) -> Result<Hash, Error>
 }
 
 async fn dry_run_works(rpc: &RpcClient) -> Result<(), Error> {
-    if let Err(SubxtError::Rpc(RpcError::ClientError(e))) = rpc.dry_run(&[], None).await {
-        let rpc_err = match e.downcast::<JsonRpseeError>() {
-            Ok(e) => *e,
-            Err(_) => {
-                return Err(Error::Other(
-                    "Failed to downcast RPC error; this is a bug please file an issue".to_string(),
-                ))
+    match rpc.dry_run(&[], None).await {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            if let subxt_rpcs::Error::Client(boxed_err) = &e {
+                match boxed_err.downcast_ref::<JsonRpseeError>() {
+                    Some(JsonRpseeError::Call(e)) => {
+                        if e.message() == "RPC call is unsafe to be called externally" {
+                            return Err(Error::Other(
+                                "dry-run requires a RPC endpoint with `--rpc-methods unsafe`; \
+                                either connect to another RPC endpoint or disable dry-run"
+                                    .to_string(),
+                            ));
+                        }
+                    }
+                    _ => {
+                        return Err(Error::Other(
+                            "Failed to downcast RPC error; this is a bug please file an issue"
+                                .to_string(),
+                        ))
+                    }
+                }
             }
-        };
-
-        if let JsonRpseeError::Call(e) = rpc_err {
-            if e.message() == "RPC call is unsafe to be called externally" {
-                return Err(Error::Other(
-                    "dry-run requires a RPC endpoint with `--rpc-methods unsafe`; \
-						either connect to another RPC endpoint or disable dry-run"
-                        .to_string(),
-                ));
-            }
+            Err(e.into())
         }
     }
-    Ok(())
 }

@@ -57,10 +57,6 @@ impl subxt::tx::Signer<Config> for PairSigner {
         self.account_id.clone()
     }
 
-    fn address(&self) -> <Config as subxt::Config>::Address {
-        self.account_id.clone().into()
-    }
-
     fn sign(&self, signer_payload: &[u8]) -> <Config as subxt::Config>::Signature {
         let signature = self.signer.sign(signer_payload);
         subxt::config::substrate::MultiSignature::Sr25519(signature.0)

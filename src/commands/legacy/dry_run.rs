@@ -102,7 +102,7 @@ where
             .create_signed(&tx, &*signer, params)
             .await?;
         let dry_run_bytes = client.rpc().dry_run(xt.encoded(), config.at).await?;
-        let dry_run_result = dry_run_bytes.into_dry_run_result(&client.chain_api().metadata())?;
+        let dry_run_result = dry_run_bytes.into_dry_run_result()?;
 
         log::info!(target: LOG_TARGET, "dry-run outcome is {:?}", dry_run_result);
     }
