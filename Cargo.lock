@@ -7454,7 +7454,6 @@ dependencies = [
  "serde",
  "serde_json",
  "subxt",
- "subxt-core 0.41.0",
  "subxt-rpcs",
  "thiserror 2.0.12",
  "tokio",

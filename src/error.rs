@@ -58,15 +58,9 @@ pub enum Error {
     FailedToSubmitPages(usize),
 }
 
-impl From<subxt_core::Error> for Error {
-    fn from(e: subxt_core::Error) -> Self {
-        Self::Subxt(e.into())
-    }
-}
-
 impl From<subxt_rpcs::Error> for Error {
     fn from(e: subxt_rpcs::Error) -> Self {
-        Self::Other(format!("RPC error: {}", e))
+        Self::Subxt(subxt::Error::Rpc(e.into()))
     }
 }
 

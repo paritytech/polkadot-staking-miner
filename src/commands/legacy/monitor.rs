@@ -319,7 +319,6 @@ where
         nonce,
         config.listen,
         config.dry_run,
-        &at,
     )
     .timed()
     .await
@@ -416,7 +415,6 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
     nonce: u64,
     listen: Listen,
     dry_run: bool,
-    at: &Header,
 ) -> Result<(), Error> {
     let tx = dynamic::signed_solution(RawSolution {
         solution,
@@ -430,14 +428,14 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
     // TODO: https://github.com/paritytech/polkadot-staking-miner/issues/730
     //
     // The extrinsic mortality length is static and it doesn't know when the signed phase ends.
-    let xt_cfg = if let Ok(_) = client
+    let xt_cfg = if let Ok(len) = client
         .chain_api()
         .constants()
         .at(&runtime::constants().babe().epoch_duration())
     {
         ExtrinsicParamsBuilder::default()
             .nonce(nonce)
-            .mortal(at.number() as u64)
+            .mortal(len)
             .build()
     } else {
         ExtrinsicParamsBuilder::default().nonce(nonce).build()
@@ -455,9 +453,11 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
         match dry_run_bytes.into_dry_run_result()? {
             DryRunResult::Success => (),
             DryRunResult::DispatchError(e) => {
-                return Err(Error::TransactionRejected(
-                    String::from_utf8_lossy(e).to_string(),
-                ))
+                let dispatch_err = subxt::error::DispatchError::decode_from(
+                    e.as_ref(),
+                    client.chain_api().metadata(),
+                )?;
+                return Err(Error::TransactionRejected(dispatch_err.to_string()));
             }
             DryRunResult::TransactionValidityError => {
                 return Err(Error::TransactionRejected(
