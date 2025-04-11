@@ -45,15 +45,18 @@ mod static_types;
 mod utils;
 
 use clap::Parser;
-use dynamic::update_metadata_constants;
 use error::Error;
 use futures::future::{BoxFuture, FutureExt};
-use prelude::{ChainClient, DEFAULT_PROMETHEUS_PORT, DEFAULT_URI, LOG_TARGET, SHARED_CLIENT};
 use std::str::FromStr;
 use tokio::sync::oneshot;
 use tracing_subscriber::EnvFilter;
 
-use crate::{client::Client, opt::RuntimeVersion};
+use crate::{
+    client::Client,
+    dynamic::update_metadata_constants,
+    opt::RuntimeVersion,
+    prelude::{ChainClient, DEFAULT_PROMETHEUS_PORT, DEFAULT_URI, LOG_TARGET, SHARED_CLIENT},
+};
 
 #[derive(Debug, Clone, Parser)]
 #[cfg_attr(test, derive(PartialEq))]

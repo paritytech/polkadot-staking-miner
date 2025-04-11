@@ -58,8 +58,14 @@ pub enum Error {
     FailedToSubmitPages(usize),
 }
 
-impl From<subxt_core::Error> for Error {
-    fn from(e: subxt_core::Error) -> Self {
-        Self::Subxt(e.into())
+impl From<subxt_rpcs::Error> for Error {
+    fn from(e: subxt_rpcs::Error) -> Self {
+        Self::Subxt(subxt::Error::Rpc(e.into()))
+    }
+}
+
+impl From<subxt::backend::legacy::rpc_methods::DryRunDecodeError> for Error {
+    fn from(_e: subxt::backend::legacy::rpc_methods::DryRunDecodeError) -> Self {
+        Self::Other("Failed to decode dry run result".to_string())
     }
 }

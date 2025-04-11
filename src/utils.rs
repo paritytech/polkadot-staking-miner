@@ -32,10 +32,10 @@ use std::{
     time::{Duration, Instant},
 };
 use subxt::{
-    backend::rpc::RpcSubscription,
     error::{Error as SubxtError, RpcError},
     tx::{TxInBlock, TxProgress},
 };
+use subxt_rpcs::client::RpcSubscription;
 
 pin_project! {
     pub struct Timed<Fut>
@@ -103,40 +103,44 @@ pub fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Er
 
             match rpc_err {
                 RpcError::ClientError(e) => {
-                    let jsonrpsee_err = match e.downcast::<JsonRpseeError>() {
-                        Ok(e) => *e,
-                        Err(_) => {
-                            let _ = tx.send(Error::Other(
-                                "Failed to downcast RPC error; this is a bug please file an issue"
-                                    .to_string(),
-                            ));
-                            return;
-                        }
-                    };
+                    if let subxt_rpcs::Error::Client(boxed_err) = e {
+                        let jsonrpsee_err = match boxed_err.downcast::<JsonRpseeError>() {
+                            Ok(e) => *e,
+                            Err(_) => {
+                                let _ = tx.send(Error::Other(
+                                    "Failed to downcast RPC error; this is a bug please file an issue"
+                                        .to_string(),
+                                ));
+                                return;
+                            }
+                        };
 
-                    match jsonrpsee_err {
-                        JsonRpseeError::Call(e) => {
-                            const BAD_EXTRINSIC_FORMAT: i32 = 1001;
-                            const VERIFICATION_ERROR: i32 = 1002;
-                            use jsonrpsee::types::error::ErrorCode;
+                        match jsonrpsee_err {
+                            JsonRpseeError::Call(e) => {
+                                const BAD_EXTRINSIC_FORMAT: i32 = 1001;
+                                const VERIFICATION_ERROR: i32 = 1002;
+                                use jsonrpsee::types::error::ErrorCode;
 
-                            // Check if the transaction gets fatal errors from the `author` RPC.
-                            // It's possible to get other errors such as outdated nonce and similar
-                            // but then it should be possible to try again in the next block or round.
-                            if e.code() == BAD_EXTRINSIC_FORMAT
-                                || e.code() == VERIFICATION_ERROR
-                                || e.code() == ErrorCode::MethodNotFound.code()
-                            {
+                                // Check if the transaction gets fatal errors from the `author` RPC.
+                                // It's possible to get other errors such as outdated nonce and similar
+                                // but then it should be possible to try again in the next block or round.
+                                if e.code() == BAD_EXTRINSIC_FORMAT
+                                    || e.code() == VERIFICATION_ERROR
+                                    || e.code() == ErrorCode::MethodNotFound.code()
+                                {
+                                    let _ = tx.send(Error::Subxt(SubxtError::Rpc(
+                                        RpcError::ClientError(subxt_rpcs::Error::Client(Box::new(
+                                            JsonRpseeError::Call(e),
+                                        ))),
+                                    )));
+                                }
+                            }
+                            JsonRpseeError::RequestTimeout => {}
+                            err => {
                                 let _ = tx.send(Error::Subxt(SubxtError::Rpc(
-                                    RpcError::ClientError(Box::new(JsonRpseeError::Call(e))),
+                                    RpcError::ClientError(subxt_rpcs::Error::Client(Box::new(err))),
                                 )));
                             }
-                        }
-                        JsonRpseeError::RequestTimeout => {}
-                        err => {
-                            let _ = tx.send(Error::Subxt(SubxtError::Rpc(RpcError::ClientError(
-                                Box::new(err),
-                            ))));
                         }
                     }
                 }
