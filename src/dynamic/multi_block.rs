@@ -430,28 +430,28 @@ where
     }
 }
 
-/// Submit all solution pages concurrently.
-pub(crate) async fn inner_submit_pages_concurrent<T: MinerConfig + Send + Sync + 'static>(
+/// Helper function to submit a batch of pages and wait for their inclusion in blocks
+async fn submit_pages_batch<T: MinerConfig + Send + Sync + 'static>(
     client: &Client,
     signer: &Signer,
-    paged_raw_solution: Vec<(u32, T::Solution)>,
+    pages_to_submit: Vec<(u32, T::Solution)>,
     listen: Listen,
-) -> Result<Vec<u32>, Error>
+) -> Result<(Vec<u32>, HashSet<u32>), Error>
 where
     T::Solution: Send + Sync + 'static,
     T::Pages: Send + Sync + 'static,
 {
     let mut txs = FuturesUnordered::new();
-
     let mut nonce = client
         .rpc()
         .system_account_next_index(signer.account_id())
         .await?;
 
-    let len = paged_raw_solution.len();
+    // Collect expected pages before consuming the vector
+    let expected_pages: HashSet<u32> = pages_to_submit.iter().map(|(page, _)| *page).collect();
 
-    // 1. Submit all solution pages.
-    for (page, solution) in paged_raw_solution.into_iter() {
+    // 1. Submit all pages in the batch
+    for (page, solution) in pages_to_submit.into_iter() {
         let tx_status = submit_inner(
             client,
             signer.clone(),
@@ -470,17 +470,18 @@ where
         nonce += 1;
     }
 
-    // 2. Wait for all pages to be included in a block.
-    let mut failed_pages = Vec::new();
+    // 2. Wait for all pages in the batch to be included in a block
+    let mut failed_pages_set = HashSet::new();
     let mut submitted_pages = HashSet::new();
 
+    // 3. Process all transactions
     while let Some(page) = txs.next().await {
         match page {
             Ok(tx) => {
                 let hash = tx.block_hash();
-
-                // NOTE: It's slow to iterate over the events and that's we are
-                // submitting all pages "at once" and several pages are submitted in the same block.
+                // NOTE: It's slow to iterate over the events and that's the main reason why
+                // submitting all pages "at once" with several pages submitted in the same block
+                // is faster than a sequential or chuncked submission.
                 let events = tx.wait_for_success().await?;
                 for event in events.iter() {
                     let event = event?;
@@ -500,14 +501,59 @@ where
                     }
                 }
             }
+            // Transaction failed to be included in a block.
+            // This happens when the transaction itself was rejected or failed
             Err(p) => {
-                failed_pages.push(p);
+                failed_pages_set.insert(p);
             }
         }
+    }
 
-        if submitted_pages.len() == len {
-            return Ok(vec![]);
-        }
+    // 4. Check if all expected pages were included.
+    // This handles cases where the transaction was submitted but we didn't get confirmation.
+    let missing_pages: HashSet<u32> = expected_pages
+        .difference(&submitted_pages)
+        .cloned()
+        .collect();
+
+    // 5. Add missing pages to failed pages set.
+    // This combines both types of failures (transactions not included in a block and transactions not confirmed)
+    // into a single set of failed pages.
+    failed_pages_set.extend(missing_pages);
+
+    if !failed_pages_set.is_empty() {
+        log::warn!(
+            target: LOG_TARGET,
+            "Some pages were not included in blocks: {:?}",
+            failed_pages_set
+        );
+    }
+
+    let failed_pages: Vec<u32> = failed_pages_set.into_iter().collect();
+
+    Ok((failed_pages, submitted_pages))
+}
+
+/// Submit all solution pages concurrently.
+pub(crate) async fn inner_submit_pages_concurrent<T: MinerConfig + Send + Sync + 'static>(
+    client: &Client,
+    signer: &Signer,
+    paged_raw_solution: Vec<(u32, T::Solution)>,
+    listen: Listen,
+) -> Result<Vec<u32>, Error>
+where
+    T::Solution: Send + Sync + 'static,
+    T::Pages: Send + Sync + 'static,
+{
+    let len = paged_raw_solution.len();
+
+    // Submit all pages in a single batch
+    let (failed_pages, submitted_pages) =
+        submit_pages_batch::<T>(client, signer, paged_raw_solution, listen).await?;
+
+    // If all pages were submitted successfully, we're done
+    if submitted_pages.len() == len {
+        return Ok(vec![]);
     }
 
     Ok(failed_pages)
@@ -526,6 +572,8 @@ where
     T::Solution: Send + Sync + 'static,
     T::Pages: Send + Sync + 'static,
 {
+    assert!(chunk_size > 0, "Chunk size must be greater than 0");
+
     let mut failed_pages = Vec::new();
     let mut submitted_pages = HashSet::new();
     let total_pages = paged_raw_solution.len();
@@ -533,72 +581,44 @@ where
     // Process pages in chunks
     for chunk_start in (0..total_pages).step_by(chunk_size) {
         let chunk_end = std::cmp::min(chunk_start + chunk_size, total_pages);
-        let chunk = &paged_raw_solution[chunk_start..chunk_end];
+        let chunk = paged_raw_solution[chunk_start..chunk_end].to_vec();
+
+        // Get the actual page numbers in this chunk for logging
+        let chunk_page_numbers: Vec<u32> = chunk.iter().map(|(page, _)| *page).collect();
 
         log::info!(
             target: LOG_TARGET,
-            "Submitting chunk of pages {}-{} of {}",
-            chunk_start,
-            chunk_end - 1,
+            "Submitting pages {:?} (out of {})",
+            chunk_page_numbers,
             total_pages
         );
 
-        let mut txs = FuturesUnordered::new();
-        let mut nonce = client
-            .rpc()
-            .system_account_next_index(signer.account_id())
-            .await?;
+        // Submit the current chunk
+        let (chunk_failed_pages, chunk_submitted_pages) =
+            submit_pages_batch::<T>(client, signer, chunk, listen).await?;
 
-        // Submit all pages in the current chunk
-        for (page, solution) in chunk.iter() {
-            let tx_status = submit_inner(
-                client,
-                signer.clone(),
-                MultiBlockTransaction::submit_page::<T>(*page, Some(solution.clone()))?,
-                nonce,
-            )
-            .await?;
+        // Check if we have failed pages before extending the overall lists
+        if !chunk_failed_pages.is_empty() {
+            log::warn!(
+                target: LOG_TARGET,
+                "Pages {:?} failed to be included in blocks",
+                chunk_failed_pages
+            );
 
-            txs.push(async move {
-                match utils::wait_tx_in_block_for_strategy(tx_status, listen).await {
-                    Ok(tx) => Ok(tx),
-                    Err(_) => Err(*page),
-                }
-            });
+            // Add the failed pages from this chunk to the overall list
+            failed_pages.extend(chunk_failed_pages);
 
-            nonce += 1;
+            return Ok(failed_pages);
         }
 
-        // Wait for all pages in the current chunk to be included in a block
-        while let Some(page) = txs.next().await {
-            match page {
-                Ok(tx) => {
-                    let hash = tx.block_hash();
+        // Add submitted pages to the overall set
+        submitted_pages.extend(chunk_submitted_pages);
 
-                    let events = tx.wait_for_success().await?;
-                    for event in events.iter() {
-                        let event = event?;
-
-                        if let Some(solution_stored) =
-                            event.as_event::<runtime::multi_block_signed::events::Stored>()?
-                        {
-                            let page = solution_stored.2;
-
-                            log::info!(
-                                target: LOG_TARGET,
-                                "Page {page} included in block {:?}",
-                                hash
-                            );
-
-                            submitted_pages.insert(solution_stored.2);
-                        }
-                    }
-                }
-                Err(p) => {
-                    failed_pages.push(p);
-                }
-            }
-        }
+        log::info!(
+            target: LOG_TARGET,
+            "All pages {:?} were successfully included in blocks",
+            chunk_page_numbers
+        );
 
         // If all pages have been submitted, we're done
         if submitted_pages.len() == total_pages {
