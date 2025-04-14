@@ -430,32 +430,29 @@ where
     }
 }
 
-/// Submit all solution pages concurrently.
-pub(crate) async fn inner_submit_pages_concurrent<T: MinerConfig + Send + Sync + 'static>(
+/// Helper function to submit a batch of pages and wait for their inclusion in blocks
+async fn submit_pages_batch<T: MinerConfig + Send + Sync + 'static>(
     client: &Client,
     signer: &Signer,
-    paged_raw_solution: Vec<(u32, T::Solution)>,
+    pages_to_submit: &[(u32, T::Solution)],
     listen: Listen,
-) -> Result<Vec<u32>, Error>
+) -> Result<(Vec<u32>, HashSet<u32>), Error>
 where
     T::Solution: Send + Sync + 'static,
     T::Pages: Send + Sync + 'static,
 {
     let mut txs = FuturesUnordered::new();
-
     let mut nonce = client
         .rpc()
         .system_account_next_index(signer.account_id())
         .await?;
 
-    let len = paged_raw_solution.len();
-
-    // 1. Submit all solution pages.
-    for (page, solution) in paged_raw_solution.into_iter() {
+    // Submit all pages in the batch
+    for (page, solution) in pages_to_submit.iter() {
         let tx_status = submit_inner(
             client,
             signer.clone(),
-            MultiBlockTransaction::submit_page::<T>(page, Some(solution))?,
+            MultiBlockTransaction::submit_page::<T>(*page, Some(solution.clone()))?,
             nonce,
         )
         .await?;
@@ -463,14 +460,14 @@ where
         txs.push(async move {
             match utils::wait_tx_in_block_for_strategy(tx_status, listen).await {
                 Ok(tx) => Ok(tx),
-                Err(_) => Err(page),
+                Err(_) => Err(*page),
             }
         });
 
         nonce += 1;
     }
 
-    // 2. Wait for all pages to be included in a block.
+    // Wait for all pages in the batch to be included in a block
     let mut failed_pages = Vec::new();
     let mut submitted_pages = HashSet::new();
 
@@ -478,9 +475,9 @@ where
         match page {
             Ok(tx) => {
                 let hash = tx.block_hash();
-
-                // NOTE: It's slow to iterate over the events and that's we are
-                // submitting all pages "at once" and several pages are submitted in the same block.
+                // NOTE: It's slow to iterate over the events and that's the main reason why
+                // submitting all pages "at once" with several pages submitted in the same block
+                // is faster than a sequential or chuncked submission.
                 let events = tx.wait_for_success().await?;
                 for event in events.iter() {
                     let event = event?;
@@ -504,10 +501,31 @@ where
                 failed_pages.push(p);
             }
         }
+    }
 
-        if submitted_pages.len() == len {
-            return Ok(vec![]);
-        }
+    Ok((failed_pages, submitted_pages))
+}
+
+/// Submit all solution pages concurrently.
+pub(crate) async fn inner_submit_pages_concurrent<T: MinerConfig + Send + Sync + 'static>(
+    client: &Client,
+    signer: &Signer,
+    paged_raw_solution: Vec<(u32, T::Solution)>,
+    listen: Listen,
+) -> Result<Vec<u32>, Error>
+where
+    T::Solution: Send + Sync + 'static,
+    T::Pages: Send + Sync + 'static,
+{
+    let len = paged_raw_solution.len();
+
+    // Submit all pages in a single batch
+    let (failed_pages, submitted_pages) =
+        submit_pages_batch::<T>(client, signer, &paged_raw_solution, listen).await?;
+
+    // If all pages were submitted successfully, we're done
+    if submitted_pages.len() == len {
+        return Ok(vec![]);
     }
 
     Ok(failed_pages)
@@ -543,62 +561,15 @@ where
             total_pages
         );
 
-        let mut txs = FuturesUnordered::new();
-        let mut nonce = client
-            .rpc()
-            .system_account_next_index(signer.account_id())
-            .await?;
+        // Submit the current chunk
+        let (chunk_failed_pages, chunk_submitted_pages) =
+            submit_pages_batch::<T>(client, signer, chunk, listen).await?;
 
-        // Submit all pages in the current chunk
-        for (page, solution) in chunk.iter() {
-            let tx_status = submit_inner(
-                client,
-                signer.clone(),
-                MultiBlockTransaction::submit_page::<T>(*page, Some(solution.clone()))?,
-                nonce,
-            )
-            .await?;
+        // Add failed pages to the overall list
+        failed_pages.extend(chunk_failed_pages);
 
-            txs.push(async move {
-                match utils::wait_tx_in_block_for_strategy(tx_status, listen).await {
-                    Ok(tx) => Ok(tx),
-                    Err(_) => Err(*page),
-                }
-            });
-
-            nonce += 1;
-        }
-
-        // Wait for all pages in the current chunk to be included in a block
-        while let Some(page) = txs.next().await {
-            match page {
-                Ok(tx) => {
-                    let hash = tx.block_hash();
-
-                    let events = tx.wait_for_success().await?;
-                    for event in events.iter() {
-                        let event = event?;
-
-                        if let Some(solution_stored) =
-                            event.as_event::<runtime::multi_block_signed::events::Stored>()?
-                        {
-                            let page = solution_stored.2;
-
-                            log::info!(
-                                target: LOG_TARGET,
-                                "Page {page} included in block {:?}",
-                                hash
-                            );
-
-                            submitted_pages.insert(solution_stored.2);
-                        }
-                    }
-                }
-                Err(p) => {
-                    failed_pages.push(p);
-                }
-            }
-        }
+        // Add submitted pages to the overall set
+        submitted_pages.extend(chunk_submitted_pages);
 
         // If all pages have been submitted, we're done
         if submitted_pages.len() == total_pages {
