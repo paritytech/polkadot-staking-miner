@@ -447,6 +447,9 @@ where
         .system_account_next_index(signer.account_id())
         .await?;
 
+    // Create a map to track which page corresponds to which transaction
+    let mut page_to_tx = Vec::new();
+
     // Submit all pages in the batch
     for (page, solution) in pages_to_submit.into_iter() {
         let tx_status = submit_inner(
@@ -456,6 +459,9 @@ where
             nonce,
         )
         .await?;
+
+        // Store the page number with the transaction
+        page_to_tx.push(page);
 
         txs.push(async move {
             match utils::wait_tx_in_block_for_strategy(tx_status, listen).await {
@@ -470,35 +476,69 @@ where
     // Wait for all pages in the batch to be included in a block
     let mut failed_pages = Vec::new();
     let mut submitted_pages = HashSet::new();
+    let mut processed_pages = HashSet::new();
 
+    let mut tx_index = 0;
     while let Some(page) = txs.next().await {
         match page {
             Ok(tx) => {
                 let hash = tx.block_hash();
-                // NOTE: It's slow to iterate over the events and that's the main reason why
-                // submitting all pages "at once" with several pages submitted in the same block
-                // is faster than a sequential or chuncked submission.
-                let events = tx.wait_for_success().await?;
-                for event in events.iter() {
-                    let event = event?;
 
-                    if let Some(solution_stored) =
-                        event.as_event::<runtime::multi_block_signed::events::Stored>()?
-                    {
-                        let page = solution_stored.2;
+                // Instead of waiting for events, use a polling mechanism with exponential backoff
+                let mut retries = 0;
+                let max_retries = 10;
+                let mut backoff_ms = 100;
 
-                        log::info!(
-                            target: LOG_TARGET,
-                            "Page {page} included in block {:?}",
-                            hash
-                        );
+                let mut page_confirmed = false;
+                while retries < max_retries && !page_confirmed {
+                    // Check if the page was successfully submitted by querying the storage
+                    let storage = utils::storage_at(Some(hash), client.chain_api()).await?;
+                    let round = storage
+                        .fetch_or_default(&runtime::storage().multi_block().round())
+                        .await?;
 
-                        submitted_pages.insert(solution_stored.2);
+                    // Get the submission metadata for the current account
+                    let submission = storage
+                        .fetch(
+                            &runtime::storage()
+                                .multi_block_signed()
+                                .submission_metadata_storage(round, signer.account_id()),
+                        )
+                        .await?;
+
+                    // If we have submission metadata and the page is marked as submitted, add it to our set
+                    if let Some(submission) = submission {
+                        // Get the page number for this transaction
+                        let page_num = page_to_tx[tx_index];
+
+                        // Check if this specific page is marked as submitted
+                        if let Some(submitted) = submission.pages.0.get(page_num as usize) {
+                            if *submitted && !processed_pages.contains(&page_num) {
+                                log::info!(
+                                    target: LOG_TARGET,
+                                    "Page {page_num} confirmed in block {:?}",
+                                    hash
+                                );
+                                submitted_pages.insert(page_num);
+                                processed_pages.insert(page_num);
+                                page_confirmed = true;
+                            }
+                        }
+                    }
+
+                    if !page_confirmed {
+                        // Exponential backoff with a maximum of 1 second
+                        tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+                        backoff_ms = std::cmp::min(backoff_ms * 2, 1000);
+                        retries += 1;
                     }
                 }
+
+                tx_index += 1;
             }
             Err(p) => {
                 failed_pages.push(p);
+                tx_index += 1;
             }
         }
     }
@@ -519,12 +559,56 @@ where
 {
     let len = paged_raw_solution.len();
 
-    // Submit all pages in a single batch
+    // First, check which pages are already submitted to avoid resubmitting
+    let storage = utils::storage_at_head(client, listen).await?;
+    let round = storage
+        .fetch_or_default(&runtime::storage().multi_block().round())
+        .await?;
+
+    // Get the submission metadata for the current account
+    let submission = storage
+        .fetch(
+            &runtime::storage()
+                .multi_block_signed()
+                .submission_metadata_storage(round, signer.account_id()),
+        )
+        .await?;
+
+    // Filter out pages that are already submitted
+    let mut pages_to_submit = Vec::new();
+    let mut already_submitted = HashSet::new();
+
+    if let Some(submission) = submission {
+        for (page, solution) in paged_raw_solution {
+            if let Some(submitted) = submission.pages.0.get(page as usize) {
+                if *submitted {
+                    already_submitted.insert(page);
+                } else {
+                    pages_to_submit.push((page, solution));
+                }
+            } else {
+                pages_to_submit.push((page, solution));
+            }
+        }
+    } else {
+        pages_to_submit = paged_raw_solution;
+    }
+
+    // If all pages are already submitted, we're done
+    if already_submitted.len() == len {
+        return Ok(vec![]);
+    }
+
+    // Submit only the pages that haven't been submitted yet
     let (failed_pages, submitted_pages) =
-        submit_pages_batch::<T>(client, signer, paged_raw_solution, listen).await?;
+        submit_pages_batch::<T>(client, signer, pages_to_submit, listen).await?;
+
+    // Combine already submitted pages with newly submitted pages
+    let mut all_submitted = already_submitted;
+    all_submitted.extend(submitted_pages);
 
     // If all pages were submitted successfully, we're done
-    if submitted_pages.len() == len {
+    if all_submitted.len() == len {
         return Ok(vec![]);
     }
 
@@ -550,11 +634,50 @@ where
     let mut submitted_pages = HashSet::new();
     let total_pages = paged_raw_solution.len();
 
-    // Process pages in chunks
-    for chunk_start in (0..total_pages).step_by(chunk_size) {
-        let chunk_end = std::cmp::min(chunk_start + chunk_size, total_pages);
+    // First, check which pages are already submitted to avoid resubmitting
+    let storage = utils::storage_at_head(client, listen).await?;
+    let round = storage
+        .fetch_or_default(&runtime::storage().multi_block().round())
+        .await?;
 
-        let chunk: Vec<_> = paged_raw_solution[chunk_start..chunk_end]
+    // Get the submission metadata for the current account
+    let submission = storage
+        .fetch(
+            &runtime::storage()
+                .multi_block_signed()
+                .submission_metadata_storage(round, signer.account_id()),
+        )
+        .await?;
+
+    // Filter out pages that are already submitted
+    let mut pages_to_submit = Vec::new();
+
+    if let Some(submission) = submission {
+        for (page, solution) in paged_raw_solution {
+            if let Some(submitted) = submission.pages.0.get(page as usize) {
+                if *submitted {
+                    submitted_pages.insert(page);
+                } else {
+                    pages_to_submit.push((page, solution));
+                }
+            } else {
+                pages_to_submit.push((page, solution));
+            }
+        }
+    } else {
+        pages_to_submit = paged_raw_solution;
+    }
+
+    // If all pages are already submitted, we're done
+    if submitted_pages.len() == total_pages {
+        return Ok(vec![]);
+    }
+
+    // Process pages in chunks
+    for chunk_start in (0..pages_to_submit.len()).step_by(chunk_size) {
+        let chunk_end = std::cmp::min(chunk_start + chunk_size, pages_to_submit.len());
+
+        let chunk: Vec<_> = pages_to_submit[chunk_start..chunk_end]
             .iter()
             .map(|(page, solution)| (*page, solution.clone()))
             .collect();
@@ -564,7 +687,7 @@ where
             "Submitting chunk of pages {}-{} of {}",
             chunk_start,
             chunk_end - 1,
-            total_pages
+            pages_to_submit.len()
         );
 
         // Submit the current chunk
