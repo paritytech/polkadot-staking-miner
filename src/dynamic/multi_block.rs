@@ -335,7 +335,12 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
     signer: &Signer,
     mut paged_raw_solution: PagedRawSolution<T>,
     listen: Listen,
-) -> Result<(), Error> {
+    chunk_size: usize,
+) -> Result<(), Error>
+where
+    T::Solution: Send + Sync + 'static,
+    T::Pages: Send + Sync + 'static,
+{
     let mut i = 0;
     let tx_status = loop {
         let nonce = client
@@ -384,8 +389,14 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
         .map(|(page, solution)| (page as u32, solution.clone()))
         .collect::<Vec<_>>();
 
-    // 2. Submit all solution pages.
-    let failed_pages = inner_submit_pages::<T>(client, signer, solutions, listen).await?;
+    // 2. Submit all solution pages using the appropriate strategy based on chunk_size
+    let failed_pages = if chunk_size == 0 {
+        // Use fully concurrent submission
+        inner_submit_pages_concurrent::<T>(client, signer, solutions, listen).await?
+    } else {
+        // Use chunked concurrent submission
+        inner_submit_pages_chunked::<T>(client, signer, solutions, listen, chunk_size).await?
+    };
 
     // 3. All pages were submitted successfully, we are done.
     if failed_pages.is_empty() {
@@ -405,7 +416,12 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
         solutions.push((page, solution));
     }
 
-    let failed_pages = inner_submit_pages::<T>(client, signer, solutions, listen).await?;
+    // Retry with the same strategy as the initial submission
+    let failed_pages = if chunk_size == 0 {
+        inner_submit_pages_concurrent::<T>(client, signer, solutions, listen).await?
+    } else {
+        inner_submit_pages_chunked::<T>(client, signer, solutions, listen, chunk_size).await?
+    };
 
     if failed_pages.is_empty() {
         Ok(())
@@ -414,12 +430,17 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
     }
 }
 
-pub(crate) async fn inner_submit_pages<T: MinerConfig + Send + Sync + 'static>(
+/// Submit all solution pages concurrently.
+pub(crate) async fn inner_submit_pages_concurrent<T: MinerConfig + Send + Sync + 'static>(
     client: &Client,
     signer: &Signer,
     paged_raw_solution: Vec<(u32, T::Solution)>,
     listen: Listen,
-) -> Result<Vec<u32>, Error> {
+) -> Result<Vec<u32>, Error>
+where
+    T::Solution: Send + Sync + 'static,
+    T::Pages: Send + Sync + 'static,
+{
     let mut txs = FuturesUnordered::new();
 
     let mut nonce = client
@@ -485,6 +506,102 @@ pub(crate) async fn inner_submit_pages<T: MinerConfig + Send + Sync + 'static>(
         }
 
         if submitted_pages.len() == len {
+            return Ok(vec![]);
+        }
+    }
+
+    Ok(failed_pages)
+}
+
+/// Submit solution pages in chunks, waiting for each chunk to be included in a block
+/// before submitting the next chunk.
+pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + Send + Sync + 'static>(
+    client: &Client,
+    signer: &Signer,
+    paged_raw_solution: Vec<(u32, T::Solution)>,
+    listen: Listen,
+    chunk_size: usize,
+) -> Result<Vec<u32>, Error>
+where
+    T::Solution: Send + Sync + 'static,
+    T::Pages: Send + Sync + 'static,
+{
+    let mut failed_pages = Vec::new();
+    let mut submitted_pages = HashSet::new();
+    let total_pages = paged_raw_solution.len();
+
+    // Process pages in chunks
+    for chunk_start in (0..total_pages).step_by(chunk_size) {
+        let chunk_end = std::cmp::min(chunk_start + chunk_size, total_pages);
+        let chunk = &paged_raw_solution[chunk_start..chunk_end];
+
+        log::info!(
+            target: LOG_TARGET,
+            "Submitting chunk of pages {}-{} of {}",
+            chunk_start,
+            chunk_end - 1,
+            total_pages
+        );
+
+        let mut txs = FuturesUnordered::new();
+        let mut nonce = client
+            .rpc()
+            .system_account_next_index(signer.account_id())
+            .await?;
+
+        // Submit all pages in the current chunk
+        for (page, solution) in chunk.iter() {
+            let tx_status = submit_inner(
+                client,
+                signer.clone(),
+                MultiBlockTransaction::submit_page::<T>(*page, Some(solution.clone()))?,
+                nonce,
+            )
+            .await?;
+
+            txs.push(async move {
+                match utils::wait_tx_in_block_for_strategy(tx_status, listen).await {
+                    Ok(tx) => Ok(tx),
+                    Err(_) => Err(*page),
+                }
+            });
+
+            nonce += 1;
+        }
+
+        // Wait for all pages in the current chunk to be included in a block
+        while let Some(page) = txs.next().await {
+            match page {
+                Ok(tx) => {
+                    let hash = tx.block_hash();
+
+                    let events = tx.wait_for_success().await?;
+                    for event in events.iter() {
+                        let event = event?;
+
+                        if let Some(solution_stored) =
+                            event.as_event::<runtime::multi_block_signed::events::Stored>()?
+                        {
+                            let page = solution_stored.2;
+
+                            log::info!(
+                                target: LOG_TARGET,
+                                "Page {page} included in block {:?}",
+                                hash
+                            );
+
+                            submitted_pages.insert(solution_stored.2);
+                        }
+                    }
+                }
+                Err(p) => {
+                    failed_pages.push(p);
+                }
+            }
+        }
+
+        // If all pages have been submitted, we're done
+        if submitted_pages.len() == total_pages {
             return Ok(vec![]);
         }
     }

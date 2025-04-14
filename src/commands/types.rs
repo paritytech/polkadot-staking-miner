@@ -185,4 +185,11 @@ pub struct ExperimentalMultiBlockMonitorConfig {
     /// Reduce the solution to prevent further trimming.
     #[clap(long, default_value_t = false)]
     pub do_reduce: bool,
+
+    /// Chunk size for submitting solution pages. If not specified or equal to zero,
+    /// all pages will be submitted concurrently. Otherwise, pages will be submitted in chunks
+    /// of the specified size, waiting for each chunk to be included in a block before
+    /// submitting the next chunk.
+    #[clap(long, default_value_t = 0)]
+    pub chunk_size: usize,
 }
