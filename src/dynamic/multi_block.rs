@@ -434,7 +434,7 @@ where
 async fn submit_pages_batch<T: MinerConfig + Send + Sync + 'static>(
     client: &Client,
     signer: &Signer,
-    pages_to_submit: &[(u32, T::Solution)],
+    pages_to_submit: Vec<(u32, T::Solution)>,
     listen: Listen,
 ) -> Result<(Vec<u32>, HashSet<u32>), Error>
 where
@@ -448,11 +448,11 @@ where
         .await?;
 
     // Submit all pages in the batch
-    for (page, solution) in pages_to_submit.iter() {
+    for (page, solution) in pages_to_submit.into_iter() {
         let tx_status = submit_inner(
             client,
             signer.clone(),
-            MultiBlockTransaction::submit_page::<T>(*page, Some(solution.clone()))?,
+            MultiBlockTransaction::submit_page::<T>(page, Some(solution))?,
             nonce,
         )
         .await?;
@@ -460,7 +460,7 @@ where
         txs.push(async move {
             match utils::wait_tx_in_block_for_strategy(tx_status, listen).await {
                 Ok(tx) => Ok(tx),
-                Err(_) => Err(*page),
+                Err(_) => Err(page),
             }
         });
 
@@ -521,7 +521,7 @@ where
 
     // Submit all pages in a single batch
     let (failed_pages, submitted_pages) =
-        submit_pages_batch::<T>(client, signer, &paged_raw_solution, listen).await?;
+        submit_pages_batch::<T>(client, signer, paged_raw_solution, listen).await?;
 
     // If all pages were submitted successfully, we're done
     if submitted_pages.len() == len {
@@ -544,6 +544,8 @@ where
     T::Solution: Send + Sync + 'static,
     T::Pages: Send + Sync + 'static,
 {
+    assert!(chunk_size > 0, "Chunk size must be greater than 0");
+
     let mut failed_pages = Vec::new();
     let mut submitted_pages = HashSet::new();
     let total_pages = paged_raw_solution.len();
@@ -551,7 +553,11 @@ where
     // Process pages in chunks
     for chunk_start in (0..total_pages).step_by(chunk_size) {
         let chunk_end = std::cmp::min(chunk_start + chunk_size, total_pages);
-        let chunk = &paged_raw_solution[chunk_start..chunk_end];
+
+        let chunk: Vec<_> = paged_raw_solution[chunk_start..chunk_end]
+            .iter()
+            .map(|(page, solution)| (*page, solution.clone()))
+            .collect();
 
         log::info!(
             target: LOG_TARGET,

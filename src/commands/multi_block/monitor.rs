@@ -49,7 +49,6 @@ where
             .fetch(&runtime::storage().system().account(signer.account_id()))
             .await?
             .ok_or(Error::AccountDoesNotExists)?;
-
         prometheus::set_balance(account_info.data.free as f64);
 
         log::info!(
