@@ -578,13 +578,13 @@ where
     let mut submitted_pages = HashSet::new();
     let total_pages = paged_raw_solution.len();
 
-    // Process pages in chunks
-    for chunk_start in (0..total_pages).step_by(chunk_size) {
-        let chunk_end = std::cmp::min(chunk_start + chunk_size, total_pages);
-        let chunk = paged_raw_solution[chunk_start..chunk_end].to_vec();
+    // Process pages in chunks using the built-in chunks method
+    for chunk in paged_raw_solution.chunks(chunk_size) {
+        // Convert the chunk slice to a Vec to pass to submit_pages_batch
+        let chunk_vec = chunk.to_vec();
 
         // Get the actual page numbers in this chunk for logging
-        let chunk_page_numbers: Vec<u32> = chunk.iter().map(|(page, _)| *page).collect();
+        let chunk_page_numbers: Vec<u32> = chunk_vec.iter().map(|(page, _)| *page).collect();
 
         log::info!(
             target: LOG_TARGET,
@@ -595,7 +595,7 @@ where
 
         // Submit the current chunk
         let (chunk_failed_pages, chunk_submitted_pages) =
-            submit_pages_batch::<T>(client, signer, chunk, listen).await?;
+            submit_pages_batch::<T>(client, signer, chunk_vec, listen).await?;
 
         // Check if we have failed pages before extending the overall lists
         if !chunk_failed_pages.is_empty() {
