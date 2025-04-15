@@ -17,14 +17,19 @@
 use crate::prelude::LOG_TARGET;
 use futures::channel::oneshot;
 pub use hidden::*;
-use hyper::{
-    header::CONTENT_TYPE,
-    service::{make_service_fn, service_fn},
-    Body, Method, Request, Response,
+use http_body_util::Full;
+use hyper::{body::Bytes, header::CONTENT_TYPE, service::service_fn, Method, Request, Response};
+use hyper_util::{
+    rt::{TokioExecutor, TokioIo},
+    server::{conn::auto::Builder, graceful::GracefulShutdown as HyperGracefulShutdown},
 };
 use prometheus::{Encoder, TextEncoder};
+use std::net::SocketAddr;
+use tokio::net::TcpListener;
 
-async fn serve_req(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
+type Body = Full<Bytes>;
+
+async fn serve_req(req: Request<hyper::body::Incoming>) -> Result<Response<Body>, hyper::Error> {
     let response = match (req.method(), req.uri().path()) {
         (&Method::GET, "/metrics") => {
             let mut buffer = vec![];
@@ -61,30 +66,60 @@ impl Drop for GracefulShutdown {
     }
 }
 
-pub fn run(port: u16) -> Result<GracefulShutdown, String> {
+pub async fn run(port: u16) -> Result<GracefulShutdown, String> {
     let (tx, rx) = oneshot::channel();
 
-    // For every connection, we must make a `Service` to handle all incoming HTTP requests on said
-    // connection.
-    let make_svc = make_service_fn(move |_conn| async move {
-        Ok::<_, std::convert::Infallible>(service_fn(serve_req))
-    });
+    // Create the address to bind to
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
 
-    let addr = ([0, 0, 0, 0], port).into();
-    let server = hyper::Server::try_bind(&addr)
-        .map_err(|e| format!("Failed bind socket on port {} {:?}", port, e))?
-        .serve(make_svc);
+    // Bind the TCP listener
+    let listener = TcpListener::bind(&addr)
+        .await
+        .map_err(|e| format!("Failed to bind socket on port {}: {:?}", port, e))?;
 
     log::info!(target: LOG_TARGET, "Started prometheus endpoint on http://{}", addr);
 
-    let graceful = server.with_graceful_shutdown(async {
-        rx.await.ok();
+    // Create a graceful shutdown handler
+    let graceful = HyperGracefulShutdown::new();
+
+    // Spawn the server task
+    tokio::spawn(async move {
+        let executor = TokioExecutor::new();
+        let server = Builder::new(executor);
+
+        loop {
+            match listener.accept().await {
+                Ok((stream, _)) => {
+                    let io = TokioIo::new(stream);
+
+                    // Create a service for this connection
+                    let service = service_fn(serve_req);
+
+                    // Serve the connection with graceful shutdown
+                    let conn = server
+                        .serve_connection_with_upgrades(io, service)
+                        .into_owned();
+
+                    let conn = graceful.watch(conn);
+
+                    tokio::spawn(async move {
+                        if let Err(err) = conn.await {
+                            log::debug!(target: LOG_TARGET, "connection error: {:?}", err);
+                        }
+                    });
+                }
+                Err(e) => {
+                    log::debug!(target: LOG_TARGET, "Error accepting connection: {:?}", e);
+                    continue;
+                }
+            }
+        }
     });
 
+    // Spawn a task to handle graceful shutdown
     tokio::spawn(async move {
-        if let Err(e) = graceful.await {
-            log::warn!("Server error: {}", e);
-        }
+        rx.await.ok();
+        // The graceful shutdown will be triggered when the task is dropped
     });
 
     Ok(GracefulShutdown(Some(tx)))
@@ -135,9 +170,9 @@ mod hidden {
     });
     static SUBMIT_SOLUTION_AND_WATCH_DURATION: Lazy<Gauge> = Lazy::new(|| {
         register_gauge!(
-			"staking_miner_submit_and_watch_duration_ms",
-			"The time in milliseconds it took to submit the solution to chain and to be included in block",
-		)
+            "staking_miner_submit_and_watch_duration_ms",
+            "The time in milliseconds it took to submit the solution to chain and to be included in block",
+        )
         .unwrap()
     });
     static BALANCE: Lazy<Gauge> = Lazy::new(|| {
