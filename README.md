@@ -32,6 +32,14 @@ it's not possible to know in advance which runtimes it will work with.
 Thus, it's important to subscribe to releases to this repo or
 add some logic that triggers an alert once the polkadot-staking-miner crashes.
 
+## Important Warning
+
+**Do not run multiple instances of the miner with the same account.**
+
+The miner uses the on-chain nonce for a given user to submit solutions, which can lead to nonce
+collisions if multiple miners are running with the same account. This can cause transaction
+failures and potentially result in lost rewards or other issues.
+
 ## Usage
 
 You can check the help with:
