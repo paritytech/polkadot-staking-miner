@@ -430,13 +430,29 @@ where
     }
 }
 
+/// Result of a page submission batch
+#[derive(Debug)]
+pub struct SubmissionResult {
+    /// Pages that failed to be included in blocks
+    pub failed_pages: Vec<u32>,
+    /// Pages that were successfully included in blocks
+    pub submitted_pages: HashSet<u32>,
+}
+
+impl SubmissionResult {
+    /// Check if all pages were submitted successfully
+    pub fn all_successful(&self) -> bool {
+        self.failed_pages.is_empty()
+    }
+}
+
 /// Helper function to submit a batch of pages and wait for their inclusion in blocks
 async fn submit_pages_batch<T: MinerConfig + Send + Sync + 'static>(
     client: &Client,
     signer: &Signer,
     pages_to_submit: Vec<(u32, T::Solution)>,
     listen: Listen,
-) -> Result<(Vec<u32>, HashSet<u32>), Error>
+) -> Result<SubmissionResult, Error>
 where
     T::Solution: Send + Sync + 'static,
     T::Pages: Send + Sync + 'static,
@@ -531,7 +547,10 @@ where
 
     let failed_pages: Vec<u32> = failed_pages_set.into_iter().collect();
 
-    Ok((failed_pages, submitted_pages))
+    Ok(SubmissionResult {
+        failed_pages,
+        submitted_pages,
+    })
 }
 
 /// Submit all solution pages concurrently.
@@ -545,18 +564,15 @@ where
     T::Solution: Send + Sync + 'static,
     T::Pages: Send + Sync + 'static,
 {
-    let len = paged_raw_solution.len();
-
     // Submit all pages in a single batch
-    let (failed_pages, submitted_pages) =
-        submit_pages_batch::<T>(client, signer, paged_raw_solution, listen).await?;
+    let result = submit_pages_batch::<T>(client, signer, paged_raw_solution, listen).await?;
 
     // If all pages were submitted successfully, we're done
-    if submitted_pages.len() == len {
+    if result.all_successful() {
         return Ok(vec![]);
     }
 
-    Ok(failed_pages)
+    Ok(result.failed_pages)
 }
 
 /// Submit solution pages in chunks, waiting for each chunk to be included in a block
@@ -594,25 +610,24 @@ where
         );
 
         // Submit the current chunk
-        let (chunk_failed_pages, chunk_submitted_pages) =
-            submit_pages_batch::<T>(client, signer, chunk_vec, listen).await?;
+        let result = submit_pages_batch::<T>(client, signer, chunk_vec, listen).await?;
 
         // Check if we have failed pages before extending the overall lists
-        if !chunk_failed_pages.is_empty() {
+        if !result.all_successful() {
             log::warn!(
                 target: LOG_TARGET,
                 "Pages {:?} failed to be included in blocks",
-                chunk_failed_pages
+                result.failed_pages
             );
 
             // Add the failed pages from this chunk to the overall list
-            failed_pages.extend(chunk_failed_pages);
+            failed_pages.extend(result.failed_pages);
 
             return Ok(failed_pages);
         }
 
         // Add submitted pages to the overall set
-        submitted_pages.extend(chunk_submitted_pages);
+        submitted_pages.extend(result.submitted_pages);
 
         log::info!(
             target: LOG_TARGET,
