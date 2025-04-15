@@ -7,7 +7,7 @@ This is a re-write of the [staking miner](https://github.com/paritytech/polkadot
 The miner can work with two kinds of nodes:
 
 - **multi-phase (legacy)** , targeting the multi-phase, single paged election provider pallet
-- **multi-block (experimental) **, targeting the multi-phase, multi-block election provider pallet.
+- **multi-block (experimental)**, targeting the multi-phase, multi-block election provider pallet.
 
 The legacy path is intended to be temporary until all chains are migrated to multi-page staking (`asset-hub`).
 Once that occurs, we can remove the legacy components and rename the experimental monitor command to `monitor`.
@@ -102,6 +102,18 @@ This command is similar to the stable `monitor command` but targets the new pall
 
 ```bash
 polkadot-staking-miner --uri ws://127.0.0.1:9966 experimental-monitor-multi-block --seed-or-path //Alice
+```
+
+The `--chunk-size` option controls how many solution pages are submitted concurrently. When set to 0 (default), all pages are submitted at once. When set to a positive number, pages are submitted in chunks of that size, waiting for each chunk to be included in a block before submitting the next chunk. This can help manage network load and improve reliability on congested networks or if the pages per solution increases.
+
+```bash
+polkadot-staking-miner --uri ws://127.0.0.1:9966 experimental-monitor-multi-block --seed-or-path //Alice --chunk-size 4
+```
+
+The `--do-reduce` option (off by default) enables solution reduction, to prevent further trimming, making submission more efficient.
+
+```bash
+polkadot-staking-miner --uri ws://127.0.0.1:9966 experimental-monitor-multi-block --seed-or-path //Alice --do-reduce
 ```
 
 ### Prepare your SEED

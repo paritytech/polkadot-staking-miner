@@ -31,7 +31,7 @@ pub async fn monitor_cmd<T>(
 ) -> Result<(), Error>
 where
     T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
-    T::Solution: Send,
+    T::Solution: Send + Sync + 'static,
     T::Pages: Send + Sync + 'static,
     T::TargetSnapshotPerBlock: Send + Sync + 'static,
     T::VoterSnapshotPerBlock: Send + Sync + 'static,
@@ -135,6 +135,7 @@ where
                 submit_lock,
                 config.submission_strategy,
                 config.do_reduce,
+                config.chunk_size,
             )
             .await
             {
@@ -165,14 +166,15 @@ async fn process_block<T>(
     submit_lock: Arc<Mutex<()>>,
     submission_strategy: SubmissionStrategy,
     do_reduce: bool,
+    chunk_size: usize,
 ) -> Result<(), Error>
 where
     T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
-    T::Solution: Send,
-    T::Pages: Send,
+    T::Solution: Send + Sync + 'static,
+    T::Pages: Send + Sync + 'static,
     T::TargetSnapshotPerBlock: Send,
     T::VoterSnapshotPerBlock: Send,
-    T::MaxVotesPerVoter: Send,
+    T::MaxVotesPerVoter: Send + Sync + 'static,
 {
     let BlockDetails {
         storage,
@@ -268,7 +270,25 @@ where
                     missing_pages.push((page, solution));
                 }
 
-                dynamic::inner_submit_pages::<T>(&client, &signer, missing_pages, listen).await?;
+                // Use the appropriate submission method based on chunk_size
+                if chunk_size == 0 {
+                    dynamic::inner_submit_pages_concurrent::<T>(
+                        &client,
+                        &signer,
+                        missing_pages,
+                        listen,
+                    )
+                    .await?;
+                } else {
+                    dynamic::inner_submit_pages_chunked::<T>(
+                        &client,
+                        &signer,
+                        missing_pages,
+                        listen,
+                        chunk_size,
+                    )
+                    .await?;
+                }
                 return Ok(());
             }
 
@@ -301,7 +321,7 @@ where
     prometheus::set_score(paged_raw_solution.score);
 
     // 7. Submit the score and solution to the chain.
-    match dynamic::submit(&client, &signer, paged_raw_solution, listen)
+    match dynamic::submit(&client, &signer, paged_raw_solution, listen, chunk_size)
         .timed()
         .await
     {
