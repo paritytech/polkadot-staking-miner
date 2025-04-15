@@ -111,9 +111,9 @@ async fn main() -> Result<(), Error> {
     let runtime_version: RuntimeVersion =
         client.rpc().state_get_runtime_version(None).await?.into();
     let chain = opt::Chain::from_str(&runtime_version.spec_name)?;
-    let _prometheus_handle = prometheus::run(prometheus_port)
-        .await
-        .map_err(|e| log::warn!("Failed to start prometheus endpoint: {}", e));
+    if let Err(e) = prometheus::run(prometheus_port).await {
+        log::warn!("Failed to start prometheus endpoint: {}", e);
+    }
     log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
 
     let is_legacy = !matches!(command, Command::ExperimentalMonitorMultiBlock(_));

@@ -15,13 +15,12 @@
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
 use crate::prelude::LOG_TARGET;
-use futures::channel::oneshot;
 pub use hidden::*;
 use http_body_util::Full;
 use hyper::{body::Bytes, header::CONTENT_TYPE, service::service_fn, Method, Request, Response};
 use hyper_util::{
     rt::{TokioExecutor, TokioIo},
-    server::{conn::auto::Builder, graceful::GracefulShutdown as HyperGracefulShutdown},
+    server::{conn::auto::Builder, graceful::GracefulShutdown},
 };
 use prometheus::{Encoder, TextEncoder};
 use std::net::SocketAddr;
@@ -56,19 +55,7 @@ async fn serve_req(req: Request<hyper::body::Incoming>) -> Result<Response<Body>
     Ok(response)
 }
 
-pub struct GracefulShutdown(Option<oneshot::Sender<()>>);
-
-impl Drop for GracefulShutdown {
-    fn drop(&mut self) {
-        if let Some(handle) = self.0.take() {
-            let _ = handle.send(());
-        }
-    }
-}
-
-pub async fn run(port: u16) -> Result<GracefulShutdown, String> {
-    let (tx, rx) = oneshot::channel();
-
+pub async fn run(port: u16) -> Result<(), String> {
     // Create the address to bind to
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
 
@@ -80,7 +67,7 @@ pub async fn run(port: u16) -> Result<GracefulShutdown, String> {
     log::info!(target: LOG_TARGET, "Started prometheus endpoint on http://{}", addr);
 
     // Create a graceful shutdown handler
-    let graceful = HyperGracefulShutdown::new();
+    let graceful = GracefulShutdown::new();
 
     // Spawn the server task
     tokio::spawn(async move {
@@ -116,13 +103,7 @@ pub async fn run(port: u16) -> Result<GracefulShutdown, String> {
         }
     });
 
-    // Spawn a task to handle graceful shutdown
-    tokio::spawn(async move {
-        rx.await.ok();
-        // The graceful shutdown will be triggered when the task is dropped
-    });
-
-    Ok(GracefulShutdown(Some(tx)))
+    Ok(())
 }
 
 mod hidden {
