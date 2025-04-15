@@ -336,11 +336,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
     mut paged_raw_solution: PagedRawSolution<T>,
     listen: Listen,
     chunk_size: usize,
-) -> Result<(), Error>
-where
-    T::Solution: Send + Sync + 'static,
-    T::Pages: Send + Sync + 'static,
-{
+) -> Result<(), Error> {
     let mut i = 0;
     let tx_status = loop {
         let nonce = client
@@ -447,16 +443,12 @@ impl SubmissionResult {
 }
 
 /// Helper function to submit a batch of pages and wait for their inclusion in blocks
-async fn submit_pages_batch<T: MinerConfig + Send + Sync + 'static>(
+async fn submit_pages_batch<T: MinerConfig + 'static>(
     client: &Client,
     signer: &Signer,
     pages_to_submit: Vec<(u32, T::Solution)>,
     listen: Listen,
-) -> Result<SubmissionResult, Error>
-where
-    T::Solution: Send + Sync + 'static,
-    T::Pages: Send + Sync + 'static,
-{
+) -> Result<SubmissionResult, Error> {
     let mut txs = FuturesUnordered::new();
     let mut nonce = client
         .rpc()
@@ -554,16 +546,12 @@ where
 }
 
 /// Submit all solution pages concurrently.
-pub(crate) async fn inner_submit_pages_concurrent<T: MinerConfig + Send + Sync + 'static>(
+pub(crate) async fn inner_submit_pages_concurrent<T: MinerConfig + 'static>(
     client: &Client,
     signer: &Signer,
     paged_raw_solution: Vec<(u32, T::Solution)>,
     listen: Listen,
-) -> Result<Vec<u32>, Error>
-where
-    T::Solution: Send + Sync + 'static,
-    T::Pages: Send + Sync + 'static,
-{
+) -> Result<Vec<u32>, Error> {
     // Submit all pages in a single batch
     let result = submit_pages_batch::<T>(client, signer, paged_raw_solution, listen).await?;
 
@@ -577,17 +565,13 @@ where
 
 /// Submit solution pages in chunks, waiting for each chunk to be included in a block
 /// before submitting the next chunk.
-pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + Send + Sync + 'static>(
+pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
     client: &Client,
     signer: &Signer,
     paged_raw_solution: Vec<(u32, T::Solution)>,
     listen: Listen,
     chunk_size: usize,
-) -> Result<Vec<u32>, Error>
-where
-    T::Solution: Send + Sync + 'static,
-    T::Pages: Send + Sync + 'static,
-{
+) -> Result<Vec<u32>, Error> {
     assert!(chunk_size > 0, "Chunk size must be greater than 0");
 
     let mut failed_pages = Vec::new();
