@@ -112,137 +112,19 @@ where
         prometheus::set_balance(account_info.data.free as f64);
 
         let current_block_round = state.round;
-        let mut rounds_to_remove = Vec::new();
-        let mut rounds_to_potentially_clear = Vec::new();
-
-        // Scope to release lock quickly
-        {
-            let submitted_data = submitted_rounds.lock().await;
-            for (&round_to_check, &(n_pages, submitted_score)) in submitted_data.iter() {
-                // Only consider clearing submissions for rounds strictly older than the current round.
-                // This ensures clear_submission is never called for the current round
-                if round_to_check < current_block_round {
-                    rounds_to_potentially_clear.push((round_to_check, n_pages, submitted_score));
-                }
-            }
-        } // Lock released
 
         // This checking logic runs on EVERY block
-        if !rounds_to_potentially_clear.is_empty() {
-            log::debug!(target: LOG_TARGET, "Checking status of PAST rounds (< {}): {:?}", current_block_round, rounds_to_potentially_clear.iter().map(|(r,_,_)| r).collect::<Vec<_>>());
+        let rounds_to_potentially_clear =
+            collect_past_rounds_to_clear(&submitted_rounds, current_block_round).await;
 
-            // Use finalized state for checking past rounds
-            let get_finalized_storage = async {
-                let finalized_hash = client.rpc().chain_get_finalized_head().await?;
-                utils::storage_at(Some(finalized_hash), client.chain_api()).await
-            };
-            let storage_finalized = match get_finalized_storage.await {
-                Ok(s) => s,
-                Err::<_, Error>(e) => {
-                    log::warn!(target: LOG_TARGET, "Failed to get finalized storage state for checking old rounds: {:?}. Skipping check.", e);
-                    // Skip checking old rounds this iteration if we can't get finalized state
-                    rounds_to_potentially_clear.clear(); // Clear the list to avoid processing below
-                    continue; // Skip the rest of the checks for this block
-                }
-            };
-
-            for (round_to_check, n_pages, submitted_score) in rounds_to_potentially_clear {
-                // Check if our submission metadata still exists for this PAST round
-                let maybe_submission_metadata = storage_finalized
-                    .fetch(
-                        &runtime::storage()
-                            .multi_block_signed()
-                            .submission_metadata_storage(round_to_check, signer.account_id()),
-                    )
-                    .await?;
-
-                if maybe_submission_metadata.is_none() {
-                    log::debug!(target: LOG_TARGET, "Submission metadata for past round {} gone. Removing from tracking.", round_to_check);
-                    rounds_to_remove.push(round_to_check);
-                    continue; // Move to the next round to check
-                }
-
-                // Metadata exists for this PAST round. Check phase and potential winning solution.
-                let maybe_round_phase = storage_finalized
-                    .fetch(&runtime::storage().multi_block().current_phase())
-                    .await?;
-
-                let mut should_clear = false;
-                let mut clear_reason = "";
-
-                match maybe_round_phase {
-                    Some(Phase::SignedValidation(_)) => {
-                        // Check if a better solution was confirmed during its validation phase
-                        let sorted_scores = storage_finalized
-                            .fetch_or_default(
-                                &runtime::storage()
-                                    .multi_block_signed()
-                                    .sorted_scores(round_to_check),
-                            )
-                            .await?;
-                        if let Some((_, winning_score)) = sorted_scores.0.first() {
-                            if score_passes_strategy(
-                                winning_score.0, // Access the inner ElectionScore from Static<ElectionScore>
-                                submitted_score,
-                                SubmissionStrategy::IfLeading,
-                            ) && winning_score.0 != submitted_score
-                            {
-                                should_clear = true;
-                                clear_reason =
-                                    "Better solution validated during its SignedValidation phase";
-                            } else {
-                                log::trace!(target: LOG_TARGET, "Past round {} was in SignedValidation, but no better score confirmed.", round_to_check);
-                            }
-                        } else {
-                            log::trace!(target: LOG_TARGET, "Past round {} was in SignedValidation, but SortedScores is empty.", round_to_check);
-                        }
-                    }
-                    Some(Phase::Signed(_)) => {
-                        // Still in Signed phase, should not happen if round_to_check < current_block_round and finalized state is used.
-                        log::trace!(target: LOG_TARGET, "Past round {} unexpectedly found in Signed phase in finalized state.", round_to_check);
-                    }
-                    Some(_) | None => {
-                        should_clear = true;
-                        clear_reason = "Phase is past Signed/SignedValidation or round gone, and metadata still exists";
-                    }
-                }
-
-                // Attempt clearing if needed
-                if should_clear {
-                    log::info!(target: LOG_TARGET, "Submission for past round {} detected as DISCARDED (Reason: {}). Attempting to clear.", round_to_check, clear_reason);
-                    match clear_submission(
-                        config.listen,
-                        &client,
-                        signer.clone(),
-                        round_to_check,
-                        n_pages,
-                    )
-                    .await
-                    {
-                        Ok(_) => {
-                            log::info!(target: LOG_TARGET, "Successfully cleared submission for past round {}", round_to_check);
-                            rounds_to_remove.push(round_to_check); // Mark for removal
-                        }
-                        Err(e) => {
-                            log::error!(target: LOG_TARGET, "Failed to clear submission for past round {}: {:?}. Will retry.", round_to_check, e);
-                            // Don't remove, retry next block
-                        }
-                    }
-                } else {
-                    log::trace!(target: LOG_TARGET, "Conditions not met to clear past round {}.", round_to_check);
-                }
-            }
-        }
-
-        // Remove successfully cleared or confirmed non-existent rounds from tracking
-        if !rounds_to_remove.is_empty() {
-            let mut submitted_data = submitted_rounds.lock().await;
-            for round_index in rounds_to_remove {
-                if submitted_data.remove(&round_index).is_some() {
-                    log::info!(target: LOG_TARGET, "Removed past round {} from local tracking.", round_index);
-                }
-            }
-        }
+        check_and_clear_discarded_submissions(
+            &client,
+            &config,
+            &signer,
+            rounds_to_potentially_clear,
+            &submitted_rounds,
+        )
+        .await?;
 
         // This block handles CURRENT round processing
         if !state.phase_is_signed() && !state.phase_is_snapshot() {
@@ -258,8 +140,6 @@ where
             continue;
         }
 
-        // If we reach here, the CURRENT block's phase IS Signed or Snapshot!
-        prev_block_signed_phase = true;
         let snapshot = snapshot.clone();
         let signer = signer.clone();
         let client = client.clone();
@@ -356,20 +236,27 @@ where
     match get_submission(&storage, round, signer.account_id(), n_pages).await? {
         CurrentSubmission::Done(score_on_chain) => {
             // Found on chain but not locally, record it locally now.
-            log::info!(target: LOG_TARGET, "Found submission for round {} on-chain, recording locally.", round);
-            submitted_rounds
-                .lock()
-                .await
-                .insert(round, (n_pages, score_on_chain));
+            track_round_submission(
+                &submitted_rounds,
+                round,
+                n_pages,
+                score_on_chain,
+                Some("Found submission for round {} on-chain, recording locally."),
+            )
+            .await;
             return Ok(());
         }
         CurrentSubmission::Incomplete(incomplete_sub) => {
             // Found incomplete on chain, record locally to prevent full resubmission if score matches
             log::info!(target: LOG_TARGET, "Found incomplete submission for round {} on-chain, recording locally.", round);
-            submitted_rounds
-                .lock()
-                .await
-                .insert(round, (n_pages, incomplete_sub.score()));
+            track_round_submission(
+                &submitted_rounds,
+                round,
+                n_pages,
+                incomplete_sub.score(),
+                None,
+            )
+            .await;
             // Continue to potentially submit missing pages below...
         }
         CurrentSubmission::NotStarted => { /* Continue */ }
@@ -399,18 +286,19 @@ where
     {
         CurrentSubmission::Done(score_on_chain) => {
             log::info!(target: LOG_TARGET, "Found submission for round {} on-chain after acquiring lock, recording locally.", round);
-            submitted_rounds
-                .lock()
-                .await
-                .insert(round, (n_pages, score_on_chain));
+            track_round_submission(&submitted_rounds, round, n_pages, score_on_chain, None).await;
             return Ok(());
         }
         CurrentSubmission::Incomplete(incomplete_sub) => {
             log::info!(target: LOG_TARGET, "Found incomplete submission for round {} on-chain after acquiring lock, recording locally.", round);
-            submitted_rounds
-                .lock()
-                .await
-                .insert(round, (n_pages, incomplete_sub.score()));
+            track_round_submission(
+                &submitted_rounds,
+                round,
+                n_pages,
+                incomplete_sub.score(),
+                None,
+            )
+            .await;
             // Continue...
         }
         CurrentSubmission::NotStarted => { /* Continue */ }
@@ -458,10 +346,7 @@ where
                 log::info!(target: LOG_TARGET, "Mined solution score {:?} not better than already submitted score {:?} for round {}. Skipping.", submitted_score, score, round);
                 // Ensure it's recorded locally if somehow missed before
                 if !submitted_rounds.lock().await.contains_key(&round) {
-                    submitted_rounds
-                        .lock()
-                        .await
-                        .insert(round, (n_pages, score));
+                    track_round_submission(&submitted_rounds, round, n_pages, score, None).await;
                 }
                 return Ok(());
             }
@@ -469,7 +354,12 @@ where
             log::warn!(target: LOG_TARGET, "Mined solution score {:?} is better than submitted score {:?} for round {}. Bailing previous submission.", submitted_score, score, round);
             bail(listen, &client, signer.clone()).await?;
             // Clear local tracking as we are bailing
-            submitted_rounds.lock().await.remove(&round);
+            untrack_round_submission(
+                &submitted_rounds,
+                round,
+                Some("Removed previous submission for round {} after bailing"),
+            )
+            .await;
         }
         CurrentSubmission::Incomplete(s) => {
             // Submit the missing pages if score matches.
@@ -512,10 +402,14 @@ where
                     Ok(failed_pages) if failed_pages.is_empty() => {
                         log::info!(target: LOG_TARGET, "Successfully submitted missing pages for round {}", round);
                         // Ensure complete submission is recorded locally
-                        submitted_rounds
-                            .lock()
-                            .await
-                            .insert(round, (n_pages, submitted_score));
+                        track_round_submission(
+                            &submitted_rounds,
+                            round,
+                            n_pages,
+                            submitted_score,
+                            None,
+                        )
+                        .await;
                         return Ok(());
                     }
                     Ok(failed_pages) => {
@@ -536,7 +430,12 @@ where
                 log::warn!(target: LOG_TARGET, "Mined solution score {:?} differs from incomplete submission score {:?} for round {}. Bailing previous submission.", submitted_score, s.score(), round);
                 bail(listen, &client, signer.clone()).await?;
                 // Clear local tracking as we are bailing
-                submitted_rounds.lock().await.remove(&round);
+                untrack_round_submission(
+                    &submitted_rounds,
+                    round,
+                    Some("Removed previous submission for round {} after bailing"),
+                )
+                .await;
             }
         }
         CurrentSubmission::NotStarted => (), // Continue to submit new solution
@@ -579,17 +478,24 @@ where
             prometheus::observe_submit_and_watch_duration(dur.as_millis() as f64);
 
             // Record successful submission with score
-            {
-                let mut rounds = submitted_rounds.lock().await;
-                // Use the captured score
-                rounds.insert(round, (n_pages, submitted_score));
-                log::info!(target: LOG_TARGET, "Successfully submitted and recorded round {} ({} pages, score {:?})", round, n_pages, submitted_score);
-            }
+            track_round_submission(
+                &submitted_rounds,
+                round,
+                n_pages,
+                submitted_score,
+                Some("Successfully submitted and recorded"),
+            )
+            .await;
         }
         (Err(e), _) => {
             log::error!(target: LOG_TARGET, "Submission failed for round {}: {:?}", round, e);
             // Ensure we DON'T have a potentially incomplete entry from above if submit fails.
-            submitted_rounds.lock().await.remove(&round);
+            untrack_round_submission(
+                &submitted_rounds,
+                round,
+                Some("Removed failed submission for round {}"),
+            )
+            .await;
             return Err(e);
         }
     };
@@ -747,7 +653,7 @@ async fn clear_submission(
         Err(e) => {
             log::error!(
                 target: LOG_TARGET,
-                "Failed to clear submission data for round {}: {:?}",
+                "Failed to clear submission data for round {}: {:?}. Will retry.",
                 round_index,
                 e
             );
@@ -757,4 +663,185 @@ async fn clear_submission(
     }
 
     Ok(())
+}
+
+async fn check_and_clear_discarded_submissions(
+    client: &Client,
+    config: &ExperimentalMultiBlockMonitorConfig,
+    signer: &Signer,
+    rounds_to_potentially_clear: Vec<(u32, u32, ElectionScore)>,
+    submitted_rounds: &Arc<Mutex<HashMap<u32, (u32, ElectionScore)>>>,
+) -> Result<(), Error> {
+    if rounds_to_potentially_clear.is_empty() {
+        return Ok(());
+    }
+
+    log::debug!(
+        target: LOG_TARGET,
+        "Checking status of PAST rounds: {:?}",
+        rounds_to_potentially_clear.iter().map(|(r,_,_)| r).collect::<Vec<_>>()
+    );
+
+    let get_finalized_storage = async {
+        let finalized_hash = client.rpc().chain_get_finalized_head().await?;
+        utils::storage_at(Some(finalized_hash), client.chain_api()).await
+    };
+    let storage_finalized = match get_finalized_storage.await {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!(target: LOG_TARGET, "Failed to get finalized storage state for checking old rounds: {:?}. Skipping check.", e);
+            return Ok(());
+        }
+    };
+
+    let mut rounds_to_remove = Vec::new();
+
+    for (round_to_check, n_pages, submitted_score) in rounds_to_potentially_clear {
+        let maybe_submission_metadata = storage_finalized
+            .fetch(
+                &runtime::storage()
+                    .multi_block_signed()
+                    .submission_metadata_storage(round_to_check, signer.account_id()),
+            )
+            .await?;
+
+        if maybe_submission_metadata.is_none() {
+            log::debug!(target: LOG_TARGET, "Submission metadata for past round {} gone. Removing from tracking.", round_to_check);
+            rounds_to_remove.push(round_to_check);
+            continue;
+        }
+
+        let maybe_round_phase = storage_finalized
+            .fetch(&runtime::storage().multi_block().current_phase())
+            .await?;
+
+        let mut should_clear = false;
+        let mut clear_reason = "";
+
+        match maybe_round_phase {
+            Some(Phase::SignedValidation(_)) => {
+                let sorted_scores = storage_finalized
+                    .fetch_or_default(
+                        &runtime::storage()
+                            .multi_block_signed()
+                            .sorted_scores(round_to_check),
+                    )
+                    .await?;
+                if let Some((_, winning_score)) = sorted_scores.0.first() {
+                    if score_passes_strategy(
+                        winning_score.0,
+                        submitted_score,
+                        SubmissionStrategy::IfLeading,
+                    ) && winning_score.0 != submitted_score
+                    {
+                        should_clear = true;
+                        clear_reason =
+                            "Better solution validated during its SignedValidation phase";
+                    }
+                }
+            }
+            Some(Phase::Signed(_)) => {}
+            Some(_) | None => {
+                should_clear = true;
+                clear_reason = "Phase is past Signed/SignedValidation or round gone, and metadata still exists";
+            }
+        }
+
+        if should_clear {
+            log::info!(target: LOG_TARGET, "Submission for past round {} detected as DISCARDED (Reason: {}). Attempting to clear.", round_to_check, clear_reason);
+            match clear_submission(
+                config.listen,
+                client,
+                signer.clone(),
+                round_to_check,
+                n_pages,
+            )
+            .await
+            {
+                Ok(_) => {
+                    log::info!(target: LOG_TARGET, "Successfully cleared submission for past round {}", round_to_check);
+                    rounds_to_remove.push(round_to_check);
+                }
+                Err(e) => {
+                    log::error!(target: LOG_TARGET, "Failed to clear submission for past round {}: {:?}. Will retry.", round_to_check, e);
+                }
+            }
+        }
+    }
+
+    if !rounds_to_remove.is_empty() {
+        for round_index in rounds_to_remove {
+            untrack_round_submission(
+                submitted_rounds,
+                round_index,
+                Some("Removed past round {} from local tracking after clearing"),
+            )
+            .await;
+        }
+    }
+
+    Ok(())
+}
+
+async fn collect_past_rounds_to_clear(
+    submitted_rounds: &Arc<Mutex<HashMap<u32, (u32, ElectionScore)>>>,
+    current_block_round: u32,
+) -> Vec<(u32, u32, ElectionScore)> {
+    // Acquire lock once and collect data in one go
+    let submitted_data = submitted_rounds.lock().await;
+
+    submitted_data
+        .iter()
+        .filter_map(|(&round_to_check, &(n_pages, submitted_score))| {
+            if round_to_check < current_block_round {
+                Some((round_to_check, n_pages, submitted_score))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Helper method to safely insert a round's submission data into the tracking map
+async fn track_round_submission(
+    submitted_rounds: &Arc<Mutex<HashMap<u32, (u32, ElectionScore)>>>,
+    round: u32,
+    n_pages: u32,
+    score: ElectionScore,
+    log_message: Option<&str>,
+) {
+    let mut rounds = submitted_rounds.lock().await;
+    rounds.insert(round, (n_pages, score));
+
+    if let Some(message) = log_message {
+        log::info!(
+            target: LOG_TARGET,
+            "{} round {} ({} pages, score {:?})",
+            message,
+            round,
+            n_pages,
+            score
+        );
+    }
+}
+
+/// Helper method to safely remove a round's submission data from the tracking map
+async fn untrack_round_submission(
+    submitted_rounds: &Arc<Mutex<HashMap<u32, (u32, ElectionScore)>>>,
+    round: u32,
+    log_message: Option<&str>,
+) -> bool {
+    let mut rounds = submitted_rounds.lock().await;
+    let removed = rounds.remove(&round).is_some();
+
+    if removed && log_message.is_some() {
+        log::info!(
+            target: LOG_TARGET,
+            "{} round {}",
+            log_message.unwrap(),
+            round
+        );
+    }
+
+    removed
 }
