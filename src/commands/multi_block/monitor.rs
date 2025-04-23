@@ -28,6 +28,25 @@ use std::{
 };
 use tokio::sync::Mutex;
 
+/// Enum representing different tracking events for rounds
+#[derive(Debug, Clone, Copy)]
+enum RoundTrackingEvent {
+    Found,                 // Found existing submission on-chain
+    Submitted,             // Successfully submitted a new solution
+    SubmittedPartial,      // Submitted missing pages for partial solution
+    Cleared,               // Successfully cleared a discarded submission
+    Bailed,                // Bailed out of a previous submission
+    FailedSubmission,      // Failed to submit a solution
+}
+
+/// Enum representing different untracking events for rounds
+#[derive(Debug, Clone, Copy)]
+enum RoundUntrackingEvent {
+    Cleared,       // Removed after clearing
+    Bailed,        // Removed after bailing
+    Failed,        // Removed after a failed submission
+}
+
 pub async fn monitor_cmd<T>(
     client: Client,
     config: ExperimentalMultiBlockMonitorConfig,
@@ -123,6 +142,7 @@ where
             &signer,
             rounds_to_potentially_clear,
             &submitted_rounds,
+            &state.storage,
         )
         .await?;
 
@@ -241,7 +261,7 @@ where
                 round,
                 n_pages,
                 score_on_chain,
-                Some("Found submission for round {} on-chain, recording locally."),
+                Some(RoundTrackingEvent::Found),
             )
             .await;
             return Ok(());
@@ -254,7 +274,7 @@ where
                 round,
                 n_pages,
                 incomplete_sub.score(),
-                None,
+                Some(RoundTrackingEvent::SubmittedPartial),
             )
             .await;
             // Continue to potentially submit missing pages below...
@@ -286,7 +306,7 @@ where
     {
         CurrentSubmission::Done(score_on_chain) => {
             log::info!(target: LOG_TARGET, "Found submission for round {} on-chain after acquiring lock, recording locally.", round);
-            track_round_submission(&submitted_rounds, round, n_pages, score_on_chain, None).await;
+            track_round_submission(&submitted_rounds, round, n_pages, score_on_chain, Some(RoundTrackingEvent::Found)).await;
             return Ok(());
         }
         CurrentSubmission::Incomplete(incomplete_sub) => {
@@ -296,7 +316,7 @@ where
                 round,
                 n_pages,
                 incomplete_sub.score(),
-                None,
+                Some(RoundTrackingEvent::SubmittedPartial),
             )
             .await;
             // Continue...
@@ -357,7 +377,7 @@ where
             untrack_round_submission(
                 &submitted_rounds,
                 round,
-                Some("Removed previous submission for round {} after bailing"),
+                Some(RoundUntrackingEvent::Bailed),
             )
             .await;
         }
@@ -407,7 +427,7 @@ where
                             round,
                             n_pages,
                             submitted_score,
-                            None,
+                            Some(RoundTrackingEvent::SubmittedPartial),
                         )
                         .await;
                         return Ok(());
@@ -433,7 +453,7 @@ where
                 untrack_round_submission(
                     &submitted_rounds,
                     round,
-                    Some("Removed previous submission for round {} after bailing"),
+                    Some(RoundUntrackingEvent::Bailed),
                 )
                 .await;
             }
@@ -483,17 +503,27 @@ where
                 round,
                 n_pages,
                 submitted_score,
-                Some("Successfully submitted and recorded"),
+                Some(RoundTrackingEvent::Submitted),
             )
             .await;
         }
         (Err(e), _) => {
+            track_round_submission(
+                &submitted_rounds,
+                round,
+                n_pages,
+                submitted_score,
+                Some(RoundTrackingEvent::FailedSubmission),
+            )
+            .await;
+
             log::error!(target: LOG_TARGET, "Submission failed for round {}: {:?}", round, e);
-            // Ensure we DON'T have a potentially incomplete entry from above if submit fails.
+
+            // Ensure we DON'T have a potentially incomplete entry if submit fails.
             untrack_round_submission(
                 &submitted_rounds,
                 round,
-                Some("Removed failed submission for round {}"),
+                Some(RoundUntrackingEvent::Failed),
             )
             .await;
             return Err(e);
@@ -669,8 +699,9 @@ async fn check_and_clear_discarded_submissions(
     client: &Client,
     config: &ExperimentalMultiBlockMonitorConfig,
     signer: &Signer,
-    rounds_to_potentially_clear: Vec<(u32, u32, ElectionScore)>,
+    rounds_to_potentially_clear: Vec<(u32, u32)>,
     submitted_rounds: &Arc<Mutex<HashMap<u32, (u32, ElectionScore)>>>,
+    storage: &Storage,
 ) -> Result<(), Error> {
     if rounds_to_potentially_clear.is_empty() {
         return Ok(());
@@ -679,25 +710,13 @@ async fn check_and_clear_discarded_submissions(
     log::debug!(
         target: LOG_TARGET,
         "Checking status of PAST rounds: {:?}",
-        rounds_to_potentially_clear.iter().map(|(r,_,_)| r).collect::<Vec<_>>()
+        rounds_to_potentially_clear.iter().map(|(r,_)| r).collect::<Vec<_>>()
     );
-
-    let get_finalized_storage = async {
-        let finalized_hash = client.rpc().chain_get_finalized_head().await?;
-        utils::storage_at(Some(finalized_hash), client.chain_api()).await
-    };
-    let storage_finalized = match get_finalized_storage.await {
-        Ok(s) => s,
-        Err(e) => {
-            log::warn!(target: LOG_TARGET, "Failed to get finalized storage state for checking old rounds: {:?}. Skipping check.", e);
-            return Ok(());
-        }
-    };
 
     let mut rounds_to_remove = Vec::new();
 
-    for (round_to_check, n_pages, submitted_score) in rounds_to_potentially_clear {
-        let maybe_submission_metadata = storage_finalized
+    for (round_to_check, n_pages) in rounds_to_potentially_clear {
+        let maybe_submission_metadata = storage
             .fetch(
                 &runtime::storage()
                     .multi_block_signed()
@@ -711,41 +730,10 @@ async fn check_and_clear_discarded_submissions(
             continue;
         }
 
-        let maybe_round_phase = storage_finalized
-            .fetch(&runtime::storage().multi_block().current_phase())
-            .await?;
-
-        let mut should_clear = false;
-        let mut clear_reason = "";
-
-        match maybe_round_phase {
-            Some(Phase::SignedValidation(_)) => {
-                let sorted_scores = storage_finalized
-                    .fetch_or_default(
-                        &runtime::storage()
-                            .multi_block_signed()
-                            .sorted_scores(round_to_check),
-                    )
-                    .await?;
-                if let Some((_, winning_score)) = sorted_scores.0.first() {
-                    if score_passes_strategy(
-                        winning_score.0,
-                        submitted_score,
-                        SubmissionStrategy::IfLeading,
-                    ) && winning_score.0 != submitted_score
-                    {
-                        should_clear = true;
-                        clear_reason =
-                            "Better solution validated during its SignedValidation phase";
-                    }
-                }
-            }
-            Some(Phase::Signed(_)) => {}
-            Some(_) | None => {
-                should_clear = true;
-                clear_reason = "Phase is past Signed/SignedValidation or round gone, and metadata still exists";
-            }
-        }
+        // For past rounds, we assume they've already progressed beyond active phases
+        // If submission metadata still exists, it needs clearing
+        let should_clear = true;
+        let clear_reason = "Past round with still existing submission metadata";
 
         if should_clear {
             log::info!(target: LOG_TARGET, "Submission for past round {} detected as DISCARDED (Reason: {}). Attempting to clear.", round_to_check, clear_reason);
@@ -760,6 +748,14 @@ async fn check_and_clear_discarded_submissions(
             {
                 Ok(_) => {
                     log::info!(target: LOG_TARGET, "Successfully cleared submission for past round {}", round_to_check);
+                    track_round_submission(
+                        submitted_rounds,
+                        round_to_check,
+                        n_pages,
+                        ElectionScore::default(), // We don't have the score here, use default
+                        Some(RoundTrackingEvent::Cleared),
+                    )
+                    .await;
                     rounds_to_remove.push(round_to_check);
                 }
                 Err(e) => {
@@ -774,7 +770,7 @@ async fn check_and_clear_discarded_submissions(
             untrack_round_submission(
                 submitted_rounds,
                 round_index,
-                Some("Removed past round {} from local tracking after clearing"),
+                Some(RoundUntrackingEvent::Cleared),
             )
             .await;
         }
@@ -784,17 +780,16 @@ async fn check_and_clear_discarded_submissions(
 }
 
 async fn collect_past_rounds_to_clear(
-    submitted_rounds: &Arc<Mutex<HashMap<u32, (u32, ElectionScore)>>>,
+    submitted_rounds: &Mutex<HashMap<u32, (u32, ElectionScore)>>,
     current_block_round: u32,
-) -> Vec<(u32, u32, ElectionScore)> {
-    // Acquire lock once and collect data in one go
+) -> Vec<(u32, u32)> {
     let submitted_data = submitted_rounds.lock().await;
 
     submitted_data
         .iter()
-        .filter_map(|(&round_to_check, &(n_pages, submitted_score))| {
+        .filter_map(|(&round_to_check, &(n_pages, _submitted_score))| {
             if round_to_check < current_block_round {
-                Some((round_to_check, n_pages, submitted_score))
+                Some((round_to_check, n_pages))
             } else {
                 None
             }
@@ -808,12 +803,21 @@ async fn track_round_submission(
     round: u32,
     n_pages: u32,
     score: ElectionScore,
-    log_message: Option<&str>,
+    event: Option<RoundTrackingEvent>,
 ) {
     let mut rounds = submitted_rounds.lock().await;
     rounds.insert(round, (n_pages, score));
 
-    if let Some(message) = log_message {
+    if let Some(event) = event {
+        let message = match event {
+            RoundTrackingEvent::Found => "Found submission for",
+            RoundTrackingEvent::Submitted => "Successfully submitted and recorded",
+            RoundTrackingEvent::SubmittedPartial => "Completed partial submission for",
+            RoundTrackingEvent::Cleared => "Cleared discarded submission for",
+            RoundTrackingEvent::Bailed => "Bailed from previous submission for",
+            RoundTrackingEvent::FailedSubmission => "Failed submission for",
+        };
+
         log::info!(
             target: LOG_TARGET,
             "{} round {} ({} pages, score {:?})",
@@ -829,16 +833,22 @@ async fn track_round_submission(
 async fn untrack_round_submission(
     submitted_rounds: &Arc<Mutex<HashMap<u32, (u32, ElectionScore)>>>,
     round: u32,
-    log_message: Option<&str>,
+    event: Option<RoundUntrackingEvent>,
 ) -> bool {
     let mut rounds = submitted_rounds.lock().await;
     let removed = rounds.remove(&round).is_some();
 
-    if removed && log_message.is_some() {
+    if removed && event.is_some() {
+        let message = match event.unwrap() {
+            RoundUntrackingEvent::Cleared => "Removed after clearing submission for",
+            RoundUntrackingEvent::Bailed => "Removed after bailing from",
+            RoundUntrackingEvent::Failed => "Removed failed submission for",
+        };
+
         log::info!(
             target: LOG_TARGET,
             "{} round {}",
-            log_message.unwrap(),
+            message,
             round
         );
     }
