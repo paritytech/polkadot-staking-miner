@@ -106,7 +106,7 @@ Compatible: YES
 
 ### Experimental monitor multi-block
 
-This command is similar to the stable `monitor command` but targets the new pallet `pallet-election-provider-multi-block` which is currently only supported on asset-hub-next.
+This command is similar to the stable `monitor command` but targets the new pallet `pallet-election-provider-multi-block` which is currently only supported on asset-hub-next. The multi-block version exclusively uses finalized blocks to prevent potential issues with chain reorganizations.
 
 ```bash
 polkadot-staking-miner --uri ws://127.0.0.1:9966 experimental-monitor-multi-block --seed-or-path //Alice

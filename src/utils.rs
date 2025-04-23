@@ -15,7 +15,6 @@
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
 use crate::{
-    client::Client,
     commands::types::{Listen, SubmissionStrategy},
     error::Error,
     prelude::{ChainClient, Config, Hash, Header, RpcClient, Storage, LOG_TARGET},
@@ -163,11 +162,6 @@ pub async fn storage_at(block: Option<Hash>, api: &ChainClient) -> Result<Storag
     }
 }
 
-pub async fn storage_at_head(api: &Client, listen: Listen) -> Result<Storage, Error> {
-    let hash = rpc_get_latest_head(api.rpc(), listen).await?;
-    storage_at(Some(hash), api.chain_api()).await
-}
-
 /// Wait for the transaction to be in a block.
 ///
 /// **Note:** transaction statuses like `Invalid`/`Usurped`/`Dropped` indicate with some
@@ -207,17 +201,6 @@ pub async fn rpc_block_subscription(
         Listen::Finalized => rpc.chain_subscribe_finalized_heads().await,
     }
     .map_err(Into::into)
-}
-
-pub async fn rpc_get_latest_head(rpc: &RpcClient, listen: Listen) -> Result<Hash, Error> {
-    match listen {
-        Listen::Head => match rpc.chain_get_block_hash(None).await {
-            Ok(Some(hash)) => Ok(hash),
-            Ok(None) => Err(Error::Other("Latest block not found".into())),
-            Err(e) => Err(e.into()),
-        },
-        Listen::Finalized => rpc.chain_get_finalized_head().await.map_err(Into::into),
-    }
 }
 
 /// Returns `true` if `our_score` better the onchain `best_score` according the given strategy.

@@ -170,7 +170,8 @@ where
         );
     }
 
-    let mut subscription = utils::rpc_block_subscription(client.rpc(), config.listen).await?;
+    // Always use finalized blocks. We are not supporting best blocks.
+    let mut subscription = utils::rpc_block_subscription(client.rpc(), Listen::Finalized).await?;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
     let submit_lock = Arc::new(Mutex::new(()));
     let snapshot = SharedSnapshot::<T>::new(static_types::Pages::get());
@@ -193,8 +194,8 @@ where
                     //	- the connection was closed.
                     //	- the subscription could not keep up with the server.
                     None => {
-                        log::warn!(target: LOG_TARGET, "subscription to `{:?}` terminated. Retrying..", config.listen);
-                        subscription = utils::rpc_block_subscription(client.rpc(), config.listen).await?;
+                        log::warn!(target: LOG_TARGET, "subscription to `Finalized` terminated. Retrying..");
+                        subscription = utils::rpc_block_subscription(client.rpc(), Listen::Finalized).await?;
                         continue
                     }
                 }
@@ -224,7 +225,6 @@ where
 
         check_and_clear_discarded_submissions(
             &client,
-            &config,
             &signer,
             rounds_to_potentially_clear,
             &submitted_rounds,
@@ -260,7 +260,6 @@ where
                 state,
                 snapshot,
                 signer,
-                config.listen,
                 submit_lock,
                 config.submission_strategy,
                 config.do_reduce,
@@ -292,7 +291,6 @@ async fn process_block<T>(
     state: BlockDetails,
     snapshot: SharedSnapshot<T>,
     signer: Signer,
-    listen: Listen,
     submit_lock: Arc<Mutex<()>>,
     submission_strategy: SubmissionStrategy,
     do_reduce: bool,
@@ -381,15 +379,10 @@ where
         // Round recorded locally, no need to check on-chain
         return Ok(());
     }
-    let storage_head_after_lock = utils::storage_at_head(&client, listen).await?;
-    match get_submission(
-        &storage_head_after_lock,
-        round,
-        signer.account_id(),
-        n_pages,
-    )
-    .await?
-    {
+
+    // Always use finalized storage instead of best block
+    let storage_after_lock = storage_at_finalized(&client).await?;
+    match get_submission(&storage_after_lock, round, signer.account_id(), n_pages).await? {
         CurrentSubmission::Done(score_on_chain) => {
             log::info!(target: LOG_TARGET, "Found submission for round {} on-chain after acquiring lock, recording locally.", round);
             submitted_rounds
@@ -444,15 +437,8 @@ where
     let submitted_score = paged_raw_solution.score;
 
     // Check again if we have submitted something while mining
-    let storage_head_after_mining = utils::storage_at_head(&client, listen).await?;
-    match get_submission(
-        &storage_head_after_mining,
-        round,
-        signer.account_id(),
-        n_pages,
-    )
-    .await?
-    {
+    let storage_after_mining = storage_at_finalized(&client).await?;
+    match get_submission(&storage_after_mining, round, signer.account_id(), n_pages).await? {
         CurrentSubmission::Done(score) => {
             // We have already submitted the solution with a better score or equal score
             if !score_passes_strategy(submitted_score, score, submission_strategy) {
@@ -465,7 +451,7 @@ where
             }
             // Revert previous submission and submit the new one.
             log::warn!(target: LOG_TARGET, "Mined solution score {:?} is better than submitted score {:?} for round {}. Bailing previous submission.", submitted_score, score, round);
-            bail(listen, &client, signer.clone()).await?;
+            bail(Listen::Finalized, &client, signer.clone()).await?;
             // Clear local tracking as we are bailing
             submitted_rounds
                 .remove(round, Some(RoundUntrackingEvent::Bailed))
@@ -494,7 +480,7 @@ where
                         &client,
                         &signer,
                         missing_pages,
-                        listen,
+                        Listen::Finalized,
                     )
                     .await
                 } else {
@@ -502,7 +488,7 @@ where
                         &client,
                         &signer,
                         missing_pages,
-                        listen,
+                        Listen::Finalized,
                         chunk_size,
                     )
                     .await
@@ -538,7 +524,7 @@ where
             } else {
                 // Score mismatch, revert previous submission and submit a new one.
                 log::warn!(target: LOG_TARGET, "Mined solution score {:?} differs from incomplete submission score {:?} for round {}. Bailing previous submission.", submitted_score, s.score(), round);
-                bail(listen, &client, signer.clone()).await?;
+                bail(Listen::Finalized, &client, signer.clone()).await?;
                 // Clear local tracking as we are bailing
                 submitted_rounds
                     .remove(round, Some(RoundUntrackingEvent::Bailed))
@@ -549,16 +535,9 @@ where
     };
 
     // 6. Check if the score is better than the current best score on chain.
-    //
-    // We allow overwriting the score if the "our account" has the best score but hasn't submitted
-    // the solution. This is to allow the miner to re-submit the score and solution if the miner crashed
-    // or the RPC connection was lost.
-    //
-    // This to ensure that the miner doesn't miss out on submitting the solution if the miner crashed
-    // and to prevent to be slashed.
-    let storage_head_before_submit = utils::storage_at_head(&client, listen).await?;
+    let storage_before_submit = storage_at_finalized(&client).await?;
     if !score_better(
-        &storage_head_before_submit,
+        &storage_before_submit,
         submitted_score,
         round,
         submission_strategy,
@@ -572,9 +551,15 @@ where
     prometheus::set_score(submitted_score);
 
     // 7. Submit the score and solution to the chain.
-    match dynamic::submit(&client, &signer, paged_raw_solution, listen, chunk_size)
-        .timed()
-        .await
+    match dynamic::submit(
+        &client,
+        &signer,
+        paged_raw_solution,
+        Listen::Finalized,
+        chunk_size,
+    )
+    .timed()
+    .await
     {
         (Ok(_), dur) => {
             log::trace!(
@@ -781,7 +766,6 @@ async fn clear_submission(
 
 async fn check_and_clear_discarded_submissions(
     client: &Client,
-    config: &ExperimentalMultiBlockMonitorConfig,
     signer: &Signer,
     rounds_to_potentially_clear: Vec<(u32, u32)>,
     submitted_rounds: &RoundSubmission,
@@ -822,7 +806,7 @@ async fn check_and_clear_discarded_submissions(
         if should_clear {
             log::info!(target: LOG_TARGET, "Submission for past round {} detected as DISCARDED (Reason: {}). Attempting to clear.", round_to_check, clear_reason);
             match clear_submission(
-                config.listen,
+                Listen::Finalized,
                 client,
                 signer.clone(),
                 round_to_check,
@@ -857,4 +841,10 @@ async fn check_and_clear_discarded_submissions(
     }
 
     Ok(())
+}
+
+/// Helper function to get storage at finalized head
+async fn storage_at_finalized(client: &Client) -> Result<Storage, Error> {
+    let finalized_hash = client.rpc().chain_get_finalized_head().await?;
+    utils::storage_at(Some(finalized_hash), client.chain_api()).await
 }
