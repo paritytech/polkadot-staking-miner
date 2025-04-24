@@ -111,15 +111,13 @@ where
 
         let current_block_round = state.round;
 
-        // This checking logic runs on EVERY block
-        let rounds_to_potentially_clear = submitted_rounds
-            .collect_past_rounds(current_block_round)
-            .await;
+        let past_round = submitted_rounds.get_past_round(current_block_round).await;
 
+        // This checking logic runs on EVERY block.
         check_and_clear_discarded_submissions(
             &client,
             &signer,
-            rounds_to_potentially_clear,
+            past_round,
             &submitted_rounds,
             &state.storage,
         )
@@ -668,21 +666,17 @@ async fn clear_submission(
 async fn check_and_clear_discarded_submissions(
     client: &Client,
     signer: &Signer,
-    rounds_to_potentially_clear: Vec<(u32, u32)>,
+    most_recent_past_round: Option<(u32, u32)>,
     submitted_rounds: &RoundSubmission,
     storage: &Storage,
 ) -> Result<(), Error> {
-    if rounds_to_potentially_clear.is_empty() {
-        return Ok(());
-    }
+    if let Some((round_to_check, n_pages)) = most_recent_past_round {
+        log::debug!(
+            target: LOG_TARGET,
+            "Checking status of most recent PAST round: {}",
+            round_to_check
+        );
 
-    log::debug!(
-        target: LOG_TARGET,
-        "Checking status of PAST rounds: {:?}",
-        rounds_to_potentially_clear.iter().map(|(r,_)| r).collect::<Vec<_>>()
-    );
-
-    for (round_to_check, n_pages) in rounds_to_potentially_clear {
         let maybe_submission_metadata = storage
             .fetch(
                 &runtime::storage()
@@ -696,10 +690,10 @@ async fn check_and_clear_discarded_submissions(
             submitted_rounds
                 .remove(round_to_check, RoundUntrackingEvent::Cleared)
                 .await;
-            continue;
+            return Ok(());
         }
 
-        // For past rounds, we assume they've already progressed beyond active phases
+        // For a past round, we assume it has already progressed beyond active phases.
         // If submission metadata still exists, it needs clearing
         let clear_reason = "Past round with still existing submission metadata";
         log::info!(target: LOG_TARGET, "Submission for past round {} detected as DISCARDED (Reason: {}). Spawning task to clear.", round_to_check, clear_reason);
