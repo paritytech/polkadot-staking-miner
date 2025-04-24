@@ -26,6 +26,8 @@ use polkadot_sdk::{
 use std::{collections::HashSet, sync::Arc};
 use tokio::sync::Mutex;
 
+type RoundBeingCleared = std::sync::Arc<std::sync::atomic::AtomicBool>;
+
 pub async fn monitor_cmd<T>(
     client: Client,
     config: ExperimentalMultiBlockMonitorConfig,
@@ -71,8 +73,14 @@ where
     let mut pending_tasks: Vec<AbortHandle> = Vec::new();
     let mut prev_block_signed_phase = false;
 
-    // State to track submitted rounds, their page count, and if needed in the future score
+    // State to track submitted rounds
     let submitted_rounds = RoundSubmission::new();
+
+    // Flag to track if we're already clearing a round
+    let clearing_in_progress = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    // Track the current round so we can detect round transitions
+    let mut current_round = None;
 
     loop {
         let at = tokio::select! {
@@ -111,6 +119,28 @@ where
 
         let current_block_round = state.round;
 
+        // Detect round transitions - this is where we discard any unclearable rounds
+        if let Some(prev_round) = current_round {
+            if current_block_round != prev_round {
+                // We've moved to a new round. If there was a past round that wasn't cleared
+                // during the entire previous round, remove it from tracking
+                if let Some((past_round, _)) = submitted_rounds.get_past_round(prev_round).await {
+                    // This is a round that was past during the previous round and is still being tracked
+                    // It's now "two rounds old" and should be discarded if not cleared
+                    log::warn!(
+                        target: LOG_TARGET,
+                        "Round {} wasn't cleared during the entire round {}. Discarding without reclaiming deposit.",
+                        past_round,
+                        prev_round
+                    );
+                    submitted_rounds
+                        .remove(past_round, RoundUntrackingEvent::Cleared)
+                        .await;
+                }
+            }
+        }
+        current_round = Some(current_block_round);
+
         let past_round = submitted_rounds.get_past_round(current_block_round).await;
 
         // This checking logic runs on EVERY block.
@@ -120,6 +150,7 @@ where
             past_round,
             &submitted_rounds,
             &state.storage,
+            &clearing_in_progress,
         )
         .await?;
 
@@ -669,7 +700,13 @@ async fn check_and_clear_discarded_submissions(
     most_recent_past_round: Option<(u32, u32)>,
     submitted_rounds: &RoundSubmission,
     storage: &Storage,
+    clearing_in_progress: &RoundBeingCleared,
 ) -> Result<(), Error> {
+    // If we're already clearing a round, don't start another task
+    if clearing_in_progress.load(std::sync::atomic::Ordering::Relaxed) {
+        return Ok(());
+    }
+
     if let Some((round_to_check, n_pages)) = most_recent_past_round {
         log::debug!(
             target: LOG_TARGET,
@@ -698,10 +735,14 @@ async fn check_and_clear_discarded_submissions(
         let clear_reason = "Past round with still existing submission metadata";
         log::info!(target: LOG_TARGET, "Submission for past round {} detected as DISCARDED (Reason: {}). Spawning task to clear.", round_to_check, clear_reason);
 
+        // Set the flag to indicate we're clearing a round
+        clearing_in_progress.store(true, std::sync::atomic::Ordering::Relaxed);
+
         // Clone what we need for the spawned task
         let client_clone = client.clone();
         let signer_clone = signer.clone();
         let submitted_rounds_clone = submitted_rounds.clone();
+        let clearing_flag = clearing_in_progress.clone();
 
         // Spawn a separate task to handle the submission
         tokio::spawn(async move {
@@ -714,9 +755,13 @@ async fn check_and_clear_discarded_submissions(
                 }
                 Err(e) => {
                     log::error!(target: LOG_TARGET, "Failed to clear submission for past round {}: {:?}. Will retry.", round_to_check, e);
-                    // We don't remove from tracking, allowing retry in future blocks
+                    // We don't remove from tracking, allowing retry until the round is discarded
+                    // after a full round passes without successful clearing
                 }
             }
+
+            // Always reset the flag when done
+            clearing_flag.store(false, std::sync::atomic::Ordering::Relaxed);
         });
     }
 
