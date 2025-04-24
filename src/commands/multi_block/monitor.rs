@@ -307,7 +307,9 @@ where
                 log::info!(target: LOG_TARGET, "Mined solution score {:?} not better than already submitted score {:?} for round {}. Skipping.", submitted_score, score, round);
                 // Ensure it's recorded locally if somehow missed before
                 if !submitted_rounds.contains(round).await {
-                    submitted_rounds.insert(round, n_pages, score, None).await;
+                    submitted_rounds
+                        .insert(round, n_pages, RoundTrackingEvent::Found)
+                        .await;
                 }
                 return Ok(());
             }
@@ -355,12 +357,7 @@ where
                         log::info!(target: LOG_TARGET, "Successfully submitted missing pages for round {}", round);
                         // Ensure complete submission is recorded locally
                         submitted_rounds
-                            .insert(
-                                round,
-                                n_pages,
-                                submitted_score,
-                                Some(RoundTrackingEvent::SubmittedPartial),
-                            )
+                            .insert(round, n_pages, RoundTrackingEvent::SubmittedPartial)
                             .await;
                         return Ok(());
                     }
@@ -427,22 +424,12 @@ where
 
             // Record successful submission with score
             submitted_rounds
-                .insert(
-                    round,
-                    n_pages,
-                    submitted_score,
-                    Some(RoundTrackingEvent::Submitted),
-                )
+                .insert(round, n_pages, RoundTrackingEvent::Submitted)
                 .await;
         }
         (Err(e), _) => {
             submitted_rounds
-                .insert(
-                    round,
-                    n_pages,
-                    submitted_score,
-                    Some(RoundTrackingEvent::FailedSubmission),
-                )
+                .insert(round, n_pages, RoundTrackingEvent::FailedSubmission)
                 .await;
 
             log::error!(target: LOG_TARGET, "Submission failed for round {}: {:?}", round, e);
@@ -533,8 +520,8 @@ async fn get_submission(
 /// If found, records it in the local tracking system.
 ///
 /// Returns:
-///   - `Ok(true)` if a solution is already submitted (should skip further processing)
-///   - `Ok(false)` if no solution is found (should continue processing)
+///   - `Ok(true)` if a complete solution is already submitted (should skip further processing)
+///   - `Ok(false)` if no solution is found or only an incomplete solution is found (should continue processing)
 async fn is_solution_already_submitted(
     storage: &Storage,
     round: u32,
@@ -542,27 +529,33 @@ async fn is_solution_already_submitted(
     n_pages: u32,
     submitted_rounds: &RoundSubmission,
 ) -> Result<bool, Error> {
-    // Check local tracking first
-    if submitted_rounds.contains(round).await {
-        // Already submitted locally, no need to check on-chain
-        return Ok(true);
+    // Check local tracking first, but we need to distinguish between complete and incomplete
+    let submission_state = submitted_rounds.get_state(round).await;
+
+    // If we have a local record AND it's marked as complete, return true
+    if let Some(state) = submission_state {
+        if state.is_complete() {
+            return Ok(true);
+        }
+        // If it's incomplete, we should continue and check on-chain status
+        // in case it's been completed since we last checked
+        log::trace!(
+            target: LOG_TARGET,
+            "Found incomplete local submission for round {}. Checking chain state.",
+            round
+        );
     }
 
     // Then check chain state
     match get_submission(storage, round, account_id, n_pages).await? {
-        CurrentSubmission::Done(score_on_chain) => {
-            // Found on chain but not locally, record it locally now
+        CurrentSubmission::Done(_) => {
+            // Found complete submission on chain, record it locally now
             submitted_rounds
-                .insert(
-                    round,
-                    n_pages,
-                    score_on_chain,
-                    Some(RoundTrackingEvent::Found),
-                )
+                .insert(round, n_pages, RoundTrackingEvent::Found)
                 .await;
             return Ok(true);
         }
-        CurrentSubmission::Incomplete(incomplete_sub) => {
+        CurrentSubmission::Incomplete(_) => {
             // Found incomplete on chain, record locally to prevent full resubmission if score matches
             log::info!(
                 target: LOG_TARGET,
@@ -570,14 +563,8 @@ async fn is_solution_already_submitted(
                 round
             );
             submitted_rounds
-                .insert(
-                    round,
-                    n_pages,
-                    incomplete_sub.score(),
-                    Some(RoundTrackingEvent::SubmittedPartial),
-                )
+                .insert(round, n_pages, RoundTrackingEvent::SubmittedPartial)
                 .await;
-            // Continue to potentially submit missing pages below
             return Ok(false);
         }
         CurrentSubmission::NotStarted => {
@@ -623,7 +610,6 @@ async fn bail(client: &Client, signer: Signer) -> Result<(), Error> {
 /// Clears the miner's submission data for a specific round to reclaim the deposit.
 /// This should be called when a previously submitted solution is known to be discarded.
 async fn clear_submission(
-    listen: Listen,
     client: &Client,
     signer: Signer,
     round_index: u32,
@@ -654,7 +640,7 @@ async fn clear_submission(
 
     let tx_progress = xt.submit_and_watch().await?;
 
-    match utils::wait_tx_in_block_for_strategy(tx_progress, listen).await {
+    match utils::wait_tx_in_block_for_strategy(tx_progress, Listen::Finalized).await {
         Ok(tx_in_block) => {
             log::info!(
                 target: LOG_TARGET,
@@ -696,8 +682,6 @@ async fn check_and_clear_discarded_submissions(
         rounds_to_potentially_clear.iter().map(|(r,_)| r).collect::<Vec<_>>()
     );
 
-    let mut rounds_to_remove = Vec::new();
-
     for (round_to_check, n_pages) in rounds_to_potentially_clear {
         let maybe_submission_metadata = storage
             .fetch(
@@ -709,50 +693,24 @@ async fn check_and_clear_discarded_submissions(
 
         if maybe_submission_metadata.is_none() {
             log::debug!(target: LOG_TARGET, "Submission metadata for past round {} gone. Removing from tracking.", round_to_check);
-            rounds_to_remove.push(round_to_check);
             continue;
         }
 
         // For past rounds, we assume they've already progressed beyond active phases
         // If submission metadata still exists, it needs clearing
-        let should_clear = true;
         let clear_reason = "Past round with still existing submission metadata";
-
-        if should_clear {
-            log::info!(target: LOG_TARGET, "Submission for past round {} detected as DISCARDED (Reason: {}). Attempting to clear.", round_to_check, clear_reason);
-            match clear_submission(
-                Listen::Finalized,
-                client,
-                signer.clone(),
-                round_to_check,
-                n_pages,
-            )
-            .await
-            {
-                Ok(_) => {
-                    log::info!(target: LOG_TARGET, "Successfully cleared submission for past round {}", round_to_check);
-                    submitted_rounds
-                        .insert(
-                            round_to_check,
-                            n_pages,
-                            ElectionScore::default(), // We don't have the score here, use default
-                            Some(RoundTrackingEvent::Cleared),
-                        )
-                        .await;
-                    rounds_to_remove.push(round_to_check);
-                }
-                Err(e) => {
-                    log::error!(target: LOG_TARGET, "Failed to clear submission for past round {}: {:?}. Will retry.", round_to_check, e);
-                }
+        log::info!(target: LOG_TARGET, "Submission for past round {} detected as DISCARDED (Reason: {}). Attempting to clear.", round_to_check, clear_reason);
+        match clear_submission(client, signer.clone(), round_to_check, n_pages).await {
+            Ok(_) => {
+                log::info!(target: LOG_TARGET, "Successfully cleared submission for past round {}", round_to_check);
+                submitted_rounds
+                    .remove(round_to_check, RoundUntrackingEvent::Cleared)
+                    .await;
+            }
+            Err(e) => {
+                log::error!(target: LOG_TARGET, "Failed to clear submission for past round {}: {:?}. Will retry.", round_to_check, e);
             }
         }
-    }
-
-    // Remove successfully cleared rounds from tracking
-    for round_index in rounds_to_remove {
-        submitted_rounds
-            .remove(round_index, RoundUntrackingEvent::Cleared)
-            .await;
     }
 
     Ok(())

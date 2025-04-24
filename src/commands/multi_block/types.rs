@@ -32,90 +32,63 @@ pub type VoterSnapshotPage<T> = BoundedVec<Voter<T>, <T as MinerConfig>::VoterSn
 type Page = u32;
 
 /// Enum representing different tracking events for rounds
-#[derive(Debug, Clone, Copy)]
-pub enum RoundTrackingEvent {
-    /// Found existing submission on-chain
-    Found,
-    /// Successfully submitted a new solution
-    Submitted,
-    /// Submitted missing pages for partial solution
-    SubmittedPartial,
-    /// Successfully cleared a discarded submission
-    Cleared,
-    /// Failed to submit a solution
-    FailedSubmission,
+#[derive(Debug, Clone)]
+pub struct RoundState {
+    pub n_pages: u32,
+    pub event: RoundTrackingEvent,
+    // We could add pub score : ElectionScore if needed in the future
 }
 
-impl std::fmt::Display for RoundTrackingEvent {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RoundTrackingEvent::Found => write!(f, "Found submission for"),
-            RoundTrackingEvent::Submitted => write!(f, "Successfully submitted and recorded"),
-            RoundTrackingEvent::SubmittedPartial => write!(f, "Completed partial submission for"),
-            RoundTrackingEvent::Cleared => write!(f, "Cleared discarded submission for"),
-            RoundTrackingEvent::FailedSubmission => write!(f, "Failed submission for"),
+impl RoundState {
+    /// Returns true if this is a complete submission (all pages)
+    pub fn is_complete(&self) -> bool {
+        match self.event {
+            RoundTrackingEvent::Found | RoundTrackingEvent::Submitted => true,
+            RoundTrackingEvent::SubmittedPartial | RoundTrackingEvent::FailedSubmission => false,
         }
     }
 }
 
-/// Enum representing different untracking events for rounds
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
+pub enum RoundTrackingEvent {
+    Found,            // Found a complete submission on chain
+    Submitted,        // Fully submitted by us
+    SubmittedPartial, // Partially submitted (some pages missing)
+    FailedSubmission, // Submission was attempted but failed
+}
+
+#[derive(Debug, Clone)]
 pub enum RoundUntrackingEvent {
-    /// Removed after clearing
-    Cleared,
-    /// Removed after bailing
     Bailed,
-    /// Removed after a failed submission
     Failed,
+    Cleared,
 }
 
 impl std::fmt::Display for RoundUntrackingEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RoundUntrackingEvent::Cleared => write!(f, "Removed after clearing submission for"),
-            RoundUntrackingEvent::Bailed => write!(f, "Removed after bailing from"),
-            RoundUntrackingEvent::Failed => write!(f, "Removed failed submission for"),
+            RoundUntrackingEvent::Bailed => write!(f, "Bailed submission"),
+            RoundUntrackingEvent::Failed => write!(f, "Removed failed submission"),
+            RoundUntrackingEvent::Cleared => write!(f, "Cleared submission"),
         }
     }
 }
 
-/// A dedicated type to manage submitted rounds tracking with clean APIs
-/// that hide the mutex implementation details
-#[derive(Clone)]
-pub struct RoundSubmission(Arc<Mutex<HashMap<u32, (u32, ElectionScore)>>>);
+pub struct RoundSubmission(Arc<Mutex<HashMap<u32, RoundState>>>);
 
 impl RoundSubmission {
-    /// Create a new RoundSubmission tracker
     pub fn new() -> Self {
         Self(Arc::new(Mutex::new(HashMap::new())))
+    }
+
+    pub async fn insert(&self, round: u32, n_pages: u32, event: RoundTrackingEvent) {
+        let mut guard = self.0.lock().await;
+        guard.insert(round, RoundState { n_pages, event });
     }
 
     /// Check if a round is being tracked
     pub async fn contains(&self, round: u32) -> bool {
         self.0.lock().await.contains_key(&round)
-    }
-
-    /// Insert a new round submission into the tracking map
-    pub async fn insert(
-        &self,
-        round: u32,
-        n_pages: u32,
-        score: ElectionScore,
-        event: Option<RoundTrackingEvent>,
-    ) {
-        let mut rounds = self.0.lock().await;
-        rounds.insert(round, (n_pages, score));
-
-        if let Some(event) = event {
-            log::info!(
-                target: LOG_TARGET,
-                "{} round {} ({} pages, score {:?})",
-                event,
-                round,
-                n_pages,
-                score
-            );
-        }
     }
 
     /// Remove a round submission from the tracking map
@@ -126,7 +99,7 @@ impl RoundSubmission {
         if removed {
             log::info!(
                 target: LOG_TARGET,
-                "{} round {}",
+                "{} (round {})",
                 event,
                 round
             );
@@ -141,14 +114,26 @@ impl RoundSubmission {
 
         rounds
             .iter()
-            .filter_map(|(&round_to_check, &(n_pages, _))| {
+            .filter_map(|(&round_to_check, state)| {
                 if round_to_check < current_block_round {
-                    Some((round_to_check, n_pages))
+                    Some((round_to_check, state.n_pages))
                 } else {
                     None
                 }
             })
             .collect()
+    }
+
+    /// Get the state of a specific round
+    pub async fn get_state(&self, round: u32) -> Option<RoundState> {
+        let guard = self.0.lock().await;
+        guard.get(&round).cloned()
+    }
+}
+
+impl Clone for RoundSubmission {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
     }
 }
 
