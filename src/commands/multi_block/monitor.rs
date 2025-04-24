@@ -223,40 +223,22 @@ where
         _ => return Ok(()),
     }
 
-    // 2. If the solution has already been submitted:
-    // 2.1 Check local tracking first
-    if submitted_rounds.contains(round).await {
-        // Already submitted locally, no need to check on-chain
-        return Ok(());
-    }
-    // 2.2 Then check chain state
-    match get_submission(&storage, round, signer.account_id(), n_pages).await? {
-        CurrentSubmission::Done(score_on_chain) => {
-            // Found on chain but not locally, record it locally now.
-            submitted_rounds
-                .insert(
-                    round,
-                    n_pages,
-                    score_on_chain,
-                    Some(RoundTrackingEvent::Found),
-                )
-                .await;
+    // 2. Check if the solution has already been submitted (locally or on-chain).
+    match check_existing_submission(
+        &storage,
+        round,
+        signer.account_id(),
+        n_pages,
+        &submitted_rounds,
+    )
+    .await?
+    {
+        CurrentSubmission::Done(_) => {
+            // Found a complete submission, nothing more to do for this round.
             return Ok(());
         }
-        CurrentSubmission::Incomplete(incomplete_sub) => {
-            // Found incomplete on chain, record locally to prevent full resubmission if score matches
-            log::info!(target: LOG_TARGET, "Found incomplete submission for round {} on-chain, recording locally.", round);
-            submitted_rounds
-                .insert(
-                    round,
-                    n_pages,
-                    incomplete_sub.score(),
-                    Some(RoundTrackingEvent::SubmittedPartial),
-                )
-                .await;
-            // Continue to potentially submit missing pages below...
-        }
-        CurrentSubmission::NotStarted => { /* Continue */ }
+        // Continue processing if incomplete or not started
+        _ => {}
     }
 
     // 3. Fetch the target and voter snapshots if needed.
@@ -268,14 +250,26 @@ where
 
     // After the submission lock has been acquired, check again
     // that no submissions has been submitted (both locally and on-chain).
-    if submitted_rounds.contains(round).await {
-        // Round recorded locally, no need to check on-chain
-        return Ok(());
+    match check_existing_submission(
+        &storage,
+        round,
+        signer.account_id(),
+        n_pages,
+        &submitted_rounds,
+    )
+    .await?
+    {
+        CurrentSubmission::Done(_) => {
+            return Ok(());
+        }
+        // Continue processing if incomplete or not started
+        _ => {}
     }
 
-    // Always use finalized storage instead of best block
+    // Always use finalized storage instead of best block for subsequent checks
     let storage_after_lock = storage_at_finalized(&client).await?;
-    if is_solution_already_submitted(
+    // Check again using finalized storage after lock, before mining
+    match check_existing_submission(
         &storage_after_lock,
         round,
         signer.account_id(),
@@ -284,7 +278,13 @@ where
     )
     .await?
     {
-        return Ok(());
+        CurrentSubmission::Done(_) => {
+            // Found a complete submission, nothing more to do for this round.
+            log::trace!(target: LOG_TARGET, "Round {} already submitted after acquiring lock (checked finalized).", round);
+            return Ok(());
+        }
+        // Continue processing if incomplete or not started
+        _ => {}
     }
 
     // 5. Mine solution
@@ -473,6 +473,65 @@ where
     Ok(())
 }
 
+/// Checks if a submission for the given round already exists, either locally or on-chain.
+/// If an incomplete submission is found on-chain, it's recorded locally.
+///
+/// Returns:
+/// - `Ok(CurrentSubmission::Done(score))` if a complete submission was found (locally or on-chain).
+/// - `Ok(CurrentSubmission::Incomplete(details))` if an incomplete submission was found on-chain.
+/// - `Ok(CurrentSubmission::NotStarted)` if no submission was found.
+/// - `Err(e)` if an error occurred during the check.
+async fn check_existing_submission(
+    storage: &Storage,
+    round: u32,
+    account_id: &subxt::config::substrate::AccountId32,
+    n_pages: u32,
+    submitted_rounds: &RoundSubmission,
+) -> Result<CurrentSubmission, Error> {
+    // Check local tracking first
+    if submitted_rounds.contains(round).await {
+        // Already submitted locally, no need to check on-chain.
+        // We don't have the score readily available here, but we know it's complete.
+        log::trace!(target: LOG_TARGET, "Round {} already submitted locally.", round);
+        // Note: Using Default score as we don't store it locally upon simple completion check.
+        return Ok(CurrentSubmission::Done(Default::default()));
+    }
+
+    // Then check chain state
+    match get_submission(storage, round, account_id, n_pages).await? {
+        CurrentSubmission::Done(score_on_chain) => {
+            // Found complete on chain but not locally, record it locally now.
+            log::info!(target: LOG_TARGET, "Found complete submission for round {} on-chain with score {:?}, recording locally.", round, score_on_chain);
+            submitted_rounds
+                .insert(
+                    round,
+                    n_pages,
+                    score_on_chain,
+                    Some(RoundTrackingEvent::Found),
+                )
+                .await;
+            Ok(CurrentSubmission::Done(score_on_chain))
+        }
+        CurrentSubmission::Incomplete(incomplete_sub) => {
+            // Found incomplete on chain, record locally to prevent full resubmission if score matches later.
+            log::info!(target: LOG_TARGET, "Found incomplete submission for round {} on-chain with score {:?}, recording locally.", round, incomplete_sub.score());
+            submitted_rounds
+                .insert(
+                    round,
+                    n_pages,
+                    incomplete_sub.score(),
+                    Some(RoundTrackingEvent::SubmittedPartial),
+                )
+                .await;
+            Ok(CurrentSubmission::Incomplete(incomplete_sub))
+        }
+        CurrentSubmission::NotStarted => {
+            log::trace!(target: LOG_TARGET, "No submission found locally or on-chain for round {}.", round);
+            Ok(CurrentSubmission::NotStarted)
+        }
+    }
+}
+
 /// Whether the computed score is better than the current best score
 async fn score_better(
     storage: &Storage,
@@ -541,64 +600,6 @@ async fn get_submission(
             pages,
             n_pages,
         )))
-    }
-}
-
-/// Check if a solution for this round is already submitted, either locally or on-chain.
-/// If found, records it in the local tracking system.
-///
-/// Returns:
-///   - `Ok(true)` if a solution is already submitted (should skip further processing)
-///   - `Ok(false)` if no solution is found (should continue processing)
-async fn is_solution_already_submitted(
-    storage: &Storage,
-    round: u32,
-    account_id: &subxt::config::substrate::AccountId32,
-    n_pages: u32,
-    submitted_rounds: &RoundSubmission,
-) -> Result<bool, Error> {
-    // Check local tracking first
-    if submitted_rounds.contains(round).await {
-        // Already submitted locally, no need to check on-chain
-        return Ok(true);
-    }
-
-    // Then check chain state
-    match get_submission(storage, round, account_id, n_pages).await? {
-        CurrentSubmission::Done(score_on_chain) => {
-            // Found on chain but not locally, record it locally now
-            submitted_rounds
-                .insert(
-                    round,
-                    n_pages,
-                    score_on_chain,
-                    Some(RoundTrackingEvent::Found),
-                )
-                .await;
-            return Ok(true);
-        }
-        CurrentSubmission::Incomplete(incomplete_sub) => {
-            // Found incomplete on chain, record locally to prevent full resubmission if score matches
-            log::info!(
-                target: LOG_TARGET,
-                "Found incomplete submission for round {} on-chain, recording locally.",
-                round
-            );
-            submitted_rounds
-                .insert(
-                    round,
-                    n_pages,
-                    incomplete_sub.score(),
-                    Some(RoundTrackingEvent::SubmittedPartial),
-                )
-                .await;
-            // Continue to potentially submit missing pages below
-            return Ok(false);
-        }
-        CurrentSubmission::NotStarted => {
-            // No submission found, continue
-            return Ok(false);
-        }
     }
 }
 
