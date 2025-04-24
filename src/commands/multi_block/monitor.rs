@@ -2,7 +2,8 @@ use crate::{
     client::Client,
     commands::{
         multi_block::types::{
-            BlockDetails, CurrentSubmission, IncompleteSubmission, SharedSnapshot,
+            BlockDetails, CurrentSubmission, IncompleteSubmission, RoundSubmission,
+            RoundTrackingEvent, RoundUntrackingEvent, SharedSnapshot,
         },
         types::{ExperimentalMultiBlockMonitorConfig, Listen, SubmissionStrategy},
     },
@@ -22,116 +23,8 @@ use polkadot_sdk::{
     pallet_election_provider_multi_block::unsigned::miner::MinerConfig,
     sp_npos_elections::ElectionScore,
 };
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashSet, sync::Arc};
 use tokio::sync::Mutex;
-
-/// Enum representing different tracking events for rounds
-#[derive(Debug, Clone, Copy)]
-enum RoundTrackingEvent {
-    Found,            // Found existing submission on-chain
-    Submitted,        // Successfully submitted a new solution
-    SubmittedPartial, // Submitted missing pages for partial solution
-    Cleared,          // Successfully cleared a discarded submission
-    FailedSubmission, // Failed to submit a solution
-}
-
-/// Enum representing different untracking events for rounds
-#[derive(Debug, Clone, Copy)]
-enum RoundUntrackingEvent {
-    Cleared, // Removed after clearing
-    Bailed,  // Removed after bailing
-    Failed,  // Removed after a failed submission
-}
-
-/// A dedicated type to manage submitted rounds tracking with clean APIs
-/// that hide the mutex implementation details
-#[derive(Clone)]
-struct RoundSubmission(Arc<Mutex<HashMap<u32, (u32, ElectionScore)>>>);
-
-impl RoundSubmission {
-    /// Create a new RoundSubmission tracker
-    fn new() -> Self {
-        Self(Arc::new(Mutex::new(HashMap::new())))
-    }
-
-    /// Check if a round is being tracked
-    async fn contains(&self, round: u32) -> bool {
-        self.0.lock().await.contains_key(&round)
-    }
-
-    /// Insert a new round submission into the tracking map
-    async fn insert(
-        &self,
-        round: u32,
-        n_pages: u32,
-        score: ElectionScore,
-        event: Option<RoundTrackingEvent>,
-    ) {
-        let mut rounds = self.0.lock().await;
-        rounds.insert(round, (n_pages, score));
-
-        if let Some(event) = event {
-            let message = match event {
-                RoundTrackingEvent::Found => "Found submission for",
-                RoundTrackingEvent::Submitted => "Successfully submitted and recorded",
-                RoundTrackingEvent::SubmittedPartial => "Completed partial submission for",
-                RoundTrackingEvent::Cleared => "Cleared discarded submission for",
-                RoundTrackingEvent::FailedSubmission => "Failed submission for",
-            };
-
-            log::info!(
-                target: LOG_TARGET,
-                "{} round {} ({} pages, score {:?})",
-                message,
-                round,
-                n_pages,
-                score
-            );
-        }
-    }
-
-    /// Remove a round submission from the tracking map
-    async fn remove(&self, round: u32, event: Option<RoundUntrackingEvent>) -> bool {
-        let mut rounds = self.0.lock().await;
-        let removed = rounds.remove(&round).is_some();
-
-        if removed && event.is_some() {
-            let message = match event.unwrap() {
-                RoundUntrackingEvent::Cleared => "Removed after clearing submission for",
-                RoundUntrackingEvent::Bailed => "Removed after bailing from",
-                RoundUntrackingEvent::Failed => "Removed failed submission for",
-            };
-
-            log::info!(
-                target: LOG_TARGET,
-                "{} round {}",
-                message,
-                round
-            );
-        }
-
-        removed
-    }
-
-    /// Collect past rounds that should be cleared
-    async fn collect_past_rounds(&self, current_block_round: u32) -> Vec<(u32, u32)> {
-        let rounds = self.0.lock().await;
-
-        rounds
-            .iter()
-            .filter_map(|(&round_to_check, &(n_pages, _))| {
-                if round_to_check < current_block_round {
-                    Some((round_to_check, n_pages))
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-}
 
 pub async fn monitor_cmd<T>(
     client: Client,
@@ -382,32 +275,16 @@ where
 
     // Always use finalized storage instead of best block
     let storage_after_lock = storage_at_finalized(&client).await?;
-    match get_submission(&storage_after_lock, round, signer.account_id(), n_pages).await? {
-        CurrentSubmission::Done(score_on_chain) => {
-            log::info!(target: LOG_TARGET, "Found submission for round {} on-chain after acquiring lock, recording locally.", round);
-            submitted_rounds
-                .insert(
-                    round,
-                    n_pages,
-                    score_on_chain,
-                    Some(RoundTrackingEvent::Found),
-                )
-                .await;
-            return Ok(());
-        }
-        CurrentSubmission::Incomplete(incomplete_sub) => {
-            log::info!(target: LOG_TARGET, "Found incomplete submission for round {} on-chain after acquiring lock, recording locally.", round);
-            submitted_rounds
-                .insert(
-                    round,
-                    n_pages,
-                    incomplete_sub.score(),
-                    Some(RoundTrackingEvent::SubmittedPartial),
-                )
-                .await;
-            // Continue...
-        }
-        CurrentSubmission::NotStarted => { /* Continue */ }
+    if is_solution_already_submitted(
+        &storage_after_lock,
+        round,
+        signer.account_id(),
+        n_pages,
+        &submitted_rounds,
+    )
+    .await?
+    {
+        return Ok(());
     }
 
     // 5. Mine solution
@@ -451,10 +328,10 @@ where
             }
             // Revert previous submission and submit the new one.
             log::warn!(target: LOG_TARGET, "Mined solution score {:?} is better than submitted score {:?} for round {}. Bailing previous submission.", submitted_score, score, round);
-            bail(Listen::Finalized, &client, signer.clone()).await?;
+            bail(&client, signer.clone()).await?;
             // Clear local tracking as we are bailing
             submitted_rounds
-                .remove(round, Some(RoundUntrackingEvent::Bailed))
+                .remove(round, RoundUntrackingEvent::Bailed)
                 .await;
         }
         CurrentSubmission::Incomplete(s) => {
@@ -476,19 +353,13 @@ where
                 }
 
                 let submission_result = if chunk_size == 0 {
-                    dynamic::inner_submit_pages_concurrent::<T>(
-                        &client,
-                        &signer,
-                        missing_pages,
-                        Listen::Finalized,
-                    )
-                    .await
+                    dynamic::inner_submit_pages_concurrent::<T>(&client, &signer, missing_pages)
+                        .await
                 } else {
                     dynamic::inner_submit_pages_chunked::<T>(
                         &client,
                         &signer,
                         missing_pages,
-                        Listen::Finalized,
                         chunk_size,
                     )
                     .await
@@ -524,10 +395,10 @@ where
             } else {
                 // Score mismatch, revert previous submission and submit a new one.
                 log::warn!(target: LOG_TARGET, "Mined solution score {:?} differs from incomplete submission score {:?} for round {}. Bailing previous submission.", submitted_score, s.score(), round);
-                bail(Listen::Finalized, &client, signer.clone()).await?;
+                bail(&client, signer.clone()).await?;
                 // Clear local tracking as we are bailing
                 submitted_rounds
-                    .remove(round, Some(RoundUntrackingEvent::Bailed))
+                    .remove(round, RoundUntrackingEvent::Bailed)
                     .await;
             }
         }
@@ -593,7 +464,7 @@ where
 
             // Ensure we DON'T have a potentially incomplete entry if submit fails.
             submitted_rounds
-                .remove(round, Some(RoundUntrackingEvent::Failed))
+                .remove(round, RoundUntrackingEvent::Failed)
                 .await;
             return Err(e);
         }
@@ -673,8 +544,66 @@ async fn get_submission(
     }
 }
 
+/// Check if a solution for this round is already submitted, either locally or on-chain.
+/// If found, records it in the local tracking system.
+///
+/// Returns:
+///   - `Ok(true)` if a solution is already submitted (should skip further processing)
+///   - `Ok(false)` if no solution is found (should continue processing)
+async fn is_solution_already_submitted(
+    storage: &Storage,
+    round: u32,
+    account_id: &subxt::config::substrate::AccountId32,
+    n_pages: u32,
+    submitted_rounds: &RoundSubmission,
+) -> Result<bool, Error> {
+    // Check local tracking first
+    if submitted_rounds.contains(round).await {
+        // Already submitted locally, no need to check on-chain
+        return Ok(true);
+    }
+
+    // Then check chain state
+    match get_submission(storage, round, account_id, n_pages).await? {
+        CurrentSubmission::Done(score_on_chain) => {
+            // Found on chain but not locally, record it locally now
+            submitted_rounds
+                .insert(
+                    round,
+                    n_pages,
+                    score_on_chain,
+                    Some(RoundTrackingEvent::Found),
+                )
+                .await;
+            return Ok(true);
+        }
+        CurrentSubmission::Incomplete(incomplete_sub) => {
+            // Found incomplete on chain, record locally to prevent full resubmission if score matches
+            log::info!(
+                target: LOG_TARGET,
+                "Found incomplete submission for round {} on-chain, recording locally.",
+                round
+            );
+            submitted_rounds
+                .insert(
+                    round,
+                    n_pages,
+                    incomplete_sub.score(),
+                    Some(RoundTrackingEvent::SubmittedPartial),
+                )
+                .await;
+            // Continue to potentially submit missing pages below
+            return Ok(false);
+        }
+        CurrentSubmission::NotStarted => {
+            // No submission found, continue
+            return Ok(false);
+        }
+    }
+}
+
 /// Bail out of the current round submission.
-async fn bail(listen: Listen, client: &Client, signer: Signer) -> Result<(), Error> {
+async fn bail(client: &Client, signer: Signer) -> Result<(), Error> {
     log::warn!(target: LOG_TARGET, "Bailing out of current submission");
     let tx = runtime::tx().multi_block_signed().bail();
 
@@ -692,7 +621,8 @@ async fn bail(listen: Listen, client: &Client, signer: Signer) -> Result<(), Err
 
     let tx_progress = xt.submit_and_watch().await?;
 
-    match utils::wait_tx_in_block_for_strategy(tx_progress, listen).await {
+    // Always use finalized blocks
+    match utils::wait_tx_in_block_for_strategy(tx_progress, Listen::Finalized).await {
         Ok(tx_in_block) => {
             log::info!(target: LOG_TARGET, "Successfully bailed in block {:?}", tx_in_block.block_hash());
         }
@@ -836,7 +766,7 @@ async fn check_and_clear_discarded_submissions(
     // Remove successfully cleared rounds from tracking
     for round_index in rounds_to_remove {
         submitted_rounds
-            .remove(round_index, Some(RoundUntrackingEvent::Cleared))
+            .remove(round_index, RoundUntrackingEvent::Cleared)
             .await;
     }
 

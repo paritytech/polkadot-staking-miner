@@ -14,10 +14,11 @@ use polkadot_sdk::{
     sp_npos_elections::ElectionScore,
 };
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::{Arc, RwLock},
 };
 use subxt::config::Header as _;
+use tokio::sync::Mutex;
 
 pub type TargetSnapshotPageOf<T> =
     BoundedVec<AccountId, <T as MinerConfig>::TargetSnapshotPerBlock>;
@@ -29,6 +30,127 @@ pub type TargetSnapshotPage<T> =
 pub type VoterSnapshotPage<T> = BoundedVec<Voter<T>, <T as MinerConfig>::VoterSnapshotPerBlock>;
 
 type Page = u32;
+
+/// Enum representing different tracking events for rounds
+#[derive(Debug, Clone, Copy)]
+pub enum RoundTrackingEvent {
+    /// Found existing submission on-chain
+    Found,
+    /// Successfully submitted a new solution
+    Submitted,
+    /// Submitted missing pages for partial solution
+    SubmittedPartial,
+    /// Successfully cleared a discarded submission
+    Cleared,
+    /// Failed to submit a solution
+    FailedSubmission,
+}
+
+impl std::fmt::Display for RoundTrackingEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RoundTrackingEvent::Found => write!(f, "Found submission for"),
+            RoundTrackingEvent::Submitted => write!(f, "Successfully submitted and recorded"),
+            RoundTrackingEvent::SubmittedPartial => write!(f, "Completed partial submission for"),
+            RoundTrackingEvent::Cleared => write!(f, "Cleared discarded submission for"),
+            RoundTrackingEvent::FailedSubmission => write!(f, "Failed submission for"),
+        }
+    }
+}
+
+/// Enum representing different untracking events for rounds
+#[derive(Debug, Clone, Copy)]
+pub enum RoundUntrackingEvent {
+    /// Removed after clearing
+    Cleared,
+    /// Removed after bailing
+    Bailed,
+    /// Removed after a failed submission
+    Failed,
+}
+
+impl std::fmt::Display for RoundUntrackingEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RoundUntrackingEvent::Cleared => write!(f, "Removed after clearing submission for"),
+            RoundUntrackingEvent::Bailed => write!(f, "Removed after bailing from"),
+            RoundUntrackingEvent::Failed => write!(f, "Removed failed submission for"),
+        }
+    }
+}
+
+/// A dedicated type to manage submitted rounds tracking with clean APIs
+/// that hide the mutex implementation details
+#[derive(Clone)]
+pub struct RoundSubmission(Arc<Mutex<HashMap<u32, (u32, ElectionScore)>>>);
+
+impl RoundSubmission {
+    /// Create a new RoundSubmission tracker
+    pub fn new() -> Self {
+        Self(Arc::new(Mutex::new(HashMap::new())))
+    }
+
+    /// Check if a round is being tracked
+    pub async fn contains(&self, round: u32) -> bool {
+        self.0.lock().await.contains_key(&round)
+    }
+
+    /// Insert a new round submission into the tracking map
+    pub async fn insert(
+        &self,
+        round: u32,
+        n_pages: u32,
+        score: ElectionScore,
+        event: Option<RoundTrackingEvent>,
+    ) {
+        let mut rounds = self.0.lock().await;
+        rounds.insert(round, (n_pages, score));
+
+        if let Some(event) = event {
+            log::info!(
+                target: LOG_TARGET,
+                "{} round {} ({} pages, score {:?})",
+                event,
+                round,
+                n_pages,
+                score
+            );
+        }
+    }
+
+    /// Remove a round submission from the tracking map
+    pub async fn remove(&self, round: u32, event: RoundUntrackingEvent) -> bool {
+        let mut rounds = self.0.lock().await;
+        let removed = rounds.remove(&round).is_some();
+
+        if removed {
+            log::info!(
+                target: LOG_TARGET,
+                "{} round {}",
+                event,
+                round
+            );
+        }
+
+        removed
+    }
+
+    /// Collect past rounds that should be cleared
+    pub async fn collect_past_rounds(&self, current_block_round: u32) -> Vec<(u32, u32)> {
+        let rounds = self.0.lock().await;
+
+        rounds
+            .iter()
+            .filter_map(|(&round_to_check, &(n_pages, _))| {
+                if round_to_check < current_block_round {
+                    Some((round_to_check, n_pages))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+}
 
 /// Snapshot of the target and voter pages in the multi-block stuff.
 ///
