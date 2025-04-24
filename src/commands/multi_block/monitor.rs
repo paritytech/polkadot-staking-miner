@@ -71,7 +71,7 @@ where
     let mut pending_tasks: Vec<AbortHandle> = Vec::new();
     let mut prev_block_signed_phase = false;
 
-    // State to track submitted rounds, their page count, and score
+    // State to track submitted rounds, their page count, and if needed in the future score
     let submitted_rounds = RoundSubmission::new();
 
     loop {
@@ -693,24 +693,37 @@ async fn check_and_clear_discarded_submissions(
 
         if maybe_submission_metadata.is_none() {
             log::debug!(target: LOG_TARGET, "Submission metadata for past round {} gone. Removing from tracking.", round_to_check);
+            submitted_rounds
+                .remove(round_to_check, RoundUntrackingEvent::Cleared)
+                .await;
             continue;
         }
 
         // For past rounds, we assume they've already progressed beyond active phases
         // If submission metadata still exists, it needs clearing
         let clear_reason = "Past round with still existing submission metadata";
-        log::info!(target: LOG_TARGET, "Submission for past round {} detected as DISCARDED (Reason: {}). Attempting to clear.", round_to_check, clear_reason);
-        match clear_submission(client, signer.clone(), round_to_check, n_pages).await {
-            Ok(_) => {
-                log::info!(target: LOG_TARGET, "Successfully cleared submission for past round {}", round_to_check);
-                submitted_rounds
-                    .remove(round_to_check, RoundUntrackingEvent::Cleared)
-                    .await;
+        log::info!(target: LOG_TARGET, "Submission for past round {} detected as DISCARDED (Reason: {}). Spawning task to clear.", round_to_check, clear_reason);
+
+        // Clone what we need for the spawned task
+        let client_clone = client.clone();
+        let signer_clone = signer.clone();
+        let submitted_rounds_clone = submitted_rounds.clone();
+
+        // Spawn a separate task to handle the submission
+        tokio::spawn(async move {
+            match clear_submission(&client_clone, signer_clone, round_to_check, n_pages).await {
+                Ok(_) => {
+                    log::info!(target: LOG_TARGET, "Successfully cleared submission for past round {}", round_to_check);
+                    submitted_rounds_clone
+                        .remove(round_to_check, RoundUntrackingEvent::Cleared)
+                        .await;
+                }
+                Err(e) => {
+                    log::error!(target: LOG_TARGET, "Failed to clear submission for past round {}: {:?}. Will retry.", round_to_check, e);
+                    // We don't remove from tracking, allowing retry in future blocks
+                }
             }
-            Err(e) => {
-                log::error!(target: LOG_TARGET, "Failed to clear submission for past round {}: {:?}. Will retry.", round_to_check, e);
-            }
-        }
+        });
     }
 
     Ok(())
