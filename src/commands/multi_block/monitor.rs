@@ -240,26 +240,32 @@ async fn run_clearing_task(
     prometheus::set_clearing_round_queue_size(clear_receiver.len());
 
     loop {
-        // Process any rounds in the queue
-        let mut processed = false;
+        // Use tokio::select to either process items from the queue or wait for notification
+        tokio::select! {
+            // Properly await messages asynchronously instead of polling
+            Some(round_to_clear) = clear_receiver.recv() => {
+                process_round_clearing(&client, signer.clone(), round_to_clear, &submitted_rounds)
+                    .await;
 
-        while let Ok(round_to_clear) = clear_receiver.try_recv() {
-            processed = true;
-
-            process_round_clearing(&client, signer.clone(), round_to_clear, &submitted_rounds)
-                .await;
-
-            // Update the queue size metric after each processing
-            prometheus::set_clearing_round_queue_size(clear_receiver.len());
+                // Update the queue size metric after processing
+                prometheus::set_clearing_round_queue_size(clear_receiver.len());
+            }
+            // Wait for notification when there are no messages to process
+            _ = notify.notified() => {
+                // Just wake up and continue the loop to check for new messages
+            }
+            // If clear_receiver is closed, exit the task
+            else => {
+                log::warn!(
+                    target: LOG_TARGET,
+                    "Clearing task channel closed, exiting clearing task"
+                );
+                break;
+            }
         }
-
-        if !processed {
-            prometheus::set_clearing_round_queue_size(clear_receiver.len());
-        }
-
-        // Wait for notification of a new round to clear
-        notify.notified().await;
     }
+
+    Ok(())
 }
 
 // Helper function to process a single round clearing
