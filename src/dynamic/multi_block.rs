@@ -402,10 +402,10 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
     // 2. Submit all solution pages using the appropriate strategy based on chunk_size
     let failed_pages = if chunk_size == 0 {
         // Use fully concurrent submission
-        inner_submit_pages_concurrent::<T>(client, signer, solutions, listen).await?
+        inner_submit_pages_concurrent::<T>(client, signer, solutions).await?
     } else {
         // Use chunked concurrent submission
-        inner_submit_pages_chunked::<T>(client, signer, solutions, listen, chunk_size).await?
+        inner_submit_pages_chunked::<T>(client, signer, solutions, chunk_size).await?
     };
 
     // 3. All pages were submitted successfully, we are done.
@@ -428,9 +428,9 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 
     // Retry with the same strategy as the initial submission
     let failed_pages = if chunk_size == 0 {
-        inner_submit_pages_concurrent::<T>(client, signer, solutions, listen).await?
+        inner_submit_pages_concurrent::<T>(client, signer, solutions).await?
     } else {
-        inner_submit_pages_chunked::<T>(client, signer, solutions, listen, chunk_size).await?
+        inner_submit_pages_chunked::<T>(client, signer, solutions, chunk_size).await?
     };
 
     if failed_pages.is_empty() {
@@ -461,7 +461,6 @@ async fn submit_pages_batch<T: MinerConfig + 'static>(
     client: &Client,
     signer: &Signer,
     pages_to_submit: Vec<(u32, T::Solution)>,
-    listen: Listen,
 ) -> Result<SubmissionResult, Error> {
     let mut txs = FuturesUnordered::new();
     let mut nonce = client
@@ -483,7 +482,7 @@ async fn submit_pages_batch<T: MinerConfig + 'static>(
         .await?;
 
         txs.push(async move {
-            match utils::wait_tx_in_block_for_strategy(tx_status, listen).await {
+            match utils::wait_tx_in_block_for_strategy(tx_status, Listen::Finalized).await {
                 Ok(tx) => Ok(tx),
                 Err(_) => Err(page),
             }
@@ -564,10 +563,9 @@ pub(crate) async fn inner_submit_pages_concurrent<T: MinerConfig + 'static>(
     client: &Client,
     signer: &Signer,
     paged_raw_solution: Vec<(u32, T::Solution)>,
-    listen: Listen,
 ) -> Result<Vec<u32>, Error> {
     // Submit all pages in a single batch
-    let result = submit_pages_batch::<T>(client, signer, paged_raw_solution, listen).await?;
+    let result = submit_pages_batch::<T>(client, signer, paged_raw_solution).await?;
 
     // If all pages were submitted successfully, we're done
     if result.all_successful() {
@@ -583,7 +581,6 @@ pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
     client: &Client,
     signer: &Signer,
     paged_raw_solution: Vec<(u32, T::Solution)>,
-    listen: Listen,
     chunk_size: usize,
 ) -> Result<Vec<u32>, Error> {
     assert!(chunk_size > 0, "Chunk size must be greater than 0");
@@ -608,7 +605,7 @@ pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
         );
 
         // Submit the current chunk
-        let result = submit_pages_batch::<T>(client, signer, chunk_vec, listen).await?;
+        let result = submit_pages_batch::<T>(client, signer, chunk_vec).await?;
 
         // Check if we have failed pages before extending the overall lists
         if !result.all_successful() {

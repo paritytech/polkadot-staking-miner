@@ -14,10 +14,11 @@ use polkadot_sdk::{
     sp_npos_elections::ElectionScore,
 };
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::{Arc, RwLock},
 };
 use subxt::config::Header as _;
+use tokio::sync::Mutex;
 
 pub type TargetSnapshotPageOf<T> =
     BoundedVec<AccountId, <T as MinerConfig>::TargetSnapshotPerBlock>;
@@ -29,6 +30,121 @@ pub type TargetSnapshotPage<T> =
 pub type VoterSnapshotPage<T> = BoundedVec<Voter<T>, <T as MinerConfig>::VoterSnapshotPerBlock>;
 
 type Page = u32;
+
+/// State for tracking a round's submission status
+#[derive(Debug, Clone)]
+pub struct RoundState {
+    pub n_pages: u32,
+    pub event: RoundTrackingEvent,
+    // We could add pub score : ElectionScore if needed in the future
+}
+
+impl RoundState {
+    /// Returns true if this is a complete submission (all pages)
+    pub fn is_complete(&self) -> bool {
+        match self.event {
+            RoundTrackingEvent::Found | RoundTrackingEvent::Submitted => true,
+            RoundTrackingEvent::SubmittedPartial | RoundTrackingEvent::FailedSubmission => false,
+        }
+    }
+}
+
+/// Enum representing different tracking events for rounds
+#[derive(Debug, Clone)]
+pub enum RoundTrackingEvent {
+    /// Found a complete submission on chain
+    Found,
+    /// Fully submitted by us
+    Submitted,
+    /// Partially submitted (some pages missing)
+    SubmittedPartial,
+    /// Submission was attempted but failed
+    FailedSubmission,
+}
+
+/// Events that trigger the removal of a round from tracking
+#[derive(Debug, Clone)]
+pub enum RoundUntrackingEvent {
+    /// Submission was abandoned (e.g., due to a strategy change)
+    Bailed,
+    /// Submission explicitly failed and shouldn't be retried
+    Failed,
+    /// Submission was successfully cleared from chain storage
+    Cleared,
+}
+
+impl std::fmt::Display for RoundUntrackingEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RoundUntrackingEvent::Bailed => write!(f, "Bailed submission"),
+            RoundUntrackingEvent::Failed => write!(f, "Removed failed submission"),
+            RoundUntrackingEvent::Cleared => write!(f, "Cleared submission"),
+        }
+    }
+}
+
+pub struct RoundSubmission(Arc<Mutex<HashMap<u32, RoundState>>>);
+
+impl RoundSubmission {
+    pub fn new() -> Self {
+        Self(Arc::new(Mutex::new(HashMap::new())))
+    }
+
+    pub async fn insert(&self, round: u32, n_pages: u32, event: RoundTrackingEvent) {
+        let mut guard = self.0.lock().await;
+        guard.insert(round, RoundState { n_pages, event });
+    }
+
+    /// Check if a round is being tracked
+    pub async fn contains(&self, round: u32) -> bool {
+        self.0.lock().await.contains_key(&round)
+    }
+
+    /// Remove a round submission from the tracking map
+    pub async fn remove(&self, round: u32, event: RoundUntrackingEvent) -> bool {
+        let mut rounds = self.0.lock().await;
+        let removed = rounds.remove(&round).is_some();
+
+        if removed {
+            log::info!(
+                target: LOG_TARGET,
+                "{} (round {})",
+                event,
+                round
+            );
+        }
+
+        removed
+    }
+
+    /// Collect all past rounds that should be cleared (rounds less than current_round)
+    pub async fn get_all_past_rounds(&self, current_block_round: u32) -> Vec<(u32, u32)> {
+        let rounds = self.0.lock().await;
+
+        rounds
+            .iter()
+            .filter_map(|(&round, state)| {
+                if round < current_block_round {
+                    Some((round, state.n_pages))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Get the state of a specific round
+    pub async fn get_state(&self, round: u32) -> Option<RoundState> {
+        let guard = self.0.lock().await;
+        guard.get(&round).cloned()
+    }
+}
+
+impl Clone for RoundSubmission {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
 
 /// Snapshot of the target and voter pages in the multi-block stuff.
 ///
