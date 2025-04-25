@@ -193,7 +193,7 @@ where
     // 1. Check if the phase is signed/snapshot, otherwise wait for the next block.
     match phase {
         Phase::Snapshot(_) => {
-            dynamic::fetch_missing_snapshots_lossy::<T>(&snapshot, &storage).await?;
+            dynamic::fetch_missing_snapshots_lossy::<T>(&snapshot, &storage, round).await?;
             return Ok(());
         }
         Phase::Signed(_) => {}
@@ -207,7 +207,7 @@ where
     }
 
     // 3. Fetch the target and voter snapshots if needed.
-    dynamic::fetch_missing_snapshots::<T>(&snapshot, &storage).await?;
+    dynamic::fetch_missing_snapshots::<T>(&snapshot, &storage, round).await?;
     let (target_snapshot, voter_snapshot) = snapshot.read().get();
 
     // 4. Lock mining and submission.
