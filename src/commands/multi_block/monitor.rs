@@ -295,26 +295,9 @@ async fn process_round_clearing(
                         return;
                     }
 
-                    // Submission metadata still exists, attempt to clear it
-                    log::info!(
-                        target: LOG_TARGET,
-                        "Attempting to clear submission data for past round {}",
-                        round_to_clear
-                    );
-
-                    // Only start timing here - after we've confirmed metadata exists
-                    let start_time = std::time::Instant::now();
+                    // Submission metadata exists, attempt to clear it
                     match clear_submission(client, signer, round_to_clear, n_pages).await {
                         Ok(_) => {
-                            let elapsed_ms = start_time.elapsed().as_millis() as f64;
-                            prometheus::observe_clearing_round_duration(elapsed_ms);
-
-                            log::info!(
-                                target: LOG_TARGET,
-                                "Successfully cleared submission for past round {} in {:.2}ms",
-                                round_to_clear,
-                                elapsed_ms
-                            );
                             let _ = submitted_rounds
                                 .remove(round_to_clear, RoundUntrackingEvent::Cleared)
                                 .await;
@@ -326,9 +309,6 @@ async fn process_round_clearing(
                                 round_to_clear,
                                 e
                             );
-
-                            // Use the prometheus module's method to increment the failure counter
-                            prometheus::on_clearing_round_failure();
                         }
                     }
                 }
@@ -806,6 +786,9 @@ async fn clear_submission(
         round_index, witness_pages
     );
 
+    // Start timing here for metrics
+    let start_time = std::time::Instant::now();
+
     // Construct the extrinsic call using the static types from the runtime module
     let tx = runtime::tx()
         .multi_block_signed()
@@ -827,27 +810,32 @@ async fn clear_submission(
 
     match utils::wait_tx_in_block_for_strategy(tx_progress, Listen::Finalized).await {
         Ok(tx_in_block) => {
+            // Record the timing metric on success
+            let elapsed_ms = start_time.elapsed().as_millis() as f64;
+            prometheus::observe_clearing_round_duration(elapsed_ms);
+
             log::info!(
                 target: LOG_TARGET,
-                "Successfully cleared submission data for round {} in block {:?}",
+                "Successfully cleared submission data for round {} in block {:?} ({:.2}ms)",
                 round_index,
-                tx_in_block.block_hash()
+                tx_in_block.block_hash(),
+                elapsed_ms
             );
-            // Optionally check events here if needed, e.g., for deposit reclaimed event
+            Ok(())
         }
         Err(e) => {
+            // Record the failure metric
+            prometheus::on_clearing_round_failure();
+
             log::error!(
                 target: LOG_TARGET,
-                "Failed to clear submission data for round {}: {:?}. Will retry.",
+                "Failed to clear submission data for round {}: {:?}",
                 round_index,
                 e
             );
-            // Return the error, the caller might want to retry or log differently
             return Err(e.into());
         }
     }
-
-    Ok(())
 }
 
 /// Helper function to get storage at finalized head
