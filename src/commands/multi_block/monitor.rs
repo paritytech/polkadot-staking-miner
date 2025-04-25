@@ -246,15 +246,8 @@ async fn run_clearing_task(
         while let Ok(round_to_clear) = clear_receiver.try_recv() {
             processed = true;
 
-            // Measure the total time taken to clear a round
-            let start_time = std::time::Instant::now();
-
             process_round_clearing(&client, signer.clone(), round_to_clear, &submitted_rounds)
                 .await;
-
-            // Record clearing duration for successful clearings
-            let elapsed_ms = start_time.elapsed().as_millis() as f64;
-            prometheus::observe_clearing_round_duration(elapsed_ms);
 
             // Update the queue size metric after each processing
             prometheus::set_clearing_round_queue_size(clear_receiver.len());
@@ -291,7 +284,7 @@ async fn process_round_clearing(
             {
                 Ok(maybe_submission_metadata) => {
                     if maybe_submission_metadata.is_none() {
-                        log::debug!(
+                        log::trace!(
                             target: LOG_TARGET,
                             "Submission metadata for past round {} already gone. Removing from tracking.",
                             round_to_clear
@@ -309,6 +302,7 @@ async fn process_round_clearing(
                         round_to_clear
                     );
 
+                    // Only start timing here - after we've confirmed metadata exists
                     let start_time = std::time::Instant::now();
                     match clear_submission(client, signer, round_to_clear, n_pages).await {
                         Ok(_) => {
@@ -428,7 +422,6 @@ where
         // Found a complete submission (or recorded an incomplete one found on chain),
         // nothing more to do in this initial check.
         // If it was incomplete, we'll handle potential page submission after mining if needed.
-        log::trace!(target: LOG_TARGET, "Round {} already submitted or incomplete found on chain. Skipping initial processing.", round);
         return Ok(());
     }
     // If is_solution_already_submitted returned false, it means:
