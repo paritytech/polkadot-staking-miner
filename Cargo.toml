@@ -44,7 +44,7 @@ polkadot-sdk = { git = "https://github.com/paritytech/polkadot-sdk", features = 
     "sp-runtime",
     "pallet-election-provider-multi-phase",
     "pallet-election-provider-multi-block",
-], branch = "ankn/staking-async-3" }
+], branch = "master" }
 
 # prometheus
 prometheus = "0.14"
