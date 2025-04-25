@@ -52,17 +52,24 @@ impl RoundState {
 /// Enum representing different tracking events for rounds
 #[derive(Debug, Clone)]
 pub enum RoundTrackingEvent {
-    Found,            // Found a complete submission on chain
-    Submitted,        // Fully submitted by us
-    SubmittedPartial, // Partially submitted (some pages missing)
-    FailedSubmission, // Submission was attempted but failed
+    /// Found a complete submission on chain
+    Found,
+    /// Fully submitted by us
+    Submitted,
+    /// Partially submitted (some pages missing)
+    SubmittedPartial,
+    /// Submission was attempted but failed
+    FailedSubmission,
 }
 
 /// Events that trigger the removal of a round from tracking
 #[derive(Debug, Clone)]
 pub enum RoundUntrackingEvent {
+    /// Submission was abandoned (e.g., due to a strategy change)
     Bailed,
+    /// Submission explicitly failed and shouldn't be retried
     Failed,
+    /// Submission was successfully cleared from chain storage
     Cleared,
 }
 
