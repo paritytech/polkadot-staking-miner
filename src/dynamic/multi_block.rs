@@ -277,7 +277,11 @@ pub(crate) async fn fetch_missing_snapshots<T: MinerConfig>(
     check_and_update_target_snapshot(n_pages - 1, round, storage, snapshot).await
 }
 
-pub(crate) async fn paged_voter_snapshot_hash(page: u32, round: u32, storage: &Storage) -> Result<Hash, Error> {
+pub(crate) async fn paged_voter_snapshot_hash(
+    page: u32,
+    round: u32,
+    storage: &Storage,
+) -> Result<Hash, Error> {
     let bytes = storage
         .fetch(&storage_addr(
             pallet_api::multi_block::storage::PAGED_VOTER_SNAPSHOT_HASH,
@@ -289,7 +293,11 @@ pub(crate) async fn paged_voter_snapshot_hash(page: u32, round: u32, storage: &S
     Decode::decode(&mut bytes.encoded()).map_err(Into::into)
 }
 
-pub(crate) async fn target_snapshot_hash(page: u32, round: u32, storage: &Storage) -> Result<Hash, Error> {
+pub(crate) async fn target_snapshot_hash(
+    page: u32,
+    round: u32,
+    storage: &Storage,
+) -> Result<Hash, Error> {
     let bytes = storage
         .fetch(&storage_addr(
             pallet_api::multi_block::storage::PAGED_TARGET_SNAPSHOT_HASH,
