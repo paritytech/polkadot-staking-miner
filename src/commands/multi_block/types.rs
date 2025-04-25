@@ -31,7 +31,7 @@ pub type VoterSnapshotPage<T> = BoundedVec<Voter<T>, <T as MinerConfig>::VoterSn
 
 type Page = u32;
 
-/// Enum representing different tracking events for rounds
+/// State for tracking a round's submission status
 #[derive(Debug, Clone)]
 pub struct RoundState {
     pub n_pages: u32,
@@ -49,6 +49,7 @@ impl RoundState {
     }
 }
 
+/// Enum representing different tracking events for rounds
 #[derive(Debug, Clone)]
 pub enum RoundTrackingEvent {
     Found,            // Found a complete submission on chain
@@ -57,6 +58,7 @@ pub enum RoundTrackingEvent {
     FailedSubmission, // Submission was attempted but failed
 }
 
+/// Events that trigger the removal of a round from tracking
 #[derive(Debug, Clone)]
 pub enum RoundUntrackingEvent {
     Bailed,
