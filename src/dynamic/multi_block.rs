@@ -94,9 +94,10 @@ impl MultiBlockTransaction {
 /// Note: the target snapshot is single paged.
 pub(crate) async fn target_snapshot<T: MinerConfig>(
     page: u32,
+    round: u32,
     storage: &Storage,
 ) -> Result<TargetSnapshotPage<T>, Error> {
-    let page_idx = vec![Value::from(page)];
+    let page_idx = vec![Value::from(round), Value::from(page)];
     let addr = storage_addr(
         pallet_api::multi_block::storage::PAGED_TARGET_SNAPSHOT,
         page_idx,
@@ -109,7 +110,7 @@ pub(crate) async fn target_snapshot<T: MinerConfig>(
                 target: LOG_TARGET,
                 "Target snapshot with len {:?}, hash: {:?}",
                 snapshot.len(),
-                target_snapshot_hash(page, storage).await,
+                target_snapshot_hash(page, round, storage).await,
             );
             Ok(snapshot)
         }
@@ -121,6 +122,7 @@ pub(crate) async fn target_snapshot<T: MinerConfig>(
 /// Fetches `page` of the voter snapshot.
 pub(crate) async fn paged_voter_snapshot<T>(
     page: u32,
+    round: u32,
     storage: &Storage,
 ) -> Result<VoterSnapshotPage<T>, Error>
 where
@@ -129,7 +131,7 @@ where
     match storage
         .fetch(&storage_addr(
             pallet_api::multi_block::storage::PAGED_VOTER_SNAPSHOT,
-            vec![Value::from(page)],
+            vec![Value::from(round), Value::from(page)],
         ))
         .await
     {
@@ -140,7 +142,7 @@ where
                     target: LOG_TARGET,
                     "Voter snapshot page={page} len={}, hash={:?}",
                     snapshot.len(),
-                    paged_voter_snapshot_hash(page, storage).await,
+                    paged_voter_snapshot_hash(page, round, storage).await,
                 );
                 Ok(snapshot)
             }
@@ -243,18 +245,19 @@ where
 pub(crate) async fn fetch_missing_snapshots_lossy<T: MinerConfig>(
     snapshot: &SharedSnapshot<T>,
     storage: &Storage,
+    round: u32,
 ) -> Result<(), Error> {
     let n_pages = snapshot.read().n_pages;
 
     for page in 0..n_pages {
-        match check_and_update_voter_snapshot(page, storage, snapshot).await {
+        match check_and_update_voter_snapshot(page, round, storage, snapshot).await {
             Ok(_) => {}
             Err(Error::EmptySnapshot) => {}
             Err(e) => return Err(e),
         };
     }
 
-    let _ = check_and_update_target_snapshot(n_pages - 1, storage, snapshot).await;
+    let _ = check_and_update_target_snapshot(n_pages - 1, round, storage, snapshot).await;
 
     Ok(())
 }
@@ -263,21 +266,22 @@ pub(crate) async fn fetch_missing_snapshots_lossy<T: MinerConfig>(
 pub(crate) async fn fetch_missing_snapshots<T: MinerConfig>(
     snapshot: &SharedSnapshot<T>,
     storage: &Storage,
+    round: u32,
 ) -> Result<(), Error> {
     let n_pages = snapshot.read().n_pages;
 
     for page in 0..n_pages {
-        check_and_update_voter_snapshot(page, storage, snapshot).await?;
+        check_and_update_voter_snapshot(page, round, storage, snapshot).await?;
     }
 
-    check_and_update_target_snapshot(n_pages - 1, storage, snapshot).await
+    check_and_update_target_snapshot(n_pages - 1, round, storage, snapshot).await
 }
 
-pub(crate) async fn paged_voter_snapshot_hash(page: u32, storage: &Storage) -> Result<Hash, Error> {
+pub(crate) async fn paged_voter_snapshot_hash(page: u32, round: u32, storage: &Storage) -> Result<Hash, Error> {
     let bytes = storage
         .fetch(&storage_addr(
             pallet_api::multi_block::storage::PAGED_VOTER_SNAPSHOT_HASH,
-            vec![Value::from(page)],
+            vec![Value::from(round), Value::from(page)],
         ))
         .await?
         .ok_or(Error::EmptySnapshot)?;
@@ -285,11 +289,11 @@ pub(crate) async fn paged_voter_snapshot_hash(page: u32, storage: &Storage) -> R
     Decode::decode(&mut bytes.encoded()).map_err(Into::into)
 }
 
-pub(crate) async fn target_snapshot_hash(page: u32, storage: &Storage) -> Result<Hash, Error> {
+pub(crate) async fn target_snapshot_hash(page: u32, round: u32, storage: &Storage) -> Result<Hash, Error> {
     let bytes = storage
         .fetch(&storage_addr(
             pallet_api::multi_block::storage::PAGED_TARGET_SNAPSHOT_HASH,
-            vec![Value::from(page)],
+            vec![Value::from(round), Value::from(page)],
         ))
         .await?
         .ok_or(Error::EmptySnapshot)?;
@@ -299,12 +303,13 @@ pub(crate) async fn target_snapshot_hash(page: u32, storage: &Storage) -> Result
 
 pub(crate) async fn check_and_update_voter_snapshot<T: MinerConfig>(
     page: u32,
+    round: u32,
     storage: &Storage,
     snapshot: &SharedSnapshot<T>,
 ) -> Result<(), Error> {
-    let snapshot_hash = paged_voter_snapshot_hash(page, storage).await?;
+    let snapshot_hash = paged_voter_snapshot_hash(page, round, storage).await?;
     if snapshot.read().needs_voter_page(page, snapshot_hash) {
-        let voter_snapshot = paged_voter_snapshot::<T>(page, storage).await?;
+        let voter_snapshot = paged_voter_snapshot::<T>(page, round, storage).await?;
         snapshot
             .write()
             .set_voter_page(page, voter_snapshot, snapshot_hash);
@@ -314,12 +319,13 @@ pub(crate) async fn check_and_update_voter_snapshot<T: MinerConfig>(
 
 pub(crate) async fn check_and_update_target_snapshot<T: MinerConfig>(
     page: u32,
+    round: u32,
     storage: &Storage,
     snapshot: &SharedSnapshot<T>,
 ) -> Result<(), Error> {
-    let snapshot_hash = target_snapshot_hash(page, storage).await?;
+    let snapshot_hash = target_snapshot_hash(page, round, storage).await?;
     if snapshot.read().needs_target_snapshot(snapshot_hash) {
-        let target_snapshot = target_snapshot::<T>(page, storage).await?;
+        let target_snapshot = target_snapshot::<T>(page, round, storage).await?;
         snapshot
             .write()
             .set_target_snapshot(target_snapshot, snapshot_hash);
