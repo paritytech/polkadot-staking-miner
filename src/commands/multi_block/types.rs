@@ -153,8 +153,9 @@ impl BlockDetails {
         let phase = storage
             .fetch_or_default(&runtime::storage().multi_block().current_phase())
             .await?;
+
         let desired_targets = storage
-            .fetch(&runtime::storage().multi_block().desired_targets())
+            .fetch(&runtime::storage().multi_block().desired_targets(round))
             .await?
             .unwrap_or(0);
 
