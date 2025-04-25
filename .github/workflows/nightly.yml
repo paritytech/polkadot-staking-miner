@@ -20,6 +20,17 @@ jobs:
       - name: Get Polkadot and Staking Miner Playground binaries
         uses: ./.github/workflows/actions/prepare-binaries
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install zombienet globally
+        run: npm install -g @zombienet/cli
+
+      - name: Verify zombienet installation
+        run: zombienet --version
+
       - name: Cache Rust dependencies
         uses: swatinem/rust-cache@v2
         with:
