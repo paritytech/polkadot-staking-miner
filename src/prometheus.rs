@@ -205,6 +205,29 @@ mod hidden {
         ))
         .unwrap()
     });
+    static CLEARING_ROUND_FAILURES: Lazy<Counter> = Lazy::new(|| {
+        register_counter!(opts!(
+            "staking_miner_clearing_round_failures_total",
+            "Total number of failed attempts to clear old round submissions"
+        ))
+        .unwrap()
+    });
+
+    static CLEARING_ROUND_QUEUE_SIZE: Lazy<Gauge> = Lazy::new(|| {
+        register_gauge!(opts!(
+            "staking_miner_clearing_round_queue_size",
+            "Current number of rounds waiting to be cleared"
+        ))
+        .unwrap()
+    });
+
+    static CLEARING_ROUND_DURATION: Lazy<Gauge> = Lazy::new(|| {
+        register_gauge!(
+            "staking_miner_clearing_round_duration_ms",
+            "The time in milliseconds it takes to clear a round submission"
+        )
+        .unwrap()
+    });
 
     pub fn on_runtime_upgrade() {
         RUNTIME_UPGRADES.inc();
@@ -250,5 +273,17 @@ mod hidden {
 
     pub fn observe_mined_solution_duration(time: f64) {
         MINED_SOLUTION_DURATION.set(time);
+    }
+
+    pub fn on_clearing_round_failure() {
+        CLEARING_ROUND_FAILURES.inc();
+    }
+
+    pub fn set_clearing_round_queue_size(size: usize) {
+        CLEARING_ROUND_QUEUE_SIZE.set(size as f64);
+    }
+
+    pub fn observe_clearing_round_duration(time: f64) {
+        CLEARING_ROUND_DURATION.set(time);
     }
 }

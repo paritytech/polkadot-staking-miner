@@ -108,8 +108,8 @@ impl RoundSubmission {
         removed
     }
 
-    /// Collect the most recent past round that should be cleared (e.g. round N if current round is N+1)
-    pub async fn get_past_round(&self, current_block_round: u32) -> Option<(u32, u32)> {
+    /// Collect all past rounds that should be cleared (rounds less than current_round)
+    pub async fn get_all_past_rounds(&self, current_block_round: u32) -> Vec<(u32, u32)> {
         let rounds = self.0.lock().await;
 
         rounds
@@ -121,7 +121,7 @@ impl RoundSubmission {
                     None
                 }
             })
-            .max_by_key(|(round, _)| *round)
+            .collect()
     }
 
     /// Get the state of a specific round

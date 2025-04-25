@@ -24,9 +24,10 @@ use polkadot_sdk::{
     sp_npos_elections::ElectionScore,
 };
 use std::{collections::HashSet, sync::Arc};
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex, Notify};
 
-type RoundBeingCleared = std::sync::Arc<std::sync::atomic::AtomicBool>;
+// Round with number of pages to be cleared
+type RoundToClear = (u32, u32);
 
 pub async fn monitor_cmd<T>(
     client: Client,
@@ -76,11 +77,38 @@ where
     // State to track submitted rounds
     let submitted_rounds = RoundSubmission::new();
 
-    // Flag to track if we're already clearing a round
-    let clearing_in_progress = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    // Queue size for rounds to clear. Normally we should have just a single round to clear or none.
+    // If there are more, it means we have failed to clear for more than an entire round.
+    // Dedicated Prometheus metrics for this are in place.
+    const ROUND_TO_CLEAR_CHANNEL_SIZE: usize = 10;
+    // Communication channel for the clearing task
+    let (clear_sender, clear_receiver) = mpsc::channel::<RoundToClear>(ROUND_TO_CLEAR_CHANNEL_SIZE);
+
+    // Notification mechanism to wake the clearing task when new rounds are added
+    let clear_notify = Arc::new(Notify::new());
 
     // Track the current round so we can detect round transitions
     let mut current_round = None;
+
+    // Start the dedicated clearing task
+    let client_for_clearing = client.clone();
+    let signer_for_clearing = signer.clone();
+    let submitted_rounds_for_clearing = submitted_rounds.clone();
+    let clear_notify_for_task = clear_notify.clone();
+
+    tokio::spawn(async move {
+        if let Err(e) = run_clearing_task(
+            client_for_clearing,
+            signer_for_clearing,
+            clear_receiver,
+            submitted_rounds_for_clearing,
+            clear_notify_for_task,
+        )
+        .await
+        {
+            log::error!(target: LOG_TARGET, "Clearing task failed: {:?}", e);
+        }
+    });
 
     loop {
         let at = tokio::select! {
@@ -119,40 +147,41 @@ where
 
         let current_block_round = state.round;
 
-        // Detect round transitions - this is where we discard any unclearable rounds
+        // Detect round transitions - this is where we queue past rounds for clearing
         if let Some(prev_round) = current_round {
             if current_block_round != prev_round {
-                // We've moved to a new round. If there was a past round that wasn't cleared
-                // during the entire previous round, remove it from tracking
-                if let Some((past_round, _)) = submitted_rounds.get_past_round(prev_round).await {
-                    // This is a round that was past during the previous round and is still being tracked
-                    // It's now "two rounds old" and should be discarded if not cleared
-                    log::warn!(
-                        target: LOG_TARGET,
-                        "Round {} wasn't cleared during the entire round {}. Discarding without reclaiming deposit.",
-                        past_round,
-                        prev_round
-                    );
-                    submitted_rounds
-                        .remove(past_round, RoundUntrackingEvent::Cleared)
-                        .await;
+                // Get all past rounds that need clearing
+                let past_rounds = submitted_rounds
+                    .get_all_past_rounds(current_block_round)
+                    .await;
+
+                // Only send notification if we have rounds to clear
+                if !past_rounds.is_empty() {
+                    for (past_round, n_pages) in past_rounds {
+                        log::info!(
+                            target: LOG_TARGET,
+                            "Adding round {} to clearing queue (prev round was {})",
+                            past_round,
+                            prev_round
+                        );
+
+                        // Send the round to the clearing task
+                        if let Err(e) = clear_sender.send((past_round, n_pages)).await {
+                            log::error!(
+                                target: LOG_TARGET,
+                                "Failed to send round {} to clearing task: {:?}",
+                                past_round,
+                                e
+                            );
+                        }
+                    }
+
+                    // Only notify once after adding all rounds
+                    clear_notify.notify_one();
                 }
             }
         }
         current_round = Some(current_block_round);
-
-        let past_round = submitted_rounds.get_past_round(current_block_round).await;
-
-        // This checking logic runs on EVERY block.
-        check_and_clear_discarded_submissions(
-            &client,
-            &signer,
-            past_round,
-            &submitted_rounds,
-            &state.storage,
-            &clearing_in_progress,
-        )
-        .await?;
 
         // This block handles CURRENT round processing
         if !state.phase_is_signed() && !state.phase_is_snapshot() {
@@ -199,11 +228,145 @@ where
     }
 }
 
+/// Dedicated task to clear past submissions
+async fn run_clearing_task(
+    client: Client,
+    signer: Signer,
+    mut clear_receiver: mpsc::Receiver<RoundToClear>,
+    submitted_rounds: RoundSubmission,
+    notify: Arc<Notify>,
+) -> Result<(), Error> {
+    // Initial queue size update
+    prometheus::set_clearing_round_queue_size(clear_receiver.len());
+
+    loop {
+        // Process any rounds in the queue
+        let mut processed = false;
+
+        while let Ok(round_to_clear) = clear_receiver.try_recv() {
+            processed = true;
+
+            // Measure the total time taken to clear a round
+            let start_time = std::time::Instant::now();
+
+            process_round_clearing(&client, signer.clone(), round_to_clear, &submitted_rounds)
+                .await;
+
+            // Record clearing duration for successful clearings
+            let elapsed_ms = start_time.elapsed().as_millis() as f64;
+            prometheus::observe_clearing_round_duration(elapsed_ms);
+
+            // Update the queue size metric after each processing
+            prometheus::set_clearing_round_queue_size(clear_receiver.len());
+        }
+
+        if !processed {
+            prometheus::set_clearing_round_queue_size(clear_receiver.len());
+        }
+
+        // Wait for notification of a new round to clear
+        notify.notified().await;
+    }
+}
+
+// Helper function to process a single round clearing
+async fn process_round_clearing(
+    client: &Client,
+    signer: Signer,
+    round_info: RoundToClear,
+    submitted_rounds: &RoundSubmission,
+) {
+    let (round_to_clear, n_pages) = round_info;
+
+    // Check if the round is still valid before attempting to clear
+    match storage_at_finalized(client).await {
+        Ok(storage) => {
+            match storage
+                .fetch(
+                    &runtime::storage()
+                        .multi_block_signed()
+                        .submission_metadata_storage(round_to_clear, signer.account_id()),
+                )
+                .await
+            {
+                Ok(maybe_submission_metadata) => {
+                    if maybe_submission_metadata.is_none() {
+                        log::debug!(
+                            target: LOG_TARGET,
+                            "Submission metadata for past round {} already gone. Removing from tracking.",
+                            round_to_clear
+                        );
+                        let _ = submitted_rounds
+                            .remove(round_to_clear, RoundUntrackingEvent::Cleared)
+                            .await;
+                        return;
+                    }
+
+                    // Submission metadata still exists, attempt to clear it
+                    log::info!(
+                        target: LOG_TARGET,
+                        "Attempting to clear submission data for past round {}",
+                        round_to_clear
+                    );
+
+                    let start_time = std::time::Instant::now();
+                    match clear_submission(client, signer, round_to_clear, n_pages).await {
+                        Ok(_) => {
+                            let elapsed_ms = start_time.elapsed().as_millis() as f64;
+                            prometheus::observe_clearing_round_duration(elapsed_ms);
+
+                            log::info!(
+                                target: LOG_TARGET,
+                                "Successfully cleared submission for past round {} in {:.2}ms",
+                                round_to_clear,
+                                elapsed_ms
+                            );
+                            let _ = submitted_rounds
+                                .remove(round_to_clear, RoundUntrackingEvent::Cleared)
+                                .await;
+                        }
+                        Err(e) => {
+                            log::error!(
+                                target: LOG_TARGET,
+                                "Failed to clear submission for past round {}: {:?}. Not retrying.",
+                                round_to_clear,
+                                e
+                            );
+
+                            // Use the prometheus module's method to increment the failure counter
+                            prometheus::on_clearing_round_failure();
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::error!(
+                        target: LOG_TARGET,
+                        "Error checking submission metadata for round {}: {:?}",
+                        round_to_clear,
+                        e
+                    );
+
+                    prometheus::on_clearing_round_failure();
+                }
+            }
+        }
+        Err(e) => {
+            log::error!(
+                target: LOG_TARGET,
+                "Error getting finalized storage: {:?}",
+                e
+            );
+
+            prometheus::on_clearing_round_failure();
+        }
+    }
+}
+
 /// For each block, the monitor essentially does the following:
 ///
 /// 1. Check if the phase is signed/snapshot, otherwise continue with the next block.
 /// 2. Check if the solution has already been submitted, if so quit.
-/// 3. Fetch the target and voter snapshots if not already in the cache.
+/// 3. Fetch the target and voter snapshots if needed.
 /// 4. Mine the solution.
 /// 5. Lock submissions.
 /// 6. Check if that our score is the best.
@@ -689,80 +852,6 @@ async fn clear_submission(
             // Return the error, the caller might want to retry or log differently
             return Err(e.into());
         }
-    }
-
-    Ok(())
-}
-
-async fn check_and_clear_discarded_submissions(
-    client: &Client,
-    signer: &Signer,
-    most_recent_past_round: Option<(u32, u32)>,
-    submitted_rounds: &RoundSubmission,
-    storage: &Storage,
-    clearing_in_progress: &RoundBeingCleared,
-) -> Result<(), Error> {
-    // If we're already clearing a round, don't start another task
-    if clearing_in_progress.load(std::sync::atomic::Ordering::Relaxed) {
-        return Ok(());
-    }
-
-    if let Some((round_to_check, n_pages)) = most_recent_past_round {
-        log::debug!(
-            target: LOG_TARGET,
-            "Checking status of most recent PAST round: {}",
-            round_to_check
-        );
-
-        let maybe_submission_metadata = storage
-            .fetch(
-                &runtime::storage()
-                    .multi_block_signed()
-                    .submission_metadata_storage(round_to_check, signer.account_id()),
-            )
-            .await?;
-
-        if maybe_submission_metadata.is_none() {
-            log::debug!(target: LOG_TARGET, "Submission metadata for past round {} gone. Removing from tracking.", round_to_check);
-            submitted_rounds
-                .remove(round_to_check, RoundUntrackingEvent::Cleared)
-                .await;
-            return Ok(());
-        }
-
-        // For a past round, we assume it has already progressed beyond active phases.
-        // If submission metadata still exists, it needs clearing
-        let clear_reason = "Past round with still existing submission metadata";
-        log::info!(target: LOG_TARGET, "Submission for past round {} detected as DISCARDED (Reason: {}). Spawning task to clear.", round_to_check, clear_reason);
-
-        // Set the flag to indicate we're clearing a round
-        clearing_in_progress.store(true, std::sync::atomic::Ordering::Relaxed);
-
-        // Clone what we need for the spawned task
-        let client_clone = client.clone();
-        let signer_clone = signer.clone();
-        let submitted_rounds_clone = submitted_rounds.clone();
-        let clearing_flag = clearing_in_progress.clone();
-
-        // Spawn a separate task to handle the submission
-        tokio::spawn(async move {
-            match clear_submission(&client_clone, signer_clone, round_to_check, n_pages).await {
-                Ok(_) => {
-                    log::info!(target: LOG_TARGET, "Successfully cleared submission for past round {}", round_to_check);
-                    submitted_rounds_clone
-                        .remove(round_to_check, RoundUntrackingEvent::Cleared)
-                        .await;
-                }
-                Err(e) => {
-                    log::error!(target: LOG_TARGET, "Failed to clear submission for past round {}: {:?}. Will retry.", round_to_check, e);
-                    // We don't remove from tracking, allowing retry until the round is discarded
-                    // after a full round passes without successful clearing
-                }
-            }
-
-            // Always reset the flag when done
-            clearing_flag.store(false, std::sync::atomic::Ordering::Relaxed);
-        });
     }
 
     Ok(())
