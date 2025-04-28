@@ -25,15 +25,49 @@ jobs:
             polkadot
           cache-on-failure: true
 
-      - name: build polkadot binary
+      - name: build polkadot artifacts
         run: |
           cargo build -p polkadot --release --features fast-runtime
-          ./target/release/polkadot --version
+          cargo build -p polkadot-parachain-bin --release --features fast-runtime
+          cargo build -p polkadot-omni-node
+          cargo build --release -p pallet-staking-async-rc-runtime -p pallet-staking-async-parachain-runtime -p staging-chain-spec-builder
+
+          # Create the chain spec for the parachain
+          ./target/release/chain-spec-builder \
+            create \
+            -t development \
+            --runtime ./target/release/wbuild/pallet-staking-async-parachain-runtime/pallet_staking_async_parachain_runtime.compact.compressed.wasm \
+            --relay-chain rococo-local \
+            --para-id 1100 \
+            named-preset dot_size
+
+          mv ./chain_spec.json ./parachain.json
+
+          # Create the chain spec for rc.
+          ./target/release/chain-spec-builder \
+            create \
+            -t development \
+            --runtime ./target/release/wbuild/pallet-staking-async-rc-runtime/fast_runtime_binary.rs.wasm \
+            named-preset local_testnet
+
+          mv ./chain_spec.json ./rc.json
+
+          # Strip the binaries.
           strip -s ./target/release/polkadot
           strip -s ./target/release/polkadot-prepare-worker
           strip -s ./target/release/polkadot-execute-worker
+          strip -s ./target/release/polkadot-parachain
+          strip -s ./target/release/polkadot-omni-node
 
-      - name: upload polkadot binary
+      - name: Verify built binaries
+        run: |
+        ./target/release/polkadot --version
+        ./target/release/polkadot-parachain --version
+        ./target/release/polkadot-omni-node --version
+        ./target/release/polkadot-prepare-worker --version
+        ./target/release/polkadot-execute-worker --version
+
+      - name: upload polkadot artifacts
         uses: actions/upload-artifact@v4
         with:
           name: nightly-polkadot-binary
@@ -41,5 +75,9 @@ jobs:
             ./target/release/polkadot
             ./target/release/polkadot-execute-worker
             ./target/release/polkadot-prepare-worker
+            ./target/release/polkadot-parachain
+            ./target/release/polkadot-omni-node
+            ./parachain.json
+            ./rc.json
           retention-days: 2
           if-no-files-found: error

@@ -62,6 +62,8 @@ anyhow = "1"
 assert_cmd = "2.0"
 regex = "1"
 
+[features]
+integration-tests = []
 
 [package.metadata.docs.rs]
 default-features = true
