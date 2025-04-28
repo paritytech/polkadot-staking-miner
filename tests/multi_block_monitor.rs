@@ -1,5 +1,4 @@
-#[cfg(feature = "integration-tests")]
-
+#![cfg(feature = "integration-tests")]
 //! Integration tests for the multi-block monitor (pallet-election-multi-block)
 //! which requires the following artifacts to be installed in the path:
 //! 1. `zombienet`
@@ -8,8 +7,8 @@
 //! 4. `polkadot-omni-node`
 //! 6. `chainspecs (rc.json and parachain.json)`
 //!
-//! See ./zombienet-staking-runtimes.toml for further details
-
+//! See ../zombienet-staking-runtimes.toml for further details
+//!
 //! Requires a `polkadot binary ` built with `--features fast-runtime` in the path to run integration tests against.
 
 pub mod common;
