@@ -4,6 +4,50 @@ The format is based on [Keep a Changelog].
 
 [Keep a Changelog]: http://keepachangelog.com/en/1.0.0/
 
+## [v1.8.0] - 2025-05-12
+
+This release brings several important changes:
+
+- Updated to work with `election-provider-multi-block` pallet and fully support multi-block staking with experimental monitoring capabilities via a new monitor command `experimental-monitor-multi-block`
+- Added support for chunked submission strategy for multi-block solutions
+- Bumped subxt to 0.41.0 and updated hyper to v1.6.0
+- Fixed snapshot functionality after metadata update, to handle storage items keyed by a round index
+
+### [Added]
+
+- feat: `experimental-monitor-multi-block` support ([#955](https://github.com/paritytech/staking-miner-v2/pull/955))
+- Add chunked submission strategy for multi-block solutions ([#1016](https://github.com/paritytech/staking-miner-v2/pull/1016))
+- multi block miner: do_reduce configurable via CLI ([#1008](https://github.com/paritytech/staking-miner-v2/pull/1008))
+
+### [Fixed]
+
+- Fix snapshot fn after metadata update ([#1037](https://github.com/paritytech/staking-miner-v2/pull/1037))
+
+### [Changed]
+
+- Update multiblock metadata (tracking SDK rev 8da42e8fae) ([#1036](https://github.com/paritytech/staking-miner-v2/pull/1036))
+- update polkadot-sdk ([#1034](https://github.com/paritytech/staking-miner-v2/pull/1034))
+- Update hyper to v1.6.0 ([#1022](https://github.com/paritytech/staking-miner-v2/pull/1022))
+- doc: no multiple instances of the miner with the same account ([#1021](https://github.com/paritytech/staking-miner-v2/pull/1021))
+- Bump subxt to `0.41.0` ([#1015](https://github.com/paritytech/staking-miner-v2/pull/1015))
+- Update miner to properly target multi-block staking ([#1012](https://github.com/paritytech/staking-miner-v2/pull/1012))
+- chore(deps): bump prometheus from 0.13.4 to 0.14.0 ([#1005](https://github.com/paritytech/staking-miner-v2/pull/1005))
+- chore(deps): bump jsonrpsee from 0.24.7 to 0.24.9 ([#964](https://github.com/paritytech/staking-miner-v2/pull/964), [#1003](https://github.com/paritytech/staking-miner-v2/pull/1003))
+- chore(deps): bump polkadot-sdk from 0.9.0 to 0.12.1 ([#970](https://github.com/paritytech/staking-miner-v2/pull/970), [#975](https://github.com/paritytech/staking-miner-v2/pull/975))
+- chore(deps): bump tokio from 1.43.0 to 1.44.2 ([#992](https://github.com/paritytech/staking-miner-v2/pull/992), [#999](https://github.com/paritytech/staking-miner-v2/pull/999), [#1009](https://github.com/paritytech/staking-miner-v2/pull/1009))
+- cleanup todos with tracking issues ([#996](https://github.com/paritytech/staking-miner-v2/pull/996))
+- chore: use rustfmt stable ([#972](https://github.com/paritytech/staking-miner-v2/pull/972))
+
+### Compatibility
+
+Multi-phase election tested against:
+
+- Westend v1,018,001
+- Kusama v1,018,001
+- Polkadot v1,018,001
+
+Multi-block election was tested locally using `zombienet-cli` vs `polkadot-sdk` `v1.18.2`, waiting for the actual support for multi-block to be deployed on Westend network.
+
 ## [v1.7.0] - 2025-01-21
 
 This release comes with the following changes:
