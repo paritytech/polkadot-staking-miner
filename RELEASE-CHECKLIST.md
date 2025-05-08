@@ -35,15 +35,15 @@ We also assume that ongoing work done is being merged directly to the `main` bra
 
 6.  Once the branch has been reviewed and passes CI, merge it.
 
-7.  Run tests against the latest polkadot release:
+7.  Run tests against the latest polkadot-sdk release:
 
     ```
-    git clone https://github.com/paritytech/polkadot && cd polkadot
-    git checkout v0.9.33 # use the release you want to test against
+    git clone https://github.com/paritytech/polkadot-sdk && cd polkadot-sdk
+    git checkout polkadot-v1.18.1 # use the release you want to test against
     cargo build --features fast-runtime
     cp ./target/debug/polkadot /usr/local/bin/polkadot # have the polkadot binary in your path requires by the tests.
     cd .. # assumes you were in the staking-miner repo
-    cargo test --features slow-tests -- --nocapture
+    cargo test --workspace --all-features -- --nocapture
     ```
 
 8.  Now, we're ready to publish the release to crates.io. Run `cargo publish` to do that.
