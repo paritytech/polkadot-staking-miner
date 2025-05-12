@@ -13,7 +13,18 @@ We also assume that ongoing work done is being merged directly to the `main` bra
 3.  Bump the crate version in `Cargo.toml` to whatever was decided in step 2. The easiest approach is to search and replace, checking
     that you didn't replace any other crate versions along the way.
 
-4.  Update `CHANGELOG.md` to reflect the difference between this release and the last. If you're unsure of
+4.  Update chainspecs if needed for `kusama` and `polkadot`:
+
+```bash
+git clone https://github.com/polkadot-fellows/runtimes && cd runtimes
+git checkout v1.5.0 # use the release you want to test against
+cargo build --release -p chain-spec-generator --no-default-features --features fast-runtime,kusama,polkadot
+# generate RAW specs and copy to chainspecs folder within staking-miner repo
+./target/release/chain-spec-generator kusama-dev --raw > <staking miner repo root>/chainspecs/kusama-dev-raw-spec.json
+./target/release/chain-spec-generator polkadot-dev --raw > <staking miner repo root>/chainspecs/polkadot-dev-raw-spec.json
+```
+
+5.  Update `CHANGELOG.md` to reflect the difference between this release and the last. If you're unsure of
     what to add, check with the Tools team. See the `CHANGELOG.md` file for details of the format it follows.
 
     First, if there have been any significant changes, add a description of those changes to the top of the
@@ -30,12 +41,12 @@ We also assume that ongoing work done is being merged directly to the `main` bra
     provide something like `[+] Latest release tag: v0.14.0` ). Then group the PRs into "Fixed", "Added" and "Changed" sections,
     and make any other adjustments that you feel are necessary for clarity.
 
-5.  Commit any of the above changes to the release branch and open a PR in GitHub with a base of `main`. Name the branch something
+6.  Commit any of the above changes to the release branch and open a PR in GitHub with a base of `main`. Name the branch something
     like `chore(release): v0.15.0`.
 
-6.  Once the branch has been reviewed and passes CI, merge it.
+7.  Once the branch has been reviewed and passes CI, merge it.
 
-7.  Run tests against the latest polkadot-sdk release:
+8.  Run tests against the latest polkadot-sdk release:
 
     ```
     git clone https://github.com/paritytech/polkadot-sdk && cd polkadot-sdk
@@ -46,9 +57,9 @@ We also assume that ongoing work done is being merged directly to the `main` bra
     cargo test --workspace --all-features -- --nocapture
     ```
 
-8.  Now, we're ready to publish the release to crates.io. Run `cargo publish` to do that.
+9.  Now, we're ready to publish the release to crates.io. Run `cargo publish` to do that.
 
-9.  If the release was successful, tag the commit that we released in the `main` branch with the
+10. If the release was successful, tag the commit that we released in the `main` branch with the
     version that we just released, for example:
 
     ```
