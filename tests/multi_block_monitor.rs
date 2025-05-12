@@ -4,8 +4,7 @@
 //! 1. `zombienet`
 //! 2. `polkadot --features fast-runtime`
 //! 3. `polkadot-parachain`
-//! 4. `polkadot-omni-node`
-//! 6. `chainspecs (rc.json and parachain.json)`
+//! 4. `chainspecs (rc.json and parachain.json)`
 //!
 //! See ../zombienet-staking-runtimes.toml for further details
 //!

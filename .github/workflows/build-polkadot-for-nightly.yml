@@ -27,12 +27,12 @@ jobs:
 
       - name: build polkadot artifacts
         run: |
-          cargo build -p polkadot --release --features fast-runtime
-          cargo build -p polkadot-parachain-bin --release --features fast-runtime
-          cargo build -p polkadot-omni-node
+          cargo build --release  --features fast-runtime -p polkadot -p polkadot-parachain-bin
           cargo build --release -p pallet-staking-async-rc-runtime -p pallet-staking-async-parachain-runtime -p staging-chain-spec-builder
 
-          # Create the chain spec for the parachain
+          # Create the chain spec for the parachain.
+          # By default we are using `dot_size`.
+          # TODO(paolo): extend tests to cover also ksm_size and development.
           ./target/release/chain-spec-builder \
             create \
             -t development \
@@ -43,7 +43,7 @@ jobs:
 
           mv ./chain_spec.json ./parachain.json
 
-          # Create the chain spec for rc.
+          # Create the chain spec for the relay-chain.
           ./target/release/chain-spec-builder \
             create \
             -t development \
@@ -57,13 +57,11 @@ jobs:
           strip -s ./target/release/polkadot-prepare-worker
           strip -s ./target/release/polkadot-execute-worker
           strip -s ./target/release/polkadot-parachain
-          strip -s ./target/release/polkadot-omni-node
 
       - name: Verify built binaries
         run: |
         ./target/release/polkadot --version
         ./target/release/polkadot-parachain --version
-        ./target/release/polkadot-omni-node --version
         ./target/release/polkadot-prepare-worker --version
         ./target/release/polkadot-execute-worker --version
 
@@ -76,7 +74,6 @@ jobs:
             ./target/release/polkadot-execute-worker
             ./target/release/polkadot-prepare-worker
             ./target/release/polkadot-parachain
-            ./target/release/polkadot-omni-node
             ./parachain.json
             ./rc.json
           retention-days: 2
