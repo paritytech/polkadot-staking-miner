@@ -25,6 +25,7 @@ This release brings several important changes:
 
 ### [Changed]
 
+- chore(deps): bump actions/download-artifact from 4.2.1 to 4.3.0 ([#1039](https://github.com/paritytech/staking-miner-v2/pull/1039))
 - Update multiblock metadata (tracking SDK rev 8da42e8fae) ([#1036](https://github.com/paritytech/staking-miner-v2/pull/1036))
 - update polkadot-sdk ([#1034](https://github.com/paritytech/staking-miner-v2/pull/1034))
 - Update hyper to v1.6.0 ([#1022](https://github.com/paritytech/staking-miner-v2/pull/1022))
