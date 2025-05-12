@@ -29,12 +29,12 @@ use subxt::utils::AccountId32;
 async fn submit_works() {
     init_logger();
 
-    let _node = run_zombienet().await;
-    let _miner = run_miner();
-    assert!(wait_for_mined_solution().await.is_ok());
+    let (_node, port) = run_zombienet().await;
+    let _miner = run_miner(port);
+    assert!(wait_for_mined_solution(port).await.is_ok());
 }
 
-fn run_miner() -> KillChildOnDrop {
+fn run_miner(port: u16) -> KillChildOnDrop {
     log::info!("Starting miner");
 
     let mut miner = KillChildOnDrop(
@@ -43,7 +43,7 @@ fn run_miner() -> KillChildOnDrop {
             .stderr(process::Stdio::piped())
             .args([
                 "--uri",
-                "ws://localhost:9966",
+                &format!("ws://127.0.0.1:{}", port),
                 "experimental-monitor-multi-block",
                 "--seed-or-path",
                 "//Alice",
@@ -71,14 +71,14 @@ fn run_miner() -> KillChildOnDrop {
 /// Wait until a solution is ready on chain
 ///
 /// Timeout's after 6 minutes then it's regarded as an error.
-pub async fn wait_for_mined_solution() -> anyhow::Result<()> {
+pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
     const MAX_DURATION_FOR_SUBMIT_SOLUTION: std::time::Duration =
         std::time::Duration::from_secs(60 * 20);
 
     let now = Instant::now();
 
     let api = loop {
-        if let Ok(api) = ChainClient::from_url("ws://localhost:9966").await {
+        if let Ok(api) = ChainClient::from_url(&format!("ws://127.0.0.1:{}", port)).await {
             break api;
         }
 
@@ -137,20 +137,22 @@ pub async fn wait_for_mined_solution() -> anyhow::Result<()> {
     ))
 }
 
-async fn run_zombienet() -> KillChildOnDrop {
+async fn run_zombienet() -> (KillChildOnDrop, u16) {
+    // First, parse the zombienet config file to get the RPC port
+    let config_path = "zombienet-staking-runtimes.toml";
+    let config_content =
+        std::fs::read_to_string(config_path).expect("Failed to read zombienet config file");
+    let rpc_port = extract_parachain_rpc_port(&config_content)
+        .expect("Failed to extract RPC port from zombienet config");
+
+    log::trace!("Found parachain collator RPC port in config: {}", rpc_port);
+
     // zombienet --provider native -l text spawn zombienet-staking-runtimes.toml
     let mut node_cmd = KillChildOnDrop(
         process::Command::new("zombienet")
             .stdout(process::Stdio::piped())
             .stderr(process::Stdio::piped())
-            .args([
-                "--provider",
-                "native",
-                "-l",
-                "text",
-                "spawn",
-                "zombienet-staking-runtimes.toml",
-            ])
+            .args(["--provider", "native", "-l", "text", "spawn", config_path])
             .env("RUST_LOG", "info,runtime=debug")
             .spawn()
             .unwrap(),
@@ -163,16 +165,62 @@ async fn run_zombienet() -> KillChildOnDrop {
         tx,
     );
 
-    while let Some(line) = rx.recv().await {
-        log::info!("{}", line);
+    tokio::spawn(async move {
+        while let Some(line) = rx.recv().await {
+            log::info!("{}", line);
+        }
+    });
 
-        // We regard this as zombienet started and we can start the miner.
-        if line.to_lowercase().contains("node information") {
-            break;
+    log::info!(
+        "Waiting for parachain collator on port {} to be ready...",
+        rpc_port
+    );
+
+    // Wait for parachain collator to be ready with a 2 minute timeout
+    let addr = format!("127.0.0.1:{}", rpc_port);
+    let ws_url = format!("ws://{}", addr);
+
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(120), // 2 minute timeout
+        ChainClient::from_url(&ws_url),
+    )
+    .await
+    {
+        Ok(Ok(_)) => {
+            log::info!("Parachain collator on port {} is up and running", rpc_port);
+        }
+        Ok(Err(e)) => {
+            log::trace!(
+                "Connected to port but WebSocket initialization failed: {}",
+                e
+            );
+            // We still continue as the node might be partially ready
+        }
+        Err(_) => {
+            panic!(
+                "Timed out waiting for parachain collator on port {} to be ready",
+                rpc_port
+            );
         }
     }
 
-    node_cmd
+    (node_cmd, rpc_port)
+}
+
+// Function to extract the parachain collator's RPC port from the config file content
+fn extract_parachain_rpc_port(config_content: &str) -> Option<u16> {
+    // Look for the [parachains.collator] section and then find rpc_port
+    let collator_section = config_content.split("[parachains.collator]").nth(1)?;
+    let port = collator_section
+        .lines()
+        .find(|line| line.trim().starts_with("rpc_port"))?
+        .split('=')
+        .nth(1)?
+        .trim()
+        .parse::<u16>()
+        .ok()?;
+
+    Some(port)
 }
 
 fn alice() -> AccountId32 {
