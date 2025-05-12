@@ -48,7 +48,7 @@ fn run_miner(port: u16) -> KillChildOnDrop {
                 "--seed-or-path",
                 "//Alice",
             ])
-            .env("RUST_LOG", "info,polkadot_staking_miner=trace")
+            .env("RUST_LOG", "trace,polkadot_staking_miner=trace")
             .spawn()
             .unwrap(),
     );
@@ -112,6 +112,7 @@ pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
             // Score registration.
             if let Some(item) = ev.as_event::<Registered>()? {
                 if item.1 == alice() {
+                    log::info!("Score registered");
                     score_submitted = true;
                 }
             }
@@ -119,11 +120,17 @@ pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
             // Page submission.
             if let Some(item) = ev.as_event::<Stored>()? {
                 if item.1 == alice() {
-                    pages_submitted.insert(item.0);
+                    log::info!(
+                        "Adding page {} to pages_submitted (was size {})",
+                        item.2,
+                        pages_submitted.len()
+                    );
+                    pages_submitted.insert(item.2);
                 }
             }
 
             if score_submitted && pages_submitted.len() == pages as usize {
+                log::info!("All pages submitted");
                 return Ok(());
             }
         }
