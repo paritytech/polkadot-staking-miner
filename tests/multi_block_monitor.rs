@@ -18,7 +18,7 @@ use polkadot_staking_miner::{
     prelude::ChainClient,
     runtime::multi_block::{
         self as runtime,
-        multi_block_signed::events::{Registered, Stored},
+        multi_block_signed::events::{Registered, Rewarded, Stored},
     },
 };
 use std::collections::HashSet;
@@ -91,6 +91,7 @@ pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
 
     let mut score_submitted = false;
     let mut pages_submitted = HashSet::new();
+    let mut all_pages_submitted = false;
 
     let mut blocks_sub = api.blocks().subscribe_finalized().await?;
     let pages = api
@@ -129,9 +130,19 @@ pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
                 }
             }
 
-            if score_submitted && pages_submitted.len() == pages as usize {
+            if pages_submitted.len() == pages as usize {
                 log::info!("All pages submitted");
-                return Ok(());
+                all_pages_submitted = true;
+            }
+
+            // Verify that the user receives a reward.
+            if let Some(item) = ev.as_event::<Rewarded>()? {
+                if item.1 == alice() {
+                    log::info!("Rewarded!");
+                    if score_submitted && all_pages_submitted {
+                        return Ok(());
+                    }
+                }
             }
         }
     }
