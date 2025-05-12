@@ -32,7 +32,7 @@ jobs:
 
           # Create the chain spec for the parachain.
           # By default we are using `dot_size`.
-          # TODO(paolo): extend tests to cover also ksm_size and development.
+          # TODO: extend tests to cover also ksm_size and development.
           ./target/release/chain-spec-builder \
             create \
             -t development \
