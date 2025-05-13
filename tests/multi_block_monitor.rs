@@ -168,6 +168,12 @@ pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
     ))
 }
 
+// TODO: the zombienet process starts multiple child processes: 2 relay chain nodes and a polkadot-parachain node. Each of these further spawns additional child processes like workers.
+// The `KillChildOnDrop` is only killing the zombienet process but killing a parent process doesn't automatically kill all its children.
+// E.g. on most Linux systems like Ubuntu, child processes are re-parented to the init process.
+// Since the test is meant to run on a docker container environment, proper cleanup is less crucial.
+// For local testing, it's up to the tester to simply kill any lingering processes before starting new tests.
+// A better platform-specific solution on CI/CD could leverage process grouping so that if process are running in the same process group, sending a signal to the group will terminate all processes in the group.
 async fn run_zombienet() -> (KillChildOnDrop, u16) {
     // First, parse the zombienet config file to get the RPC port
     let config_path = "zombienet-staking-runtimes.toml";
