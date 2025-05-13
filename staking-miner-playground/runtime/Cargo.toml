@@ -3,7 +3,7 @@ name = "runtime"
 version = "4.0.0-dev"
 description = "staking-miner-playground runtime"
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
-edition = "2021"
+edition = "2024"
 license = "Unlicense"
 publish = false
 
