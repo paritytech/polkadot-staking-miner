@@ -68,9 +68,13 @@ fn run_miner(port: u16) -> KillChildOnDrop {
     miner
 }
 
-/// Wait until a solution is ready on chain
+/// Wait until a solution is ready on chain, all pages are submitted, and the user is rewarded.
+/// This function strictly checks that:
+/// 1. The solution score is registered
+/// 2. All solution pages are successfully submitted
+/// 3. The user receives a reward after satisfying conditions 1 and 2
 ///
-/// Timeout's after 6 minutes then it's regarded as an error.
+/// Timeout's after 20 minutes then it's regarded as an error.
 pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
     const MAX_DURATION_FOR_SUBMIT_SOLUTION: std::time::Duration =
         std::time::Duration::from_secs(60 * 20);
@@ -99,7 +103,7 @@ pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
         .at(&runtime::constants().multi_block().pages())
         .unwrap();
 
-    while let Some(block) = blocks_sub.next().await {
+    'outer: while let Some(block) = blocks_sub.next().await {
         if now.elapsed() > MAX_DURATION_FOR_SUBMIT_SOLUTION {
             break;
         }
@@ -130,7 +134,7 @@ pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
                 }
             }
 
-            if pages_submitted.len() == pages as usize {
+            if !all_pages_submitted && pages_submitted.len() == pages as usize {
                 log::info!("All pages submitted");
                 all_pages_submitted = true;
             }
@@ -139,18 +143,27 @@ pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
             if let Some(item) = ev.as_event::<Rewarded>()? {
                 if item.1 == alice() {
                     log::info!("Rewarded!");
+
                     if score_submitted && all_pages_submitted {
+                        log::info!(
+                        "Test passed: score registered, all {} pages submitted, and user rewarded!",
+                        pages
+                    );
                         return Ok(());
                     }
+                    // It should never happen that the user gets rewarded without score and all pages being submitted. Log the error outside both loops.
+                    break 'outer;
                 }
             }
         }
     }
 
     Err(anyhow::anyhow!(
-        "score_submitted: {}, pages_submitted: {:?}; timeout after {}s",
+        "Test failed: score_submitted: {}, all_pages_submitted: {} ({}/{} pages); timeout after {}s",
         score_submitted,
-        pages_submitted,
+        all_pages_submitted,
+        pages_submitted.len(),
+        pages,
         MAX_DURATION_FOR_SUBMIT_SOLUTION.as_secs()
     ))
 }
