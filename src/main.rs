@@ -184,7 +184,7 @@ async fn run_command(
     fut: BoxFuture<'_, Result<(), Error>>,
     rx_upgrade: oneshot::Receiver<Error>,
 ) -> Result<(), Error> {
-    use tokio::signal::unix::{signal, SignalKind};
+    use tokio::signal::unix::{SignalKind, signal};
 
     let mut stream_int = signal(SignalKind::interrupt()).map_err(Error::Io)?;
     let mut stream_term = signal(SignalKind::terminate()).map_err(Error::Io)?;

@@ -13,7 +13,7 @@
 pub mod common;
 
 use assert_cmd::cargo::cargo_bin;
-use common::{init_logger, spawn_cli_output_threads, KillChildOnDrop};
+use common::{KillChildOnDrop, init_logger, spawn_cli_output_threads};
 use polkadot_staking_miner::{
     prelude::ChainClient,
     runtime::multi_block::{
@@ -146,9 +146,9 @@ pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
 
                     if score_submitted && all_pages_submitted {
                         log::info!(
-                        "Test passed: score registered, all {} pages submitted, and user rewarded!",
-                        pages
-                    );
+                            "Test passed: score registered, all {} pages submitted, and user rewarded!",
+                            pages
+                        );
                         return Ok(());
                     }
                     // It should never happen that the user gets rewarded without score and all pages being submitted. Log the error outside both loops.

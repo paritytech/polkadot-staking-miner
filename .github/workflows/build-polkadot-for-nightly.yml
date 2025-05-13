@@ -60,10 +60,10 @@ jobs:
 
       - name: Verify built binaries
         run: |
-        ./target/release/polkadot --version
-        ./target/release/polkadot-parachain --version
-        ./target/release/polkadot-prepare-worker --version
-        ./target/release/polkadot-execute-worker --version
+          ./target/release/polkadot --version
+          ./target/release/polkadot-parachain --version
+          ./target/release/polkadot-prepare-worker --version
+          ./target/release/polkadot-execute-worker --version
 
       - name: upload polkadot artifacts
         uses: actions/upload-artifact@v4

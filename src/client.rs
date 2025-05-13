@@ -1,4 +1,4 @@
-use crate::prelude::{ChainClient, RpcClient, LOG_TARGET};
+use crate::prelude::{ChainClient, LOG_TARGET, RpcClient};
 use jsonrpsee::ws_client::WsClientBuilder;
 use subxt::backend::rpc::RpcClient as RawRpcClient;
 

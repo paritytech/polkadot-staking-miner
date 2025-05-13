@@ -23,8 +23,8 @@ use crate::{
 use polkadot_sdk::{
     sp_core::Pair as PairT,
     sp_runtime::{
-        traits::{IdentifyAccount, Verify},
         MultiSignature as SpMultiSignature,
+        traits::{IdentifyAccount, Verify},
     },
 };
 
