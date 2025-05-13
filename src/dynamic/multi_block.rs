@@ -369,14 +369,17 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
         {
             Ok(tx) => break tx,
             Err(Error::Subxt(subxt::Error::Transaction(e))) => {
+				log::warn!(target: LOG_TARGET, "Failed to register score: {:?}; retrying", e);
                 i += 1;
                 if i >= 10 {
-                    return Err(Error::Subxt(subxt::Error::Transaction(e)));
+					return Err(Error::Subxt(subxt::Error::Transaction(e)));
                 }
-                log::debug!(target: LOG_TARGET, "Failed to register score: {:?}; retrying", e);
                 tokio::time::sleep(std::time::Duration::from_secs(6)).await;
             }
-            Err(e) => return Err(e),
+            Err(e) => {
+				log::error!(target: LOG_TARGET, "Failed to register score other error: {:?}, dropping", e);
+				return Err(e)
+			},
         }
     };
 

@@ -75,7 +75,7 @@ impl std::str::FromStr for Chain {
             "polkadot" => Ok(Self::Polkadot),
             "kusama" => Ok(Self::Kusama),
             "westend" => Ok(Self::Westend),
-            "asset-hub-next" => Ok(Self::AssetHubNext),
+            "asset-hub-next" | "staking-async-parachain" | "westmint" => Ok(Self::AssetHubNext),
             "node" => Ok(Self::SubstrateNode),
             chain => Err(Error::InvalidChain(chain.to_string())),
         }
