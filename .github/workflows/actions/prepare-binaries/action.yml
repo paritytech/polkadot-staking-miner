@@ -24,8 +24,8 @@ runs:
         ./tmp/polkadot --version
         ./tmp/staking-miner-playground --version
         mkdir -p /usr/local/bin
-        mkdir -p /etc/polkadot-staking-miner
+        sudo mkdir -p /etc/polkadot-staking-miner
         mv ./tmp/polkadot* /usr/local/bin
         mv ./tmp/staking-miner-playground /usr/local/bin
-        mv ./tmp/parachain.json /etc/polkadot-staking-miner
-        mv ./tmp/rc.json /etc/polkadot-staking-miner
+        sudo mv ./tmp/parachain.json /etc/polkadot-staking-miner
+        sudo mv ./tmp/rc.json /etc/polkadot-staking-miner
