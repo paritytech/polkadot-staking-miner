@@ -8,16 +8,16 @@ use crate::{
     },
     dynamic::multi_block as dynamic,
     error::Error,
-    prelude::{AccountId, ExtrinsicParamsBuilder, Storage, LOG_TARGET},
+    prelude::{AccountId, ExtrinsicParamsBuilder, LOG_TARGET, Storage},
     prometheus,
     runtime::multi_block::{
         self as runtime, runtime_types::pallet_election_provider_multi_block::types::Phase,
     },
     signer::Signer,
     static_types::multi_block as static_types,
-    utils::{self, kill_main_task_if_critical_err, score_passes_strategy, TimedFuture},
+    utils::{self, TimedFuture, kill_main_task_if_critical_err, score_passes_strategy},
 };
-use futures::future::{abortable, AbortHandle};
+use futures::future::{AbortHandle, abortable};
 use polkadot_sdk::{
     pallet_election_provider_multi_block::unsigned::miner::MinerConfig,
     sp_npos_elections::ElectionScore,
@@ -389,11 +389,7 @@ async fn get_submission(
         .enumerate()
         .filter_map(
             |(i, submitted)| {
-                if submitted {
-                    Some(i as u32)
-                } else {
-                    None
-                }
+                if submitted { Some(i as u32) } else { None }
             },
         )
         .collect();

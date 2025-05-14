@@ -5,7 +5,7 @@ use crate::{
 use polkadot_sdk::{
     frame_election_provider_support::{self, SequentialPhragmen},
     frame_support, pallet_election_provider_multi_block as multi_block,
-    sp_runtime::{traits::ConstU32, PerU16, Percent},
+    sp_runtime::{PerU16, Percent, traits::ConstU32},
 };
 
 impl_u32_parameter_type!(pages, Pages);

@@ -18,7 +18,7 @@ use crate::{
     client::Client,
     commands::types::{Listen, SubmissionStrategy},
     error::Error,
-    prelude::{ChainClient, Config, Hash, Header, RpcClient, Storage, LOG_TARGET},
+    prelude::{ChainClient, Config, Hash, Header, LOG_TARGET, RpcClient, Storage},
 };
 use codec::Decode;
 use jsonrpsee::core::ClientError as JsonRpseeError;

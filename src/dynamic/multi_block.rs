@@ -12,14 +12,14 @@ use crate::{
         utils::{decode_error, storage_addr, to_scale_value, tx},
     },
     error::Error,
-    prelude::{AccountId, ChainClient, Config, ExtrinsicParamsBuilder, Hash, Storage, LOG_TARGET},
+    prelude::{AccountId, ChainClient, Config, ExtrinsicParamsBuilder, Hash, LOG_TARGET, Storage},
     runtime::multi_block as runtime,
     signer::Signer,
     utils,
 };
 use codec::Decode;
-use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use polkadot_sdk::{
     frame_support::BoundedVec,
     pallet_election_provider_multi_block::{

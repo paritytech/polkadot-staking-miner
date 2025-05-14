@@ -25,15 +25,15 @@ use crate::{
     prometheus,
     runtime::legacy as runtime,
     static_types::legacy as static_types,
-    utils::{storage_at, RuntimeDispatchInfo},
+    utils::{RuntimeDispatchInfo, storage_at},
 };
 use codec::{Decode, Encode};
 use polkadot_sdk::{
     frame_election_provider_support::{self, Get, NposSolution, PhragMMS, SequentialPhragmen},
-    frame_support::{weights::Weight, BoundedVec},
+    frame_support::{BoundedVec, weights::Weight},
     pallet_election_provider_multi_phase::{
-        self, unsigned::TrimmingStatus, Miner, MinerConfig, RawSolution, ReadySolution, SolutionOf,
-        SolutionOrSnapshotSize,
+        self, Miner, MinerConfig, RawSolution, ReadySolution, SolutionOf, SolutionOrSnapshotSize,
+        unsigned::TrimmingStatus,
     },
     sp_npos_elections::{ElectionScore, VoteWeight},
 };

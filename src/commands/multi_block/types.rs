@@ -1,7 +1,7 @@
 use crate::{
     client::Client,
     error::Error,
-    prelude::{AccountId, Hash, Header, Storage, LOG_TARGET},
+    prelude::{AccountId, Hash, Header, LOG_TARGET, Storage},
     runtime::multi_block::{
         self as runtime, runtime_types::pallet_election_provider_multi_block::types::Phase,
     },

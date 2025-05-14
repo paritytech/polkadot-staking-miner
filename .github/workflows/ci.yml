@@ -11,7 +11,7 @@ on:
       - main
 
 env:
-  IMAGE: paritytech/ci-unified:bullseye-1.84.1-2025-01-28
+  IMAGE: docker.io/paritytech/ci-unified:bullseye-1.85.0-2025-01-28-v202504231537
   IMAGE_NAME: paritytech/polkadot-staking-miner
   RUST_INFO: rustup show && cargo --version && rustup +nightly show && cargo +nightly --version
 
