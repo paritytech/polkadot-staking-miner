@@ -48,7 +48,7 @@ fn run_miner(port: u16) -> KillChildOnDrop {
                 "--seed-or-path",
                 "//Alice",
             ])
-            .env("RUST_LOG", "trace,polkadot_staking_miner=trace")
+            .env("RUST_LOG", "debug,polkadot_staking_miner=info")
             .spawn()
             .unwrap(),
     );
@@ -190,7 +190,7 @@ async fn run_zombienet() -> (KillChildOnDrop, u16) {
             .stdout(process::Stdio::piped())
             .stderr(process::Stdio::piped())
             .args(["--provider", "native", "-l", "text", "spawn", config_path])
-            .env("RUST_LOG", "info,runtime=debug")
+            .env("RUST_LOG", "error,runtime=error")
             .spawn()
             .unwrap(),
     );

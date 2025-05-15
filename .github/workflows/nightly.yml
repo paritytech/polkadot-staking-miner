@@ -5,9 +5,25 @@ on:
     - cron: '0 0 * * *'
   workflow_dispatch:
 
+env:
+  IMAGE: docker.io/paritytech/ci-unified:bullseye-1.85.0-2025-01-28-v202504231537
+  RUST_INFO: rustup show && cargo --version && rustup +nightly show && cargo +nightly --version
+
 jobs:
+  set-image:
+    # GitHub Actions does not allow using 'env' in a container context.
+    # This workaround sets the container image for each job using 'set-image' job output.
+    runs-on: parity-large
+    outputs:
+      IMAGE: ${{ steps.set_image.outputs.IMAGE }}
+    steps:
+      - id: set_image
+        run: echo "IMAGE=${{ env.IMAGE }}" >> $GITHUB_OUTPUT
+
   nightly-test:
     runs-on: parity-large
+    needs: [set-image]
+    container: ${{ needs.set-image.outputs.IMAGE }}
     strategy:
       matrix:
         channel:
@@ -29,7 +45,7 @@ jobs:
         run: npm install -g @zombienet/cli
 
       - name: Verify zombienet installation
-        run: zombienet --version
+        run: zombienet --help
 
       - name: Cache Rust dependencies
         uses: swatinem/rust-cache@v2
