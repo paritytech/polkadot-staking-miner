@@ -2,7 +2,7 @@ name: Nightly test
 
 on:
   schedule:
-    - cron: "0 0 * * *"
+    - cron: '0 0 * * *'
   workflow_dispatch:
 
 jobs:
@@ -11,8 +11,8 @@ jobs:
     strategy:
       matrix:
         channel:
-          - name: "Staking Miner Dev"
-            room: "!tXyUlsDAYvDfRKbzKx:parity.io"
+          - name: 'Staking Miner Dev'
+            room: '!tXyUlsDAYvDfRKbzKx:parity.io'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -23,7 +23,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: '18'
 
       - name: Install zombienet globally
         run: npm install -g @zombienet/cli
