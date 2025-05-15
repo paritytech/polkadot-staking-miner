@@ -176,9 +176,6 @@ pub struct ExperimentalMultiBlockMonitorConfig {
     #[clap(long, short, env = "SEED")]
     pub seed_or_path: String,
 
-    #[clap(long, value_enum, default_value_t = Listen::Finalized)]
-    pub listen: Listen,
-
     #[clap(long, value_parser, default_value = "if-leading")]
     pub submission_strategy: SubmissionStrategy,
 
