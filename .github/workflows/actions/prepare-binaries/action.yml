@@ -20,12 +20,12 @@ runs:
     - name: Setup permissions and move to path
       shell: bash
       run: |
-        chmod u+x ./tmp/polkadot* ./tmp/staking-miner-playground
-        ./tmp/polkadot --version
+        chmod u+x ./tmp/target/release/polkadot* ./tmp/staking-miner-playground
+        ./tmp/target/release/polkadot --version
         ./tmp/staking-miner-playground --version
         mkdir -p /usr/local/bin
         mkdir -p ${HOME}/.config/polkadot-staking-miner
-        mv ./tmp/polkadot* /usr/local/bin
+        mv ./tmp/target/release/polkadot* /usr/local/bin
         mv ./tmp/staking-miner-playground /usr/local/bin
         mv ./tmp/parachain.json ${HOME}/.config/polkadot-staking-miner
         mv ./tmp/rc.json ${HOME}/.config/polkadot-staking-miner
