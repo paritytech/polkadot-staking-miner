@@ -5,6 +5,10 @@ on:
     - cron: "0 0 * * *"
   workflow_dispatch:
 
+env:
+  IMAGE: docker.io/paritytech/ci-unified:bullseye-1.85.0-2025-01-28-v202504231537
+  RUST_INFO: rustup show && cargo --version && rustup +nightly show && cargo +nightly --version
+
 jobs:
   nightly-test:
     runs-on: parity-large
