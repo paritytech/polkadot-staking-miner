@@ -2,17 +2,17 @@ name: Nightly test
 
 on:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: "0 0 * * *"
   workflow_dispatch:
 
 jobs:
   nightly-test:
-    runs-on: ubuntu-latest
+    runs-on: parity-large
     strategy:
       matrix:
         channel:
-          - name: 'Staking Miner Dev'
-            room: '!tXyUlsDAYvDfRKbzKx:parity.io'
+          - name: "Staking Miner Dev"
+            room: "!tXyUlsDAYvDfRKbzKx:parity.io"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -23,7 +23,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: "18"
 
       - name: Install zombienet globally
         run: npm install -g @zombienet/cli
@@ -66,4 +66,3 @@ jobs:
           server: m.parity.io
           message: |
             @room Daily integration tests failed https://github.com/${{ github.repository }}/commit/${{ github.sha }}/checks/${{ github.run_id }}
-

@@ -20,7 +20,7 @@ jobs:
   set-image:
     # GitHub Actions does not allow using 'env' in a container context.
     # This workaround sets the container image for each job using 'set-image' job output.
-    runs-on: ubuntu-latest
+    runs-on: parity-large
     outputs:
       IMAGE: ${{ steps.set_image.outputs.IMAGE }}
     steps:
@@ -29,7 +29,7 @@ jobs:
 
   check:
     name: Check staking-miner-playground
-    runs-on: ubuntu-latest
+    runs-on: parity-large
     needs: [set-image]
     container: ${{ needs.set-image.outputs.IMAGE }}
     steps:
