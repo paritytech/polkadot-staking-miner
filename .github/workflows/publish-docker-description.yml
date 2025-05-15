@@ -5,7 +5,7 @@ on:
     branches:
       - 'main'
     paths:
-      - "Dockerfile.README.md"
+      - 'Dockerfile.README.md'
 
 jobs:
   publish_docker_description:
