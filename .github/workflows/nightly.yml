@@ -7,7 +7,7 @@ on:
 
 jobs:
   nightly-test:
-    runs-on: ubuntu-latest
+    runs-on: parity-large
     strategy:
       matrix:
         channel:
@@ -66,4 +66,3 @@ jobs:
           server: m.parity.io
           message: |
             @room Daily integration tests failed https://github.com/${{ github.repository }}/commit/${{ github.sha }}/checks/${{ github.run_id }}
-

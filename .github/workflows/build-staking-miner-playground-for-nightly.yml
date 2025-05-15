@@ -16,7 +16,7 @@ on:
 jobs:
   tests:
     name: Build staking-miner-playground
-    runs-on: ubuntu-latest
+    runs-on: parity-large
     container: docker.io/paritytech/ci-unified:bullseye-1.85.0-2025-01-28-v202504231537
     steps:
       - name: checkout
