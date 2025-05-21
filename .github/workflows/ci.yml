@@ -157,7 +157,7 @@ jobs:
   build-docker-image:
     name: Test Docker image build
     if: ${{ github.event_name == 'pull_request' }}
-    runs-on: parity-large
+    runs-on: parity-default
     needs: [check-fmt, check-clippy, check-docs, check-code, test, build]
     steps:
       - name: Checkout repository
@@ -171,9 +171,6 @@ jobs:
 
       - name: Set permissions
         run: chmod +x ./artifacts/polkadot-staking-miner
-
-      # - name: Set up Docker Buildx
-      #   uses: docker/setup-buildx-action@v3
 
       - name: Build Docker image
         uses: docker/build-push-action@v6
@@ -190,7 +187,7 @@ jobs:
   publish-docker-image:
     name: Build and publish Docker image
     if: ${{ github.ref == 'refs/heads/main' ||  github.ref_type == 'tag' }}
-    runs-on: parity-large
+    runs-on: parity-default
     environment: main_and_tags
     needs: [check-fmt, check-clippy, check-docs, check-code, test, build]
     steps:
@@ -216,9 +213,6 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
-
-      # - name: Set up Docker Buildx
-      #   uses: docker/setup-buildx-action@v3
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
