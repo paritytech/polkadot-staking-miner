@@ -9,7 +9,7 @@ on:
 
 jobs:
   publish_docker_description:
-    runs-on: parity-large
+    runs-on: ubuntu-latest
     environment: main_and_tags
     steps:
       - name: Checkout
