@@ -104,7 +104,7 @@ jobs:
 
   test:
     name: Run tests
-    runs-on: ubuntu-latest
+    runs-on: parity-large
     needs: [set-image]
     container: ${{ needs.set-image.outputs.IMAGE }}
     steps:
@@ -126,7 +126,7 @@ jobs:
 
   build:
     name: Build polkadot-staking-miner binary
-    runs-on: ubuntu-latest
+    runs-on: parity-large
     needs: [set-image]
     container: ${{ needs.set-image.outputs.IMAGE }}
     steps:
