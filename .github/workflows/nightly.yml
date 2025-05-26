@@ -13,7 +13,7 @@ jobs:
   set-image:
     # GitHub Actions does not allow using 'env' in a container context.
     # This workaround sets the container image for each job using 'set-image' job output.
-    runs-on: ubuntu-latest
+    runs-on: parity-large
     outputs:
       IMAGE: ${{ steps.set_image.outputs.IMAGE }}
     steps:
@@ -21,7 +21,7 @@ jobs:
         run: echo "IMAGE=${{ env.IMAGE }}" >> $GITHUB_OUTPUT
 
   nightly-test:
-    runs-on: ubuntu-latest
+    runs-on: parity-large
     needs: [set-image]
     container: ${{ needs.set-image.outputs.IMAGE }}
     strategy:
