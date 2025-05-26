@@ -13,6 +13,7 @@ This release brings several important changes:
 - Fixed snapshot functionality after metadata update, to handle storage items keyed by a round index
 - Bumped Rust to 1.85 / edition 2024
 - Bumped subxt to 0.41.0 and updated hyper to v1.6.0
+- Update chainspecs for Polkadot and Kusama to be compatible with runtime `v1.5.1`
 
 ### [Added]
 
