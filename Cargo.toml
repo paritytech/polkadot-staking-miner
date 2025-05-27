@@ -31,7 +31,7 @@ pin-project-lite = "0.2"
 
 # subxt
 scale-value = "0.18"
-subxt = "0.41.0"
+subxt = "0.42.1"
 subxt-rpcs = "0.41.0"
 
 
