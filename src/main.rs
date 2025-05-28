@@ -395,10 +395,9 @@ mod tests {
                 command: Command::ExperimentalMonitorMultiBlock(
                     commands::types::ExperimentalMultiBlockMonitorConfig {
                         seed_or_path: "//Alice".to_string(),
-                        listen: Listen::Finalized, // Assuming default
                         submission_strategy: SubmissionStrategy::IfLeading, // Assuming default
-                        do_reduce: true,           // Expect true because flag was present
-                        chunk_size: 0,             // Default value
+                        do_reduce: true, // Expect true because flag was present
+                        chunk_size: 0,   // Default value
                     }
                 ),
             }
@@ -423,7 +422,6 @@ mod tests {
             Command::ExperimentalMonitorMultiBlock(
                 commands::types::ExperimentalMultiBlockMonitorConfig {
                     seed_or_path: "//Alice".to_string(),
-                    listen: Listen::Finalized,
                     submission_strategy: SubmissionStrategy::IfLeading,
                     do_reduce: false, // Expect false (default)
                     chunk_size: 0,    // Default value
@@ -451,7 +449,6 @@ mod tests {
             Command::ExperimentalMonitorMultiBlock(
                 commands::types::ExperimentalMultiBlockMonitorConfig {
                     seed_or_path: "//Alice".to_string(),
-                    listen: Listen::Finalized,
                     submission_strategy: SubmissionStrategy::IfLeading,
                     do_reduce: false, // Default value
                     chunk_size: 4,    // Explicitly set to 4
