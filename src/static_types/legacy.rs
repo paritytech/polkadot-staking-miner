@@ -314,3 +314,68 @@ pub mod kusama {
         }
     }
 }
+
+/// This is used to test against staking-async runtimes from the SDK.
+pub mod staking_async {
+    use super::*;
+
+    // SYNC
+    frame_election_provider_support::generate_solution_type!(
+        #[compact]
+        pub struct NposSolution16::<
+            VoterIndex = u32,
+            TargetIndex = u16,
+            Accuracy = sp_runtime::PerU16,
+            MaxVoters = ConstU32::<22500>
+        >(16)
+    );
+
+    #[derive(Debug)]
+    pub struct MinerConfig;
+    impl pallet_election_provider_multi_phase::unsigned::MinerConfig for MinerConfig {
+        type AccountId = AccountId;
+        type MaxLength = MaxLength;
+        type MaxWeight = MaxWeight;
+        type MaxVotesPerVoter = MaxVotesPerVoter;
+        type MaxBackersPerWinner = ConstU32<22500>;
+        type Solution = NposSolution16;
+        type MaxWinners = MaxWinners;
+
+        fn solution_weight(
+            voters: u32,
+            targets: u32,
+            active_voters: u32,
+            desired_targets: u32,
+        ) -> Weight {
+            let Some(votes) = dynamic::mock_votes(
+                active_voters,
+                desired_targets
+                    .try_into()
+                    .expect("Desired targets < u16::MAX"),
+            ) else {
+                return Weight::MAX;
+            };
+
+            // Mock a RawSolution to get the correct weight without having to do the heavy work.
+            let raw = RawSolution {
+                solution: NposSolution16 {
+                    votes1: votes,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            if raw.solution.voter_count() != active_voters as usize
+                || raw.solution.unique_targets().len() != desired_targets as usize
+            {
+                return Weight::MAX;
+            }
+
+            futures::executor::block_on(dynamic::runtime_api_solution_weight(
+                raw,
+                SolutionOrSnapshotSize { voters, targets },
+            ))
+            .expect("solution_weight should work")
+        }
+    }
+}
