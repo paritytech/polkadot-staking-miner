@@ -157,3 +157,40 @@ pub mod westend {
         type Hash = Hash;
     }
 }
+
+/// This is used to test against staking-async runtimes from the SDK.
+pub mod staking_async {
+    use super::*;
+    use frame_election_provider_support::SequentialPhragmen;
+
+    // TODO: validate config https://github.com/paritytech/polkadot-staking-miner/issues/994
+    frame_election_provider_support::generate_solution_type!(
+        #[compact]
+        pub struct NposSolution16::<
+            VoterIndex = u32,
+            TargetIndex = u16,
+            Accuracy = PerU16,
+            MaxVoters = ConstU32::<22500>
+        >(16)
+    );
+
+    #[derive(Debug)]
+    pub struct MinerConfig;
+
+    // TODO: validate config https://github.com/paritytech/polkadot-staking-miner/issues/994
+    impl multi_block::unsigned::miner::MinerConfig for MinerConfig {
+        type AccountId = AccountId;
+        type Solution = NposSolution16;
+        // TODO: make it configurable via CLI https://github.com/paritytech/polkadot-staking-miner/issues/989
+        type Solver = SequentialPhragmen<AccountId, Accuracy>;
+        type Pages = Pages;
+        type MaxVotesPerVoter = ConstU32<16>;
+        type MaxWinnersPerPage = MaxWinnersPerPage;
+        type MaxBackersPerWinner = MaxBackersPerWinner;
+        type MaxBackersPerWinnerFinal = ConstU32<{ u32::MAX }>;
+        type VoterSnapshotPerBlock = VoterSnapshotPerBlock;
+        type TargetSnapshotPerBlock = TargetSnapshotPerBlock;
+        type MaxLength = MaxLength;
+        type Hash = Hash;
+    }
+}
