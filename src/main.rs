@@ -459,4 +459,15 @@ mod tests {
             )
         );
     }
+
+    #[test]
+    #[should_panic(expected = "StakingAsync is not supported in legacy monitor")]
+    fn for_legacy_runtime_panics_on_staking_async() {
+        use crate::opt::Chain;
+        let chain = Chain::StakingAsync;
+        macros::for_legacy_runtime!(chain, {
+            // This block should never be executed
+            let _ = ();
+        });
+    }
 }
