@@ -79,7 +79,9 @@ impl std::str::FromStr for Chain {
             "westend" => Ok(Self::Westend),
             "westmint" => Ok(Self::Westend), // Westend AH
             "staking-async-parachain" => Ok(Self::StakingAsync),
-            "staking-async-rc" => Ok(Self::StakingAsync),
+            "staking-async-rc" => {
+                unimplemented!("multi-block mining is not supported on relay chains")
+            }
             "node" => Ok(Self::SubstrateNode),
             chain => Err(Error::InvalidChain(chain.to_string())),
         }

@@ -54,9 +54,7 @@ macro_rules! for_legacy_runtime {
                 $($code)*
             },
             $crate::opt::Chain::StakingAsync => {
-                #[allow(unused)]
-                use $crate::static_types::legacy::staking_async::MinerConfig;
-                $($code)*
+                panic!("StakingAsync is not supported in legacy monitor");
             }
             $crate::opt::Chain::SubstrateNode => {
                 #[allow(unused)]
