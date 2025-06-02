@@ -18,7 +18,7 @@ use crate::error::Error;
 
 use clap::*;
 use polkadot_sdk::{frame_support, sp_npos_elections::BalancingConfig};
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{collections::HashMap, fmt, str::FromStr};
 use subxt::backend::legacy::rpc_methods as subxt_rpc;
 
@@ -71,6 +71,7 @@ impl std::str::FromStr for Chain {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Error> {
+        println!("#### {} ####", s);
         match s {
             "polkadot" => Ok(Self::Polkadot),
             "statemint" => Ok(Self::Polkadot), // Polkadot AH
