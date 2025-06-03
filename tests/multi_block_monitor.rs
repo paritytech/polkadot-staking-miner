@@ -193,10 +193,7 @@ async fn run_zombienet() -> (KillChildOnDrop, u16) {
             .stdout(process::Stdio::piped())
             .stderr(process::Stdio::piped())
             .args(["--provider", "native", "-l", "text", "spawn", config_path])
-            .env(
-                "RUST_LOG",
-                "runtime::multiblock-election=trace",
-            )
+            .env("RUST_LOG", "runtime::multiblock-election=trace")
             .spawn()
             .unwrap(),
     );
