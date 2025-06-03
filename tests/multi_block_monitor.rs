@@ -74,7 +74,7 @@ fn run_miner(port: u16) -> KillChildOnDrop {
 /// 2. All solution pages are successfully submitted
 /// 3. The user receives a reward after satisfying conditions 1 and 2
 ///
-/// Timeout's after 20 minutes then it's regarded as an error.
+/// Timeout's after 40 minutes then it's regarded as an error.
 pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
     const MAX_DURATION_FOR_SUBMIT_SOLUTION: std::time::Duration =
         std::time::Duration::from_secs(60 * 40);
