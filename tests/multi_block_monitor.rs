@@ -195,7 +195,7 @@ async fn run_zombienet() -> (KillChildOnDrop, u16) {
             .args(["--provider", "native", "-l", "text", "spawn", config_path])
             .env(
                 "RUST_LOG",
-                "runtime::multiblock-election=trace,runtime::staking=info",
+                "runtime::multiblock-election=trace",
             )
             .spawn()
             .unwrap(),
