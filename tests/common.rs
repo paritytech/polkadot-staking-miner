@@ -156,6 +156,34 @@ pub fn spawn_cli_output_threads(
     });
 }
 
+/// Spawn a thread to stream lines from a file (e.g., a log file) and send them to the provided
+/// channel.
+/// Each line is also printed to stdout with the given log_prefix.
+pub fn spawn_file_output_thread(
+    file_path: String,
+    log_prefix: &'static str,
+    tx: tokio::sync::mpsc::UnboundedSender<String>,
+) {
+    let prefix = log_prefix.to_string();
+    std::thread::spawn(move || {
+        if let Ok(file) = std::fs::File::open(&file_path) {
+            for line in std::io::BufReader::new(file).lines() {
+                match line {
+                    Ok(line) => {
+                        println!("{} {}", prefix, line);
+                        let _ = tx.send(format!("{} {}", prefix, line));
+                    }
+                    Err(e) => {
+                        println!("{} <error reading line: {}>", prefix, e);
+                    }
+                }
+            }
+        } else {
+            println!("{} <could not open file: {}>", prefix, file_path);
+        }
+    });
+}
+
 pub enum Target {
     Node(Chain),
     StakingMinerPlayground,

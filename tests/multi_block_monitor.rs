@@ -13,7 +13,7 @@
 pub mod common;
 
 use assert_cmd::cargo::cargo_bin;
-use common::{KillChildOnDrop, init_logger, spawn_cli_output_threads};
+use common::{KillChildOnDrop, init_logger, spawn_cli_output_threads, spawn_file_output_thread};
 use polkadot_staking_miner::{
     prelude::ChainClient,
     runtime::multi_block::{
@@ -202,94 +202,21 @@ async fn run_zombienet() -> (KillChildOnDrop, u16) {
     spawn_cli_output_threads(
         node_cmd.stdout.take().unwrap(),
         node_cmd.stderr.take().unwrap(),
-        tx,
+        tx.clone(),
     );
 
-    tokio::spawn(async move {
-        use tokio::fs::File;
-        use tokio::io::{AsyncBufReadExt, BufReader};
+    tokio::spawn({
+        async move {
+            while let Some(line) = rx.recv().await {
+                log::info!("{}", line);
 
-        // NOTE: This is somewhat of a hack and is fragile, as it still relies on the expected
-        // multi-line pattern for Charlie node information. However, it is necessary for debugging // issues occurring on the CI side related to the collator. Moreover if we fail to open
-        // charlie's log file, we just print a warning and the test result is not affected.
-        // We always get: Node Information, Name : alice, ..., Node Information, Name : bob, ..., // Node Information, Name : charlie, ...
-        // Only stream logs for charlie.
-        enum NodeInfoState {
-            WaitingNodeInfo,
-            WaitingName,
-            WaitingLogCmd,
-        }
-        let mut state = NodeInfoState::WaitingNodeInfo;
-        let mut is_charlie = false;
-
-        while let Some(line) = rx.recv().await {
-            log::info!("{}", line);
-
-            match state {
-                NodeInfoState::WaitingNodeInfo => {
-                    if line.contains("Node Information") {
-                        log::info!("Detected Node Information block");
-                        state = NodeInfoState::WaitingName;
-                        is_charlie = false;
-                    }
-                }
-                NodeInfoState::WaitingName => {
-                    if line.contains("Name : charlie") {
-                        log::info!("Detected Name : charlie");
-                        is_charlie = true;
-                        state = NodeInfoState::WaitingLogCmd;
-                    } else if line.contains("Name :") {
-                        // Not charlie, skip this node info block
-                        log::info!("Detected Name : (not charlie)");
-                        is_charlie = false;
-                        state = NodeInfoState::WaitingLogCmd;
-                    } else if line.contains("Node Information") {
-                        // Stay in this state if another node info block starts
-                        is_charlie = false;
-                    } else {
-                        // Reset if the sequence is broken
-                        state = NodeInfoState::WaitingNodeInfo;
-                        is_charlie = false;
-                    }
-                }
-                NodeInfoState::WaitingLogCmd => {
-                    if let Some(idx) = line.find("Log Cmd : tail -f ") {
-                        if is_charlie {
-                            let path = line[(idx + "Log Cmd : tail -f ".len())..].trim();
-                            log::info!("Detected charlie log path: {}", path);
-                            let path_clone = path.to_string();
-                            // Spawn a task and keep the JoinHandle to avoid dropping it
-                            let _charlie_log_handle = tokio::spawn(async move {
-                                log::info!("Starting to stream charlie log file: {}", path_clone);
-                                match File::open(&path_clone).await {
-                                    Ok(file) => {
-                                        let reader = BufReader::new(file);
-                                        let mut lines = reader.lines();
-                                        while let Ok(Some(log_line)) = lines.next_line().await {
-                                            log::info!("[charlie.log] {}", log_line);
-                                        }
-                                        log::info!(
-                                            "Finished streaming charlie log file: {}",
-                                            path_clone
-                                        );
-                                    }
-                                    Err(e) => {
-                                        log::warn!(
-                                            "Could not open charlie log file: {}. Error: {}",
-                                            path_clone,
-                                            e
-                                        );
-                                    }
-                                }
-                            });
-                        }
-                        // After log cmd, always reset to waiting for next node info
-                        state = NodeInfoState::WaitingNodeInfo;
-                        is_charlie = false;
-                    } else if line.contains("Node Information") {
-                        // If a new node info block starts, reset to look for name again
-                        state = NodeInfoState::WaitingName;
-                        is_charlie = false;
+                if let Some(idx) = line.find("Log Cmd : tail -f ") {
+                    if line.contains("charlie.log") {
+                        let path = line[(idx + "Log Cmd : tail -f ".len())..]
+                            .trim()
+                            .to_string();
+                        log::info!("Detected charlie log path: {}", path);
+                        spawn_file_output_thread(path, "[charlie.log]", tx.clone());
                     }
                 }
             }
