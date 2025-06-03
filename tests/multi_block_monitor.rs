@@ -13,7 +13,7 @@
 pub mod common;
 
 use assert_cmd::cargo::cargo_bin;
-use common::{KillChildOnDrop, init_logger, spawn_cli_output_threads, spawn_file_output_thread};
+use common::{KillChildOnDrop, init_logger, spawn_cli_output_threads};
 use polkadot_staking_miner::{
     prelude::ChainClient,
     runtime::multi_block::{
@@ -198,30 +198,12 @@ async fn run_zombienet() -> (KillChildOnDrop, u16) {
             .unwrap(),
     );
 
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     spawn_cli_output_threads(
         node_cmd.stdout.take().unwrap(),
         node_cmd.stderr.take().unwrap(),
         tx.clone(),
     );
-
-    tokio::spawn({
-        async move {
-            while let Some(line) = rx.recv().await {
-                log::info!("{}", line);
-
-                if let Some(idx) = line.find("Log Cmd : tail -f ") {
-                    if line.contains("charlie.log") {
-                        let path = line[(idx + "Log Cmd : tail -f ".len())..]
-                            .trim()
-                            .to_string();
-                        log::info!("Detected charlie log path: {}", path);
-                        spawn_file_output_thread(path, "[charlie.log]", tx.clone());
-                    }
-                }
-            }
-        }
-    });
 
     log::info!(
         "Waiting for parachain collator on port {} to be ready...",

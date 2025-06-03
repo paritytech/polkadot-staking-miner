@@ -22,7 +22,6 @@ serde_json = "1.0"
 futures = "0.3"
 thiserror = "2.0"
 tokio = { version = "1.45", features = [
-    "fs",
     "macros",
     "rt-multi-thread",
     "sync",

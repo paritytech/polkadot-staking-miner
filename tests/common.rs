@@ -156,46 +156,6 @@ pub fn spawn_cli_output_threads(
     });
 }
 
-/// Spawn a thread to stream lines from a file (e.g., a log file) and send them to the provided
-/// channel, implementing a `tail -f` loop
-/// Each line is also printed to stdout with the given log_prefix.
-pub fn spawn_file_output_thread(
-    file_path: String,
-    log_prefix: &'static str,
-    tx: tokio::sync::mpsc::UnboundedSender<String>,
-) {
-    let prefix = log_prefix.to_string();
-    std::thread::spawn(move || {
-        use std::{
-            fs::File,
-            io::{BufRead, BufReader, Seek, SeekFrom},
-            thread,
-            time::Duration,
-        };
-        let mut last_pos = 0;
-        loop {
-            if let Ok(mut file) = File::open(&file_path) {
-                let _ = file.seek(SeekFrom::Start(last_pos));
-                let mut reader = BufReader::new(file);
-                let mut buf = String::new();
-                while let Ok(bytes) = reader.read_line(&mut buf) {
-                    if bytes == 0 {
-                        break;
-                    }
-                    print!("{} {}", prefix, buf);
-                    let _ = tx.send(format!("{} {}", prefix, buf.trim_end()));
-                    buf.clear();
-                }
-                // Update last_pos to current position
-                if let Ok(pos) = reader.stream_position() {
-                    last_pos = pos;
-                }
-            }
-            thread::sleep(Duration::from_millis(500));
-        }
-    });
-}
-
 pub enum Target {
     Node(Chain),
     StakingMinerPlayground,
