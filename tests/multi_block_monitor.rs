@@ -198,12 +198,18 @@ async fn run_zombienet() -> (KillChildOnDrop, u16) {
             .unwrap(),
     );
 
-    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     spawn_cli_output_threads(
         node_cmd.stdout.take().unwrap(),
         node_cmd.stderr.take().unwrap(),
-        tx.clone(),
+        tx,
     );
+
+    tokio::spawn(async move {
+        while let Some(line) = rx.recv().await {
+            log::info!("{}", line);
+        }
+    });
 
     log::info!(
         "Waiting for parachain collator on port {} to be ready...",
