@@ -228,16 +228,19 @@ async fn run_zombienet() -> (KillChildOnDrop, u16) {
             match state {
                 NodeInfoState::WaitingNodeInfo => {
                     if line.contains("Node Information") {
+                        log::info!("Detected Node Information block");
                         state = NodeInfoState::WaitingName;
                         is_charlie = false;
                     }
                 }
                 NodeInfoState::WaitingName => {
                     if line.contains("Name : charlie") {
+                        log::info!("Detected Name : charlie");
                         is_charlie = true;
                         state = NodeInfoState::WaitingLogCmd;
                     } else if line.contains("Name :") {
                         // Not charlie, skip this node info block
+                        log::info!("Detected Name : (not charlie)");
                         is_charlie = false;
                         state = NodeInfoState::WaitingLogCmd;
                     } else if line.contains("Node Information") {
@@ -253,17 +256,30 @@ async fn run_zombienet() -> (KillChildOnDrop, u16) {
                     if let Some(idx) = line.find("Log Cmd : tail -f ") {
                         if is_charlie {
                             let path = line[(idx + "Log Cmd : tail -f ".len())..].trim();
-                            log::trace!("Detected charlie log path: {}", path);
+                            log::info!("Detected charlie log path: {}", path);
                             let path_clone = path.to_string();
-                            tokio::spawn(async move {
-                                if let Ok(file) = File::open(&path_clone).await {
-                                    let reader = BufReader::new(file);
-                                    let mut lines = reader.lines();
-                                    while let Ok(Some(log_line)) = lines.next_line().await {
-                                        log::info!("[charlie.log] {}", log_line);
+                            // Spawn a task and keep the JoinHandle to avoid dropping it
+                            let _charlie_log_handle = tokio::spawn(async move {
+                                log::info!("Starting to stream charlie log file: {}", path_clone);
+                                match File::open(&path_clone).await {
+                                    Ok(file) => {
+                                        let reader = BufReader::new(file);
+                                        let mut lines = reader.lines();
+                                        while let Ok(Some(log_line)) = lines.next_line().await {
+                                            log::info!("[charlie.log] {}", log_line);
+                                        }
+                                        log::info!(
+                                            "Finished streaming charlie log file: {}",
+                                            path_clone
+                                        );
                                     }
-                                } else {
-                                    log::warn!("Could not open charlie log file: {}", path_clone);
+                                    Err(e) => {
+                                        log::warn!(
+                                            "Could not open charlie log file: {}. Error: {}",
+                                            path_clone,
+                                            e
+                                        );
+                                    }
                                 }
                             });
                         }
