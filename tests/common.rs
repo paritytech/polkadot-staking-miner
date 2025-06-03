@@ -157,7 +157,7 @@ pub fn spawn_cli_output_threads(
 }
 
 /// Spawn a thread to stream lines from a file (e.g., a log file) and send them to the provided
-/// channel.
+/// channel, implementing a `tail -f` loop
 /// Each line is also printed to stdout with the given log_prefix.
 pub fn spawn_file_output_thread(
     file_path: String,
@@ -166,20 +166,32 @@ pub fn spawn_file_output_thread(
 ) {
     let prefix = log_prefix.to_string();
     std::thread::spawn(move || {
-        if let Ok(file) = std::fs::File::open(&file_path) {
-            for line in std::io::BufReader::new(file).lines() {
-                match line {
-                    Ok(line) => {
-                        println!("{} {}", prefix, line);
-                        let _ = tx.send(format!("{} {}", prefix, line));
+        use std::{
+            fs::File,
+            io::{BufRead, BufReader, Seek, SeekFrom},
+            thread,
+            time::Duration,
+        };
+        let mut last_pos = 0;
+        loop {
+            if let Ok(mut file) = File::open(&file_path) {
+                let _ = file.seek(SeekFrom::Start(last_pos));
+                let mut reader = BufReader::new(file);
+                let mut buf = String::new();
+                while let Ok(bytes) = reader.read_line(&mut buf) {
+                    if bytes == 0 {
+                        break;
                     }
-                    Err(e) => {
-                        println!("{} <error reading line: {}>", prefix, e);
-                    }
+                    print!("{} {}", prefix, buf);
+                    let _ = tx.send(format!("{} {}", prefix, buf.trim_end()));
+                    buf.clear();
+                }
+                // Update last_pos to current position
+                if let Ok(pos) = reader.stream_position() {
+                    last_pos = pos;
                 }
             }
-        } else {
-            println!("{} <could not open file: {}>", prefix, file_path);
+            thread::sleep(Duration::from_millis(500));
         }
     });
 }
