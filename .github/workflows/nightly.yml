@@ -55,7 +55,7 @@ jobs:
 
       - name: Run nightly tests
         run: |
-          RUST_LOG=trace cargo test --test multi_block_monitor submit_works --features integration-tests
+          RUST_LOG=info cargo test --test multi_block_monitor submit_works --features integration-tests
 
       - name: Create an issue on failure
         if: failure()

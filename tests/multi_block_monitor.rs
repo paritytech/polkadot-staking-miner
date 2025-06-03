@@ -48,7 +48,7 @@ fn run_miner(port: u16) -> KillChildOnDrop {
                 "--seed-or-path",
                 "//Alice",
             ])
-            .env("RUST_LOG", "info,polkadot_staking_miner=trace")
+            .env("RUST_LOG", "polkadot_staking_miner=trace,info")
             .spawn()
             .unwrap(),
     );
