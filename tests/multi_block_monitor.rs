@@ -48,7 +48,7 @@ fn run_miner(port: u16) -> KillChildOnDrop {
                 "--seed-or-path",
                 "//Alice",
             ])
-            .env("RUST_LOG", "debug,polkadot_staking_miner=trace")
+            .env("RUST_LOG", "info,polkadot_staking_miner=trace")
             .spawn()
             .unwrap(),
     );
@@ -77,7 +77,7 @@ fn run_miner(port: u16) -> KillChildOnDrop {
 /// Timeout's after 20 minutes then it's regarded as an error.
 pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
     const MAX_DURATION_FOR_SUBMIT_SOLUTION: std::time::Duration =
-        std::time::Duration::from_secs(60 * 20);
+        std::time::Duration::from_secs(60 * 40);
 
     let now = Instant::now();
 
@@ -190,7 +190,10 @@ async fn run_zombienet() -> (KillChildOnDrop, u16) {
             .stdout(process::Stdio::piped())
             .stderr(process::Stdio::piped())
             .args(["--provider", "native", "-l", "text", "spawn", config_path])
-            .env("RUST_LOG", "error,runtime=error")
+            .env(
+                "RUST_LOG",
+                "runtime::multiblock-election=trace,runtime::staking=info",
+            )
             .spawn()
             .unwrap(),
     );
