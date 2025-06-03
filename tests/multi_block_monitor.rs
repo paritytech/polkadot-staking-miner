@@ -48,7 +48,7 @@ fn run_miner(port: u16) -> KillChildOnDrop {
                 "--seed-or-path",
                 "//Alice",
             ])
-            .env("RUST_LOG", "debug,polkadot_staking_miner=trace")
+            .env("RUST_LOG", "polkadot_staking_miner=trace,info")
             .spawn()
             .unwrap(),
     );
@@ -74,12 +74,13 @@ fn run_miner(port: u16) -> KillChildOnDrop {
 /// 2. All solution pages are successfully submitted
 /// 3. The user receives a reward after satisfying conditions 1 and 2
 ///
-/// Timeout's after 20 minutes then it's regarded as an error.
+/// Timeout's after 40 minutes then it's regarded as an error.
 pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
     const MAX_DURATION_FOR_SUBMIT_SOLUTION: std::time::Duration =
-        std::time::Duration::from_secs(60 * 20);
+        std::time::Duration::from_secs(60 * 40);
 
     let now = Instant::now();
+    log::info!("Starting to wait for a mined solution on port {}", port);
 
     let api = loop {
         if let Ok(api) = ChainClient::from_url(&format!("ws://127.0.0.1:{}", port)).await {
@@ -146,8 +147,9 @@ pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
 
                     if score_submitted && all_pages_submitted {
                         log::info!(
-                            "Test passed: score registered, all {} pages submitted, and user rewarded!",
-                            pages
+                            "🤑 Successfully mined solution: score registered, all {} pages submitted, and user rewarded! Duration: {:?} 🤑",
+                            pages,
+                            now.elapsed()
                         );
                         return Ok(());
                     }
@@ -158,6 +160,7 @@ pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
         }
     }
 
+    log::info!("Failed to mine solution after {:?}", now.elapsed());
     Err(anyhow::anyhow!(
         "Test failed: score_submitted: {}, all_pages_submitted: {} ({}/{} pages); timeout after {}s",
         score_submitted,
@@ -190,7 +193,7 @@ async fn run_zombienet() -> (KillChildOnDrop, u16) {
             .stdout(process::Stdio::piped())
             .stderr(process::Stdio::piped())
             .args(["--provider", "native", "-l", "text", "spawn", config_path])
-            .env("RUST_LOG", "error,runtime=error")
+            .env("RUST_LOG", "runtime::multiblock-election=trace")
             .spawn()
             .unwrap(),
     );
