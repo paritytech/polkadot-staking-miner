@@ -80,6 +80,7 @@ pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
         std::time::Duration::from_secs(60 * 40);
 
     let now = Instant::now();
+    log::info!("Starting to wait for a mined solution on port {}", port);
 
     let api = loop {
         if let Ok(api) = ChainClient::from_url(&format!("ws://127.0.0.1:{}", port)).await {
@@ -146,8 +147,9 @@ pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
 
                     if score_submitted && all_pages_submitted {
                         log::info!(
-                            "Test passed: score registered, all {} pages submitted, and user rewarded!",
-                            pages
+                            "🤑 Successfully mined solution: score registered, all {} pages submitted, and user rewarded! Duration: {:?} 🤑",
+                            pages,
+                            now.elapsed()
                         );
                         return Ok(());
                     }
@@ -158,6 +160,7 @@ pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
         }
     }
 
+    log::info!("Failed to mine solution after {:?}", now.elapsed());
     Err(anyhow::anyhow!(
         "Test failed: score_submitted: {}, all_pages_submitted: {} ({}/{} pages); timeout after {}s",
         score_submitted,
