@@ -8,7 +8,7 @@ use crate::{
     },
     dynamic::multi_block as dynamic,
     error::Error,
-    prelude::{AccountId, ExtrinsicParamsBuilder, LOG_TARGET, Storage},
+    prelude::{AccountId, LOG_TARGET, Storage},
     prometheus,
     runtime::multi_block::{
         self as runtime, runtime_types::pallet_election_provider_multi_block::types::Phase,
@@ -282,7 +282,7 @@ where
                 return Ok(());
             }
             // Revert previous submission and submit the new one.
-            bail(listen, &client, signer.clone()).await?;
+            dynamic::bail(&client, &signer, listen).await?;
         }
         CurrentSubmission::Incomplete(s) => {
             // Submit the missing pages.
@@ -301,6 +301,7 @@ where
                         &signer,
                         missing_pages,
                         listen,
+                        round,
                     )
                     .await?;
                 } else {
@@ -310,6 +311,7 @@ where
                         missing_pages,
                         listen,
                         chunk_size,
+                        round,
                     )
                     .await?;
                 }
@@ -317,7 +319,7 @@ where
             }
 
             // Revert previous submission and submit a new one.
-            bail(listen, &client, signer.clone()).await?;
+            dynamic::bail(&client, &signer, listen).await?;
         }
         CurrentSubmission::NotStarted => (),
     };
@@ -345,9 +347,16 @@ where
     prometheus::set_score(paged_raw_solution.score);
 
     // 6. Submit the score and solution to the chain.
-    match dynamic::submit(&client, &signer, paged_raw_solution, listen, chunk_size)
-        .timed()
-        .await
+    match dynamic::submit(
+        &client,
+        &signer,
+        paged_raw_solution,
+        listen,
+        chunk_size,
+        round,
+    )
+    .timed()
+    .await
     {
         (Ok(_), dur) => {
             log::trace!(
@@ -440,26 +449,4 @@ async fn has_submitted(
         CurrentSubmission::Done(_) => Ok(true),
         _ => Ok(false),
     }
-}
-
-async fn bail(listen: Listen, client: &Client, signer: Signer) -> Result<(), Error> {
-    let tx = runtime::tx().multi_block_signed().bail();
-
-    let nonce = client
-        .rpc()
-        .system_account_next_index(signer.account_id())
-        .await?;
-
-    let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
-    let xt = client
-        .chain_api()
-        .tx()
-        .create_signed(&tx, &*signer, xt_cfg)
-        .await?;
-
-    let tx = xt.submit_and_watch().await?;
-
-    utils::wait_tx_in_block_for_strategy(tx, listen).await?;
-
-    Ok(())
 }

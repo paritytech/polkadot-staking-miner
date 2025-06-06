@@ -350,7 +350,13 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
     mut paged_raw_solution: PagedRawSolution<T>,
     listen: Listen,
     chunk_size: usize,
+    round: u32,
 ) -> Result<(), Error> {
+    // 1. Check phase before registering score
+    if !validate_signed_phase_or_bail(client, signer, listen, round).await? {
+        return Ok(());
+    }
+
     let mut i = 0;
     let tx_status = loop {
         let nonce = client
@@ -392,6 +398,11 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 
     log::info!(target: LOG_TARGET, "Score registered at block {:?}", tx.block_hash());
 
+    // 2. Check phase before submitting pages
+    if !validate_signed_phase_or_bail(client, signer, listen, round).await? {
+        return Ok(());
+    }
+
     let solutions: Vec<(u32, T::Solution)> = paged_raw_solution
         .solution_pages
         .iter()
@@ -399,16 +410,17 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
         .map(|(page, solution)| (page as u32, solution.clone()))
         .collect::<Vec<_>>();
 
-    // 2. Submit all solution pages using the appropriate strategy based on chunk_size
+    // 3. Submit all solution pages using the appropriate strategy based on chunk_size
     let failed_pages = if chunk_size == 0 {
         // Use fully concurrent submission
-        inner_submit_pages_concurrent::<T>(client, signer, solutions, listen).await?
+        inner_submit_pages_concurrent::<T>(client, signer, solutions, listen, round).await?
     } else {
         // Use chunked concurrent submission
-        inner_submit_pages_chunked::<T>(client, signer, solutions, listen, chunk_size).await?
+        inner_submit_pages_chunked::<T>(client, signer, solutions, listen, chunk_size, round)
+            .await?
     };
 
-    // 3. All pages were submitted successfully, we are done.
+    // 4. All pages were submitted successfully, we are done.
     if failed_pages.is_empty() {
         return Ok(());
     }
@@ -419,7 +431,12 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
         failed_pages.len()
     );
 
-    // 4. Retry failed pages, one time.
+    // 5. Check phase before retrying failed pages
+    if !validate_signed_phase_or_bail(client, signer, listen, round).await? {
+        return Ok(());
+    }
+
+    // 6. Retry failed pages, one time.
     let mut solutions = Vec::new();
     for page in failed_pages {
         let solution = std::mem::take(&mut paged_raw_solution.solution_pages[page as usize]);
@@ -428,9 +445,10 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 
     // Retry with the same strategy as the initial submission
     let failed_pages = if chunk_size == 0 {
-        inner_submit_pages_concurrent::<T>(client, signer, solutions, listen).await?
+        inner_submit_pages_concurrent::<T>(client, signer, solutions, listen, round).await?
     } else {
-        inner_submit_pages_chunked::<T>(client, signer, solutions, listen, chunk_size).await?
+        inner_submit_pages_chunked::<T>(client, signer, solutions, listen, chunk_size, round)
+            .await?
     };
 
     if failed_pages.is_empty() {
@@ -462,7 +480,17 @@ async fn submit_pages_batch<T: MinerConfig + 'static>(
     signer: &Signer,
     pages_to_submit: Vec<(u32, T::Solution)>,
     listen: Listen,
+    round: u32,
 ) -> Result<SubmissionResult, Error> {
+    // Check phase before submitting this batch
+    if !validate_signed_phase_or_bail(client, signer, listen, round).await? {
+        // Return all pages as failed if phase changed
+        let failed_pages: Vec<u32> = pages_to_submit.iter().map(|(page, _)| *page).collect();
+        return Ok(SubmissionResult {
+            failed_pages,
+            submitted_pages: HashSet::new(),
+        });
+    }
     let mut txs = FuturesUnordered::new();
     let mut nonce = client
         .rpc()
@@ -565,9 +593,10 @@ pub(crate) async fn inner_submit_pages_concurrent<T: MinerConfig + 'static>(
     signer: &Signer,
     paged_raw_solution: Vec<(u32, T::Solution)>,
     listen: Listen,
+    round: u32,
 ) -> Result<Vec<u32>, Error> {
     // Submit all pages in a single batch
-    let result = submit_pages_batch::<T>(client, signer, paged_raw_solution, listen).await?;
+    let result = submit_pages_batch::<T>(client, signer, paged_raw_solution, listen, round).await?;
 
     // If all pages were submitted successfully, we're done
     if result.all_successful() {
@@ -585,6 +614,7 @@ pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
     paged_raw_solution: Vec<(u32, T::Solution)>,
     listen: Listen,
     chunk_size: usize,
+    round: u32,
 ) -> Result<Vec<u32>, Error> {
     assert!(chunk_size > 0, "Chunk size must be greater than 0");
 
@@ -592,8 +622,16 @@ pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
     let mut submitted_pages = HashSet::new();
     let total_pages = paged_raw_solution.len();
 
-    // Process pages in chunks using the built-in chunks method
+    // Process pages in chunks
     for chunk in paged_raw_solution.chunks(chunk_size) {
+        // Check phase before each chunk
+        if !validate_signed_phase_or_bail(client, signer, listen, round).await? {
+            // Add remaining pages to failed list
+            let remaining_pages: Vec<u32> = chunk.iter().map(|(page, _)| *page).collect();
+            failed_pages.extend(remaining_pages);
+            break;
+        }
+
         // Convert the chunk slice to a Vec to pass to submit_pages_batch
         let chunk_vec = chunk.to_vec();
 
@@ -604,11 +642,11 @@ pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
             target: LOG_TARGET,
             "Submitting pages {:?} (out of {})",
             chunk_page_numbers,
-            total_pages
+            paged_raw_solution.len()
         );
 
         // Submit the current chunk
-        let result = submit_pages_batch::<T>(client, signer, chunk_vec, listen).await?;
+        let result = submit_pages_batch::<T>(client, signer, chunk_vec, listen, round).await?;
 
         // Check if we have failed pages before extending the overall lists
         if !result.all_successful() {
@@ -640,4 +678,87 @@ pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
     }
 
     Ok(failed_pages)
+}
+
+/// Submit a bail transaction to revert incomplete submissions
+pub(crate) async fn bail(client: &Client, signer: &Signer, listen: Listen) -> Result<(), Error> {
+    let bail_tx = runtime::tx().multi_block_signed().bail();
+    let nonce = client
+        .rpc()
+        .system_account_next_index(signer.account_id())
+        .await?;
+    let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
+    let xt = client
+        .chain_api()
+        .tx()
+        .create_signed(&bail_tx, &**signer, xt_cfg)
+        .await?;
+    let tx = xt.submit_and_watch().await?;
+    utils::wait_tx_in_block_for_strategy(tx, listen).await?;
+    Ok(())
+}
+
+/// Helper function to validate that we're still in Signed phase
+/// If not in Signed phase and we have an incomplete submission, bail it
+/// Returns true if we should continue, false if we should abort
+async fn validate_signed_phase_or_bail(
+    client: &Client,
+    signer: &Signer,
+    listen: Listen,
+    round: u32,
+) -> Result<bool, Error> {
+    let storage = utils::storage_at_head(client, listen).await?;
+    let current_phase = storage
+        .fetch_or_default(&runtime::storage().multi_block().current_phase())
+        .await?;
+
+    // Import Phase enum from runtime types
+    use crate::runtime::multi_block::runtime_types::pallet_election_provider_multi_block::types::Phase;
+
+    if !matches!(current_phase, Phase::Signed(_)) {
+        log::warn!(
+            target: LOG_TARGET,
+            "Phase changed from Signed to {:?} during submission for round {} - checking for incomplete submission",
+            current_phase,
+            round
+        );
+
+        // Check if we have a partial submission and bail it
+        let maybe_submission = storage
+            .fetch(
+                &runtime::storage()
+                    .multi_block_signed()
+                    .submission_metadata_storage(round, signer.account_id()),
+            )
+            .await?;
+
+        if let Some(submission) = maybe_submission {
+            // We have a submission - check if it's incomplete
+            let n_pages = crate::static_types::multi_block::Pages::get();
+            let submitted_pages: usize = submission
+                .pages
+                .0
+                .iter()
+                .map(|&b| if b { 1 } else { 0 })
+                .sum();
+
+            if submitted_pages < n_pages as usize {
+                log::info!(
+                    target: LOG_TARGET,
+                    "Bailing incomplete submission for round {} ({}/{} pages submitted)",
+                    round,
+                    submitted_pages,
+                    n_pages
+                );
+
+                bail(client, signer, listen).await?;
+
+                log::info!(target: LOG_TARGET, "Successfully bailed incomplete submission for round {}", round);
+            }
+        }
+
+        return Ok(false);
+    }
+
+    Ok(true)
 }
