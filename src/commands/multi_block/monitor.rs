@@ -23,6 +23,7 @@ use polkadot_sdk::{
     sp_npos_elections::ElectionScore,
 };
 use std::{collections::HashSet, sync::Arc};
+use subxt::config::Header;
 use tokio::sync::Mutex;
 
 pub async fn monitor_cmd<T>(
@@ -96,7 +97,20 @@ where
             }
         };
 
-        let state = BlockDetails::new(&client, at).await?;
+        // Early exit optimization: check the phase before calling BlockDetails::new(), where we
+        // we fetch `storage_at()`, `round()`, and `desired_targets()`.
+        // This approach saves us 3 RPC calls.
+        let storage = utils::storage_at(Some(at.hash()), client.chain_api()).await?;
+        let phase = storage
+            .fetch_or_default(&runtime::storage().multi_block().current_phase())
+            .await?;
+
+        if !matches!(phase, Phase::Signed(_) | Phase::Snapshot(_)) {
+            log::trace!(target: LOG_TARGET, "Phase {:?} - nothing to do", phase);
+            continue;
+        }
+
+        let state = BlockDetails::new(&client, at, phase).await?;
         let account_info = state
             .storage
             .fetch(&runtime::storage().system().account(signer.account_id()))
