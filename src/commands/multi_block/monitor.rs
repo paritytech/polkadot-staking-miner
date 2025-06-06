@@ -215,16 +215,12 @@ where
         _ => return Ok(()),
     }
 
-    // 2. If the solution has already been submitted, nothing to do
-    if has_submitted(&storage, round, signer.account_id(), n_pages).await? {
-        return Ok(());
-    }
-
-    // 3. Fetch the target and voter snapshots if needed.
+    // 2. Fetch the target and voter snapshots if needed.
     dynamic::fetch_missing_snapshots::<T>(&snapshot, &storage, round).await?;
     let (target_snapshot, voter_snapshot) = snapshot.read().get();
 
-    // 4. Try to acquire mining and submission lock - if already taken, skip this block
+    // 3. Try to acquire mining and submission lock - if already taken, skip this block: it means
+    // there is another task busy with mining and submitting a solution.
     let _guard = match submit_lock.try_lock() {
         Ok(guard) => guard,
         Err(_) => {
@@ -238,8 +234,11 @@ where
         }
     };
 
-    // After the submission lock has been acquired, check again
-    // that no submissions has been submitted.
+    // After the submission lock has been acquired, check that no submissions has been submitted.
+    // Example:
+    // 1. block N (Signed(P)): we submit a complete solution
+    // 2. miner crashes and restarts
+    // 3. block N+M (Signed(P-M)): we check if a complete solution has been submitted already
     if has_submitted(
         &utils::storage_at_head(&client, listen).await?,
         round,
@@ -251,7 +250,7 @@ where
         return Ok(());
     }
 
-    // 5. Mine solution
+    // 4. Mine solution
     let paged_raw_solution = match dynamic::mine_solution::<T>(
         target_snapshot,
         voter_snapshot,
@@ -323,7 +322,7 @@ where
         CurrentSubmission::NotStarted => (),
     };
 
-    // 6. Check if the score is better than the current best score.
+    // 5. Check if the score is better than the current best score.
     //
     // We allow overwriting the score if the "our account" has the best score but hasn't submitted
     // the solution. This is to allow the miner to re-submit the score and solution if the miner crashed
@@ -345,7 +344,7 @@ where
 
     prometheus::set_score(paged_raw_solution.score);
 
-    // 7. Submit the score and solution to the chain.
+    // 6. Submit the score and solution to the chain.
     match dynamic::submit(&client, &signer, paged_raw_solution, listen, chunk_size)
         .timed()
         .await
