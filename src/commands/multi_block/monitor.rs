@@ -224,8 +224,19 @@ where
     dynamic::fetch_missing_snapshots::<T>(&snapshot, &storage, round).await?;
     let (target_snapshot, voter_snapshot) = snapshot.read().get();
 
-    // 4. Lock mining and submission.
-    let _guard = submit_lock.lock().await;
+    // 4. Try to acquire mining and submission lock - if already taken, skip this block
+    let _guard = match submit_lock.try_lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            log::trace!(
+                target: LOG_TARGET,
+                "Submission lock already taken - skipping block {} round {}",
+                block_number,
+                round
+            );
+            return Ok(());
+        }
+    };
 
     // After the submission lock has been acquired, check again
     // that no submissions has been submitted.
