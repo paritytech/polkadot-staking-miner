@@ -240,7 +240,16 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>, i
         // if the runtime upgrade subscription fails then try establish a new one and if it fails quit.
         let update = match update_stream.next().await {
             Some(Ok(update)) => update,
-            _ => {
+            Some(Err(e)) => {
+                if e.is_disconnected_will_reconnect() {
+                    log::warn!(target: LOG_TARGET, "Runtime upgrade subscription disconnected, but will reconnect automatically");
+                    continue;
+                }
+                log::error!(target: LOG_TARGET, "Runtime upgrade subscription error: {:?}", e);
+                let _ = tx.send(e.into());
+                return;
+            }
+            None => {
                 log::warn!(target: LOG_TARGET, "Runtime upgrade subscription failed");
                 update_stream = match updater.runtime_updates().await {
                     Ok(u) => u,

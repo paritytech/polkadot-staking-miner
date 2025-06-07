@@ -63,7 +63,10 @@ where
         );
     }
 
-    let mut subscription = utils::rpc_block_subscription(client.rpc(), config.listen).await?;
+    let mut subscription = match config.listen {
+        Listen::Head => client.chain_api().blocks().subscribe_best().await?,
+        Listen::Finalized => client.chain_api().blocks().subscribe_finalized().await?,
+    };
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
     let submit_lock = Arc::new(Mutex::new(()));
     let snapshot = SharedSnapshot::<T>::new(static_types::Pages::get());
@@ -72,23 +75,30 @@ where
 
     loop {
         let at = tokio::select! {
-            maybe_rp = subscription.next() => {
-                match maybe_rp {
-                    Some(Ok(r)) => r,
-                    Some(Err(e)) => {
-                        log::error!(target: LOG_TARGET, "subscription failed to decode Header {:?}, this is bug please file an issue", e);
-                        return Err(e.into());
+            maybe_block = subscription.next() => {
+                match maybe_block {
+                    Some(block_result) => {
+                        match block_result {
+                            Ok(block) => block.header().clone(),
+                            Err(e) => {
+                                // Handle reconnection case with the reconnecting RPC client
+                                if e.is_disconnected_will_reconnect() {
+                                    log::warn!(target: LOG_TARGET, "RPC connection lost, but will reconnect automatically. Continuing...");
+                                    continue;
+                                }
+                                log::error!(target: LOG_TARGET, "subscription failed: {:?}", e);
+                                return Err(e.into());
+                            }
+                        }
                     }
-                    // The subscription was dropped, should only happen if:
-                    //	- the connection was closed.
-                    //	- the subscription could not keep up with the server.
+                    // The subscription was dropped unexpectedly
                     None => {
-                        log::warn!(target: LOG_TARGET, "subscription to `{:?}` terminated. Retrying..", config.listen);
-                        subscription = utils::rpc_block_subscription(client.rpc(), config.listen).await?;
-                        continue
+                        log::error!(target: LOG_TARGET, "Subscription to `{:?}` terminated unexpectedly", config.listen);
+                        return Err(Error::Other("Subscription terminated unexpectedly".to_string()));
                     }
                 }
             },
+
             maybe_err = rx.recv() => {
                 match maybe_err {
                     Some(err) => return Err(err),

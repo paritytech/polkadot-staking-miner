@@ -724,6 +724,7 @@ async fn validate_signed_phase_or_bail(
         );
 
         // Check if we have a partial submission and bail it
+        let storage = utils::storage_at_head(client, listen).await?;
         let maybe_submission = storage
             .fetch(
                 &runtime::storage()
