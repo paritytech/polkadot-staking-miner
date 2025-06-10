@@ -44,8 +44,6 @@ pub enum Error {
     Other(String),
     #[error("Invalid metadata: {0}")]
     InvalidMetadata(String),
-    #[error("Transaction rejected: {0}")]
-    TransactionRejected(String),
     #[error("Dynamic transaction error: {0}")]
     DynamicTransaction(String),
     #[error("Feasibility error: {0}")]

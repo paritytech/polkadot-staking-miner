@@ -29,6 +29,7 @@ use crate::{
 };
 use codec::Encode;
 use polkadot_sdk::pallet_election_provider_multi_phase::{MinerConfig, RawSolution};
+use subxt::tx::Payload;
 
 pub async fn dry_run_cmd<T>(client: Client, config: DryRunConfig) -> Result<(), Error>
 where
@@ -90,21 +91,46 @@ where
             account_info.data.frozen,
         );
 
-        let nonce = client
-            .rpc()
-            .system_account_next_index(signer.account_id())
-            .await?;
+        // Get current nonce for the account
+        let account_info = storage
+            .fetch(&runtime::storage().system().account(signer.account_id()))
+            .await?
+            .ok_or(Error::AccountDoesNotExists)?;
+        let nonce = account_info.nonce;
+
         let tx = dynamic::signed_solution(raw_solution)?;
-        let params = ExtrinsicParamsBuilder::new().nonce(nonce).build();
-        let xt = client
+        let params = ExtrinsicParamsBuilder::new().nonce(nonce.into()).build();
+        let _xt = client
             .chain_api()
             .tx()
             .create_signed(&tx, &*signer, params)
             .await?;
-        let dry_run_bytes = client.rpc().dry_run(xt.encoded(), config.at).await?;
-        let dry_run_result = dry_run_bytes.into_dry_run_result()?;
 
-        log::info!(target: LOG_TARGET, "dry-run outcome is {:?}", dry_run_result);
+        let call_data = tx
+            .encode_call_data(&client.chain_api().metadata())
+            .map_err(|e| Error::Other(e.to_string()))?;
+        let target_block = if let Some(at) = config.at {
+            at
+        } else {
+            // Use latest block hash if no specific block is provided
+            client.chain_api().blocks().at_latest().await?.hash()
+        };
+
+        match client
+            .chain_api()
+            .backend()
+            .call("DryRunApi_dry_run_call", Some(&call_data), target_block)
+            .await
+        {
+            Ok(result) => {
+                log::info!(target: LOG_TARGET, "dry-run successful: call returned {} bytes", result.len());
+                log::info!(target: LOG_TARGET, "dry-run outcome: transaction would succeed");
+            }
+            Err(e) => {
+                log::warn!(target: LOG_TARGET, "dry-run failed: {:?}", e);
+                return Err(Error::Other(format!("Dry run failed: {}", e)));
+            }
+        }
     }
 
     Ok(())

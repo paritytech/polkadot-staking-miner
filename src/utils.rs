@@ -18,7 +18,7 @@ use crate::{
     client::Client,
     commands::types::{Listen, SubmissionStrategy},
     error::Error,
-    prelude::{ChainClient, Config, Hash, Header, LOG_TARGET, RpcClient, Storage},
+    prelude::{ChainClient, Config, Hash, LOG_TARGET, Storage},
 };
 use codec::Decode;
 use jsonrpsee::core::ClientError as JsonRpseeError;
@@ -35,7 +35,6 @@ use subxt::{
     error::{Error as SubxtError, RpcError},
     tx::{TxInBlock, TxProgress},
 };
-use subxt_rpcs::client::RpcSubscription;
 pin_project! {
     pub struct Timed<Fut>
         where
@@ -93,7 +92,6 @@ pub fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Er
         Error::AlreadySubmitted
         | Error::BetterScoreExist
         | Error::IncorrectPhase
-        | Error::TransactionRejected(_)
         | Error::Join(_)
         | Error::Feasibility(_)
         | Error::EmptySnapshot => {}
@@ -163,7 +161,7 @@ pub async fn storage_at(block: Option<Hash>, api: &ChainClient) -> Result<Storag
 }
 
 pub async fn storage_at_head(api: &Client, listen: Listen) -> Result<Storage, Error> {
-    let hash = rpc_get_latest_head(api.rpc(), listen).await?;
+    let hash = get_latest_head(api.chain_api(), listen).await?;
     storage_at(Some(hash), api.chain_api()).await
 }
 
@@ -210,25 +208,16 @@ where
     Err(RpcError::SubscriptionDropped.into())
 }
 
-pub async fn rpc_block_subscription(
-    rpc: &RpcClient,
-    listen: Listen,
-) -> Result<RpcSubscription<Header>, Error> {
+pub async fn get_latest_head(api: &ChainClient, listen: Listen) -> Result<Hash, Error> {
     match listen {
-        Listen::Head => rpc.chain_subscribe_new_heads().await,
-        Listen::Finalized => rpc.chain_subscribe_finalized_heads().await,
-    }
-    .map_err(Into::into)
-}
-
-pub async fn rpc_get_latest_head(rpc: &RpcClient, listen: Listen) -> Result<Hash, Error> {
-    match listen {
-        Listen::Head => match rpc.chain_get_block_hash(None).await {
-            Ok(Some(hash)) => Ok(hash),
-            Ok(None) => Err(Error::Other("Latest block not found".into())),
-            Err(e) => Err(e.into()),
-        },
-        Listen::Finalized => rpc.chain_get_finalized_head().await.map_err(Into::into),
+        Listen::Head => {
+            let block = api.blocks().at_latest().await?;
+            Ok(block.hash())
+        }
+        Listen::Finalized => {
+            let finalized_block_ref = api.backend().latest_finalized_block_ref().await?;
+            Ok(finalized_block_ref.hash())
+        }
     }
 }
 
