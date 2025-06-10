@@ -509,11 +509,17 @@ pub async fn runtime_api_solution_weight<S: Encode + NposSolution + TypeInfo + '
     };
 
     let bytes = client
-        .rpc()
-        .state_call(
+        .chain_api()
+        .backend()
+        .call(
             "TransactionPaymentCallApi_query_call_info",
             Some(&call_data),
-            None,
+            client
+                .chain_api()
+                .backend()
+                .latest_finalized_block_ref()
+                .await?
+                .hash(),
         )
         .await?;
 

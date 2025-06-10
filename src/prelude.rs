@@ -11,8 +11,7 @@ pub const DEFAULT_URI: &str = "ws://127.0.0.1:9944";
 pub const DEFAULT_PROMETHEUS_PORT: u16 = 9999;
 /// The logging target.
 pub const LOG_TARGET: &str = "polkadot-staking-miner";
-/// RPC client.
-pub type RpcClient = subxt::backend::legacy::LegacyRpcMethods<subxt::PolkadotConfig>;
+
 /// Subxt client used by the staking miner on all chains.
 pub type ChainClient = subxt::OnlineClient<subxt::PolkadotConfig>;
 /// Config used by the staking-miner
