@@ -20,7 +20,7 @@ use crate::{
     dynamic::legacy as dynamic,
     error::Error,
     prelude::{
-        AccountId, ChainClient, ExtrinsicParamsBuilder, Hash, Header, LOG_TARGET, RpcClient,
+        AccountId, ChainClient, Config, ExtrinsicParamsBuilder, Hash, Header, LOG_TARGET, RpcClient,
     },
     prometheus,
     runtime::legacy as runtime,
@@ -31,6 +31,7 @@ use crate::{
         wait_for_in_block,
     },
 };
+
 use codec::{Decode, Encode};
 use futures::future::TryFutureExt;
 use jsonrpsee::core::ClientError as JsonRpseeError;
@@ -40,6 +41,7 @@ use polkadot_sdk::{
     sp_npos_elections,
 };
 use std::sync::Arc;
+use subxt::config::Hasher;
 use subxt::{backend::legacy::rpc_methods::DryRunResult, config::Header as _};
 use tokio::sync::Mutex;
 
@@ -152,7 +154,9 @@ where
         + 'static,
     T::Solution: Send,
 {
-    let block_hash = at.hash();
+    let hasher = <Config as subxt::Config>::Hasher::new(&client.chain_api().metadata());
+    let encoded_header = at.encode();
+    let block_hash = hasher.hash(&encoded_header);
     log::trace!(target: LOG_TARGET, "new event at #{:?} ({:?})", at.number(), block_hash);
 
     // NOTE: as we try to send at each block then the nonce is used guard against

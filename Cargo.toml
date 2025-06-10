@@ -31,8 +31,8 @@ pin-project-lite = "0.2"
 
 # subxt
 scale-value = "0.18"
-subxt = { version = "0.41.0", features = ["reconnecting-rpc-client"] }
-subxt-rpcs = "0.41.0"
+subxt = { version = "0.42.1", features = ["reconnecting-rpc-client"] }
+subxt-rpcs = "0.42.1"
 
 
 # polkadot-sdk
@@ -42,9 +42,10 @@ polkadot-sdk = { git = "https://github.com/paritytech/polkadot-sdk", features = 
     "sp-npos-elections",
     "sp-core",
     "sp-runtime",
+    "sp-staking",
     "pallet-election-provider-multi-phase",
     "pallet-election-provider-multi-block",
-], branch = "master" }
+], branch = "oty-donal-ahm-builds" }
 
 # prometheus
 prometheus = "0.14"

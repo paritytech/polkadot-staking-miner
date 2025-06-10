@@ -67,7 +67,7 @@ impl<T: DeserializeOwned + std::fmt::Display> PalletConstant<T> {
 }
 
 pub mod multi_block {
-    pub const NAME: &str = "MultiBlock";
+    pub const NAME: &str = "MultiBlockElection";
 
     pub mod constants {
         use super::{super::*, *};
@@ -90,7 +90,7 @@ pub mod multi_block {
 }
 
 pub mod multi_block_verifier {
-    pub const NAME: &str = "MultiBlockVerifier";
+    pub const NAME: &str = "MultiBlockElectionVerifier";
 
     pub mod constants {
         use super::{super::*, *};
@@ -132,7 +132,7 @@ pub mod election_provider_multi_phase {
 }
 
 pub mod multi_block_signed {
-    pub const NAME: &str = "MultiBlockSigned";
+    pub const NAME: &str = "MultiBlockElectionSigned";
 
     pub mod tx {
         use super::{super::*, *};
