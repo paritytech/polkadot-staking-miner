@@ -178,14 +178,6 @@ impl BlockDetails {
             block_number: at.number,
         })
     }
-
-    pub fn phase_is_signed(&self) -> bool {
-        matches!(self.phase, Phase::Signed(_))
-    }
-
-    pub fn phase_is_snapshot(&self) -> bool {
-        matches!(self.phase, Phase::Snapshot(_))
-    }
 }
 
 pub enum CurrentSubmission {
