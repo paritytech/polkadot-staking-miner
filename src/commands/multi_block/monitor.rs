@@ -115,7 +115,7 @@ where
             .await?;
 
         if !matches!(phase, Phase::Signed(_) | Phase::Snapshot(_)) {
-            log::trace!(target: LOG_TARGET, "Phase {:?} - nothing to do", phase);
+            log::trace!(target: LOG_TARGET, "Block #{}, Phase {:?} - nothing to do", at.number, phase);
             continue;
         }
 
