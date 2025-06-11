@@ -1,7 +1,7 @@
 use crate::{
     client::Client,
     error::Error,
-    prelude::{AccountId, Hash, Header, Storage, LOG_TARGET},
+    prelude::{AccountId, Hash, Header, LOG_TARGET, Storage},
     runtime::multi_block::{
         self as runtime, runtime_types::pallet_election_provider_multi_block::types::Phase,
     },
@@ -145,13 +145,10 @@ pub struct BlockDetails {
 }
 
 impl BlockDetails {
-    pub async fn new(client: &Client, at: Header) -> Result<Self, Error> {
+    pub async fn new(client: &Client, at: Header, phase: Phase) -> Result<Self, Error> {
         let storage = utils::storage_at(Some(at.hash()), client.chain_api()).await?;
         let round = storage
             .fetch_or_default(&runtime::storage().multi_block().round())
-            .await?;
-        let phase = storage
-            .fetch_or_default(&runtime::storage().multi_block().current_phase())
             .await?;
 
         let desired_targets = storage

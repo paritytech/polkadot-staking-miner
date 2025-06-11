@@ -17,7 +17,7 @@
 use crate::prelude::LOG_TARGET;
 pub use hidden::*;
 use http_body_util::Full;
-use hyper::{body::Bytes, header::CONTENT_TYPE, service::service_fn, Method, Request, Response};
+use hyper::{Method, Request, Response, body::Bytes, header::CONTENT_TYPE, service::service_fn};
 use hyper_util::{
     rt::{TokioExecutor, TokioIo},
     server::{conn::auto::Builder, graceful::GracefulShutdown},
@@ -109,7 +109,7 @@ pub async fn run(port: u16) -> Result<(), String> {
 mod hidden {
     use once_cell::sync::Lazy;
     use polkadot_sdk::{frame_election_provider_support::Weight, sp_npos_elections};
-    use prometheus::{opts, register_counter, register_gauge, Counter, Gauge};
+    use prometheus::{Counter, Gauge, opts, register_counter, register_gauge};
 
     static TRIMMED_SOLUTION_STARTED: Lazy<Counter> = Lazy::new(|| {
         register_counter!(opts!(

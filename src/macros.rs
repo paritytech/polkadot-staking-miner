@@ -53,10 +53,8 @@ macro_rules! for_legacy_runtime {
                 use $crate::static_types::legacy::westend::MinerConfig;
                 $($code)*
             },
-            $crate::opt::Chain::AssetHubNext => {
-                #[allow(unused)]
-                use $crate::static_types::legacy::westend::MinerConfig;
-                $($code)*
+            $crate::opt::Chain::StakingAsync => {
+                panic!("StakingAsync is not supported in legacy monitor");
             }
             $crate::opt::Chain::SubstrateNode => {
                 #[allow(unused)]
@@ -87,9 +85,9 @@ macro_rules! for_multi_block_runtime {
                 use $crate::static_types::multi_block::westend::MinerConfig;
                 $($code)*
             },
-            $crate::opt::Chain::AssetHubNext => {
+            $crate::opt::Chain::StakingAsync => {
                 #[allow(unused)]
-                use $crate::static_types::multi_block::westend::MinerConfig;
+                use $crate::static_types::multi_block::staking_async::MinerConfig;
                 $($code)*
             }
             $crate::opt::Chain::SubstrateNode => {

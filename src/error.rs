@@ -36,7 +36,9 @@ pub enum Error {
     AccountDoesNotExists,
     #[error("Submission with better score already exist")]
     BetterScoreExist,
-    #[error("Invalid chain: `{0}`, staking-miner supports only polkadot, kusama, westend, node and asset-hub-next")]
+    #[error(
+        "Invalid chain: `{0}`, staking-miner supports only polkadot, kusama, westend, node and asset-hub-next"
+    )]
     InvalidChain(String),
     #[error("Other error: `{0}`")]
     Other(String),

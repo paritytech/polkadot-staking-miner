@@ -18,7 +18,7 @@ use crate::{
     client::Client,
     commands::types::{Listen, SubmissionStrategy},
     error::Error,
-    prelude::{ChainClient, Config, Hash, Header, RpcClient, Storage, LOG_TARGET},
+    prelude::{ChainClient, Config, Hash, Header, LOG_TARGET, RpcClient, Storage},
 };
 use codec::Decode;
 use jsonrpsee::core::ClientError as JsonRpseeError;
@@ -36,7 +36,6 @@ use subxt::{
     tx::{TxInBlock, TxProgress},
 };
 use subxt_rpcs::client::RpcSubscription;
-
 pin_project! {
     pub struct Timed<Fut>
         where
@@ -184,15 +183,28 @@ where
     use subxt::{error::TransactionError, tx::TxStatus};
 
     while let Some(status) = tx.next().await {
-        match status? {
-            // Finalized or otherwise in a block! Return.
-            TxStatus::InBestBlock(s) | TxStatus::InFinalizedBlock(s) => return Ok(s),
-            // Error scenarios; return the error.
-            TxStatus::Error { message } => return Err(TransactionError::Error(message).into()),
-            TxStatus::Invalid { message } => return Err(TransactionError::Invalid(message).into()),
-            TxStatus::Dropped { message } => return Err(TransactionError::Dropped(message).into()),
-            // Ignore anything else and wait for next status event:
-            _ => continue,
+        match status {
+            Ok(status) => match status {
+                // Finalized or otherwise in a block! Return.
+                TxStatus::InBestBlock(s) | TxStatus::InFinalizedBlock(s) => return Ok(s),
+                // Error scenarios; return the error.
+                TxStatus::Error { message } => return Err(TransactionError::Error(message).into()),
+                TxStatus::Invalid { message } => {
+                    return Err(TransactionError::Invalid(message).into());
+                }
+                TxStatus::Dropped { message } => {
+                    return Err(TransactionError::Dropped(message).into());
+                }
+                // Ignore anything else and wait for next status event:
+                _ => continue,
+            },
+            Err(e) => {
+                // Handle reconnection case with the reconnecting RPC client
+                if e.is_disconnected_will_reconnect() {
+                    continue;
+                }
+                return Err(e.into());
+            }
         }
     }
     Err(RpcError::SubscriptionDropped.into())

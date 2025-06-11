@@ -10,8 +10,8 @@ on:
 jobs:
   tests:
     name: Build polkadot binary
-    runs-on: ubuntu-latest
-    container: paritytech/ci-unified:bullseye-1.81.0-2024-09-11
+    runs-on: parity-large
+    container: docker.io/paritytech/ci-unified:bullseye-1.85.0-2025-01-28-v202504231537
     steps:
       - name: checkout polkadot-sdk
         uses: actions/checkout@v4
@@ -25,15 +25,47 @@ jobs:
             polkadot
           cache-on-failure: true
 
-      - name: build polkadot binary
+      - name: build polkadot artifacts
         run: |
-          cargo build -p polkadot --release --features fast-runtime
-          ./target/release/polkadot --version
+          cargo build --release  --features fast-runtime -p polkadot -p polkadot-parachain-bin
+          cargo build --release -p pallet-staking-async-rc-runtime -p pallet-staking-async-parachain-runtime -p staging-chain-spec-builder
+
+          # Create the chain spec for the parachain.
+          # By default we are using `dot_size`.
+          # TODO: extend tests to cover also ksm_size and development.
+          ./target/release/chain-spec-builder \
+            create \
+            -t development \
+            --runtime ./target/release/wbuild/pallet-staking-async-parachain-runtime/pallet_staking_async_parachain_runtime.compact.compressed.wasm \
+            --relay-chain rococo-local \
+            --para-id 1100 \
+            named-preset dot_size
+
+          mv ./chain_spec.json ./parachain.json
+
+          # Create the chain spec for the relay-chain.
+          ./target/release/chain-spec-builder \
+            create \
+            -t development \
+            --runtime ./target/release/wbuild/pallet-staking-async-rc-runtime/fast_runtime_binary.rs.wasm \
+            named-preset local_testnet
+
+          mv ./chain_spec.json ./rc.json
+
+          # Strip the binaries.
           strip -s ./target/release/polkadot
           strip -s ./target/release/polkadot-prepare-worker
           strip -s ./target/release/polkadot-execute-worker
+          strip -s ./target/release/polkadot-parachain
 
-      - name: upload polkadot binary
+      - name: Verify built binaries
+        run: |
+          ./target/release/polkadot --version
+          ./target/release/polkadot-parachain --version
+          ./target/release/polkadot-prepare-worker --version
+          ./target/release/polkadot-execute-worker --version
+
+      - name: upload polkadot artifacts
         uses: actions/upload-artifact@v4
         with:
           name: nightly-polkadot-binary
@@ -41,5 +73,8 @@ jobs:
             ./target/release/polkadot
             ./target/release/polkadot-execute-worker
             ./target/release/polkadot-prepare-worker
+            ./target/release/polkadot-parachain
+            ./parachain.json
+            ./rc.json
           retention-days: 2
           if-no-files-found: error

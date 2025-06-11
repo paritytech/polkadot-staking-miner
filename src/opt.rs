@@ -18,7 +18,7 @@ use crate::error::Error;
 
 use clap::*;
 use polkadot_sdk::{frame_support, sp_npos_elections::BalancingConfig};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{collections::HashMap, fmt, str::FromStr};
 use subxt::backend::legacy::rpc_methods as subxt_rpc;
 
@@ -51,7 +51,7 @@ pub enum Chain {
     Kusama,
     Polkadot,
     SubstrateNode,
-    AssetHubNext,
+    StakingAsync,
 }
 
 impl fmt::Display for Chain {
@@ -61,7 +61,7 @@ impl fmt::Display for Chain {
             Self::Kusama => "kusama",
             Self::Westend => "westend",
             Self::SubstrateNode => "node",
-            Self::AssetHubNext => "asset-hub-next",
+            Self::StakingAsync => "staking-async",
         };
         write!(f, "{}", chain)
     }
@@ -73,9 +73,15 @@ impl std::str::FromStr for Chain {
     fn from_str(s: &str) -> Result<Self, Error> {
         match s {
             "polkadot" => Ok(Self::Polkadot),
+            "statemint" => Ok(Self::Polkadot), // Polkadot AH
             "kusama" => Ok(Self::Kusama),
+            "statemine" => Ok(Self::Kusama), // Kusama AH
             "westend" => Ok(Self::Westend),
-            "asset-hub-next" => Ok(Self::AssetHubNext),
+            "westmint" => Ok(Self::Westend), // Westend AH
+            "staking-async-parachain" => Ok(Self::StakingAsync),
+            "staking-async-rc" => {
+                unimplemented!("multi-block mining is not supported on relay chains")
+            }
             "node" => Ok(Self::SubstrateNode),
             chain => Err(Error::InvalidChain(chain.to_string())),
         }

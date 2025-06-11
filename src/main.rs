@@ -184,7 +184,7 @@ async fn run_command(
     fut: BoxFuture<'_, Result<(), Error>>,
     rx_upgrade: oneshot::Receiver<Error>,
 ) -> Result<(), Error> {
-    use tokio::signal::unix::{signal, SignalKind};
+    use tokio::signal::unix::{SignalKind, signal};
 
     let mut stream_int = signal(SignalKind::interrupt()).map_err(Error::Io)?;
     let mut stream_term = signal(SignalKind::terminate()).map_err(Error::Io)?;
@@ -240,7 +240,16 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>, i
         // if the runtime upgrade subscription fails then try establish a new one and if it fails quit.
         let update = match update_stream.next().await {
             Some(Ok(update)) => update,
-            _ => {
+            Some(Err(e)) => {
+                if e.is_disconnected_will_reconnect() {
+                    log::warn!(target: LOG_TARGET, "Runtime upgrade subscription disconnected, but will reconnect automatically");
+                    continue;
+                }
+                log::error!(target: LOG_TARGET, "Runtime upgrade subscription error: {:?}", e);
+                let _ = tx.send(e.into());
+                return;
+            }
+            None => {
                 log::warn!(target: LOG_TARGET, "Runtime upgrade subscription failed");
                 update_stream = match updater.runtime_updates().await {
                     Ok(u) => u,
@@ -458,5 +467,16 @@ mod tests {
                 }
             )
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "StakingAsync is not supported in legacy monitor")]
+    fn for_legacy_runtime_panics_on_staking_async() {
+        use crate::opt::Chain;
+        let chain = Chain::StakingAsync;
+        macros::for_legacy_runtime!(chain, {
+            // This block should never be executed
+            let _ = ();
+        });
     }
 }

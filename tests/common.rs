@@ -84,7 +84,7 @@ pub fn run_polkadot_node(chain: Chain) -> (KillChildOnDrop, String) {
         Chain::Kusama => "chainspecs/kusama-dev.json",
         Chain::Westend => "westend-dev",
         Chain::SubstrateNode => "dev",
-        Chain::AssetHubNext => panic!("AssetHubNext is not supported"),
+        Chain::StakingAsync => panic!("StakingAsync is not supported"),
     };
 
     let mut node_cmd = KillChildOnDrop(

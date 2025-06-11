@@ -20,15 +20,15 @@ use crate::{
     dynamic::legacy as dynamic,
     error::Error,
     prelude::{
-        AccountId, ChainClient, ExtrinsicParamsBuilder, Hash, Header, RpcClient, LOG_TARGET,
+        AccountId, ChainClient, ExtrinsicParamsBuilder, Hash, Header, LOG_TARGET, RpcClient,
     },
     prometheus,
     runtime::legacy as runtime,
     signer::Signer,
     static_types::legacy as static_types,
     utils::{
-        kill_main_task_if_critical_err, rpc_block_subscription, score_passes_strategy,
-        wait_for_in_block, TimedFuture,
+        TimedFuture, kill_main_task_if_critical_err, rpc_block_subscription, score_passes_strategy,
+        wait_for_in_block,
     },
 };
 use codec::{Decode, Encode};
@@ -462,7 +462,7 @@ async fn submit_and_watch_solution<T: MinerConfig + Send + Sync + 'static>(
             DryRunResult::TransactionValidityError => {
                 return Err(Error::TransactionRejected(
                     "TransactionValidityError".into(),
-                ))
+                ));
             }
         }
     }
@@ -543,7 +543,7 @@ async fn dry_run_works(rpc: &RpcClient) -> Result<(), Error> {
                         return Err(Error::Other(
                             "Failed to downcast RPC error; this is a bug please file an issue"
                                 .to_string(),
-                        ))
+                        ));
                     }
                 }
             }

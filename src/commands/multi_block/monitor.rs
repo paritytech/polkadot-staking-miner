@@ -8,21 +8,22 @@ use crate::{
     },
     dynamic::multi_block as dynamic,
     error::Error,
-    prelude::{AccountId, ExtrinsicParamsBuilder, Storage, LOG_TARGET},
+    prelude::{AccountId, LOG_TARGET, Storage},
     prometheus,
     runtime::multi_block::{
         self as runtime, runtime_types::pallet_election_provider_multi_block::types::Phase,
     },
     signer::Signer,
     static_types::multi_block as static_types,
-    utils::{self, kill_main_task_if_critical_err, score_passes_strategy, TimedFuture},
+    utils::{self, TimedFuture, kill_main_task_if_critical_err, score_passes_strategy},
 };
-use futures::future::{abortable, AbortHandle};
+use futures::future::{AbortHandle, abortable};
 use polkadot_sdk::{
     pallet_election_provider_multi_block::unsigned::miner::MinerConfig,
     sp_npos_elections::ElectionScore,
 };
 use std::{collections::HashSet, sync::Arc};
+use subxt::config::Header;
 use tokio::sync::Mutex;
 
 pub async fn monitor_cmd<T>(
@@ -62,7 +63,10 @@ where
         );
     }
 
-    let mut subscription = utils::rpc_block_subscription(client.rpc(), config.listen).await?;
+    let mut subscription = match config.listen {
+        Listen::Head => client.chain_api().blocks().subscribe_best().await?,
+        Listen::Finalized => client.chain_api().blocks().subscribe_finalized().await?,
+    };
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
     let submit_lock = Arc::new(Mutex::new(()));
     let snapshot = SharedSnapshot::<T>::new(static_types::Pages::get());
@@ -71,23 +75,30 @@ where
 
     loop {
         let at = tokio::select! {
-            maybe_rp = subscription.next() => {
-                match maybe_rp {
-                    Some(Ok(r)) => r,
-                    Some(Err(e)) => {
-                        log::error!(target: LOG_TARGET, "subscription failed to decode Header {:?}, this is bug please file an issue", e);
-                        return Err(e.into());
+            maybe_block = subscription.next() => {
+                match maybe_block {
+                    Some(block_result) => {
+                        match block_result {
+                            Ok(block) => block.header().clone(),
+                            Err(e) => {
+                                // Handle reconnection case with the reconnecting RPC client
+                                if e.is_disconnected_will_reconnect() {
+                                    log::warn!(target: LOG_TARGET, "RPC connection lost, but will reconnect automatically. Continuing...");
+                                    continue;
+                                }
+                                log::error!(target: LOG_TARGET, "subscription failed: {:?}", e);
+                                return Err(e.into());
+                            }
+                        }
                     }
-                    // The subscription was dropped, should only happen if:
-                    //	- the connection was closed.
-                    //	- the subscription could not keep up with the server.
+                    // The subscription was dropped unexpectedly
                     None => {
-                        log::warn!(target: LOG_TARGET, "subscription to `{:?}` terminated. Retrying..", config.listen);
-                        subscription = utils::rpc_block_subscription(client.rpc(), config.listen).await?;
-                        continue
+                        log::error!(target: LOG_TARGET, "Subscription to `{:?}` terminated unexpectedly", config.listen);
+                        return Err(Error::Other("Subscription terminated unexpectedly".to_string()));
                     }
                 }
             },
+
             maybe_err = rx.recv() => {
                 match maybe_err {
                     Some(err) => return Err(err),
@@ -96,7 +107,20 @@ where
             }
         };
 
-        let state = BlockDetails::new(&client, at).await?;
+        // Early exit optimization: check the phase before calling BlockDetails::new(), where we
+        // we fetch `storage_at()`, `round()`, and `desired_targets()`.
+        // This approach saves us 3 RPC calls.
+        let storage = utils::storage_at(Some(at.hash()), client.chain_api()).await?;
+        let phase = storage
+            .fetch_or_default(&runtime::storage().multi_block().current_phase())
+            .await?;
+
+        if !matches!(phase, Phase::Signed(_) | Phase::Snapshot(_)) {
+            log::trace!(target: LOG_TARGET, "Phase {:?} - nothing to do", phase);
+            continue;
+        }
+
+        let state = BlockDetails::new(&client, at, phase).await?;
         let account_info = state
             .storage
             .fetch(&runtime::storage().system().account(signer.account_id()))
@@ -201,20 +225,30 @@ where
         _ => return Ok(()),
     }
 
-    // 2. If the solution has already been submitted, nothing to do
-    if has_submitted(&storage, round, signer.account_id(), n_pages).await? {
-        return Ok(());
-    }
-
-    // 3. Fetch the target and voter snapshots if needed.
+    // 2. Fetch the target and voter snapshots if needed.
     dynamic::fetch_missing_snapshots::<T>(&snapshot, &storage, round).await?;
     let (target_snapshot, voter_snapshot) = snapshot.read().get();
 
-    // 4. Lock mining and submission.
-    let _guard = submit_lock.lock().await;
+    // 3. Try to acquire mining and submission lock - if already taken, skip this block: it means
+    // there is another task busy with mining and submitting a solution.
+    let _guard = match submit_lock.try_lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            log::trace!(
+                target: LOG_TARGET,
+                "Submission lock already taken - skipping block {} round {}",
+                block_number,
+                round
+            );
+            return Ok(());
+        }
+    };
 
-    // After the submission lock has been acquired, check again
-    // that no submissions has been submitted.
+    // After the submission lock has been acquired, check that no submissions has been submitted.
+    // Example:
+    // 1. block N (Signed(P)): we submit a complete solution
+    // 2. miner crashes and restarts
+    // 3. block N+M (Signed(P-M)): we check if a complete solution has been submitted already
     if has_submitted(
         &utils::storage_at_head(&client, listen).await?,
         round,
@@ -226,7 +260,7 @@ where
         return Ok(());
     }
 
-    // 5. Mine solution
+    // 4. Mine solution
     let paged_raw_solution = match dynamic::mine_solution::<T>(
         target_snapshot,
         voter_snapshot,
@@ -258,7 +292,7 @@ where
                 return Ok(());
             }
             // Revert previous submission and submit the new one.
-            bail(listen, &client, signer.clone()).await?;
+            dynamic::bail(&client, &signer, listen).await?;
         }
         CurrentSubmission::Incomplete(s) => {
             // Submit the missing pages.
@@ -277,6 +311,7 @@ where
                         &signer,
                         missing_pages,
                         listen,
+                        round,
                     )
                     .await?;
                 } else {
@@ -286,6 +321,7 @@ where
                         missing_pages,
                         listen,
                         chunk_size,
+                        round,
                     )
                     .await?;
                 }
@@ -293,12 +329,12 @@ where
             }
 
             // Revert previous submission and submit a new one.
-            bail(listen, &client, signer.clone()).await?;
+            dynamic::bail(&client, &signer, listen).await?;
         }
         CurrentSubmission::NotStarted => (),
     };
 
-    // 6. Check if the score is better than the current best score.
+    // 5. Check if the score is better than the current best score.
     //
     // We allow overwriting the score if the "our account" has the best score but hasn't submitted
     // the solution. This is to allow the miner to re-submit the score and solution if the miner crashed
@@ -320,10 +356,17 @@ where
 
     prometheus::set_score(paged_raw_solution.score);
 
-    // 7. Submit the score and solution to the chain.
-    match dynamic::submit(&client, &signer, paged_raw_solution, listen, chunk_size)
-        .timed()
-        .await
+    // 6. Submit the score and solution to the chain.
+    match dynamic::submit(
+        &client,
+        &signer,
+        paged_raw_solution,
+        listen,
+        chunk_size,
+        round,
+    )
+    .timed()
+    .await
     {
         (Ok(_), dur) => {
             log::trace!(
@@ -389,11 +432,7 @@ async fn get_submission(
         .enumerate()
         .filter_map(
             |(i, submitted)| {
-                if submitted {
-                    Some(i as u32)
-                } else {
-                    None
-                }
+                if submitted { Some(i as u32) } else { None }
             },
         )
         .collect();
@@ -420,26 +459,4 @@ async fn has_submitted(
         CurrentSubmission::Done(_) => Ok(true),
         _ => Ok(false),
     }
-}
-
-async fn bail(listen: Listen, client: &Client, signer: Signer) -> Result<(), Error> {
-    let tx = runtime::tx().multi_block_signed().bail();
-
-    let nonce = client
-        .rpc()
-        .system_account_next_index(signer.account_id())
-        .await?;
-
-    let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
-    let xt = client
-        .chain_api()
-        .tx()
-        .create_signed(&tx, &*signer, xt_cfg)
-        .await?;
-
-    let tx = xt.submit_and_watch().await?;
-
-    utils::wait_tx_in_block_for_strategy(tx, listen).await?;
-
-    Ok(())
 }
