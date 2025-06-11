@@ -269,21 +269,29 @@ where
             .fetch_or_default(&runtime::storage().multi_block_election().current_phase())
             .await?;
 
-        if !matches!(phase, Phase::Signed(_) | Phase::Snapshot(_)) {
-            // Signal to clear snapshots when phase ends
-            if prev_block_signed_phase {
-                log::debug!(target: LOG_TARGET, "Phase ended, signaling snapshot cleanup");
-                if let Err(e) = miner_tx.send(MinerMessage::ClearSnapshots).await {
-                    log::error!(target: LOG_TARGET, "Failed to send clear snapshots signal: {}", e);
-                    return Err(Error::Other(format!(
-                        "Failed to send clear snapshots signal: {}",
-                        e
-                    )));
+        match phase {
+            Phase::Done | Phase::Off => {
+                if prev_block_signed_phase {
+                    log::debug!(target: LOG_TARGET, "Election round complete (phase {:?}), signaling snapshot cleanup", phase);
+                    if let Err(e) = miner_tx.send(MinerMessage::ClearSnapshots).await {
+                        log::error!(target: LOG_TARGET, "Failed to send clear snapshots signal: {}", e);
+                        return Err(Error::Other(format!(
+                            "Failed to send clear snapshots signal: {}",
+                            e
+                        )));
+                    }
+                    prev_block_signed_phase = false;
                 }
-                prev_block_signed_phase = false;
+                log::trace!(target: LOG_TARGET, "Block #{}, Phase {:?} - nothing to do", at.number, phase);
+                continue;
             }
-            log::trace!(target: LOG_TARGET, "Block #{}, Phase {:?} - nothing to do", at.number, phase);
-            continue;
+            Phase::Signed(_) | Phase::Snapshot(_) => {
+                // Relevant phases for mining - continue processing
+            }
+            _ => {
+                log::trace!(target: LOG_TARGET, "Block #{}, Phase {:?} - nothing to do", at.number, phase);
+                continue;
+            }
         }
 
         // We're in a relevant phase (Signed or Snapshot)
