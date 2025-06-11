@@ -8,6 +8,7 @@ use crate::{
     static_types::multi_block as static_types,
     utils,
 };
+
 use polkadot_sdk::{
     frame_election_provider_support, frame_support::BoundedVec,
     pallet_election_provider_multi_block::unsigned::miner::MinerConfig,
@@ -17,7 +18,6 @@ use std::{
     collections::{BTreeMap, HashSet},
     sync::{Arc, RwLock},
 };
-use subxt::config::Header as _;
 
 pub type TargetSnapshotPageOf<T> =
     BoundedVec<AccountId, <T as MinerConfig>::TargetSnapshotPerBlock>;
@@ -145,14 +145,23 @@ pub struct BlockDetails {
 }
 
 impl BlockDetails {
-    pub async fn new(client: &Client, at: Header, phase: Phase) -> Result<Self, Error> {
-        let storage = utils::storage_at(Some(at.hash()), client.chain_api()).await?;
+    pub async fn new(
+        client: &Client,
+        at: Header,
+        phase: Phase,
+        block_hash: Hash,
+    ) -> Result<Self, Error> {
+        let storage = utils::storage_at(Some(block_hash), client.chain_api()).await?;
         let round = storage
-            .fetch_or_default(&runtime::storage().multi_block().round())
+            .fetch_or_default(&runtime::storage().multi_block_election().round())
             .await?;
 
         let desired_targets = storage
-            .fetch(&runtime::storage().multi_block().desired_targets(round))
+            .fetch(
+                &runtime::storage()
+                    .multi_block_election()
+                    .desired_targets(round),
+            )
             .await?
             .unwrap_or(0);
 

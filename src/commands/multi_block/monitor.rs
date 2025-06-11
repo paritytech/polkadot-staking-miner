@@ -23,7 +23,6 @@ use polkadot_sdk::{
     sp_npos_elections::ElectionScore,
 };
 use std::{collections::HashSet, sync::Arc};
-use subxt::config::Header;
 use tokio::sync::Mutex;
 
 pub async fn monitor_cmd<T>(
@@ -74,12 +73,12 @@ where
     let mut prev_block_signed_phase = false;
 
     loop {
-        let at = tokio::select! {
+        let (at, block_hash) = tokio::select! {
             maybe_block = subscription.next() => {
                 match maybe_block {
                     Some(block_result) => {
                         match block_result {
-                            Ok(block) => block.header().clone(),
+                            Ok(block) => (block.header().clone(), block.hash()),
                             Err(e) => {
                                 // Handle reconnection case with the reconnecting RPC client
                                 if e.is_disconnected_will_reconnect() {
@@ -110,17 +109,17 @@ where
         // Early exit optimization: check the phase before calling BlockDetails::new(), where we
         // we fetch `storage_at()`, `round()`, and `desired_targets()`.
         // This approach saves us 3 RPC calls.
-        let storage = utils::storage_at(Some(at.hash()), client.chain_api()).await?;
+        let storage = utils::storage_at(Some(block_hash), client.chain_api()).await?;
         let phase = storage
-            .fetch_or_default(&runtime::storage().multi_block().current_phase())
+            .fetch_or_default(&runtime::storage().multi_block_election().current_phase())
             .await?;
 
         if !matches!(phase, Phase::Signed(_) | Phase::Snapshot(_)) {
-            log::trace!(target: LOG_TARGET, "Phase {:?} - nothing to do", phase);
+            log::trace!(target: LOG_TARGET, "Block #{}, Phase {:?} - nothing to do", at.number, phase);
             continue;
         }
 
-        let state = BlockDetails::new(&client, at, phase).await?;
+        let state = BlockDetails::new(&client, at, phase, block_hash).await?;
         let account_info = state
             .storage
             .fetch(&runtime::storage().system().account(signer.account_id()))
@@ -392,7 +391,11 @@ async fn score_better(
     strategy: SubmissionStrategy,
 ) -> Result<bool, Error> {
     let scores = storage
-        .fetch_or_default(&runtime::storage().multi_block_signed().sorted_scores(round))
+        .fetch_or_default(
+            &runtime::storage()
+                .multi_block_election_signed()
+                .sorted_scores(round),
+        )
         .await?;
 
     if scores
@@ -416,7 +419,7 @@ async fn get_submission(
     let maybe_submission = storage
         .fetch(
             &runtime::storage()
-                .multi_block_signed()
+                .multi_block_election_signed()
                 .submission_metadata_storage(round, who),
         )
         .await?;

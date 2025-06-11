@@ -392,7 +392,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
     // but it's performed for registering the score only once.
     let tx = utils::wait_tx_in_block_for_strategy(tx_status, listen).await?;
     let events = tx.wait_for_success().await?;
-    if !events.has::<runtime::multi_block_signed::events::Registered>()? {
+    if !events.has::<runtime::multi_block_election_signed::events::Registered>()? {
         return Err(Error::MissingTxEvent("Register score".to_string()));
     };
 
@@ -537,7 +537,7 @@ async fn submit_pages_batch<T: MinerConfig + 'static>(
                     let event = event?;
 
                     if let Some(solution_stored) =
-                        event.as_event::<runtime::multi_block_signed::events::Stored>()?
+                        event.as_event::<runtime::multi_block_election_signed::events::Stored>()?
                     {
                         let page = solution_stored.2;
 
@@ -682,7 +682,7 @@ pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
 
 /// Submit a bail transaction to revert incomplete submissions
 pub(crate) async fn bail(client: &Client, signer: &Signer, listen: Listen) -> Result<(), Error> {
-    let bail_tx = runtime::tx().multi_block_signed().bail();
+    let bail_tx = runtime::tx().multi_block_election_signed().bail();
     let nonce = client
         .rpc()
         .system_account_next_index(signer.account_id())
@@ -709,7 +709,7 @@ async fn validate_signed_phase_or_bail(
 ) -> Result<bool, Error> {
     let storage = utils::storage_at_head(client, listen).await?;
     let current_phase = storage
-        .fetch_or_default(&runtime::storage().multi_block().current_phase())
+        .fetch_or_default(&runtime::storage().multi_block_election().current_phase())
         .await?;
 
     // Import Phase enum from runtime types
@@ -728,7 +728,7 @@ async fn validate_signed_phase_or_bail(
         let maybe_submission = storage
             .fetch(
                 &runtime::storage()
-                    .multi_block_signed()
+                    .multi_block_election_signed()
                     .submission_metadata_storage(round, signer.account_id()),
             )
             .await?;

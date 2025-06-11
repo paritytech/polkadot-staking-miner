@@ -11,7 +11,7 @@ description = "A tool to submit NPoS election solutions for substrate based chai
 resolver = "2"
 
 [dependencies]
-codec = { package = "parity-scale-codec", version = "3.7.4" }
+codec = { package = "parity-scale-codec", version = "3.7.5" }
 scale-info = { package = "scale-info", version = "2.11.6" }
 clap = { version = "4.5", features = ["derive", "env"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
@@ -31,8 +31,8 @@ pin-project-lite = "0.2"
 
 # subxt
 scale-value = "0.18"
-subxt = { version = "0.41.0", features = ["reconnecting-rpc-client"] }
-subxt-rpcs = "0.41.0"
+subxt = { version = "0.42.1", features = ["reconnecting-rpc-client"] }
+subxt-rpcs = "0.42.1"
 
 
 # polkadot-sdk
@@ -42,9 +42,10 @@ polkadot-sdk = { git = "https://github.com/paritytech/polkadot-sdk", features = 
     "sp-npos-elections",
     "sp-core",
     "sp-runtime",
+    "sp-staking",
     "pallet-election-provider-multi-phase",
     "pallet-election-provider-multi-block",
-], branch = "master" }
+], branch = "donal-ahm" }
 
 # prometheus
 prometheus = "0.14"

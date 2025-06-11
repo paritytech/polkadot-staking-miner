@@ -18,7 +18,7 @@ use polkadot_staking_miner::{
     prelude::ChainClient,
     runtime::multi_block::{
         self as runtime,
-        multi_block_signed::events::{Registered, Rewarded, Stored},
+        multi_block_election_signed::events::{Registered, Rewarded, Stored},
     },
 };
 use std::collections::HashSet;
@@ -101,7 +101,7 @@ pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
     let mut blocks_sub = api.blocks().subscribe_finalized().await?;
     let pages = api
         .constants()
-        .at(&runtime::constants().multi_block().pages())
+        .at(&runtime::constants().multi_block_election().pages())
         .unwrap();
 
     'outer: while let Some(block) = blocks_sub.next().await {

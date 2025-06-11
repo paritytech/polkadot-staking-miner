@@ -1,6 +1,6 @@
 /// The header type. We re-export it here, but we can easily get it from block as well.
 pub type Header =
-    subxt::config::substrate::SubstrateHeader<u32, subxt::config::substrate::BlakeTwo256>;
+    subxt::config::substrate::SubstrateHeader<u32, subxt::config::substrate::DynamicHasher256>;
 /// The header type. We re-export it here, but we can easily get it from block as well.
 pub type Hash = subxt::utils::H256;
 /// Default URI to connect to.
