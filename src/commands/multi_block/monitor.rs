@@ -731,6 +731,7 @@ fn is_critical_miner_error(error: &Error) -> bool {
         | Error::Join(_)
         | Error::Feasibility(_)
         | Error::EmptySnapshot
+        | Error::FailedToSubmitPages(_)
         | Error::Subxt(SubxtError::Runtime(_)) // e.g. Subxt(Runtime(Module(ModuleError(<MultiBlockElectionSigned::Duplicate>))))
         | Error::Subxt(SubxtError::Transaction(_)) // e.g. Subxt(Transaction(Invalid("Transaction is invalid (eg because of a bad nonce, signature etc)"))))
         => false,
