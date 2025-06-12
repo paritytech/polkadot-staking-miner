@@ -23,7 +23,7 @@ use polkadot_sdk::{
 };
 use std::collections::HashSet;
 use subxt::error::Error as SubxtError;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 
 /// Message types for communication between listener and miner
 enum MinerMessage<T: MinerConfig> {
@@ -31,18 +31,10 @@ enum MinerMessage<T: MinerConfig> {
     ProcessBlock {
         state: BlockDetails,
         snapshot: SharedSnapshot<T>,
-        respond_to: oneshot::Sender<MinerResponse>,
     },
 
     /// Signal to clear snapshots (phase ended)
     ClearSnapshots,
-}
-
-enum MinerResponse {
-    /// Processing completed successfully
-    Success,
-    /// Processing completed with error
-    Error(Error),
 }
 
 /// The monitor command splits the work into two communicating tasks:
@@ -301,30 +293,15 @@ where
         let state = BlockDetails::new(&client, at, phase, block_hash).await?;
 
         // Use try_send for backpressure - if miner is busy, skip this block
-        let (response_tx, response_rx) = oneshot::channel();
         let message = MinerMessage::ProcessBlock {
             state,
             snapshot: snapshot.clone(),
-            respond_to: response_tx,
         };
 
         match miner_tx.try_send(message) {
             Ok(()) => {
                 log::debug!(target: LOG_TARGET, "Sent block #{} to miner", block_number);
-
-                // Wait for response (optional - we could fire and forget)
-                match response_rx.await {
-                    Ok(MinerResponse::Success) => {
-                        log::debug!(target: LOG_TARGET, "Miner completed processing block #{}", block_number);
-                    }
-                    Ok(MinerResponse::Error(e)) => {
-                        log::warn!(target: LOG_TARGET, "Miner reported error for block #{}: {}", block_number, e);
-                        // Note: miner task handles error classification internally
-                    }
-                    Err(_) => {
-                        log::warn!(target: LOG_TARGET, "Miner response channel closed for block #{}", block_number);
-                    }
-                }
+                // Don't wait for response to allow proper backpressure - listener must continue processing blocks
             }
             Err(mpsc::error::TrySendError::Full(_)) => {
                 // Miner is busy processing another block - apply backpressure by skipping
@@ -370,11 +347,7 @@ where
 
     while let Some(message) = miner_rx.recv().await {
         match message {
-            MinerMessage::ProcessBlock {
-                state,
-                snapshot,
-                respond_to,
-            } => {
+            MinerMessage::ProcessBlock { state, snapshot } => {
                 let result = process_block::<T>(
                     client.clone(),
                     state,
@@ -387,10 +360,9 @@ where
                 )
                 .await;
 
-                let response = match result {
+                match result {
                     Ok(()) => {
                         log::trace!(target: LOG_TARGET, "Block processing completed successfully");
-                        MinerResponse::Success
                     }
                     Err(e) => {
                         if is_critical_miner_error(&e) {
@@ -398,13 +370,8 @@ where
                             return Err(e);
                         } else {
                             log::warn!(target: LOG_TARGET, "Block processing failed, continuing: {:?}", e);
-                            MinerResponse::Error(e)
                         }
                     }
-                };
-
-                if respond_to.send(response).is_err() {
-                    log::trace!(target: LOG_TARGET, "Listener dropped response channel");
                 }
             }
             MinerMessage::ClearSnapshots => {
