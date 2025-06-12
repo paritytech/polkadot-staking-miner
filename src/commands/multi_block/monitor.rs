@@ -1,9 +1,7 @@
 use crate::{
     client::Client,
     commands::{
-        multi_block::types::{
-            BlockDetails, CurrentSubmission, IncompleteSubmission, SharedSnapshot,
-        },
+        multi_block::types::{BlockDetails, CurrentSubmission, IncompleteSubmission, Snapshot},
         types::{ExperimentalMultiBlockMonitorConfig, Listen, SubmissionStrategy},
     },
     dynamic::multi_block as dynamic,
@@ -26,12 +24,9 @@ use subxt::error::Error as SubxtError;
 use tokio::sync::mpsc;
 
 /// Message types for communication between listener and miner
-enum MinerMessage<T: MinerConfig> {
+enum MinerMessage {
     /// Request to process a block with given details
-    ProcessBlock {
-        state: BlockDetails,
-        snapshot: SharedSnapshot<T>,
-    },
+    ProcessBlock { state: BlockDetails },
 
     /// Signal to clear snapshots (phase ended)
     ClearSnapshots,
@@ -135,25 +130,21 @@ where
     // - This causes listener to skip the current block and continue to next
     // - Prevents unbounded memory growth and ensures fresh work
     // - Eliminates the need for explicit busy-checking or submission locks
-    let (miner_tx, miner_rx) = mpsc::channel::<MinerMessage<T>>(1);
-
-    let snapshot = SharedSnapshot::<T>::new(static_types::Pages::get());
+    let (miner_tx, miner_rx) = mpsc::channel::<MinerMessage>(1);
 
     // Spawn the miner task
     let miner_handle = {
         let client = client.clone();
-        let snapshot = snapshot.clone();
         let signer = signer.clone();
         let config = config.clone();
-        tokio::spawn(async move { miner_task(client, snapshot, signer, config, miner_rx).await })
+        tokio::spawn(async move { miner_task::<T>(client, signer, config, miner_rx).await })
     };
 
     // Spawn the listener task
     let listener_handle = {
         let client = client.clone();
-        let snapshot = snapshot.clone();
         let config = config.clone();
-        tokio::spawn(async move { listener_task(client, snapshot, config, miner_tx).await })
+        tokio::spawn(async move { listener_task::<T>(client, config, miner_tx).await })
     };
 
     // Wait for either task to complete (which should never happen in normal operation)
@@ -205,9 +196,8 @@ where
 /// - Any error causes the entire process to exit
 async fn listener_task<T>(
     client: Client,
-    snapshot: SharedSnapshot<T>,
     config: ExperimentalMultiBlockMonitorConfig,
-    miner_tx: mpsc::Sender<MinerMessage<T>>,
+    miner_tx: mpsc::Sender<MinerMessage>,
 ) -> Result<(), Error>
 where
     T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
@@ -293,10 +283,7 @@ where
         let state = BlockDetails::new(&client, at, phase, block_hash).await?;
 
         // Use try_send for backpressure - if miner is busy, skip this block
-        let message = MinerMessage::ProcessBlock {
-            state,
-            snapshot: snapshot.clone(),
-        };
+        let message = MinerMessage::ProcessBlock { state };
 
         match miner_tx.try_send(message) {
             Ok(()) => {
@@ -330,28 +317,30 @@ where
 /// Backpressure is automatically applied when the bounded channel is full.
 async fn miner_task<T>(
     client: Client,
-    snapshot: SharedSnapshot<T>,
     signer: Signer,
     config: ExperimentalMultiBlockMonitorConfig,
-    mut miner_rx: mpsc::Receiver<MinerMessage<T>>,
+    mut miner_rx: mpsc::Receiver<MinerMessage>,
 ) -> Result<(), Error>
 where
     T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
     T::Solution: Send + Sync + 'static,
     T::Pages: Send + Sync + 'static,
-    T::TargetSnapshotPerBlock: Send,
-    T::VoterSnapshotPerBlock: Send,
+    T::TargetSnapshotPerBlock: Send + Sync + 'static,
+    T::VoterSnapshotPerBlock: Send + Sync + 'static,
     T::MaxVotesPerVoter: Send + Sync + 'static,
 {
     log::trace!(target: LOG_TARGET, "Miner task started");
 
+    // Miner owns the snapshot exclusively
+    let mut snapshot = Snapshot::<T>::new(static_types::Pages::get());
+
     while let Some(message) = miner_rx.recv().await {
         match message {
-            MinerMessage::ProcessBlock { state, snapshot } => {
+            MinerMessage::ProcessBlock { state } => {
                 let result = process_block::<T>(
                     client.clone(),
                     state,
-                    snapshot,
+                    &mut snapshot,
                     signer.clone(),
                     config.listen,
                     config.submission_strategy,
@@ -376,7 +365,7 @@ where
             }
             MinerMessage::ClearSnapshots => {
                 log::trace!(target: LOG_TARGET, "Clearing snapshots");
-                snapshot.write().clear();
+                snapshot.clear();
             }
         }
     }
@@ -405,7 +394,7 @@ where
 async fn process_block<T>(
     client: Client,
     state: BlockDetails,
-    snapshot: SharedSnapshot<T>,
+    snapshot: &mut Snapshot<T>,
     signer: Signer,
     listen: Listen,
     submission_strategy: SubmissionStrategy,
@@ -440,13 +429,12 @@ where
     prometheus::set_balance(account_info.data.free as f64);
 
     // Update page length
-    snapshot.write().set_page_length(n_pages);
+    snapshot.set_page_length(n_pages);
 
     // Handle different phases
     match phase {
         Phase::Snapshot(_) => {
-            log::trace!(target: LOG_TARGET, "Snapshot phase - fetching missing snapshots");
-            dynamic::fetch_missing_snapshots_lossy::<T>(&snapshot, &storage, round).await?;
+            dynamic::fetch_missing_snapshots_lossy::<T>(snapshot, &storage, round).await?;
             return Ok(());
         }
         Phase::Signed(_) => {
@@ -459,8 +447,8 @@ where
     }
 
     // Fetch snapshots if needed
-    dynamic::fetch_missing_snapshots::<T>(&snapshot, &storage, round).await?;
-    let (target_snapshot, voter_snapshot) = snapshot.read().get();
+    dynamic::fetch_missing_snapshots::<T>(snapshot, &storage, round).await?;
+    let (target_snapshot, voter_snapshot) = snapshot.get();
 
     // Check if we already submitted for this round
     if has_submitted(
