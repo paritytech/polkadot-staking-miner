@@ -224,7 +224,7 @@ where
 
     let mut prev_block_signed_phase = false;
 
-    log::info!(target: LOG_TARGET, "Listener task started, watching for {:?} blocks", config.listen);
+    log::trace!(target: LOG_TARGET, "Listener task started, watching for {:?} blocks", config.listen);
 
     loop {
         let (at, block_hash) = tokio::select! {
@@ -300,12 +300,12 @@ where
 
         match miner_tx.try_send(message) {
             Ok(()) => {
-                log::debug!(target: LOG_TARGET, "Sent block #{} to miner", block_number);
+                log::trace!(target: LOG_TARGET, "Sent block #{} to miner", block_number);
                 // Don't wait for response to allow proper backpressure - listener must continue processing blocks
             }
             Err(mpsc::error::TrySendError::Full(_)) => {
                 // Miner is busy processing another block - apply backpressure by skipping
-                log::debug!(target: LOG_TARGET, "Miner busy, skipping block #{} (applying backpressure)", block_number);
+                log::trace!(target: LOG_TARGET, "Miner busy, skipping block #{}", block_number);
             }
             Err(mpsc::error::TrySendError::Closed(_)) => {
                 log::error!(target: LOG_TARGET, "Miner channel closed unexpectedly");
@@ -343,7 +343,7 @@ where
     T::VoterSnapshotPerBlock: Send,
     T::MaxVotesPerVoter: Send + Sync + 'static,
 {
-    log::info!(target: LOG_TARGET, "Miner task started");
+    log::trace!(target: LOG_TARGET, "Miner task started");
 
     while let Some(message) = miner_rx.recv().await {
         match message {
@@ -511,7 +511,7 @@ where
                 log::debug!(target: LOG_TARGET, "Our new score doesn't beat existing submission, skipping");
                 return Ok(());
             }
-            log::info!(target: LOG_TARGET, "Reverting previous submission to submit better solution");
+            log::debug!(target: LOG_TARGET, "Reverting previous submission to submit better solution");
             dynamic::bail(&client, &signer, listen).await?;
         }
         CurrentSubmission::Incomplete(s) => {
@@ -548,7 +548,7 @@ where
                 return Ok(());
             }
 
-            log::info!(target: LOG_TARGET, "Reverting incomplete submission to submit new solution");
+            log::debug!(target: LOG_TARGET, "Reverting incomplete submission to submit new solution");
             dynamic::bail(&client, &signer, listen).await?;
         }
         CurrentSubmission::NotStarted => {
