@@ -3,8 +3,7 @@
 use crate::{
     client::Client,
     commands::multi_block::types::{
-        SharedSnapshot, TargetSnapshotPage, TargetSnapshotPageOf, VoterSnapshotPage,
-        VoterSnapshotPageOf,
+        Snapshot, TargetSnapshotPage, TargetSnapshotPageOf, VoterSnapshotPage, VoterSnapshotPageOf,
     },
     commands::types::Listen,
     dynamic::{
@@ -243,11 +242,11 @@ where
 /// Fetches the target snapshot and all voter snapshots which are missing
 /// but some snapshots may not exist yet which is just ignored.
 pub(crate) async fn fetch_missing_snapshots_lossy<T: MinerConfig>(
-    snapshot: &SharedSnapshot<T>,
+    snapshot: &mut Snapshot<T>,
     storage: &Storage,
     round: u32,
 ) -> Result<(), Error> {
-    let n_pages = snapshot.read().n_pages;
+    let n_pages = snapshot.n_pages;
 
     for page in 0..n_pages {
         match check_and_update_voter_snapshot(page, round, storage, snapshot).await {
@@ -264,11 +263,11 @@ pub(crate) async fn fetch_missing_snapshots_lossy<T: MinerConfig>(
 
 /// Similar to `fetch_missing_snapshots_lossy` but it returns an error if any snapshot is missing.
 pub(crate) async fn fetch_missing_snapshots<T: MinerConfig>(
-    snapshot: &SharedSnapshot<T>,
+    snapshot: &mut Snapshot<T>,
     storage: &Storage,
     round: u32,
 ) -> Result<(), Error> {
-    let n_pages = snapshot.read().n_pages;
+    let n_pages = snapshot.n_pages;
 
     for page in 0..n_pages {
         check_and_update_voter_snapshot(page, round, storage, snapshot).await?;
@@ -313,14 +312,12 @@ pub(crate) async fn check_and_update_voter_snapshot<T: MinerConfig>(
     page: u32,
     round: u32,
     storage: &Storage,
-    snapshot: &SharedSnapshot<T>,
+    snapshot: &mut Snapshot<T>,
 ) -> Result<(), Error> {
     let snapshot_hash = paged_voter_snapshot_hash(page, round, storage).await?;
-    if snapshot.read().needs_voter_page(page, snapshot_hash) {
+    if snapshot.needs_voter_page(page, snapshot_hash) {
         let voter_snapshot = paged_voter_snapshot::<T>(page, round, storage).await?;
-        snapshot
-            .write()
-            .set_voter_page(page, voter_snapshot, snapshot_hash);
+        snapshot.set_voter_page(page, voter_snapshot, snapshot_hash);
     }
     Ok(())
 }
@@ -329,14 +326,12 @@ pub(crate) async fn check_and_update_target_snapshot<T: MinerConfig>(
     page: u32,
     round: u32,
     storage: &Storage,
-    snapshot: &SharedSnapshot<T>,
+    snapshot: &mut Snapshot<T>,
 ) -> Result<(), Error> {
     let snapshot_hash = target_snapshot_hash(page, round, storage).await?;
-    if snapshot.read().needs_target_snapshot(snapshot_hash) {
+    if snapshot.needs_target_snapshot(snapshot_hash) {
         let target_snapshot = target_snapshot::<T>(page, round, storage).await?;
-        snapshot
-            .write()
-            .set_target_snapshot(target_snapshot, snapshot_hash);
+        snapshot.set_target_snapshot(target_snapshot, snapshot_hash);
     }
     Ok(())
 }
