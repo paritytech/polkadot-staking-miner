@@ -42,16 +42,15 @@ mod static_types;
 mod utils;
 
 use clap::Parser;
+use codec::Decode;
 use error::Error;
 use futures::future::{BoxFuture, FutureExt};
-use std::str::FromStr;
 use tokio::sync::oneshot;
 use tracing_subscriber::EnvFilter;
 
 use crate::{
 	client::Client,
 	dynamic::update_metadata_constants,
-	opt::RuntimeVersion,
 	prelude::{ChainClient, DEFAULT_PROMETHEUS_PORT, DEFAULT_URI, LOG_TARGET, SHARED_CLIENT},
 };
 
@@ -95,9 +94,21 @@ async fn main() -> Result<(), Error> {
 	tracing_subscriber::fmt().with_env_filter(filter).init();
 
 	let client = Client::new(&uri).await?;
-	let runtime_version: RuntimeVersion =
-		client.rpc().state_get_runtime_version(None).await?.into();
-	let chain = opt::Chain::from_str(&runtime_version.spec_name)?;
+
+	// Get full runtime version using ChainHead backend Core_version call
+	let latest_block = client.chain_api().blocks().at_latest().await?;
+	let version_bytes = client
+		.chain_api()
+		.backend()
+		.call("Core_version", None, latest_block.hash())
+		.await?;
+
+	// Decode the runtime version using SDK RuntimeVersion
+	let runtime_version: polkadot_sdk::sp_version::RuntimeVersion =
+		Decode::decode(&mut &version_bytes[..])
+			.map_err(|e| Error::Other(format!("Failed to decode runtime version: {}", e)))?;
+
+	let chain = opt::Chain::try_from(&runtime_version)?;
 	if let Err(e) = prometheus::run(prometheus_port).await {
 		log::warn!("Failed to start prometheus endpoint: {}", e);
 	}
@@ -114,8 +125,19 @@ async fn main() -> Result<(), Error> {
 
 	let fut = match command {
 		Command::Info => async {
-			let remote_node = serde_json::to_string_pretty(&runtime_version)
-				.expect("Serialize is infallible; qed");
+			// Create a simple map for serialization since SDK RuntimeVersion doesn't derive
+			// Serialize. All these field must exist on substrate-based chains
+			// (see https://docs.rs/sp-version/latest/sp_version/struct.RuntimeVersion.html)
+			let runtime_info = serde_json::json!({
+				"spec_name": runtime_version.spec_name.to_string(),
+				"impl_name": runtime_version.impl_name.to_string(),
+				"spec_version": runtime_version.spec_version,
+				"impl_version": runtime_version.impl_version,
+				"authoring_version": runtime_version.authoring_version,
+				"transaction_version": runtime_version.transaction_version
+			});
+			let remote_node =
+				serde_json::to_string_pretty(&runtime_info).expect("Serialize is infallible; qed");
 
 			eprintln!("Remote_node:\n{remote_node}");
 

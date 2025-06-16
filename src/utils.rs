@@ -18,7 +18,7 @@ use crate::{
 	client::Client,
 	commands::types::{Listen, SubmissionStrategy},
 	error::Error,
-	prelude::{ChainClient, Config, Hash, RpcClient, Storage},
+	prelude::{ChainClient, Config, Hash, Storage},
 };
 use pin_project_lite::pin_project;
 use polkadot_sdk::{sp_npos_elections, sp_runtime::Perbill};
@@ -82,7 +82,7 @@ pub async fn storage_at(block: Option<Hash>, api: &ChainClient) -> Result<Storag
 }
 
 pub async fn storage_at_head(api: &Client, listen: Listen) -> Result<Storage, Error> {
-	let hash = rpc_get_latest_head(api.rpc(), listen).await?;
+	let hash = get_latest_head(api.chain_api(), listen).await?;
 	storage_at(Some(hash), api.chain_api()).await
 }
 
@@ -129,14 +129,16 @@ where
 	Err(RpcError::SubscriptionDropped.into())
 }
 
-pub async fn rpc_get_latest_head(rpc: &RpcClient, listen: Listen) -> Result<Hash, Error> {
+pub async fn get_latest_head(api: &ChainClient, listen: Listen) -> Result<Hash, Error> {
 	match listen {
-		Listen::Head => match rpc.chain_get_block_hash(None).await {
-			Ok(Some(hash)) => Ok(hash),
-			Ok(None) => Err(Error::Other("Latest block not found".into())),
-			Err(e) => Err(e.into()),
+		Listen::Head => {
+			let block = api.blocks().at_latest().await?;
+			Ok(block.hash())
 		},
-		Listen::Finalized => rpc.chain_get_finalized_head().await.map_err(Into::into),
+		Listen::Finalized => {
+			let finalized_block_ref = api.backend().latest_finalized_block_ref().await?;
+			Ok(finalized_block_ref.hash())
+		},
 	}
 }
 

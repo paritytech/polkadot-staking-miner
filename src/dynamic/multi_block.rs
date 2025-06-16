@@ -349,7 +349,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 
 	let mut i = 0;
 	let tx_status = loop {
-		let nonce = client.rpc().system_account_next_index(signer.account_id()).await?;
+		let nonce = get_account_nonce(client.chain_api(), signer.account_id()).await?;
 
 		// Register score.
 		match submit_inner(
@@ -482,7 +482,7 @@ async fn submit_pages_batch<T: MinerConfig + 'static>(
 		return Ok(SubmissionResult { failed_pages, submitted_pages: HashSet::new() });
 	}
 	let mut txs = FuturesUnordered::new();
-	let mut nonce = client.rpc().system_account_next_index(signer.account_id()).await?;
+	let mut nonce = get_account_nonce(client.chain_api(), signer.account_id()).await?;
 
 	// Collect expected pages before consuming the vector
 	let expected_pages: HashSet<u32> = pages_to_submit.iter().map(|(page, _)| *page).collect();
@@ -665,7 +665,7 @@ pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
 /// Submit a bail transaction to revert incomplete submissions
 pub(crate) async fn bail(client: &Client, signer: &Signer, listen: Listen) -> Result<(), Error> {
 	let bail_tx = runtime::tx().multi_block_election_signed().bail();
-	let nonce = client.rpc().system_account_next_index(signer.account_id()).await?;
+	let nonce = get_account_nonce(client.chain_api(), signer.account_id()).await?;
 	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
 	let xt = client.chain_api().tx().create_signed(&bail_tx, &**signer, xt_cfg).await?;
 	let tx = xt.submit_and_watch().await?;
@@ -733,4 +733,18 @@ async fn validate_signed_phase_or_bail(
 	}
 
 	Ok(true)
+}
+
+async fn get_account_nonce(
+	api: &ChainClient,
+	account_id: &subxt::config::substrate::AccountId32,
+) -> Result<u64, Error> {
+	let account_info = api
+		.storage()
+		.at_latest()
+		.await?
+		.fetch(&runtime::storage().system().account(account_id))
+		.await?
+		.ok_or(Error::AccountDoesNotExists)?;
+	Ok(account_info.nonce as u64)
 }

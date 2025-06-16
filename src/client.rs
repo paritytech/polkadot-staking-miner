@@ -1,15 +1,13 @@
-use crate::prelude::{ChainClient, LOG_TARGET, RpcClient};
-use std::time::Duration;
-use subxt::backend::rpc::{
-	RpcClient as RawRpcClient,
-	reconnecting_rpc_client::{ExponentialBackoff, RpcClient as ReconnectingRpcClient},
+use crate::prelude::{ChainClient, Config, LOG_TARGET};
+use std::{sync::Arc, time::Duration};
+use subxt::backend::{
+	chain_head::{ChainHeadBackend, ChainHeadBackendBuilder},
+	rpc::reconnecting_rpc_client::{ExponentialBackoff, RpcClient as ReconnectingRpcClient},
 };
 
 /// Wraps the subxt interfaces to make it easy to use for the staking-miner.
 #[derive(Clone, Debug)]
 pub struct Client {
-	/// Access to typed rpc calls from subxt.
-	rpc: RpcClient,
 	/// Access to chain APIs such as storage, events etc.
 	chain_api: ChainClient,
 }
@@ -30,17 +28,13 @@ impl Client {
 				.await
 				.map_err(|e| subxt::Error::Other(format!("Failed to connect: {:?}", e)))?;
 
-		let rpc = RawRpcClient::new(reconnecting_rpc);
-		let chain_api = ChainClient::from_rpc_client(rpc.clone()).await?;
+		let backend: ChainHeadBackend<Config> =
+			ChainHeadBackendBuilder::default().build_with_background_driver(reconnecting_rpc);
+		let chain_api = ChainClient::from_backend(Arc::new(backend)).await?;
 
-		log::info!(target: LOG_TARGET, "Connected to {} with reconnecting RPC client", uri);
+		log::info!(target: LOG_TARGET, "Connected to {} with ChainHead backend", uri);
 
-		Ok(Self { rpc: RpcClient::new(rpc), chain_api })
-	}
-
-	/// Get a reference to the RPC interface exposed by subxt.
-	pub fn rpc(&self) -> &RpcClient {
-		&self.rpc
+		Ok(Self { chain_api })
 	}
 
 	/// Get a reference to the chain API.
