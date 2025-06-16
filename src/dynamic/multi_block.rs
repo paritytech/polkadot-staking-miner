@@ -361,12 +361,14 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 		.await
 		{
 			Ok(tx) => break tx,
-			Err(Error::Subxt(subxt::Error::Transaction(e))) => {
+			Err(Error::Subxt(boxed_err))
+				if matches!(boxed_err.as_ref(), subxt::Error::Transaction(_)) =>
+			{
 				i += 1;
 				if i >= 10 {
-					return Err(Error::Subxt(subxt::Error::Transaction(e)));
+					return Err(Error::Subxt(boxed_err));
 				}
-				log::debug!(target: LOG_TARGET, "Failed to register score: {:?}; retrying", e);
+				log::debug!(target: LOG_TARGET, "Failed to register score: {:?}; retrying", boxed_err);
 				tokio::time::sleep(std::time::Duration::from_secs(6)).await;
 			},
 			Err(e) => return Err(e),

@@ -122,7 +122,7 @@ where
 				if e.is_disconnected_will_reconnect() {
 					continue;
 				}
-				return Err(e.into());
+				return Err(e);
 			},
 		}
 	}

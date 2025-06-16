@@ -20,7 +20,7 @@ use polkadot_sdk::{
 	sp_npos_elections::ElectionScore,
 };
 use std::collections::HashSet;
-use subxt::error::Error as SubxtError;
+
 use tokio::sync::mpsc;
 
 /// Message types for communication between listener and miner
@@ -333,15 +333,18 @@ where
 	while let Some(message) = miner_rx.recv().await {
 		match message {
 			MinerMessage::ProcessBlock { state } => {
+				let process_config = ProcessConfig {
+					submission_strategy: config.submission_strategy,
+					do_reduce: config.do_reduce,
+					chunk_size: config.chunk_size,
+				};
 				let result = process_block::<T>(
 					client.clone(),
 					state,
 					&mut snapshot,
 					signer.clone(),
 					config.listen,
-					config.submission_strategy,
-					config.do_reduce,
-					config.chunk_size,
+					process_config,
 				)
 				.await;
 
@@ -384,15 +387,19 @@ where
 ///
 /// No submission lock is needed since the miner task is single-threaded.
 /// Retransmission scenarios are handled after miner restarts or runtime upgrades.
+struct ProcessConfig {
+	submission_strategy: SubmissionStrategy,
+	do_reduce: bool,
+	chunk_size: usize,
+}
+
 async fn process_block<T>(
 	client: Client,
 	state: BlockDetails,
 	snapshot: &mut Snapshot<T>,
 	signer: Signer,
 	listen: Listen,
-	submission_strategy: SubmissionStrategy,
-	do_reduce: bool,
-	chunk_size: usize,
+	config: ProcessConfig,
 ) -> Result<(), Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
@@ -454,7 +461,7 @@ where
 		round,
 		desired_targets,
 		block_number,
-		do_reduce,
+		config.do_reduce,
 	)
 	.timed()
 	.await
@@ -477,7 +484,7 @@ where
 	match get_submission(&storage_head, round, signer.account_id(), n_pages).await? {
 		CurrentSubmission::Done(score) => {
 			// We have already submitted the solution with a score
-			if !score_passes_strategy(paged_raw_solution.score, score, submission_strategy) {
+			if !score_passes_strategy(paged_raw_solution.score, score, config.submission_strategy) {
 				log::debug!(target: LOG_TARGET, "Our new score doesn't beat existing submission, skipping");
 				return Ok(());
 			}
@@ -494,7 +501,7 @@ where
 
 				log::info!(target: LOG_TARGET, "Submitting {} missing pages for existing submission", missing_pages.len());
 
-				if chunk_size == 0 {
+				if config.chunk_size == 0 {
 					dynamic::inner_submit_pages_concurrent::<T>(
 						&client,
 						&signer,
@@ -509,7 +516,7 @@ where
 						&signer,
 						missing_pages,
 						listen,
-						chunk_size,
+						config.chunk_size,
 						round,
 					)
 					.await?;
@@ -526,7 +533,9 @@ where
 	};
 
 	// Check if our score is competitive
-	if !score_better(&storage_head, paged_raw_solution.score, round, submission_strategy).await? {
+	if !score_better(&storage_head, paged_raw_solution.score, round, config.submission_strategy)
+		.await?
+	{
 		log::debug!(target: LOG_TARGET, "Our score is not competitive, skipping submission");
 		return Ok(());
 	}
@@ -535,7 +544,7 @@ where
 	log::info!(target: LOG_TARGET, "Submitting solution with score {:?} for round {}", paged_raw_solution.score, round);
 
 	// Submit the solution
-	match dynamic::submit(&client, &signer, paged_raw_solution, listen, chunk_size, round)
+	match dynamic::submit(&client, &signer, paged_raw_solution, listen, config.chunk_size, round)
 		.timed()
 		.await
 	{
@@ -567,7 +576,7 @@ async fn score_better(
 	storage: &Storage,
 	score: ElectionScore,
 	round: u32,
-	strategy: SubmissionStrategy,
+	submission_strategy: SubmissionStrategy,
 ) -> Result<bool, Error> {
 	let scores = storage
 		.fetch_or_default(&runtime::storage().multi_block_election_signed().sorted_scores(round))
@@ -576,7 +585,7 @@ async fn score_better(
 	if scores
 		.0
 		.into_iter()
-		.any(|(_, other_score)| !score_passes_strategy(score, other_score.0, strategy))
+		.any(|(_, other_score)| !score_passes_strategy(score, other_score.0, submission_strategy))
 	{
 		return Ok(false);
 	}
@@ -640,19 +649,20 @@ async fn has_submitted(
 /// Determine if a miner error is critical and should cause the process to exit
 fn is_critical_miner_error(error: &Error) -> bool {
 	match error {
-        Error::Join(_)
-        | Error::Feasibility(_)
-        | Error::EmptySnapshot
-        | Error::FailedToSubmitPages(_)
-        | Error::Subxt(SubxtError::Runtime(_)) // e.g. Subxt(Runtime(Module(ModuleError(<MultiBlockElectionSigned::Duplicate>))))
-        | Error::Subxt(SubxtError::Transaction(_)) // e.g. Subxt(Transaction(Invalid("Transaction is invalid (eg because of a bad nonce, signature etc)"))))
-        => false,
-        // Everything else we consider it critical e.g.
-        //  - Error::AccountDoesNotExists
-        //  - Error::InvalidMetadata(_)
-        //  - Error::InvalidChain(_)
-        // - Error::Rpc(_) i.e. persistent RPC failures (after reconnecting client gave up)
-        // - Error::Subxt(_) i.e. any other subxt error
-        _ => true,
-    }
+		Error::Join(_) |
+		Error::Feasibility(_) |
+		Error::EmptySnapshot |
+		Error::FailedToSubmitPages(_) => false,
+		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Runtime(_)) => false, /* e.g. Subxt(Runtime(Module(ModuleError(<MultiBlockElectionSigned::Duplicate>)))) */
+		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Transaction(_)) =>
+			false, /* e.g. Subxt(Transaction(Invalid("Transaction is invalid (eg because of a bad
+		         * nonce, signature etc)")))) */
+		// Everything else we consider it critical e.g.
+		//  - Error::AccountDoesNotExists
+		//  - Error::InvalidMetadata(_)
+		//  - Error::InvalidChain(_)
+		// - Error::Rpc(_) i.e. persistent RPC failures (after reconnecting client gave up)
+		// - Error::Subxt(_) i.e. any other subxt error
+		_ => true,
+	}
 }

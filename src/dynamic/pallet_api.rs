@@ -48,7 +48,7 @@ impl<T: DeserializeOwned + std::fmt::Display> PalletConstant<T> {
 			.at(&subxt::dynamic::constant(pallet, variant))
 			.map_err(|e| invalid_metadata_error(variant.to_string(), e))?
 			.to_value()
-			.map_err(|e| Error::Subxt(e.into()))?;
+			.map_err(|e| Error::Subxt(Box::new(e.into())))?;
 
 		let val = scale_value::serde::from_value::<_, T>(val).map_err(|e| {
 			Error::InvalidMetadata(format!(

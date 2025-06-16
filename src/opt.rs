@@ -119,6 +119,6 @@ pub struct RuntimeVersion {
 }
 
 fn get_val_unchecked<T: DeserializeOwned>(val: &str, rv: &HashMap<String, serde_json::Value>) -> T {
-	let json = rv.get(val).expect("`{val}` must exist; qed").clone();
+	let json = rv.get(val).unwrap_or_else(|| panic!("`{val}` must exist; qed")).clone();
 	serde_json::from_value::<T>(json).expect("T must be Deserialize; qed")
 }

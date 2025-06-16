@@ -23,7 +23,7 @@ pub enum Error {
 	#[error("RPC error: `{0}`")]
 	Rpc(#[from] jsonrpsee::core::ClientError),
 	#[error("subxt error: `{0}`")]
-	Subxt(#[from] subxt::Error),
+	Subxt(#[from] Box<subxt::Error>),
 	#[error("Crypto error: `{0:?}`")]
 	Crypto(polkadot_sdk::sp_core::crypto::SecretStringError),
 	#[error("Codec error: `{0}`")]
@@ -55,7 +55,13 @@ pub enum Error {
 
 impl From<subxt_rpcs::Error> for Error {
 	fn from(e: subxt_rpcs::Error) -> Self {
-		Self::Subxt(subxt::Error::Rpc(e.into()))
+		Self::Subxt(Box::new(subxt::Error::Rpc(e.into())))
+	}
+}
+
+impl From<subxt::Error> for Error {
+	fn from(e: subxt::Error) -> Self {
+		Self::Subxt(Box::new(e))
 	}
 }
 

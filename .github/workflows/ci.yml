@@ -61,7 +61,7 @@ jobs:
       - name: Run Clippy
         run: |
           ${{ env.RUST_INFO }}
-          cargo clippy --all-targets
+          cargo clippy --all-targets -- --deny warnings
 
   check-docs:
     name: Check documentation
