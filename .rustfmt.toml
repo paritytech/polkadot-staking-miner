@@ -1,5 +1,4 @@
 # Basic
-unstable_features = true
 edition = "2024"
 hard_tabs = true
 max_width = 100
