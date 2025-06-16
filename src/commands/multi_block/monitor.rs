@@ -655,8 +655,9 @@ fn is_critical_miner_error(error: &Error) -> bool {
 		Error::FailedToSubmitPages(_) => false,
 		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Runtime(_)) => false, /* e.g. Subxt(Runtime(Module(ModuleError(<MultiBlockElectionSigned::Duplicate>)))) */
 		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Transaction(_)) =>
-			false, /* e.g. Subxt(Transaction(Invalid("Transaction is invalid (eg because of a bad
-		         * nonce, signature etc)")))) */
+			false, /* e.g. Subxt(Transaction(Invalid("Transaction is invalid (eg because of a bad */
+		// nonce, signature etc)"))))
+		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Rpc(_)) => false, /* e.g. Subxt(Rpc(ClientError(User(UserError { code: -32801, message: "Invalid block hash" })))) */
 		// Everything else we consider it critical e.g.
 		//  - Error::AccountDoesNotExists
 		//  - Error::InvalidMetadata(_)
