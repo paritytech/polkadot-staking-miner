@@ -349,7 +349,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 
 	let mut i = 0;
 	let tx_status = loop {
-		let nonce = get_account_nonce(client.chain_api(), signer.account_id(), None).await?;
+		let nonce = get_latest_account_nonce(client.chain_api(), signer.account_id()).await?;
 
 		// Register score.
 		match submit_inner(
@@ -482,7 +482,7 @@ async fn submit_pages_batch<T: MinerConfig + 'static>(
 		return Ok(SubmissionResult { failed_pages, submitted_pages: HashSet::new() });
 	}
 	let mut txs = FuturesUnordered::new();
-	let mut nonce = get_account_nonce(client.chain_api(), signer.account_id(), None).await?;
+	let mut nonce = get_latest_account_nonce(client.chain_api(), signer.account_id()).await?;
 
 	// Collect expected pages before consuming the vector
 	let expected_pages: HashSet<u32> = pages_to_submit.iter().map(|(page, _)| *page).collect();
@@ -665,7 +665,7 @@ pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
 /// Submit a bail transaction to revert incomplete submissions
 pub(crate) async fn bail(client: &Client, signer: &Signer, listen: Listen) -> Result<(), Error> {
 	let bail_tx = runtime::tx().multi_block_election_signed().bail();
-	let nonce = get_account_nonce(client.chain_api(), signer.account_id(), None).await?;
+	let nonce = get_latest_account_nonce(client.chain_api(), signer.account_id()).await?;
 	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
 	let xt = client.chain_api().tx().create_signed(&bail_tx, &**signer, xt_cfg).await?;
 	let tx = xt.submit_and_watch().await?;
@@ -735,18 +735,11 @@ async fn validate_signed_phase_or_bail(
 	Ok(true)
 }
 
-async fn get_account_nonce(
+async fn get_latest_account_nonce(
 	api: &ChainClient,
 	account_id: &subxt::config::substrate::AccountId32,
-	block_hash: Option<Hash>,
 ) -> Result<u64, Error> {
-	let block_hash = if let Some(hash) = block_hash {
-		log::trace!(target: LOG_TARGET, "Getting account nonce at block hash: {:?}", hash);
-		hash
-	} else {
-		log::trace!(target: LOG_TARGET, "Getting account nonce at latest block");
-		api.blocks().at_latest().await?.hash()
-	};
+	let block_hash = api.blocks().at_latest().await?.hash();
 
 	let account_id_encoded = account_id.encode();
 	let nonce_bytes = api
