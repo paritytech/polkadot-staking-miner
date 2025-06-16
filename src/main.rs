@@ -256,18 +256,21 @@ mod tests {
 		])
 		.unwrap();
 
-		assert_eq!(opt, Opt {
-			uri: "hi".to_string(),
-			prometheus_port: 9999,
-			log: "info".to_string(),
-			command: Command::Monitor(MultiBlockMonitorConfig {
-				seed_or_path: "//Alice".to_string(),
-				listen: Listen::Finalized,                          // Default
-				submission_strategy: SubmissionStrategy::IfLeading, // Default
-				do_reduce: true,
-				chunk_size: 0, // Default
-			}),
-		});
+		assert_eq!(
+			opt,
+			Opt {
+				uri: "hi".to_string(),
+				prometheus_port: 9999,
+				log: "info".to_string(),
+				command: Command::Monitor(MultiBlockMonitorConfig {
+					seed_or_path: "//Alice".to_string(),
+					listen: Listen::Finalized,                          // Default
+					submission_strategy: SubmissionStrategy::IfLeading, // Default
+					do_reduce: true,
+					chunk_size: 0, // Default
+				}),
+			}
+		);
 	}
 
 	#[test]

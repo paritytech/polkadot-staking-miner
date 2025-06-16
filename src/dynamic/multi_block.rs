@@ -75,10 +75,10 @@ impl MultiBlockTransaction {
 
 		Ok(Self {
 			kind: TransactionKind::SubmitPage(page),
-			tx: tx(pallet_api::multi_block_signed::tx::SUBMIT_PAGE, vec![
-				scale_page,
-				scale_solution,
-			]),
+			tx: tx(
+				pallet_api::multi_block_signed::tx::SUBMIT_PAGE,
+				vec![scale_page, scale_solution],
+			),
 		})
 	}
 
@@ -124,10 +124,10 @@ where
 	T: MinerConfig,
 {
 	match storage
-		.fetch(&storage_addr(pallet_api::multi_block::storage::PAGED_VOTER_SNAPSHOT, vec![
-			Value::from(round),
-			Value::from(page),
-		]))
+		.fetch(&storage_addr(
+			pallet_api::multi_block::storage::PAGED_VOTER_SNAPSHOT,
+			vec![Value::from(round), Value::from(page)],
+		))
 		.await
 	{
 		Ok(Some(val)) => match Decode::decode(&mut val.encoded()) {
@@ -274,10 +274,10 @@ pub(crate) async fn paged_voter_snapshot_hash(
 	storage: &Storage,
 ) -> Result<Hash, Error> {
 	let bytes = storage
-		.fetch(&storage_addr(pallet_api::multi_block::storage::PAGED_VOTER_SNAPSHOT_HASH, vec![
-			Value::from(round),
-			Value::from(page),
-		]))
+		.fetch(&storage_addr(
+			pallet_api::multi_block::storage::PAGED_VOTER_SNAPSHOT_HASH,
+			vec![Value::from(round), Value::from(page)],
+		))
 		.await?
 		.ok_or(Error::EmptySnapshot)?;
 
@@ -290,10 +290,10 @@ pub(crate) async fn target_snapshot_hash(
 	storage: &Storage,
 ) -> Result<Hash, Error> {
 	let bytes = storage
-		.fetch(&storage_addr(pallet_api::multi_block::storage::PAGED_TARGET_SNAPSHOT_HASH, vec![
-			Value::from(round),
-			Value::from(page),
-		]))
+		.fetch(&storage_addr(
+			pallet_api::multi_block::storage::PAGED_TARGET_SNAPSHOT_HASH,
+			vec![Value::from(round), Value::from(page)],
+		))
 		.await?
 		.ok_or(Error::EmptySnapshot)?;
 
