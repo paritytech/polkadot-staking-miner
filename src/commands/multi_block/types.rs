@@ -14,10 +14,7 @@ use polkadot_sdk::{
     pallet_election_provider_multi_block::unsigned::miner::MinerConfig,
     sp_npos_elections::ElectionScore,
 };
-use std::{
-    collections::{BTreeMap, HashSet},
-    sync::{Arc, RwLock},
-};
+use std::collections::{BTreeMap, HashSet};
 
 pub type TargetSnapshotPageOf<T> =
     BoundedVec<AccountId, <T as MinerConfig>::TargetSnapshotPerBlock>;
@@ -81,10 +78,6 @@ impl<T: MinerConfig> Snapshot<T> {
         self.voter.insert(page, (voter, hash));
     }
 
-    pub fn set_page_length(&mut self, n_pages: Page) {
-        self.n_pages = n_pages;
-    }
-
     /// Clear the snapshot.
     pub fn clear(&mut self) {
         self.target = None;
@@ -109,28 +102,6 @@ impl<T: MinerConfig> Snapshot<T> {
             .map(|(_, (snapshot, _))| snapshot.clone())
             .collect();
         (target, voter)
-    }
-}
-
-pub struct SharedSnapshot<T: MinerConfig>(Arc<RwLock<Snapshot<T>>>);
-
-impl<T: MinerConfig> SharedSnapshot<T> {
-    pub fn new(n_pages: Page) -> Self {
-        SharedSnapshot(Arc::new(RwLock::new(Snapshot::new(n_pages))))
-    }
-
-    pub fn read(&self) -> std::sync::RwLockReadGuard<Snapshot<T>> {
-        self.0.read().expect("Lock is not poisoned; qed")
-    }
-
-    pub fn write(&self) -> std::sync::RwLockWriteGuard<Snapshot<T>> {
-        self.0.write().expect("Lock is not poisoned; qed")
-    }
-}
-
-impl<T: MinerConfig> Clone for SharedSnapshot<T> {
-    fn clone(&self) -> Self {
-        SharedSnapshot(self.0.clone())
     }
 }
 
@@ -177,14 +148,6 @@ impl BlockDetails {
             desired_targets,
             block_number: at.number,
         })
-    }
-
-    pub fn phase_is_signed(&self) -> bool {
-        matches!(self.phase, Phase::Signed(_))
-    }
-
-    pub fn phase_is_snapshot(&self) -> bool {
-        matches!(self.phase, Phase::Snapshot(_))
     }
 }
 

@@ -1,9 +1,7 @@
 use crate::{
     client::Client,
     commands::{
-        multi_block::types::{
-            BlockDetails, CurrentSubmission, IncompleteSubmission, SharedSnapshot,
-        },
+        multi_block::types::{BlockDetails, CurrentSubmission, IncompleteSubmission, Snapshot},
         types::{ExperimentalMultiBlockMonitorConfig, Listen, SubmissionStrategy},
     },
     dynamic::multi_block as dynamic,
@@ -15,16 +13,78 @@ use crate::{
     },
     signer::Signer,
     static_types::multi_block as static_types,
-    utils::{self, TimedFuture, kill_main_task_if_critical_err, score_passes_strategy},
+    utils::{self, TimedFuture, score_passes_strategy},
 };
-use futures::future::{AbortHandle, abortable};
 use polkadot_sdk::{
     pallet_election_provider_multi_block::unsigned::miner::MinerConfig,
     sp_npos_elections::ElectionScore,
 };
-use std::{collections::HashSet, sync::Arc};
-use tokio::sync::Mutex;
+use std::collections::HashSet;
+use subxt::error::Error as SubxtError;
+use tokio::sync::mpsc;
 
+/// Message types for communication between listener and miner
+enum MinerMessage {
+    /// Request to process a block with given details
+    ProcessBlock { state: BlockDetails },
+
+    /// Signal to clear snapshots (phase ended)
+    ClearSnapshots,
+}
+
+/// The monitor command splits the work into two communicating tasks:
+///
+/// ### Listener Task
+/// - Always follows the chain (head or finalized blocks)
+/// - Performs fast phase checks to identify relevant blocks (Snapshot or Signed)
+/// - Checks if miner is busy before sending work
+/// - Never blocks on slow operations
+/// - **Any error causes entire process to exit** (RPC errors handled by reconnecting client)
+///
+/// ### Miner Task
+/// - Single-threaded processor that handles one block at a time
+/// - Performs the expensive mining and submission operations
+/// - **Critical errors cause process exit** (e.g. account doesn't exist)
+/// - **Non-critical errors are recoverable** (log and continue)
+/// - Handles snapshot management and cleanup
+///
+/// ### Communication
+/// - Uses bounded channels (buffer=1) for automatic flow control
+/// - **Backpressure mechanism**: When miner is busy processing a block:
+///   - Channel becomes full, listener's try_send() returns immediately
+///   - Listener skips current block and moves to next (fresher) block
+///   - No blocking, no buffering of stale work
+/// - No submission locks needed since miner is single-threaded by design
+///
+/// ## Error Handling Strategy
+/// - **Listener errors**: All critical - process exits immediately
+/// - **Miner errors**: Classified as critical or recoverable
+///   - Critical: Account doesn't exist, invalid metadata, persistent RPC failures
+///   - Recoverable: Already submitted, wrong phase, temporary mining issues
+/// - **RPC issues**: Handled transparently by reconnecting RPC client
+///
+/// ```text
+/// ┌─────────────────┐                    ┌─────────────────┐
+/// │  Listener Task  │                    │   Miner Task    │
+/// │                 │                    │                 │
+/// │ ┌─────────────┐ │  bounded chan(1)   │ ┌─────────────┐ │
+/// │ │Block Stream │ │ ──────────────────▶│ │   Process   │ │
+/// │ │Subscription │ │                    │ │    Block    │ │
+/// │ └─────────────┘ │                    │ └─────────────┘ │
+/// │        │        │                    │                 │
+/// │        ▼        │                    │                 │
+/// │ ┌─────────────┐ │                    │                 │
+/// │ │Phase Check  │ │   ┌─ Channel Full? │                 │
+/// │ │(fast)       │ │   │                │                 │
+/// │ └─────────────┘ │   │    YES ──────▶ │ Skip block      │
+/// │        │        │   │                │ (backpressure)  │
+/// │        ▼        │   │                │                 │
+/// │ ┌─────────────┐ │───┘                │                 │
+/// │ │try_send()   │ │    NO ────────────▶│ Accept work     │
+/// │ │(non-block)  │ │                    │                 │
+/// │ └─────────────┘ │                    │                 │
+/// └─────────────────┘                    └─────────────────┘
+/// ```
 pub async fn monitor_cmd<T>(
     client: Client,
     config: ExperimentalMultiBlockMonitorConfig,
@@ -62,15 +122,99 @@ where
         );
     }
 
+    // Create bounded channels for communication between listener and miner
+    //
+    // Buffer size of 1 provides natural backpressure control:
+    // - When miner is processing a block, the channel is full
+    // - Listener's try_send() will return TrySendError::Full
+    // - This causes listener to skip the current block and continue to next
+    // - Prevents unbounded memory growth and ensures fresh work
+    // - Eliminates the need for explicit busy-checking or submission locks
+    let (miner_tx, miner_rx) = mpsc::channel::<MinerMessage>(1);
+
+    // Spawn the miner task
+    let miner_handle = {
+        let client = client.clone();
+        let signer = signer.clone();
+        let config = config.clone();
+        tokio::spawn(async move { miner_task::<T>(client, signer, config, miner_rx).await })
+    };
+
+    // Spawn the listener task
+    let listener_handle = {
+        let client = client.clone();
+        let config = config.clone();
+        tokio::spawn(async move { listener_task::<T>(client, config, miner_tx).await })
+    };
+
+    // Wait for either task to complete (which should never happen in normal operation)
+    // If either task exits, the whole process should exit
+    tokio::select! {
+        result = listener_handle => {
+            match result {
+                Ok(Ok(())) => {
+                    log::error!(target: LOG_TARGET, "Listener task completed unexpectedly");
+                    Err(Error::Other("Listener task should never complete".to_string()))
+                }
+                Ok(Err(e)) => {
+                    log::error!(target: LOG_TARGET, "Listener task failed: {}", e);
+                    Err(e)
+                }
+                Err(e) => {
+                    log::error!(target: LOG_TARGET, "Listener task panicked: {}", e);
+                    Err(Error::Other(format!("Listener task panicked: {}", e)))
+                }
+            }
+        }
+        result = miner_handle => {
+            match result {
+                Ok(Ok(())) => {
+                    log::error!(target: LOG_TARGET, "Miner task completed unexpectedly");
+                    Err(Error::Other("Miner task should never complete".to_string()))
+                }
+                Ok(Err(e)) => {
+                    log::error!(target: LOG_TARGET, "Miner task failed: {}", e);
+                    Err(e)
+                }
+                Err(e) => {
+                    log::error!(target: LOG_TARGET, "Miner task panicked: {}", e);
+                    Err(Error::Other(format!("Miner task panicked: {}", e)))
+                }
+            }
+        }
+    }
+}
+
+/// Listener task that follows the chain and signals the miner when appropriate
+///
+/// This task is responsible for:
+/// - Subscribing to block updates (head or finalized)
+/// - Performing fast phase checks to identify signed/snapshot phases
+/// - Using backpressure to skip blocks when miner is busy
+/// - Managing phase transitions and snapshot cleanup
+/// - Never blocking on slow operations to avoid subscription buffering
+/// - Any error causes the entire process to exit
+async fn listener_task<T>(
+    client: Client,
+    config: ExperimentalMultiBlockMonitorConfig,
+    miner_tx: mpsc::Sender<MinerMessage>,
+) -> Result<(), Error>
+where
+    T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
+    T::Solution: Send + Sync + 'static,
+    T::Pages: Send + Sync + 'static,
+    T::TargetSnapshotPerBlock: Send + Sync + 'static,
+    T::VoterSnapshotPerBlock: Send + Sync + 'static,
+    T::MaxVotesPerVoter: Send + Sync + 'static,
+{
     let mut subscription = match config.listen {
         Listen::Head => client.chain_api().blocks().subscribe_best().await?,
         Listen::Finalized => client.chain_api().blocks().subscribe_finalized().await?,
     };
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Error>();
-    let submit_lock = Arc::new(Mutex::new(()));
-    let snapshot = SharedSnapshot::<T>::new(static_types::Pages::get());
-    let mut pending_tasks: Vec<AbortHandle> = Vec::new();
+
     let mut prev_block_signed_phase = false;
+
+    log::trace!(target: LOG_TARGET, "Listener task started, watching for {:?} blocks", config.listen);
 
     loop {
         let (at, block_hash) = tokio::select! {
@@ -96,13 +240,6 @@ where
                         return Err(Error::Other("Subscription terminated unexpectedly".to_string()));
                     }
                 }
-            },
-
-            maybe_err = rx.recv() => {
-                match maybe_err {
-                    Some(err) => return Err(err),
-                    None => unreachable!("at least one sender kept in the main loop should always return Some; qed"),
-                }
             }
         };
 
@@ -114,79 +251,152 @@ where
             .fetch_or_default(&runtime::storage().multi_block_election().current_phase())
             .await?;
 
-        if !matches!(phase, Phase::Signed(_) | Phase::Snapshot(_)) {
-            log::trace!(target: LOG_TARGET, "Block #{}, Phase {:?} - nothing to do", at.number, phase);
-            continue;
+        match phase {
+            Phase::Done | Phase::Off => {
+                if prev_block_signed_phase {
+                    log::debug!(target: LOG_TARGET, "Election round complete (phase {:?}), signaling snapshot cleanup", phase);
+                    if let Err(e) = miner_tx.send(MinerMessage::ClearSnapshots).await {
+                        log::error!(target: LOG_TARGET, "Failed to send clear snapshots signal: {}", e);
+                        return Err(Error::Other(format!(
+                            "Failed to send clear snapshots signal: {}",
+                            e
+                        )));
+                    }
+                    prev_block_signed_phase = false;
+                }
+                log::trace!(target: LOG_TARGET, "Block #{}, Phase {:?} - nothing to do", at.number, phase);
+                continue;
+            }
+            Phase::Signed(_) | Phase::Snapshot(_) => {
+                // Relevant phases for mining - continue processing
+            }
+            _ => {
+                log::trace!(target: LOG_TARGET, "Block #{}, Phase {:?} - nothing to do", at.number, phase);
+                continue;
+            }
         }
 
-        let state = BlockDetails::new(&client, at, phase, block_hash).await?;
-        let account_info = state
-            .storage
-            .fetch(&runtime::storage().system().account(signer.account_id()))
-            .await?
-            .ok_or(Error::AccountDoesNotExists)?;
-        prometheus::set_balance(account_info.data.free as f64);
-
-        if !state.phase_is_signed() && !state.phase_is_snapshot() {
-            // Signal to pending mining task the sign phase has ended.
-            for stop in pending_tasks.drain(..) {
-                stop.abort();
-            }
-
-            // Clear snapshot cache
-            if prev_block_signed_phase {
-                snapshot.write().clear();
-                prev_block_signed_phase = false;
-            }
-
-            continue;
-        }
-
+        // We're in a relevant phase (Signed or Snapshot)
         prev_block_signed_phase = true;
-        let snapshot = snapshot.clone();
-        let signer = signer.clone();
-        let client = client.clone();
-        let submit_lock = submit_lock.clone();
-        let tx = tx.clone();
-        let (fut, handle) = abortable(async move {
-            if let Err(e) = process_block(
-                client,
-                state,
-                snapshot,
-                signer,
-                config.listen,
-                submit_lock,
-                config.submission_strategy,
-                config.do_reduce,
-                config.chunk_size,
-            )
-            .await
-            {
-                kill_main_task_if_critical_err(&tx, e);
-            }
-        });
 
-        tokio::spawn(fut);
-        pending_tasks.push(handle);
+        let block_number = at.number;
+        let state = BlockDetails::new(&client, at, phase, block_hash).await?;
+
+        // Use try_send for backpressure - if miner is busy, skip this block
+        let message = MinerMessage::ProcessBlock { state };
+
+        match miner_tx.try_send(message) {
+            Ok(()) => {
+                log::trace!(target: LOG_TARGET, "Sent block #{} to miner", block_number);
+                // Don't wait for response to allow proper backpressure - listener must continue processing blocks
+            }
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                // Miner is busy processing another block - apply backpressure by skipping
+                log::trace!(target: LOG_TARGET, "Miner busy, skipping block #{}", block_number);
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                log::error!(target: LOG_TARGET, "Miner channel closed unexpectedly");
+                return Err(Error::Other(
+                    "Miner channel closed unexpectedly".to_string(),
+                ));
+            }
+        }
     }
 }
 
-/// For each block, the monitor essentially does the following:
+/// Miner task that processes mining requests
 ///
-/// 1. Check if the phase is signed/snapshot, otherwise continue with the next block.
-/// 2. Check if the solution has already been submitted, if so quit.
-/// 3. Fetch the target and voter snapshots if not already in the cache.
-/// 4. Mine the solution.
-/// 5. Lock submissions.
-/// 6. Check if that our score is the best.
-/// 7. Register the solution score and submit each page of the solution.
+/// This task is responsible for:
+/// - Processing mining requests one at a time (single-threaded)
+/// - Performing expensive mining and submission operations
+/// - Handling snapshot fetching and management
+/// - Providing natural backpressure via bounded channel
+/// - Critical errors cause process exit, others are recoverable
+///
+/// No submission lock is needed since this task is inherently single-threaded.
+/// Backpressure is automatically applied when the bounded channel is full.
+async fn miner_task<T>(
+    client: Client,
+    signer: Signer,
+    config: ExperimentalMultiBlockMonitorConfig,
+    mut miner_rx: mpsc::Receiver<MinerMessage>,
+) -> Result<(), Error>
+where
+    T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
+    T::Solution: Send + Sync + 'static,
+    T::Pages: Send + Sync + 'static,
+    T::TargetSnapshotPerBlock: Send + Sync + 'static,
+    T::VoterSnapshotPerBlock: Send + Sync + 'static,
+    T::MaxVotesPerVoter: Send + Sync + 'static,
+{
+    log::trace!(target: LOG_TARGET, "Miner task started");
+
+    // Miner owns the snapshot exclusively
+    let mut snapshot = Snapshot::<T>::new(static_types::Pages::get());
+
+    while let Some(message) = miner_rx.recv().await {
+        match message {
+            MinerMessage::ProcessBlock { state } => {
+                let result = process_block::<T>(
+                    client.clone(),
+                    state,
+                    &mut snapshot,
+                    signer.clone(),
+                    config.listen,
+                    config.submission_strategy,
+                    config.do_reduce,
+                    config.chunk_size,
+                )
+                .await;
+
+                match result {
+                    Ok(()) => {
+                        log::trace!(target: LOG_TARGET, "Block processing completed successfully");
+                    }
+                    Err(e) => {
+                        if is_critical_miner_error(&e) {
+                            log::error!(target: LOG_TARGET, "Critical miner error - process will exit: {:?}", e);
+                            return Err(e);
+                        } else {
+                            log::warn!(target: LOG_TARGET, "Block processing failed, continuing: {:?}", e);
+                        }
+                    }
+                }
+            }
+            MinerMessage::ClearSnapshots => {
+                log::trace!(target: LOG_TARGET, "Clearing snapshots");
+                snapshot.clear();
+            }
+        }
+    }
+
+    // This should never be reached as miner runs indefinitely
+    log::error!(target: LOG_TARGET, "Miner task loop exited unexpectedly");
+    Err(Error::Other(
+        "Miner task completed unexpectedly".to_string(),
+    ))
+}
+
+/// Process a single block
+///
+/// This function handles the core mining logic for a single block:
+/// 1. Update account balance and page length
+/// 2. Handle snapshot vs signed phase appropriately
+/// 3. Fetch missing snapshots if needed
+/// 4. Check if already submitted for this round
+/// 5. Mine the solution
+/// 6. Handle existing submissions (complete/incomplete)
+/// 7. Check score competitiveness
+/// 8. Submit the solution
+///
+/// No submission lock is needed since the miner task is single-threaded.
+/// Retransmission scenarios are handled after miner restarts or runtime upgrades.
 async fn process_block<T>(
     client: Client,
     state: BlockDetails,
-    snapshot: SharedSnapshot<T>,
+    snapshot: &mut Snapshot<T>,
     signer: Signer,
     listen: Listen,
-    submit_lock: Arc<Mutex<()>>,
     submission_strategy: SubmissionStrategy,
     do_reduce: bool,
     chunk_size: usize,
@@ -209,45 +419,35 @@ where
         ..
     } = state;
 
-    // This will only change after runtime upgrades/when the metadata is changed.
-    // but let's be on the safe-side and update it every block.
-    snapshot.write().set_page_length(n_pages);
+    log::trace!(target: LOG_TARGET, "Processing block #{} (round {}, phase {:?})", block_number, round, phase);
 
-    // 1. Check if the phase is signed/snapshot, otherwise wait for the next block.
+    // Update balance
+    let account_info = storage
+        .fetch(&runtime::storage().system().account(signer.account_id()))
+        .await?
+        .ok_or(Error::AccountDoesNotExists)?;
+    prometheus::set_balance(account_info.data.free as f64);
+
+    // Handle different phases
     match phase {
         Phase::Snapshot(_) => {
-            dynamic::fetch_missing_snapshots_lossy::<T>(&snapshot, &storage, round).await?;
+            dynamic::fetch_missing_snapshots_lossy::<T>(snapshot, &storage, round).await?;
             return Ok(());
         }
-        Phase::Signed(_) => {}
-        // Ignore other phases.
-        _ => return Ok(()),
+        Phase::Signed(_) => {
+            log::trace!(target: LOG_TARGET, "Signed phase - checking for mining opportunity");
+        }
+        _ => {
+            log::trace!(target: LOG_TARGET, "Phase {:?} - nothing to do", phase);
+            return Ok(());
+        }
     }
 
-    // 2. Fetch the target and voter snapshots if needed.
-    dynamic::fetch_missing_snapshots::<T>(&snapshot, &storage, round).await?;
-    let (target_snapshot, voter_snapshot) = snapshot.read().get();
+    // Fetch snapshots if needed
+    dynamic::fetch_missing_snapshots::<T>(snapshot, &storage, round).await?;
+    let (target_snapshot, voter_snapshot) = snapshot.get();
 
-    // 3. Try to acquire mining and submission lock - if already taken, skip this block: it means
-    // there is another task busy with mining and submitting a solution.
-    let _guard = match submit_lock.try_lock() {
-        Ok(guard) => guard,
-        Err(_) => {
-            log::trace!(
-                target: LOG_TARGET,
-                "Submission lock already taken - skipping block {} round {}",
-                block_number,
-                round
-            );
-            return Ok(());
-        }
-    };
-
-    // After the submission lock has been acquired, check that no submissions has been submitted.
-    // Example:
-    // 1. block N (Signed(P)): we submit a complete solution
-    // 2. miner crashes and restarts
-    // 3. block N+M (Signed(P-M)): we check if a complete solution has been submitted already
+    // Check if we already submitted for this round
     if has_submitted(
         &utils::storage_at_head(&client, listen).await?,
         round,
@@ -256,10 +456,12 @@ where
     )
     .await?
     {
+        log::trace!(target: LOG_TARGET, "Already submitted for round {}, skipping", round);
         return Ok(());
     }
 
-    // 4. Mine solution
+    // Mine the solution
+    log::debug!(target: LOG_TARGET, "Mining solution for block #{} round {}", block_number, round);
     let paged_raw_solution = match dynamic::mine_solution::<T>(
         target_snapshot,
         voter_snapshot,
@@ -273,37 +475,45 @@ where
     .await
     {
         (Ok(sol), dur) => {
-            log::trace!(target: LOG_TARGET, "Mining solution took {}ms", dur.as_millis());
+            log::info!(target: LOG_TARGET, "Mining solution took {}ms for block #{}", dur.as_millis(), block_number);
             prometheus::observe_mined_solution_duration(dur.as_millis() as f64);
             sol
         }
-        (Err(e), _) => {
+        (Err(e), dur) => {
+            log::error!(target: LOG_TARGET, "Mining failed after {}ms: {:?}", dur.as_millis(), e);
             return Err(e);
         }
     };
 
+    // Get latest storage state (chain may have progressed while we were mining)
     let storage_head = utils::storage_at_head(&client, listen).await?;
 
+    // Handle existing submissions
     match get_submission(&storage_head, round, signer.account_id(), n_pages).await? {
         CurrentSubmission::Done(score) => {
-            // We have already submitted the solution with a better score or equal score
+            // We have already submitted the solution with a score
             if !score_passes_strategy(paged_raw_solution.score, score, submission_strategy) {
+                log::debug!(target: LOG_TARGET, "Our new score doesn't beat existing submission, skipping");
                 return Ok(());
             }
-            // Revert previous submission and submit the new one.
+            log::debug!(target: LOG_TARGET, "Reverting previous submission to submit better solution");
             dynamic::bail(&client, &signer, listen).await?;
         }
         CurrentSubmission::Incomplete(s) => {
-            // Submit the missing pages.
             if s.score() == paged_raw_solution.score {
-                let mut missing_pages = Vec::new();
+                // Same score, just submit missing pages
+                let missing_pages: Vec<(u32, T::Solution)> = s
+                    .get_missing_pages()
+                    .map(|page| {
+                        (
+                            page,
+                            paged_raw_solution.solution_pages[page as usize].clone(),
+                        )
+                    })
+                    .collect();
 
-                for page in s.get_missing_pages() {
-                    let solution = paged_raw_solution.solution_pages[page as usize].clone();
-                    missing_pages.push((page, solution));
-                }
+                log::info!(target: LOG_TARGET, "Submitting {} missing pages for existing submission", missing_pages.len());
 
-                // Use the appropriate submission method based on chunk_size
                 if chunk_size == 0 {
                     dynamic::inner_submit_pages_concurrent::<T>(
                         &client,
@@ -327,21 +537,15 @@ where
                 return Ok(());
             }
 
-            // Revert previous submission and submit a new one.
+            log::debug!(target: LOG_TARGET, "Reverting incomplete submission to submit new solution");
             dynamic::bail(&client, &signer, listen).await?;
         }
-        CurrentSubmission::NotStarted => (),
+        CurrentSubmission::NotStarted => {
+            log::debug!(target: LOG_TARGET, "No existing submission found");
+        }
     };
 
-    // 5. Check if the score is better than the current best score.
-    //
-    // We allow overwriting the score if the "our account" has the best score but hasn't submitted
-    // the solution. This is to allow the miner to re-submit the score and solution if the miner crashed
-    // or the RPC connection was lost.
-    //
-    // This to ensure that the miner doesn't miss out on submitting the solution if the miner crashed
-    // and to prevent to be slashed.
-
+    // Check if our score is competitive
     if !score_better(
         &storage_head,
         paged_raw_solution.score,
@@ -350,12 +554,14 @@ where
     )
     .await?
     {
+        log::debug!(target: LOG_TARGET, "Our score is not competitive, skipping submission");
         return Ok(());
     }
 
     prometheus::set_score(paged_raw_solution.score);
+    log::info!(target: LOG_TARGET, "Submitting solution with score {:?} for round {}", paged_raw_solution.score, round);
 
-    // 6. Submit the score and solution to the chain.
+    // Submit the solution
     match dynamic::submit(
         &client,
         &signer,
@@ -368,14 +574,21 @@ where
     .await
     {
         (Ok(_), dur) => {
-            log::trace!(
+            log::info!(
                 target: LOG_TARGET,
-                "Register score and solution pages took {}ms",
+                "Successfully submitted solution for round {} in {}ms",
+                round,
                 dur.as_millis()
             );
             prometheus::observe_submit_and_watch_duration(dur.as_millis() as f64);
         }
-        (Err(e), _) => {
+        (Err(e), dur) => {
+            log::error!(
+                target: LOG_TARGET,
+                "Submission failed after {}ms: {:?}",
+                dur.as_millis(),
+                e
+            );
             return Err(e);
         }
     };
@@ -461,5 +674,29 @@ async fn has_submitted(
     match get_submission(storage, round, who, n_pages).await? {
         CurrentSubmission::Done(_) => Ok(true),
         _ => Ok(false),
+    }
+}
+
+/// Determine if a miner error is critical and should cause the process to exit
+fn is_critical_miner_error(error: &Error) -> bool {
+    match error {
+        Error::AlreadySubmitted
+        | Error::BetterScoreExist
+        | Error::IncorrectPhase
+        | Error::TransactionRejected(_)
+        | Error::Join(_)
+        | Error::Feasibility(_)
+        | Error::EmptySnapshot
+        | Error::FailedToSubmitPages(_)
+        | Error::Subxt(SubxtError::Runtime(_)) // e.g. Subxt(Runtime(Module(ModuleError(<MultiBlockElectionSigned::Duplicate>))))
+        | Error::Subxt(SubxtError::Transaction(_)) // e.g. Subxt(Transaction(Invalid("Transaction is invalid (eg because of a bad nonce, signature etc)"))))
+        => false,
+        // Everything else we consider it critical e.g.
+        //  - Error::AccountDoesNotExists
+        //  - Error::InvalidMetadata(_)
+        //  - Error::InvalidChain(_)
+        // - Error::Rpc(_) i.e. persistent RPC failures (after reconnecting client gave up)
+        // - Error::Subxt(_) i.e. any other subxt error
+        _ => true,
     }
 }
