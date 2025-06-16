@@ -349,7 +349,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 
 	let mut i = 0;
 	let tx_status = loop {
-		let nonce = get_latest_account_nonce(client.chain_api(), signer.account_id()).await?;
+		let nonce = client.chain_api().tx().account_nonce(signer.account_id()).await?;
 
 		// Register score.
 		match submit_inner(
@@ -482,7 +482,7 @@ async fn submit_pages_batch<T: MinerConfig + 'static>(
 		return Ok(SubmissionResult { failed_pages, submitted_pages: HashSet::new() });
 	}
 	let mut txs = FuturesUnordered::new();
-	let mut nonce = get_latest_account_nonce(client.chain_api(), signer.account_id()).await?;
+	let mut nonce = client.chain_api().tx().account_nonce(signer.account_id()).await?;
 
 	// Collect expected pages before consuming the vector
 	let expected_pages: HashSet<u32> = pages_to_submit.iter().map(|(page, _)| *page).collect();
@@ -665,7 +665,7 @@ pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
 /// Submit a bail transaction to revert incomplete submissions
 pub(crate) async fn bail(client: &Client, signer: &Signer, listen: Listen) -> Result<(), Error> {
 	let bail_tx = runtime::tx().multi_block_election_signed().bail();
-	let nonce = get_latest_account_nonce(client.chain_api(), signer.account_id()).await?;
+	let nonce = client.chain_api().tx().account_nonce(signer.account_id()).await?;
 	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
 	let xt = client.chain_api().tx().create_signed(&bail_tx, &**signer, xt_cfg).await?;
 	let tx = xt.submit_and_watch().await?;
@@ -733,39 +733,4 @@ async fn validate_signed_phase_or_bail(
 	}
 
 	Ok(true)
-}
-
-async fn get_latest_account_nonce(
-	api: &ChainClient,
-	account_id: &subxt::config::substrate::AccountId32,
-) -> Result<u64, Error> {
-	let runtime_api_call =
-		subxt::dynamic::runtime_api_call("AccountNonceApi", "account_nonce", vec![
-			Value::from_bytes(account_id),
-		]);
-
-	let nonce_value = api
-		.runtime_api()
-		.at_latest()
-		.await
-		.map_err(|e| {
-			log::error!(target: LOG_TARGET, "Failed to get runtime API at latest block: {:?}", e);
-			e
-		})?
-		.call(runtime_api_call)
-		.await
-		.map_err(|e| {
-			log::error!(target: LOG_TARGET, "Failed to get account nonce for {:?}: {:?}", account_id, e);
-			e
-		})?;
-
-	// Decode the nonce from the runtime API response
-	let nonce: u32 = nonce_value
-		.to_value()
-		.map_err(|e| Error::Other(format!("Failed to decode nonce value: {}", e)))?
-		.as_u128()
-		.ok_or_else(|| Error::Other("Failed to decode nonce as u128".to_string()))?
-		as u32;
-
-	Ok(nonce as u64)
 }
