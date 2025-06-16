@@ -1,6 +1,6 @@
 /// The header type. We re-export it here, but we can easily get it from block as well.
 pub type Header =
-    subxt::config::substrate::SubstrateHeader<u32, subxt::config::substrate::DynamicHasher256>;
+	subxt::config::substrate::SubstrateHeader<u32, subxt::config::substrate::DynamicHasher256>;
 /// The header type. We re-export it here, but we can easily get it from block as well.
 pub type Hash = subxt::utils::H256;
 /// Default URI to connect to.
@@ -19,7 +19,7 @@ pub type ChainClient = subxt::OnlineClient<subxt::PolkadotConfig>;
 pub type Config = subxt::PolkadotConfig;
 /// Shared client.
 pub static SHARED_CLIENT: once_cell::sync::OnceCell<crate::client::Client> =
-    once_cell::sync::OnceCell::new();
+	once_cell::sync::OnceCell::new();
 pub use polkadot_sdk::sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 /// The account id type.
 pub type AccountId = polkadot_sdk::sp_runtime::AccountId32;
