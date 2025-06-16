@@ -160,6 +160,20 @@ mod hidden {
         ))
         .unwrap()
     });
+    static SUBMISSIONS_STARTED: Lazy<Counter> = Lazy::new(|| {
+        register_counter!(opts!(
+            "staking_miner_submissions_started",
+            "Number of submissions started",
+        ))
+        .unwrap()
+    });
+    static SUBMISSIONS_SUCCESS: Lazy<Counter> = Lazy::new(|| {
+        register_counter!(opts!(
+            "staking_miner_submissions_success",
+            "Number of submissions finished successfully",
+        ))
+        .unwrap()
+    });
 
     pub fn on_runtime_upgrade() {
         RUNTIME_UPGRADES.inc();
@@ -181,5 +195,13 @@ mod hidden {
 
     pub fn observe_mined_solution_duration(time: f64) {
         MINED_SOLUTION_DURATION.set(time);
+    }
+
+    pub fn on_submission_started() {
+        SUBMISSIONS_STARTED.inc();
+    }
+
+    pub fn on_submission_success() {
+        SUBMISSIONS_SUCCESS.inc();
     }
 }
