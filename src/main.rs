@@ -16,15 +16,16 @@
 
 //! # Polkadot Staking Miner.
 //!
-//! Simple bot capable of monitoring a polkadot (and cousins) chain and submitting solutions to the
-//! `pallet-election-provider-multi-block`.
+//! Simple bot capable of monitoring Polkadot / Kusama / Westend Asset Hub chain and submitting
+//! solutions to the `pallet-election-provider-multi-block`.
 //! See `help` for more information.
 //!
 //! # Implementation Notes:
 //!
-//! The miner is designed to operate 24/7. However, if it encounters unrecoverable errors (RPC IO),
-//! it will crash. In a production environment, run it with the `restart = true` setting, which
-//! will report the crash and resume work afterward.
+//! The miner is designed to operate 24/7. However, if it encounters unrecoverable errors (e.g.
+//! RPC or IO errors), it will crash.
+//! In a production environment, run it with the `restart = true` setting, which will report the
+//! crash and resume work afterward.
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod client;
