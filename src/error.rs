@@ -28,14 +28,9 @@ pub enum Error {
     Crypto(polkadot_sdk::sp_core::crypto::SecretStringError),
     #[error("Codec error: `{0}`")]
     Codec(#[from] codec::Error),
-    #[error("Incorrect phase")]
-    IncorrectPhase,
-    #[error("Submission is already submitted")]
-    AlreadySubmitted,
     #[error("The account does not exist")]
     AccountDoesNotExists,
-    #[error("Submission with better score already exist")]
-    BetterScoreExist,
+
     #[error(
         "Invalid chain: `{0}`, staking-miner supports only polkadot, kusama, westend, node and asset-hub-next"
     )]
@@ -44,8 +39,6 @@ pub enum Error {
     Other(String),
     #[error("Invalid metadata: {0}")]
     InvalidMetadata(String),
-    #[error("Transaction rejected: {0}")]
-    TransactionRejected(String),
     #[error("Dynamic transaction error: {0}")]
     DynamicTransaction(String),
     #[error("Feasibility error: {0}")]

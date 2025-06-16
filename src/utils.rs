@@ -18,13 +18,10 @@ use crate::{
     client::Client,
     commands::types::{Listen, SubmissionStrategy},
     error::Error,
-    prelude::{ChainClient, Config, Hash, Header, LOG_TARGET, RpcClient, Storage},
+    prelude::{ChainClient, Config, Hash, RpcClient, Storage},
 };
-use codec::Decode;
-use jsonrpsee::core::ClientError as JsonRpseeError;
 use pin_project_lite::pin_project;
-use polkadot_sdk::{frame_support::weights::Weight, sp_npos_elections, sp_runtime::Perbill};
-use serde::Deserialize;
+use polkadot_sdk::{sp_npos_elections, sp_runtime::Perbill};
 use std::{
     future::Future,
     pin::Pin,
@@ -32,10 +29,10 @@ use std::{
     time::{Duration, Instant},
 };
 use subxt::{
-    error::{Error as SubxtError, RpcError},
+    error::RpcError,
     tx::{TxInBlock, TxProgress},
 };
-use subxt_rpcs::client::RpcSubscription;
+
 pin_project! {
     pub struct Timed<Fut>
         where
@@ -77,81 +74,6 @@ pub trait TimedFuture: Sized + Future {
 }
 
 impl<F: Future> TimedFuture for F {}
-
-/// Custom `RuntimeDispatchInfo` type definition similar to
-/// what is in substrate but only tries to decode the `weight` field.
-///
-/// All other fields are not used by the staking miner.
-#[derive(Decode, Default, Debug, Deserialize)]
-pub struct RuntimeDispatchInfo {
-    /// Weight of this dispatch.
-    pub weight: Weight,
-}
-
-pub fn kill_main_task_if_critical_err(tx: &tokio::sync::mpsc::UnboundedSender<Error>, err: Error) {
-    match err {
-        Error::AlreadySubmitted
-        | Error::BetterScoreExist
-        | Error::IncorrectPhase
-        | Error::TransactionRejected(_)
-        | Error::Join(_)
-        | Error::Feasibility(_)
-        | Error::EmptySnapshot => {}
-        Error::Subxt(SubxtError::Rpc(rpc_err)) => {
-            log::debug!(target: LOG_TARGET, "rpc error: {:?}", rpc_err);
-
-            match rpc_err {
-                RpcError::ClientError(e) => {
-                    if let subxt_rpcs::Error::Client(boxed_err) = e {
-                        let jsonrpsee_err = match boxed_err.downcast::<JsonRpseeError>() {
-                            Ok(e) => *e,
-                            Err(_) => {
-                                let _ = tx.send(Error::Other(
-                                    "Failed to downcast RPC error; this is a bug please file an issue"
-                                        .to_string(),
-                                ));
-                                return;
-                            }
-                        };
-
-                        match jsonrpsee_err {
-                            JsonRpseeError::Call(e) => {
-                                const BAD_EXTRINSIC_FORMAT: i32 = 1001;
-                                const VERIFICATION_ERROR: i32 = 1002;
-                                use jsonrpsee::types::error::ErrorCode;
-
-                                // Check if the transaction gets fatal errors from the `author` RPC.
-                                // It's possible to get other errors such as outdated nonce and similar
-                                // but then it should be possible to try again in the next block or round.
-                                if e.code() == BAD_EXTRINSIC_FORMAT
-                                    || e.code() == VERIFICATION_ERROR
-                                    || e.code() == ErrorCode::MethodNotFound.code()
-                                {
-                                    let _ = tx.send(Error::Subxt(SubxtError::Rpc(
-                                        RpcError::ClientError(subxt_rpcs::Error::Client(Box::new(
-                                            JsonRpseeError::Call(e),
-                                        ))),
-                                    )));
-                                }
-                            }
-                            JsonRpseeError::RequestTimeout => {}
-                            err => {
-                                let _ = tx.send(Error::Subxt(SubxtError::Rpc(
-                                    RpcError::ClientError(subxt_rpcs::Error::Client(Box::new(err))),
-                                )));
-                            }
-                        }
-                    }
-                }
-                RpcError::SubscriptionDropped => (),
-                _ => (),
-            }
-        }
-        err => {
-            let _ = tx.send(err);
-        }
-    }
-}
 
 /// Helper to get storage at block.
 pub async fn storage_at(block: Option<Hash>, api: &ChainClient) -> Result<Storage, Error> {
@@ -208,17 +130,6 @@ where
         }
     }
     Err(RpcError::SubscriptionDropped.into())
-}
-
-pub async fn rpc_block_subscription(
-    rpc: &RpcClient,
-    listen: Listen,
-) -> Result<RpcSubscription<Header>, Error> {
-    match listen {
-        Listen::Head => rpc.chain_subscribe_new_heads().await,
-        Listen::Finalized => rpc.chain_subscribe_finalized_heads().await,
-    }
-    .map_err(Into::into)
 }
 
 pub async fn rpc_get_latest_head(rpc: &RpcClient, listen: Listen) -> Result<Hash, Error> {

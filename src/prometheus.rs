@@ -108,40 +108,9 @@ pub async fn run(port: u16) -> Result<(), String> {
 
 mod hidden {
     use once_cell::sync::Lazy;
-    use polkadot_sdk::{frame_election_provider_support::Weight, sp_npos_elections};
+    use polkadot_sdk::sp_npos_elections;
     use prometheus::{Counter, Gauge, opts, register_counter, register_gauge};
 
-    static TRIMMED_SOLUTION_STARTED: Lazy<Counter> = Lazy::new(|| {
-        register_counter!(opts!(
-            "staking_miner_trim_started",
-            "Number of started trimmed solutions",
-        ))
-        .unwrap()
-    });
-
-    static TRIMMED_SOLUTION_SUCCESS: Lazy<Counter> = Lazy::new(|| {
-        register_counter!(opts!(
-            "staking_miner_trim_success",
-            "Number of successful trimmed solutions",
-        ))
-        .unwrap()
-    });
-
-    static SUBMISSIONS_STARTED: Lazy<Counter> = Lazy::new(|| {
-        register_counter!(opts!(
-            "staking_miner_submissions_started",
-            "Number of submissions started",
-        ))
-        .unwrap()
-    });
-
-    static SUBMISSIONS_SUCCESS: Lazy<Counter> = Lazy::new(|| {
-        register_counter!(opts!(
-            "staking_miner_submissions_success",
-            "Number of submissions finished successfully",
-        ))
-        .unwrap()
-    });
     static MINED_SOLUTION_DURATION: Lazy<Gauge> = Lazy::new(|| {
         register_gauge!(
             "staking_miner_mining_duration_ms",
@@ -191,17 +160,17 @@ mod hidden {
         ))
         .unwrap()
     });
-    static SUBMISSION_LENGTH: Lazy<Gauge> = Lazy::new(|| {
-        register_gauge!(opts!(
-            "staking_miner_solution_length_bytes",
-            "Number of bytes in the solution submitted",
+    static SUBMISSIONS_STARTED: Lazy<Counter> = Lazy::new(|| {
+        register_counter!(opts!(
+            "staking_miner_submissions_started",
+            "Number of submissions started",
         ))
         .unwrap()
     });
-    static SUBMISSION_WEIGHT: Lazy<Gauge> = Lazy::new(|| {
-        register_gauge!(opts!(
-            "staking_miner_solution_weight",
-            "Weight of the solution submitted"
+    static SUBMISSIONS_SUCCESS: Lazy<Counter> = Lazy::new(|| {
+        register_counter!(opts!(
+            "staking_miner_submissions_success",
+            "Number of submissions finished successfully",
         ))
         .unwrap()
     });
@@ -210,32 +179,8 @@ mod hidden {
         RUNTIME_UPGRADES.inc();
     }
 
-    pub fn on_submission_attempt() {
-        SUBMISSIONS_STARTED.inc();
-    }
-
-    pub fn on_submission_success() {
-        SUBMISSIONS_SUCCESS.inc();
-    }
-
-    pub fn on_trim_attempt() {
-        TRIMMED_SOLUTION_STARTED.inc();
-    }
-
-    pub fn on_trim_success() {
-        TRIMMED_SOLUTION_SUCCESS.inc();
-    }
-
     pub fn set_balance(balance: f64) {
         BALANCE.set(balance);
-    }
-
-    pub fn set_length(len: usize) {
-        SUBMISSION_LENGTH.set(len as f64);
-    }
-
-    pub fn set_weight(weight: Weight) {
-        SUBMISSION_WEIGHT.set(weight.ref_time() as f64)
     }
 
     pub fn set_score(score: sp_npos_elections::ElectionScore) {
@@ -250,5 +195,13 @@ mod hidden {
 
     pub fn observe_mined_solution_duration(time: f64) {
         MINED_SOLUTION_DURATION.set(time);
+    }
+
+    pub fn on_submission_started() {
+        SUBMISSIONS_STARTED.inc();
+    }
+
+    pub fn on_submission_success() {
+        SUBMISSIONS_SUCCESS.inc();
     }
 }

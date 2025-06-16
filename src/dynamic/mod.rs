@@ -8,55 +8,37 @@
 
 use crate::{error::Error, prelude::ChainClient, static_types};
 
-pub mod legacy;
 pub mod multi_block;
 pub mod pallet_api;
 pub mod utils;
 
 /// Read the constants from the metadata and updates the static types.
-pub fn update_metadata_constants(api: &ChainClient, legacy: bool) -> Result<(), Error> {
-    if legacy {
-        use static_types::legacy::{MaxLength, MaxVotesPerVoter, MaxWeight, MaxWinners};
+pub fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
+    use polkadot_sdk::sp_runtime::Percent;
+    use static_types::multi_block::{
+        MaxBackersPerWinner, MaxLength, MaxWinnersPerPage, Pages, TargetSnapshotPerBlock,
+        VoterSnapshotPerBlock,
+    };
 
-        MaxWeight::set(
-            pallet_api::election_provider_multi_phase::constants::MAX_WEIGHT.fetch(api)?,
-        );
-        MaxLength::set(
-            pallet_api::election_provider_multi_phase::constants::MAX_LENGTH.fetch(api)?,
-        );
-        MaxVotesPerVoter::set(
-            pallet_api::election_provider_multi_phase::constants::MAX_VOTES_PER_VOTER.fetch(api)?,
-        );
-        MaxWinners::set(
-            pallet_api::election_provider_multi_phase::constants::MAX_WINNERS.fetch(api)?,
-        );
-    } else {
-        use polkadot_sdk::sp_runtime::Percent;
-        use static_types::multi_block::{
-            MaxBackersPerWinner, MaxLength, MaxWinnersPerPage, Pages, TargetSnapshotPerBlock,
-            VoterSnapshotPerBlock,
-        };
+    let pages: u32 = pallet_api::multi_block::constants::PAGES.fetch(api)?;
+    Pages::set(pages);
+    TargetSnapshotPerBlock::set(
+        pallet_api::multi_block::constants::TARGET_SNAPSHOT_PER_BLOCK.fetch(api)?,
+    );
+    VoterSnapshotPerBlock::set(
+        pallet_api::multi_block::constants::VOTER_SNAPSHOT_PER_BLOCK.fetch(api)?,
+    );
 
-        let pages: u32 = pallet_api::multi_block::constants::PAGES.fetch(api)?;
-        Pages::set(pages);
-        TargetSnapshotPerBlock::set(
-            pallet_api::multi_block::constants::TARGET_SNAPSHOT_PER_BLOCK.fetch(api)?,
-        );
-        VoterSnapshotPerBlock::set(
-            pallet_api::multi_block::constants::VOTER_SNAPSHOT_PER_BLOCK.fetch(api)?,
-        );
+    let block_len = pallet_api::system::constants::BLOCK_LENGTH.fetch(api)?;
 
-        let block_len = pallet_api::system::constants::BLOCK_LENGTH.fetch(api)?;
-
-        // As instructed, a reasonable default max length is 75% of the total block length.
-        MaxLength::set(Percent::from_percent(75) * block_len.total());
-        MaxWinnersPerPage::set(
-            pallet_api::multi_block_verifier::constants::MAX_WINNERS_PER_PAGE.fetch(api)?,
-        );
-        MaxBackersPerWinner::set(
-            pallet_api::multi_block_verifier::constants::MAX_BACKERS_PER_WINNER.fetch(api)?,
-        );
-    }
+    // As instructed, a reasonable default max length is 75% of the total block length.
+    MaxLength::set(Percent::from_percent(75) * block_len.total());
+    MaxWinnersPerPage::set(
+        pallet_api::multi_block_verifier::constants::MAX_WINNERS_PER_PAGE.fetch(api)?,
+    );
+    MaxBackersPerWinner::set(
+        pallet_api::multi_block_verifier::constants::MAX_BACKERS_PER_WINNER.fetch(api)?,
+    );
 
     Ok(())
 }

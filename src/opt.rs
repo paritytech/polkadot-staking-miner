@@ -16,33 +16,9 @@
 
 use crate::error::Error;
 
-use clap::*;
-use polkadot_sdk::{frame_support, sp_npos_elections::BalancingConfig};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{collections::HashMap, fmt, str::FromStr};
 use subxt::backend::legacy::rpc_methods as subxt_rpc;
-
-/// The type of solver to use.
-// A common option across multiple commands.
-#[derive(Debug, Clone, Parser)]
-#[cfg_attr(test, derive(PartialEq))]
-pub enum Solver {
-    SeqPhragmen {
-        #[clap(long, default_value = "10")]
-        iterations: usize,
-    },
-    PhragMMS {
-        #[clap(long, default_value = "10")]
-        iterations: usize,
-    },
-}
-
-frame_support::parameter_types! {
-    /// Number of balancing iterations for a solution algorithm. Set based on the [`Solvers`] CLI
-    /// config.
-    pub static BalanceIterations: usize = 10;
-    pub static Balancing: Option<BalancingConfig> = Some( BalancingConfig { iterations: BalanceIterations::get(), tolerance: 0 } );
-}
 
 /// The chain being used.
 #[derive(Debug, Copy, Clone)]

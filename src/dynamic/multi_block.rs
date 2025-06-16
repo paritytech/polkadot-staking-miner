@@ -347,6 +347,9 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
     chunk_size: usize,
     round: u32,
 ) -> Result<(), Error> {
+    // Record that a submission has started
+    crate::prometheus::on_submission_started();
+
     // 1. Check phase before registering score
     if !validate_signed_phase_or_bail(client, signer, listen, round).await? {
         return Ok(());
@@ -417,6 +420,8 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 
     // 4. All pages were submitted successfully, we are done.
     if failed_pages.is_empty() {
+        // Record successful submission
+        crate::prometheus::on_submission_success();
         return Ok(());
     }
 
@@ -447,6 +452,8 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
     };
 
     if failed_pages.is_empty() {
+        // Record successful submission
+        crate::prometheus::on_submission_success();
         Ok(())
     } else {
         Err(Error::FailedToSubmitPages(failed_pages.len()))

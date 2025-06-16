@@ -101,36 +101,6 @@ pub mod multi_block_verifier {
     }
 }
 
-pub mod election_provider_multi_phase {
-    pub const NAME: &str = "ElectionProviderMultiPhase";
-
-    pub mod constants {
-        use super::{super::*, *};
-        use polkadot_sdk::frame_support::weights::Weight;
-
-        pub const MAX_VOTES_PER_VOTER: PalletConstant<u32> =
-            PalletConstant::new(NAME, "MinerMaxVotesPerVoter");
-        pub const MAX_LENGTH: PalletConstant<u32> = PalletConstant::new(NAME, "MinerMaxLength");
-        pub const MAX_WEIGHT: PalletConstant<Weight> = PalletConstant::new(NAME, "SignedMaxWeight");
-        // NOTE: `MaxWinners` is used instead of `MinerMaxWinners` to work with older metadata.
-        pub const MAX_WINNERS: PalletConstant<u32> = PalletConstant::new(NAME, "MaxWinners");
-    }
-
-    pub mod storage {
-        use super::{super::*, *};
-        pub const SIGNED_SUBMISSIONS_MAP: PalletItem =
-            PalletItem::new(NAME, "SignedSubmissionsMap");
-        pub const SNAPSHOT: PalletItem = PalletItem::new(NAME, "Snapshot");
-    }
-
-    pub mod tx {
-        use super::{super::*, *};
-        pub const SUBMIT_UNSIGNED: PalletItem = PalletItem::new(NAME, "submit_unsigned");
-        pub const SUBMIT: PalletItem = PalletItem::new(NAME, "submit");
-        pub const EMERGENCY: PalletItem = PalletItem::new(NAME, "set_emergency_election_result");
-    }
-}
-
 pub mod multi_block_signed {
     pub const NAME: &str = "MultiBlockElectionSigned";
 
