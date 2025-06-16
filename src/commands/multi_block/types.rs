@@ -78,10 +78,6 @@ impl<T: MinerConfig> Snapshot<T> {
         self.voter.insert(page, (voter, hash));
     }
 
-    pub fn set_page_length(&mut self, n_pages: Page) {
-        self.n_pages = n_pages;
-    }
-
     /// Clear the snapshot.
     pub fn clear(&mut self) {
         self.target = None;

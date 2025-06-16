@@ -428,9 +428,6 @@ where
         .ok_or(Error::AccountDoesNotExists)?;
     prometheus::set_balance(account_info.data.free as f64);
 
-    // Update page length
-    snapshot.set_page_length(n_pages);
-
     // Handle different phases
     match phase {
         Phase::Snapshot(_) => {
