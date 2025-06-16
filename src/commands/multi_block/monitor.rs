@@ -502,11 +502,15 @@ where
         CurrentSubmission::Incomplete(s) => {
             if s.score() == paged_raw_solution.score {
                 // Same score, just submit missing pages
-                let mut missing_pages = Vec::new();
-                for page in s.get_missing_pages() {
-                    let solution = paged_raw_solution.solution_pages[page as usize].clone();
-                    missing_pages.push((page, solution));
-                }
+                let missing_pages: Vec<(u32, T::Solution)> = s
+                    .get_missing_pages()
+                    .map(|page| {
+                        (
+                            page,
+                            paged_raw_solution.solution_pages[page as usize].clone(),
+                        )
+                    })
+                    .collect();
 
                 log::info!(target: LOG_TARGET, "Submitting {} missing pages for existing submission", missing_pages.len());
 
