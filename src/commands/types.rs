@@ -64,7 +64,7 @@ impl std::str::FromStr for SubmissionStrategy {
 /// TODO: make `solver algorithm` configurable https://github.com/paritytech/polkadot-staking-miner/issues/989
 #[derive(Debug, Clone, clap::Parser)]
 #[cfg_attr(test, derive(PartialEq))]
-pub struct ExperimentalMultiBlockMonitorConfig {
+pub struct MultiBlockMonitorConfig {
     #[clap(long, short, env = "SEED")]
     pub seed_or_path: String,
 

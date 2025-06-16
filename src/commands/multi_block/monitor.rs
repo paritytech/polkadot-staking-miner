@@ -2,7 +2,7 @@ use crate::{
     client::Client,
     commands::{
         multi_block::types::{BlockDetails, CurrentSubmission, IncompleteSubmission, Snapshot},
-        types::{ExperimentalMultiBlockMonitorConfig, Listen, SubmissionStrategy},
+        types::{Listen, MultiBlockMonitorConfig, SubmissionStrategy},
     },
     dynamic::multi_block as dynamic,
     error::Error,
@@ -85,10 +85,7 @@ enum MinerMessage {
 /// │ └─────────────┘ │                    │                 │
 /// └─────────────────┘                    └─────────────────┘
 /// ```
-pub async fn monitor_cmd<T>(
-    client: Client,
-    config: ExperimentalMultiBlockMonitorConfig,
-) -> Result<(), Error>
+pub async fn monitor_cmd<T>(client: Client, config: MultiBlockMonitorConfig) -> Result<(), Error>
 where
     T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
     T::Solution: Send + Sync + 'static,
@@ -196,7 +193,7 @@ where
 /// - Any error causes the entire process to exit
 async fn listener_task<T>(
     client: Client,
-    config: ExperimentalMultiBlockMonitorConfig,
+    config: MultiBlockMonitorConfig,
     miner_tx: mpsc::Sender<MinerMessage>,
 ) -> Result<(), Error>
 where
@@ -318,7 +315,7 @@ where
 async fn miner_task<T>(
     client: Client,
     signer: Signer,
-    config: ExperimentalMultiBlockMonitorConfig,
+    config: MultiBlockMonitorConfig,
     mut miner_rx: mpsc::Receiver<MinerMessage>,
 ) -> Result<(), Error>
 where
