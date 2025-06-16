@@ -17,18 +17,14 @@
 //! # Polkadot Staking Miner.
 //!
 //! Simple bot capable of monitoring a polkadot (and cousins) chain and submitting solutions to the
-//! `pallet-election-provider-multi-phase` and `experimental support for pallet-election-provider-multi-block`.
+//! `pallet-election-provider-multi-block`.
 //! See `help` for more information.
 //!
 //! # Implementation Notes:
 //!
-//! - First draft: Be aware that this is the first draft and there might be bugs, or undefined
-//!   behaviors. Don't attach this bot to an account with lots of funds.
-//! - Quick to crash: The bot is written so that it only continues to work if everything goes well.
-//!   In case of any failure (RPC, logic, IO), it will crash. This was a decision to simplify the
-//!   development. It is intended to run this bot with a `restart = true` way, so that it reports it
-//!   crash, but resumes work thereafter.
-
+//! The miner is designed to operate 24/7. However, if it encounters unrecoverable errors (RPC IO),
+//! it will crash. In a production environment, run it with the `restart = true` setting, which
+//! will report the crash and resume work afterward.
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod client;
@@ -85,7 +81,7 @@ pub struct Opt {
 #[cfg_attr(test, derive(PartialEq))]
 pub enum Command {
     /// Monitor for the phase being signed, then compute.
-    Monitor(commands::types::ExperimentalMultiBlockMonitorConfig),
+    Monitor(commands::types::MultiBlockMonitorConfig),
     /// Check if the staking-miner metadata is compatible to a remote node.
     Info,
 }
@@ -247,7 +243,7 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::types::{ExperimentalMultiBlockMonitorConfig, Listen, SubmissionStrategy};
+    use crate::commands::types::{Listen, MultiBlockMonitorConfig, SubmissionStrategy};
 
     #[test]
     fn cli_monitor_works() {
@@ -270,7 +266,7 @@ mod tests {
                 uri: "hi".to_string(),
                 prometheus_port: 9999,
                 log: "info".to_string(),
-                command: Command::Monitor(ExperimentalMultiBlockMonitorConfig {
+                command: Command::Monitor(MultiBlockMonitorConfig {
                     seed_or_path: "//Alice".to_string(),
                     listen: Listen::Finalized, // Default
                     submission_strategy: SubmissionStrategy::IfLeading, // Default
@@ -296,7 +292,7 @@ mod tests {
 
         assert_eq!(
             opt.command,
-            Command::Monitor(ExperimentalMultiBlockMonitorConfig {
+            Command::Monitor(MultiBlockMonitorConfig {
                 seed_or_path: "//Alice".to_string(),
                 listen: Listen::Finalized,
                 submission_strategy: SubmissionStrategy::IfLeading,
@@ -322,7 +318,7 @@ mod tests {
 
         assert_eq!(
             opt.command,
-            Command::Monitor(ExperimentalMultiBlockMonitorConfig {
+            Command::Monitor(MultiBlockMonitorConfig {
                 seed_or_path: "//Alice".to_string(),
                 listen: Listen::Finalized,
                 submission_strategy: SubmissionStrategy::IfLeading,
