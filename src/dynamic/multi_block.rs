@@ -19,7 +19,7 @@ use crate::{
 	signer::Signer,
 	utils,
 };
-use codec::{Decode, Encode};
+use codec::Decode;
 use futures::{StreamExt, stream::FuturesUnordered};
 use polkadot_sdk::{
 	frame_support::BoundedVec,
@@ -739,12 +739,20 @@ async fn get_latest_account_nonce(
 	api: &ChainClient,
 	account_id: &subxt::config::substrate::AccountId32,
 ) -> Result<u64, Error> {
-	let block_hash = api.blocks().at_latest().await?.hash();
+	let runtime_api_call =
+		subxt::dynamic::runtime_api_call("AccountNonceApi", "account_nonce", vec![
+			Value::from_bytes(account_id),
+		]);
 
-	let account_id_encoded = account_id.encode();
-	let nonce_bytes = api
-		.backend()
-		.call("AccountNonceApi_account_nonce", Some(&account_id_encoded), block_hash)
+	let nonce_value = api
+		.runtime_api()
+		.at_latest()
+		.await
+		.map_err(|e| {
+			log::error!(target: LOG_TARGET, "Failed to get runtime API at latest block: {:?}", e);
+			e
+		})?
+		.call(runtime_api_call)
 		.await
 		.map_err(|e| {
 			log::error!(target: LOG_TARGET, "Failed to get account nonce for {:?}: {:?}", account_id, e);
@@ -752,8 +760,12 @@ async fn get_latest_account_nonce(
 		})?;
 
 	// Decode the nonce from the runtime API response
-	let nonce: u32 = codec::Decode::decode(&mut &nonce_bytes[..])
-		.map_err(|e| Error::Other(format!("Failed to decode account nonce: {}", e)))?;
+	let nonce: u32 = nonce_value
+		.to_value()
+		.map_err(|e| Error::Other(format!("Failed to decode nonce value: {}", e)))?
+		.as_u128()
+		.ok_or_else(|| Error::Other("Failed to decode nonce as u128".to_string()))?
+		as u32;
 
 	Ok(nonce as u64)
 }
