@@ -6,5 +6,4 @@
 //!
 //! In most cases, these will be detected by the integration tests.
 
-pub mod legacy;
 pub mod multi_block;

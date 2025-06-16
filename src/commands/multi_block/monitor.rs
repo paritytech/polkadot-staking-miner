@@ -680,11 +680,7 @@ async fn has_submitted(
 /// Determine if a miner error is critical and should cause the process to exit
 fn is_critical_miner_error(error: &Error) -> bool {
     match error {
-        Error::AlreadySubmitted
-        | Error::BetterScoreExist
-        | Error::IncorrectPhase
-        | Error::TransactionRejected(_)
-        | Error::Join(_)
+        Error::Join(_)
         | Error::Feasibility(_)
         | Error::EmptySnapshot
         | Error::FailedToSubmitPages(_)

@@ -85,15 +85,9 @@ pub struct Opt {
 #[cfg_attr(test, derive(PartialEq))]
 pub enum Command {
     /// Monitor for the phase being signed, then compute.
-    Monitor(commands::types::MonitorConfig),
-    /// Just compute a solution now, and don't submit it.
-    DryRun(commands::types::DryRunConfig),
-    /// Provide a solution that can be submitted to the chain as an emergency response.
-    EmergencySolution(commands::types::EmergencySolutionConfig),
+    Monitor(commands::types::ExperimentalMultiBlockMonitorConfig),
     /// Check if the staking-miner metadata is compatible to a remote node.
     Info,
-    /// Experimental multi-block monitor command.
-    ExperimentalMonitorMultiBlock(commands::types::ExperimentalMultiBlockMonitorConfig),
 }
 
 #[tokio::main]
@@ -116,8 +110,6 @@ async fn main() -> Result<(), Error> {
     }
     log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
 
-    let is_legacy = !matches!(command, Command::ExperimentalMonitorMultiBlock(_));
-
     SHARED_CLIENT
         .set(client.clone())
         .expect("shared client only set once; qed");
@@ -125,48 +117,21 @@ async fn main() -> Result<(), Error> {
     // Start a new tokio task to perform the runtime updates in the background.
     // if this fails then the miner will be stopped and has to be re-started.
     let (tx_upgrade, rx_upgrade) = oneshot::channel::<Error>();
-    tokio::spawn(runtime_upgrade_task(
-        client.chain_api().clone(),
-        tx_upgrade,
-        is_legacy,
-    ));
+    tokio::spawn(runtime_upgrade_task(client.chain_api().clone(), tx_upgrade));
 
-    update_metadata_constants(client.chain_api(), is_legacy)?;
+    update_metadata_constants(client.chain_api())?;
 
     let fut = match command {
         Command::Info => async {
-            let is_compat = if runtime::legacy::is_codegen_valid_for(&client.chain_api().metadata())
-            {
-                "YES"
-            } else {
-                "NO"
-            };
-
             let remote_node = serde_json::to_string_pretty(&runtime_version)
                 .expect("Serialize is infallible; qed");
 
             eprintln!("Remote_node:\n{remote_node}");
-            eprintln!("Compatible: {is_compat}");
 
             Ok(())
         }
         .boxed(),
         Command::Monitor(cfg) => {
-            macros::for_legacy_runtime!(chain, {
-                commands::legacy::monitor_cmd::<MinerConfig>(client, cfg).boxed()
-            })
-        }
-        Command::DryRun(cfg) => {
-            macros::for_legacy_runtime!(chain, {
-                commands::legacy::dry_run_cmd::<MinerConfig>(client, cfg).boxed()
-            })
-        }
-        Command::EmergencySolution(cfg) => {
-            macros::for_legacy_runtime!(chain, {
-                commands::legacy::emergency_solution_cmd::<MinerConfig>(client, cfg).boxed()
-            })
-        }
-        Command::ExperimentalMonitorMultiBlock(cfg) => {
             macros::for_multi_block_runtime!(chain, {
                 commands::multi_block::monitor_cmd::<MinerConfig>(client, cfg).boxed()
             })
@@ -225,7 +190,7 @@ async fn run_command(
 }
 
 /// Runs until the RPC connection fails or updating the metadata failed.
-async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>, is_legacy: bool) {
+async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
     let updater = client.updater();
 
     let mut update_stream = match updater.runtime_updates().await {
@@ -265,7 +230,7 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>, i
         let version = update.runtime_version().spec_version;
         match updater.apply_update(update) {
             Ok(()) => {
-                if let Err(e) = dynamic::update_metadata_constants(&client, is_legacy) {
+                if let Err(e) = dynamic::update_metadata_constants(&client) {
                     let _ = tx.send(e);
                     return;
                 }
@@ -282,9 +247,7 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>, i
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::types::{
-        DryRunConfig, EmergencySolutionConfig, Listen, MonitorConfig, SubmissionStrategy,
-    };
+    use crate::commands::types::{ExperimentalMultiBlockMonitorConfig, Listen, SubmissionStrategy};
 
     #[test]
     fn cli_monitor_works() {
@@ -297,100 +260,6 @@ mod tests {
             "monitor",
             "--seed-or-path",
             "//Alice",
-            "--listen",
-            "head",
-            "--delay",
-            "12",
-            "seq-phragmen",
-        ])
-        .unwrap();
-
-        assert_eq!(
-            opt,
-            Opt {
-                uri: "hi".to_string(),
-                prometheus_port: 9999,
-                log: "info".to_string(),
-                command: Command::Monitor(MonitorConfig {
-                    listen: Listen::Head,
-                    solver: opt::Solver::SeqPhragmen { iterations: 10 },
-                    submission_strategy: SubmissionStrategy::IfLeading,
-                    seed_or_path: "//Alice".to_string(),
-                    delay: 12,
-                    dry_run: false,
-                }),
-            }
-        );
-    }
-
-    #[test]
-    fn cli_dry_run_works() {
-        let opt = Opt::try_parse_from([
-            env!("CARGO_PKG_NAME"),
-            "--uri",
-            "hi",
-            "dry-run",
-            "--seed-or-path",
-            "//Alice",
-            "phrag-mms",
-        ])
-        .unwrap();
-
-        assert_eq!(
-            opt,
-            Opt {
-                uri: "hi".to_string(),
-                prometheus_port: 9999,
-                log: "info".to_string(),
-                command: Command::DryRun(DryRunConfig {
-                    at: None,
-                    solver: opt::Solver::PhragMMS { iterations: 10 },
-                    force_snapshot: false,
-                    force_winner_count: None,
-                    seed_or_path: Some("//Alice".to_string()),
-                }),
-            }
-        );
-    }
-
-    #[test]
-    fn cli_emergency_works() {
-        let opt = Opt::try_parse_from([
-            env!("CARGO_PKG_NAME"),
-            "--uri",
-            "hi",
-            "emergency-solution",
-            "99",
-            "phrag-mms",
-            "--iterations",
-            "1337",
-        ])
-        .unwrap();
-
-        assert_eq!(
-            opt,
-            Opt {
-                uri: "hi".to_string(),
-                prometheus_port: 9999,
-                log: "info".to_string(),
-                command: Command::EmergencySolution(EmergencySolutionConfig {
-                    at: None,
-                    force_winner_count: Some(99),
-                    solver: opt::Solver::PhragMMS { iterations: 1337 },
-                }),
-            }
-        );
-    }
-
-    #[test]
-    fn cli_experimental_monitor_multi_block_works() {
-        let opt = Opt::try_parse_from([
-            env!("CARGO_PKG_NAME"),
-            "--uri",
-            "hi",
-            "experimental-monitor-multi-block",
-            "--seed-or-path",
-            "//Alice",
             "--do-reduce",
         ])
         .unwrap();
@@ -399,28 +268,26 @@ mod tests {
             opt,
             Opt {
                 uri: "hi".to_string(),
-                prometheus_port: 9999,   // Assuming default
-                log: "info".to_string(), // Assuming default
-                command: Command::ExperimentalMonitorMultiBlock(
-                    commands::types::ExperimentalMultiBlockMonitorConfig {
-                        seed_or_path: "//Alice".to_string(),
-                        listen: Listen::Finalized, // Assuming default
-                        submission_strategy: SubmissionStrategy::IfLeading, // Assuming default
-                        do_reduce: true,           // Expect true because flag was present
-                        chunk_size: 0,             // Default value
-                    }
-                ),
+                prometheus_port: 9999,
+                log: "info".to_string(),
+                command: Command::Monitor(ExperimentalMultiBlockMonitorConfig {
+                    seed_or_path: "//Alice".to_string(),
+                    listen: Listen::Finalized, // Default
+                    submission_strategy: SubmissionStrategy::IfLeading, // Default
+                    do_reduce: true,
+                    chunk_size: 0, // Default
+                }),
             }
         );
     }
 
     #[test]
-    fn cli_experimental_monitor_multi_block_default_works() {
+    fn cli_monitor_default_works() {
         let opt = Opt::try_parse_from([
             env!("CARGO_PKG_NAME"),
             "--uri",
             "hi",
-            "experimental-monitor-multi-block",
+            "monitor",
             "--seed-or-path",
             "//Alice",
             // No --do-reduce flag
@@ -429,25 +296,23 @@ mod tests {
 
         assert_eq!(
             opt.command,
-            Command::ExperimentalMonitorMultiBlock(
-                commands::types::ExperimentalMultiBlockMonitorConfig {
-                    seed_or_path: "//Alice".to_string(),
-                    listen: Listen::Finalized,
-                    submission_strategy: SubmissionStrategy::IfLeading,
-                    do_reduce: false, // Expect false (default)
-                    chunk_size: 0,    // Default value
-                }
-            )
+            Command::Monitor(ExperimentalMultiBlockMonitorConfig {
+                seed_or_path: "//Alice".to_string(),
+                listen: Listen::Finalized,
+                submission_strategy: SubmissionStrategy::IfLeading,
+                do_reduce: false, // Default
+                chunk_size: 0,    // Default
+            })
         );
     }
 
     #[test]
-    fn cli_experimental_monitor_multi_block_with_chunk_size_works() {
+    fn cli_monitor_with_chunk_size_works() {
         let opt = Opt::try_parse_from([
             env!("CARGO_PKG_NAME"),
             "--uri",
             "hi",
-            "experimental-monitor-multi-block",
+            "monitor",
             "--seed-or-path",
             "//Alice",
             "--chunk-size",
@@ -457,26 +322,13 @@ mod tests {
 
         assert_eq!(
             opt.command,
-            Command::ExperimentalMonitorMultiBlock(
-                commands::types::ExperimentalMultiBlockMonitorConfig {
-                    seed_or_path: "//Alice".to_string(),
-                    listen: Listen::Finalized,
-                    submission_strategy: SubmissionStrategy::IfLeading,
-                    do_reduce: false, // Default value
-                    chunk_size: 4,    // Explicitly set to 4
-                }
-            )
+            Command::Monitor(ExperimentalMultiBlockMonitorConfig {
+                seed_or_path: "//Alice".to_string(),
+                listen: Listen::Finalized,
+                submission_strategy: SubmissionStrategy::IfLeading,
+                do_reduce: false, // Default
+                chunk_size: 4,    // Explicitly set
+            })
         );
-    }
-
-    #[test]
-    #[should_panic(expected = "StakingAsync is not supported in legacy monitor")]
-    fn for_legacy_runtime_panics_on_staking_async() {
-        use crate::opt::Chain;
-        let chain = Chain::StakingAsync;
-        macros::for_legacy_runtime!(chain, {
-            // This block should never be executed
-            let _ = ();
-        });
     }
 }

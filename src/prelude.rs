@@ -31,5 +31,3 @@ pub type Accuracy = polkadot_sdk::sp_runtime::Perbill;
 pub type Storage = subxt::storage::Storage<Config, ChainClient>;
 /// Extrinsic params builder.
 pub type ExtrinsicParamsBuilder = subxt::config::DefaultExtrinsicParamsBuilder<Config>;
-/// Balance type.
-pub type Balance = u128;

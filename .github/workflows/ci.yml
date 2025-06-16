@@ -111,7 +111,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Get Polkadot and Staking Miner Playground binaries
+      - name: Get Polkadot binaries
         uses: ./.github/workflows/actions/prepare-binaries
 
       - name: Cache Rust dependencies
