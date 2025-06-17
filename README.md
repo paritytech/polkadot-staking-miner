@@ -76,7 +76,7 @@ Here are some notable options you can use with the command:
 | `--do-reduce`                        | Enables solution reduction to make submissions more efficient.                      | Off             |
 | `--listen <finalized\|head>`         | Determines the listening mode.                                                      | finalized       |
 | `--submission-strategy <strategy>`   | Sets the submission strategy.                                                       | `if-leading`    |
-| `--min_signed_phase_blocks <number>` | Minimum number of blocks required in the signed phase before submitting a solution. | 10              |
+| `--min-signed-phase-blocks <number>` | Minimum number of blocks required in the signed phase before submitting a solution. | 10              |
 
 Refer to `--help` for the full list of options.
 
