@@ -439,7 +439,7 @@ where
 		},
 		Phase::Signed(blocks_remaining) => {
 			if blocks_remaining <= config.min_signed_phase_blocks {
-				log::info!(
+				log::trace!(
 					target: LOG_TARGET,
 					"Signed phase has only {} blocks remaining (need at least {}), skipping mining to avoid incomplete submission",
 					blocks_remaining,
