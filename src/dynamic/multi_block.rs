@@ -792,7 +792,7 @@ async fn validate_signed_phase_or_bail(
 					}
 				}
 
-				return Ok(false);
+				Ok(false)
 			} else {
 				log::debug!(
 					target: LOG_TARGET,
