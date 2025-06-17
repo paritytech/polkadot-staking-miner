@@ -736,7 +736,8 @@ pub(crate) async fn bail(client: &Client, signer: &Signer, listen: Listen) -> Re
 }
 
 /// Helper function to validate that we're still in Signed phase
-/// If not in Signed phase and we have an incomplete submission, bail it
+/// If not in Signed phase, we have an incomplete submission and less than min_signed_phase_blocks,
+/// bail it.
 /// Returns true if we should continue, false if we should abort
 async fn validate_signed_phase_or_bail(
 	client: &Client,
@@ -774,17 +775,12 @@ async fn validate_signed_phase_or_bail(
 
 				if let Some(submission) = maybe_submission {
 					// We have a submission - check if it's incomplete
-					let n_pages = crate::static_types::multi_block::Pages::get();
-					let submitted_pages: usize =
-						submission.pages.0.iter().map(|&b| if b { 1 } else { 0 }).sum();
-
-					if submitted_pages < n_pages as usize {
+					let is_complete = submission.pages.0.iter().all(|&p| p);
+					if !is_complete {
 						log::info!(
 							target: LOG_TARGET,
-							"Bailing incomplete submission for round {} ({}/{} pages submitted) due to insufficient signed blocks remaining",
-							round,
-							submitted_pages,
-							n_pages
+							"Bailing incomplete submission for round {} due to insufficient signed blocks remaining",
+							round
 						);
 
 						bail(client, signer, listen).await?;
