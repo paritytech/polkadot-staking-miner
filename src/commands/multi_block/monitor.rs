@@ -449,10 +449,6 @@ where
 			}
 			log::trace!(target: LOG_TARGET, "Signed phase with {} blocks remaining - checking for mining opportunity", blocks_remaining);
 		},
-		Phase::SignedValidation(_) => {
-			log::trace!(target: LOG_TARGET, "In SignedValidation phase - no mining needed");
-			return Ok(());
-		},
 		_ => {
 			log::trace!(target: LOG_TARGET, "Phase {:?} - nothing to do", phase);
 			return Ok(());
