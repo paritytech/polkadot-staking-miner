@@ -805,38 +805,10 @@ async fn validate_signed_phase_or_bail(
 		_ => {
 			log::warn!(
 				target: LOG_TARGET,
-				"Phase changed from Signed to {:?} during submission for round {} - cannot bail",
+				"Phase changed from Signed to {:?} during submission for round {}",
 				current_phase,
 				round
 			);
-
-			// Check if we have a partial submission - we can only log it since bail is not possible
-			let maybe_submission = storage
-				.fetch(
-					&runtime::storage()
-						.multi_block_election_signed()
-						.submission_metadata_storage(round, signer.account_id()),
-				)
-				.await?;
-
-			if let Some(submission) = maybe_submission {
-				// We have a submission - check if it's incomplete
-				let n_pages = crate::static_types::multi_block::Pages::get();
-				let submitted_pages: usize =
-					submission.pages.0.iter().map(|&b| if b { 1 } else { 0 }).sum();
-
-				if submitted_pages < n_pages as usize {
-					log::warn!(
-						target: LOG_TARGET,
-						"Found incomplete submission for round {} ({}/{} pages submitted) but cannot bail in phase {:?}",
-						round,
-						submitted_pages,
-						n_pages,
-						current_phase
-					);
-				}
-			}
-
 			Ok(false)
 		},
 	}
