@@ -23,6 +23,15 @@ use std::collections::HashSet;
 
 use tokio::sync::mpsc;
 
+async fn signed_phase(client: &Client, listen: Listen) -> Result<bool, Error> {
+	let storage = utils::storage_at_head(client, listen).await?;
+	let current_phase = storage
+		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
+		.await?;
+
+	Ok(matches!(current_phase, Phase::Signed(_)))
+}
+
 /// Message types for communication between listener and miner
 enum MinerMessage {
 	/// Request to process a block with given details
@@ -337,6 +346,7 @@ where
 					submission_strategy: config.submission_strategy,
 					do_reduce: config.do_reduce,
 					chunk_size: config.chunk_size,
+					min_signed_phase_blocks: config.min_signed_phase_blocks,
 				};
 				let result = process_block::<T>(
 					client.clone(),
@@ -391,6 +401,7 @@ struct ProcessConfig {
 	submission_strategy: SubmissionStrategy,
 	do_reduce: bool,
 	chunk_size: usize,
+	min_signed_phase_blocks: u32,
 }
 
 async fn process_block<T>(
@@ -426,8 +437,17 @@ where
 			dynamic::fetch_missing_snapshots_lossy::<T>(snapshot, &storage, round).await?;
 			return Ok(());
 		},
-		Phase::Signed(_) => {
-			log::trace!(target: LOG_TARGET, "Signed phase - checking for mining opportunity");
+		Phase::Signed(blocks_remaining) => {
+			if blocks_remaining <= config.min_signed_phase_blocks {
+				log::trace!(
+					target: LOG_TARGET,
+					"Signed phase has only {} blocks remaining (need at least {}), skipping mining to avoid incomplete submission",
+					blocks_remaining,
+					config.min_signed_phase_blocks
+				);
+				return Ok(());
+			}
+			log::trace!(target: LOG_TARGET, "Signed phase with {} blocks remaining - checking for mining opportunity", blocks_remaining);
 		},
 		_ => {
 			log::trace!(target: LOG_TARGET, "Phase {:?} - nothing to do", phase);
@@ -489,6 +509,13 @@ where
 				return Ok(());
 			}
 			log::debug!(target: LOG_TARGET, "Reverting previous submission to submit better solution");
+
+			// Verify we're still in signed phase before bailing
+			if !signed_phase(&client, listen).await? {
+				log::warn!(target: LOG_TARGET, "Phase changed, cannot bail existing submission");
+				return Ok(());
+			}
+
 			dynamic::bail(&client, &signer, listen).await?;
 		},
 		CurrentSubmission::Incomplete(s) => {
@@ -508,6 +535,7 @@ where
 						missing_pages,
 						listen,
 						round,
+						config.min_signed_phase_blocks,
 					)
 					.await?;
 				} else {
@@ -518,6 +546,7 @@ where
 						listen,
 						config.chunk_size,
 						round,
+						config.min_signed_phase_blocks,
 					)
 					.await?;
 				}
@@ -525,6 +554,13 @@ where
 			}
 
 			log::debug!(target: LOG_TARGET, "Reverting incomplete submission to submit new solution");
+
+			// Verify we're still in signed phase before bailing
+			if !signed_phase(&client, listen).await? {
+				log::warn!(target: LOG_TARGET, "Phase changed, cannot bail incomplete submission");
+				return Ok(());
+			}
+
 			dynamic::bail(&client, &signer, listen).await?;
 		},
 		CurrentSubmission::NotStarted => {
@@ -544,9 +580,17 @@ where
 	log::info!(target: LOG_TARGET, "Submitting solution with score {:?} for round {}", paged_raw_solution.score, round);
 
 	// Submit the solution
-	match dynamic::submit(&client, &signer, paged_raw_solution, listen, config.chunk_size, round)
-		.timed()
-		.await
+	match dynamic::submit(
+		&client,
+		&signer,
+		paged_raw_solution,
+		listen,
+		config.chunk_size,
+		round,
+		config.min_signed_phase_blocks,
+	)
+	.timed()
+	.await
 	{
 		(Ok(_), dur) => {
 			log::info!(
