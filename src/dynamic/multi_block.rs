@@ -570,7 +570,7 @@ async fn submit_pages_batch<T: MinerConfig + 'static>(
 					{
 						let page = solution_stored.2;
 
-						log::info!(
+						log::debug!(
 							target: LOG_TARGET,
 							"Page {page} included in block {:?}",
 							hash
@@ -781,7 +781,7 @@ async fn validate_signed_phase_or_bail(
 					if submitted_pages < n_pages as usize {
 						log::info!(
 							target: LOG_TARGET,
-							"Bailing incomplete submission for round {} ({}/{} pages submitted) due to insufficient time",
+							"Bailing incomplete submission for round {} ({}/{} pages submitted) due to insufficient signed blocks remaining",
 							round,
 							submitted_pages,
 							n_pages
@@ -794,9 +794,9 @@ async fn validate_signed_phase_or_bail(
 
 				Ok(false)
 			} else {
-				log::debug!(
+				log::trace!(
 					target: LOG_TARGET,
-					"Signed phase has {} blocks remaining, sufficient time to continue",
+					"Signed phase has {} blocks remaining, enough blocks to continue",
 					blocks_remaining
 				);
 				Ok(true)
