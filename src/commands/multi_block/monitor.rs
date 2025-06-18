@@ -429,12 +429,13 @@ where
 	// Check if block is still fresh to avoid processing stale blocks.
 	// This prevents "Invalid block hash" errors when blocks become too old.
 	// This might happen in the following scenario:
-	// - block N: the miner tasks starts mining a solution, submits the score, waits for it to be on
-	//   chain, submits pages etc - which is a slow operation in comparison with block production
+	// - Block N: the miner task begins mining a solution, submits the score, waits for it to be
+	//   on-chain, and submits pages, etc. This is a slow operation compared to the speed of block
+	//   production.
 	// - the channel buffer allows one block to be queued while processing another one
 	// - block N+1 gets queued right after N before the miner tasks starts processing N
 	// - block N+2, N+3, ... , N+M are immediately discarded because the miner task is busy
-	//   (backpressure)
+	//   (`TrySendError::Full` => backpressure)
 	// - When the miner task completes processing block N, it finally processes block N+1. However,
 	// if several minutes have passed, the RPC node may no longer have the block's state available,
 	// resulting in an "invalid block hash" error. This error is not critical, as block N+1 was
