@@ -94,7 +94,6 @@ async fn main() -> Result<(), Error> {
 
 	let client = Client::new(&uri).await?;
 
-	// Get runtime version using Core_version call with automatic decoding
 	let runtime_version: polkadot_sdk::sp_version::RuntimeVersion = client
 		.chain_api()
 		.runtime_api()
