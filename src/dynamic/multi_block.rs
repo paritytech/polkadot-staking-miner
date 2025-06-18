@@ -486,6 +486,19 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 		crate::prometheus::on_submission_success();
 		Ok(())
 	} else {
+		// Final attempt to bail incomplete submission before returning error
+		log::warn!(
+			target: LOG_TARGET,
+			"All page submission attempts failed, attempting final bail to avoid slashing"
+		);
+
+		if !validate_signed_phase_or_bail(client, signer, listen, round, min_signed_phase_blocks)
+			.await?
+		{
+			log::info!(target: LOG_TARGET, "Bailed incomplete submission due to insufficient blocks remaining");
+			return Ok(());
+		}
+
 		Err(Error::FailedToSubmitPages(failed_pages.len()))
 	}
 }
