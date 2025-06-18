@@ -347,6 +347,7 @@ where
 					do_reduce: config.do_reduce,
 					chunk_size: config.chunk_size,
 					min_signed_phase_blocks: config.min_signed_phase_blocks,
+					max_block_age: 10, // Allow up to 10 blocks difference by default
 				};
 				let result = process_block::<T>(
 					client.clone(),
@@ -402,6 +403,7 @@ struct ProcessConfig {
 	do_reduce: bool,
 	chunk_size: usize,
 	min_signed_phase_blocks: u32,
+	max_block_age: u32,
 }
 
 async fn process_block<T>(
@@ -423,6 +425,32 @@ where
 	let BlockDetails { storage, phase, round, n_pages, desired_targets, block_number, .. } = state;
 
 	log::trace!(target: LOG_TARGET, "Processing block #{} (round {}, phase {:?})", block_number, round, phase);
+
+	// Check if block is still fresh to avoid processing stale blocks.
+	// This prevents "Invalid block hash" errors when blocks become too old.
+	// This might happen in the following scenario:
+	// - block N: the miner tasks starts mining a solution, submits the score, waits for it to be on
+	//   chain, submits pages etc - which is a slow operation in comparison with block production
+	// - the channel buffer allows one block to be queued while processing another one
+	// - block N+1 gets queued right after N before the miner tasks starts processing N
+	// - block N+2, N+3, ... , N+M are immediately discarded because the miner task is busy
+	//   (backpressure)
+	// - When the miner task completes processing block N, it finally processes block N+1. However,
+	// if several minutes have passed, the RPC node may no longer have the block's state available,
+	// resulting in an "invalid block hash" error. This error is not critical, as block N+1 was
+	// intended to be discarded silently, just like blocks N+2, N+3, and so on. However, we can
+	// improve this by avoiding the processing of "old" blocks altogether.
+	let current_block_number = client.chain_api().blocks().at_latest().await?.header().number;
+	if current_block_number.saturating_sub(block_number) > config.max_block_age {
+		log::warn!(
+			target: LOG_TARGET,
+			"Skipping stale block #{} (current: #{}, age: {})",
+			block_number,
+			current_block_number,
+			current_block_number.saturating_sub(block_number)
+		);
+		return Ok(());
+	}
 
 	// Update balance
 	let account_info = storage
