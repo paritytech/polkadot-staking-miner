@@ -2,7 +2,7 @@ use crate::{
 	client::Client,
 	commands::{
 		multi_block::types::{BlockDetails, CurrentSubmission, IncompleteSubmission, Snapshot},
-		types::{Listen, MultiBlockMonitorConfig, SubmissionStrategy},
+		types::{MultiBlockMonitorConfig, SubmissionStrategy},
 	},
 	dynamic::multi_block as dynamic,
 	error::Error,
@@ -23,8 +23,8 @@ use std::collections::HashSet;
 
 use tokio::sync::mpsc;
 
-async fn signed_phase(client: &Client, listen: Listen) -> Result<bool, Error> {
-	let storage = utils::storage_at_head(client, listen).await?;
+async fn signed_phase(client: &Client) -> Result<bool, Error> {
+	let storage = utils::storage_at_head(client).await?;
 	let current_phase = storage
 		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
 		.await?;
@@ -149,8 +149,7 @@ where
 	// Spawn the listener task
 	let listener_handle = {
 		let client = client.clone();
-		let config = config.clone();
-		tokio::spawn(async move { listener_task::<T>(client, config, miner_tx).await })
+		tokio::spawn(async move { listener_task::<T>(client, miner_tx).await })
 	};
 
 	// Wait for either task to complete (which should never happen in normal operation)
@@ -200,11 +199,7 @@ where
 /// - Managing phase transitions and snapshot cleanup
 /// - Never blocking on slow operations to avoid subscription buffering
 /// - Any error causes the entire process to exit
-async fn listener_task<T>(
-	client: Client,
-	config: MultiBlockMonitorConfig,
-	miner_tx: mpsc::Sender<MinerMessage>,
-) -> Result<(), Error>
+async fn listener_task<T>(client: Client, miner_tx: mpsc::Sender<MinerMessage>) -> Result<(), Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
 	T::Solution: Send + Sync + 'static,
@@ -213,14 +208,11 @@ where
 	T::VoterSnapshotPerBlock: Send + Sync + 'static,
 	T::MaxVotesPerVoter: Send + Sync + 'static,
 {
-	let mut subscription = match config.listen {
-		Listen::Head => client.chain_api().blocks().subscribe_best().await?,
-		Listen::Finalized => client.chain_api().blocks().subscribe_finalized().await?,
-	};
+	let mut subscription = client.chain_api().blocks().subscribe_finalized().await?;
 
 	let mut prev_block_signed_phase = false;
 
-	log::trace!(target: LOG_TARGET, "Listener task started, watching for {:?} blocks", config.listen);
+	log::trace!(target: LOG_TARGET, "Listener task started, watching for finalized blocks");
 
 	loop {
 		let (at, block_hash) = tokio::select! {
@@ -242,7 +234,7 @@ where
 					}
 					// The subscription was dropped unexpectedly
 					None => {
-						log::error!(target: LOG_TARGET, "Subscription to `{:?}` terminated unexpectedly", config.listen);
+						log::error!(target: LOG_TARGET, "Subscription to finalized blocks terminated unexpectedly");
 						return Err(Error::Other("Subscription terminated unexpectedly".to_string()));
 					}
 				}
@@ -353,7 +345,6 @@ where
 					state,
 					&mut snapshot,
 					signer.clone(),
-					config.listen,
 					process_config,
 				)
 				.await;
@@ -409,7 +400,6 @@ async fn process_block<T>(
 	state: BlockDetails,
 	snapshot: &mut Snapshot<T>,
 	signer: Signer,
-	listen: Listen,
 	config: ProcessConfig,
 ) -> Result<(), Error>
 where
@@ -460,13 +450,8 @@ where
 	let (target_snapshot, voter_snapshot) = snapshot.get();
 
 	// Check if we already submitted for this round
-	if has_submitted(
-		&utils::storage_at_head(&client, listen).await?,
-		round,
-		signer.account_id(),
-		n_pages,
-	)
-	.await?
+	if has_submitted(&utils::storage_at_head(&client).await?, round, signer.account_id(), n_pages)
+		.await?
 	{
 		log::trace!(target: LOG_TARGET, "Already submitted for round {}, skipping", round);
 		return Ok(());
@@ -498,7 +483,7 @@ where
 	};
 
 	// Get latest storage state (chain may have progressed while we were mining)
-	let storage_head = utils::storage_at_head(&client, listen).await?;
+	let storage_head = utils::storage_at_head(&client).await?;
 
 	// Handle existing submissions
 	match get_submission(&storage_head, round, signer.account_id(), n_pages).await? {
@@ -511,12 +496,12 @@ where
 			log::debug!(target: LOG_TARGET, "Reverting previous submission to submit better solution");
 
 			// Verify we're still in signed phase before bailing
-			if !signed_phase(&client, listen).await? {
+			if !signed_phase(&client).await? {
 				log::warn!(target: LOG_TARGET, "Phase changed, cannot bail existing submission");
 				return Ok(());
 			}
 
-			dynamic::bail(&client, &signer, listen).await?;
+			dynamic::bail(&client, &signer).await?;
 		},
 		CurrentSubmission::Incomplete(s) => {
 			if s.score() == paged_raw_solution.score {
@@ -533,7 +518,6 @@ where
 						&client,
 						&signer,
 						missing_pages,
-						listen,
 						round,
 						config.min_signed_phase_blocks,
 					)
@@ -543,7 +527,6 @@ where
 						&client,
 						&signer,
 						missing_pages,
-						listen,
 						config.chunk_size,
 						round,
 						config.min_signed_phase_blocks,
@@ -556,12 +539,12 @@ where
 			log::debug!(target: LOG_TARGET, "Reverting incomplete submission to submit new solution");
 
 			// Verify we're still in signed phase before bailing
-			if !signed_phase(&client, listen).await? {
+			if !signed_phase(&client).await? {
 				log::warn!(target: LOG_TARGET, "Phase changed, cannot bail incomplete submission");
 				return Ok(());
 			}
 
-			dynamic::bail(&client, &signer, listen).await?;
+			dynamic::bail(&client, &signer).await?;
 		},
 		CurrentSubmission::NotStarted => {
 			log::debug!(target: LOG_TARGET, "No existing submission found");
@@ -584,7 +567,6 @@ where
 		&client,
 		&signer,
 		paged_raw_solution,
-		listen,
 		config.chunk_size,
 		round,
 		config.min_signed_phase_blocks,

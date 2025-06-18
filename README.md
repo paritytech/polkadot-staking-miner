@@ -74,11 +74,11 @@ Here are some notable options you can use with the command:
 | :----------------------------------- | :---------------------------------------------------------------------------------- | :-------------- |
 | `--chunk-size <number>`              | Controls how many solution pages are submitted concurrently.                        | 0 (all at once) |
 | `--do-reduce`                        | Enables solution reduction to make submissions more efficient.                      | Off             |
-| `--listen <finalized\|head>`         | Determines the listening mode.                                                      | finalized       |
-| `--submission-strategy <strategy>`   | Sets the submission strategy.                                                       | `if-leading`    |
 | `--min-signed-phase-blocks <number>` | Minimum number of blocks required in the signed phase before submitting a solution. | 10              |
 
 Refer to `--help` for the full list of options.
+
+NOTE: the miner only listens to finalized blocks. Listening to the best blocks is not offered as an option.
 
 ### Prepare your SEED
 

@@ -16,7 +16,7 @@
 
 use crate::{
 	client::Client,
-	commands::types::{Listen, SubmissionStrategy},
+	commands::types::SubmissionStrategy,
 	error::Error,
 	prelude::{ChainClient, Config, Hash, Storage},
 };
@@ -28,10 +28,7 @@ use std::{
 	task::{Context, Poll},
 	time::{Duration, Instant},
 };
-use subxt::{
-	error::RpcError,
-	tx::{TxInBlock, TxProgress},
-};
+use subxt::tx::{TxInBlock, TxProgress};
 
 pin_project! {
 	pub struct Timed<Fut>
@@ -81,65 +78,14 @@ pub async fn storage_at(block: Option<Hash>, api: &ChainClient) -> Result<Storag
 	}
 }
 
-pub async fn storage_at_head(api: &Client, listen: Listen) -> Result<Storage, Error> {
-	let hash = get_latest_head(api.chain_api(), listen).await?;
+pub async fn storage_at_head(api: &Client) -> Result<Storage, Error> {
+	let hash = get_latest_finalized_head(api.chain_api()).await?;
 	storage_at(Some(hash), api.chain_api()).await
 }
 
-/// Wait for the transaction to be in a block.
-///
-/// **Note:** transaction statuses like `Invalid`/`Usurped`/`Dropped` indicate with some
-/// probability that the transaction will not make it into a block but there is no guarantee
-/// that this is true. In those cases the stream is closed however, so you currently have no way to
-/// find out if they finally made it into a block or not.
-pub async fn wait_for_in_block<T, C>(
-	mut tx: TxProgress<T, C>,
-) -> Result<TxInBlock<T, C>, subxt::Error>
-where
-	T: subxt::Config + Clone,
-	C: subxt::client::OnlineClientT<T> + std::fmt::Debug + Clone,
-{
-	use subxt::{error::TransactionError, tx::TxStatus};
-
-	while let Some(status) = tx.next().await {
-		match status {
-			Ok(status) => match status {
-				// Finalized or otherwise in a block! Return.
-				TxStatus::InBestBlock(s) | TxStatus::InFinalizedBlock(s) => return Ok(s),
-				// Error scenarios; return the error.
-				TxStatus::Error { message } => return Err(TransactionError::Error(message).into()),
-				TxStatus::Invalid { message } => {
-					return Err(TransactionError::Invalid(message).into());
-				},
-				TxStatus::Dropped { message } => {
-					return Err(TransactionError::Dropped(message).into());
-				},
-				// Ignore anything else and wait for next status event:
-				_ => continue,
-			},
-			Err(e) => {
-				// Handle reconnection case with the reconnecting RPC client
-				if e.is_disconnected_will_reconnect() {
-					continue;
-				}
-				return Err(e);
-			},
-		}
-	}
-	Err(RpcError::SubscriptionDropped.into())
-}
-
-pub async fn get_latest_head(api: &ChainClient, listen: Listen) -> Result<Hash, Error> {
-	match listen {
-		Listen::Head => {
-			let block = api.blocks().at_latest().await?;
-			Ok(block.hash())
-		},
-		Listen::Finalized => {
-			let finalized_block_ref = api.backend().latest_finalized_block_ref().await?;
-			Ok(finalized_block_ref.hash())
-		},
-	}
+pub async fn get_latest_finalized_head(api: &ChainClient) -> Result<Hash, Error> {
+	let finalized_block_ref = api.backend().latest_finalized_block_ref().await?;
+	Ok(finalized_block_ref.hash())
 }
 
 /// Returns `true` if `our_score` better the onchain `best_score` according the given strategy.
@@ -159,16 +105,11 @@ pub fn score_passes_strategy(
 	}
 }
 
-/// Wait for the transaction to be included in a block according to the listen strategy
-/// which can be either `Listen::Finalized` or `Listen::Head`.
-pub async fn wait_tx_in_block_for_strategy(
+/// Wait for the transaction to be included in a finalized block.
+pub async fn wait_tx_in_finalized_block(
 	tx: TxProgress<Config, ChainClient>,
-	listen: Listen,
 ) -> Result<TxInBlock<Config, ChainClient>, Error> {
-	match listen {
-		Listen::Finalized => tx.wait_for_finalized().await.map_err(Into::into),
-		Listen::Head => wait_for_in_block(tx).await.map_err(Into::into),
-	}
+	tx.wait_for_finalized().await.map_err(Into::into)
 }
 
 #[cfg(test)]

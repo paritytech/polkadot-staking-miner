@@ -261,7 +261,7 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::commands::types::{Listen, MultiBlockMonitorConfig, SubmissionStrategy};
+	use crate::commands::types::{MultiBlockMonitorConfig, SubmissionStrategy};
 
 	#[test]
 	fn cli_monitor_works() {
@@ -284,7 +284,6 @@ mod tests {
 			log: "info".to_string(),
 			command: Command::Monitor(MultiBlockMonitorConfig {
 				seed_or_path: "//Alice".to_string(),
-				listen: Listen::Finalized,                          // Default
 				submission_strategy: SubmissionStrategy::IfLeading, // Default
 				do_reduce: true,
 				chunk_size: 0,               // Default
@@ -310,7 +309,6 @@ mod tests {
 			opt.command,
 			Command::Monitor(MultiBlockMonitorConfig {
 				seed_or_path: "//Alice".to_string(),
-				listen: Listen::Finalized,
 				submission_strategy: SubmissionStrategy::IfLeading,
 				do_reduce: false,            // Default
 				chunk_size: 0,               // Default
@@ -337,7 +335,6 @@ mod tests {
 			opt.command,
 			Command::Monitor(MultiBlockMonitorConfig {
 				seed_or_path: "//Alice".to_string(),
-				listen: Listen::Finalized,
 				submission_strategy: SubmissionStrategy::IfLeading,
 				do_reduce: false,            // Default
 				chunk_size: 4,               // Explicitly set
@@ -364,7 +361,6 @@ mod tests {
 			opt.command,
 			Command::Monitor(MultiBlockMonitorConfig {
 				seed_or_path: "//Alice".to_string(),
-				listen: Listen::Finalized,
 				submission_strategy: SubmissionStrategy::IfLeading,
 				do_reduce: false,           // Default
 				chunk_size: 0,              // Default

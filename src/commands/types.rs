@@ -1,19 +1,5 @@
 use polkadot_sdk::sp_runtime::Perbill;
 
-/// The type of event to listen to.
-///
-///
-/// Typically, finalized is safer and there is no chance of anything going wrong, but it can be
-/// slower. It is recommended to use finalized, if the duration of the signed phase is longer
-/// than the the finality delay.
-#[derive(clap::ValueEnum, Debug, Copy, Clone, PartialEq)]
-pub enum Listen {
-	/// Latest finalized head of the canonical chain.
-	Finalized,
-	/// Latest head of the canonical chain.
-	Head,
-}
-
 /// Submission strategy to use.
 #[derive(Debug, Copy, Clone)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -67,9 +53,6 @@ impl std::str::FromStr for SubmissionStrategy {
 pub struct MultiBlockMonitorConfig {
 	#[clap(long, short, env = "SEED")]
 	pub seed_or_path: String,
-
-	#[clap(long, value_enum, default_value_t = Listen::Finalized)]
-	pub listen: Listen,
 
 	#[clap(long, value_parser, default_value = "if-leading")]
 	pub submission_strategy: SubmissionStrategy,
