@@ -42,7 +42,6 @@ mod static_types;
 mod utils;
 
 use clap::Parser;
-use codec::Decode;
 use error::Error;
 use futures::future::{BoxFuture, FutureExt};
 use tokio::sync::oneshot;
@@ -95,18 +94,14 @@ async fn main() -> Result<(), Error> {
 
 	let client = Client::new(&uri).await?;
 
-	// Get full runtime version using ChainHead backend Core_version call
-	let latest_block = client.chain_api().blocks().at_latest().await?;
-	let version_bytes = client
+	// Get runtime version using Core_version call with automatic decoding
+	let runtime_version: polkadot_sdk::sp_version::RuntimeVersion = client
 		.chain_api()
-		.backend()
-		.call("Core_version", None, latest_block.hash())
+		.runtime_api()
+		.at_latest()
+		.await?
+		.call_raw("Core_version", None)
 		.await?;
-
-	// Decode the runtime version using SDK RuntimeVersion
-	let runtime_version: polkadot_sdk::sp_version::RuntimeVersion =
-		Decode::decode(&mut &version_bytes[..])
-			.map_err(|e| Error::Other(format!("Failed to decode runtime version: {}", e)))?;
 
 	let chain = opt::Chain::try_from(&runtime_version)?;
 	if let Err(e) = prometheus::run(prometheus_port).await {
