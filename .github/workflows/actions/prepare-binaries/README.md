@@ -1,4 +1,3 @@
-# Prepare polkadot and staking-miner-playground binaries
+# Prepare polkadot binaries
 
-This action downloads the Polkadot and Staking miner binaries produced from workflows
-`build-polkadot-for-nightly.yml` and `build-staking-miner-playground-for-nightly.yml` and puts them into the `$PATH`.
+This action downloads the Polkadot binaries produced from workflows `build-polkadot-for-nightly.yml` and puts them into the `$PATH`.

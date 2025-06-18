@@ -84,4 +84,10 @@ pub struct MultiBlockMonitorConfig {
 	/// submitting the next chunk.
 	#[clap(long, default_value_t = 0)]
 	pub chunk_size: usize,
+
+	/// Minimum number of blocks required in the signed phase before submitting a solution.
+	/// If the signed phase has fewer blocks remaining, the miner will skip mining to avoid
+	/// incomplete submissions and will bail any existing incomplete submissions.
+	#[clap(long, default_value_t = 10, value_parser = clap::value_parser!(u32).range(1..))]
+	pub min_signed_phase_blocks: u32,
 }

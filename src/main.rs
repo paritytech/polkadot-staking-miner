@@ -287,7 +287,8 @@ mod tests {
 				listen: Listen::Finalized,                          // Default
 				submission_strategy: SubmissionStrategy::IfLeading, // Default
 				do_reduce: true,
-				chunk_size: 0, // Default
+				chunk_size: 0,               // Default
+				min_signed_phase_blocks: 10, // Default
 			}),
 		});
 	}
@@ -311,8 +312,9 @@ mod tests {
 				seed_or_path: "//Alice".to_string(),
 				listen: Listen::Finalized,
 				submission_strategy: SubmissionStrategy::IfLeading,
-				do_reduce: false, // Default
-				chunk_size: 0,    // Default
+				do_reduce: false,            // Default
+				chunk_size: 0,               // Default
+				min_signed_phase_blocks: 10, // Default
 			})
 		);
 	}
@@ -337,8 +339,36 @@ mod tests {
 				seed_or_path: "//Alice".to_string(),
 				listen: Listen::Finalized,
 				submission_strategy: SubmissionStrategy::IfLeading,
-				do_reduce: false, // Default
-				chunk_size: 4,    // Explicitly set
+				do_reduce: false,            // Default
+				chunk_size: 4,               // Explicitly set
+				min_signed_phase_blocks: 10, // Default
+			})
+		);
+	}
+
+	#[test]
+	fn cli_monitor_with_min_signed_phase_blocks_works() {
+		let opt = Opt::try_parse_from([
+			env!("CARGO_PKG_NAME"),
+			"--uri",
+			"hi",
+			"monitor",
+			"--seed-or-path",
+			"//Alice",
+			"--min-signed-phase-blocks",
+			"5",
+		])
+		.unwrap();
+
+		assert_eq!(
+			opt.command,
+			Command::Monitor(MultiBlockMonitorConfig {
+				seed_or_path: "//Alice".to_string(),
+				listen: Listen::Finalized,
+				submission_strategy: SubmissionStrategy::IfLeading,
+				do_reduce: false,           // Default
+				chunk_size: 0,              // Default
+				min_signed_phase_blocks: 5, // Explicitly set
 			})
 		);
 	}

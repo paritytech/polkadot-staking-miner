@@ -68,22 +68,15 @@ To mine a solution and earn rewards, use a command like the following:
 polkadot-staking-miner --uri ws://127.0.0.1:9946 monitor --seed-or-path //Alice
 ```
 
-The `--chunk-size` option controls how many solution pages are submitted concurrently. When set to 0 (default), all pages are submitted at once. When set to a positive number, pages are submitted in chunks of that size, waiting for each chunk to be included in a block before submitting the next chunk. This can help manage network load and improve reliability on congested networks or if the pages per solution increases.
+Here are some notable options you can use with the command:
 
-```bash
-polkadot-staking-miner --uri ws://127.0.0.1:9946 monitor --seed-or-path //Alice --chunk-size 4
-```
-
-The `--do-reduce` option (off by default) enables solution reduction, to prevent further trimming, making submission more efficient.
-
-```bash
-polkadot-staking-miner --uri ws://127.0.0.1:9966 monitor --seed-or-path //Alice --do-reduce
-```
-
-Other notable options are:
-
-- `--listen` (default: finalized, possible values: finalized or head)
-- `--submission-strategy` (default: `if-leading`)
+| Option                               | Description                                                                         | Default Value   |
+| :----------------------------------- | :---------------------------------------------------------------------------------- | :-------------- |
+| `--chunk-size <number>`              | Controls how many solution pages are submitted concurrently.                        | 0 (all at once) |
+| `--do-reduce`                        | Enables solution reduction to make submissions more efficient.                      | Off             |
+| `--listen <finalized\|head>`         | Determines the listening mode.                                                      | finalized       |
+| `--submission-strategy <strategy>`   | Sets the submission strategy.                                                       | `if-leading`    |
+| `--min-signed-phase-blocks <number>` | Minimum number of blocks required in the signed phase before submitting a solution. | 10              |
 
 Refer to `--help` for the full list of options.
 
