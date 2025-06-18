@@ -42,6 +42,7 @@ polkadot-sdk = { git = "https://github.com/paritytech/polkadot-sdk", features = 
     "sp-npos-elections",
     "sp-core",
     "sp-runtime",
+    "sp-version",
     "pallet-election-provider-multi-block",
 ], branch = "donal-ahm" }
 

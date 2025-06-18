@@ -44,14 +44,12 @@ mod utils;
 use clap::Parser;
 use error::Error;
 use futures::future::{BoxFuture, FutureExt};
-use std::str::FromStr;
 use tokio::sync::oneshot;
 use tracing_subscriber::EnvFilter;
 
 use crate::{
 	client::Client,
 	dynamic::update_metadata_constants,
-	opt::RuntimeVersion,
 	prelude::{ChainClient, DEFAULT_PROMETHEUS_PORT, DEFAULT_URI, LOG_TARGET, SHARED_CLIENT},
 };
 
@@ -95,9 +93,16 @@ async fn main() -> Result<(), Error> {
 	tracing_subscriber::fmt().with_env_filter(filter).init();
 
 	let client = Client::new(&uri).await?;
-	let runtime_version: RuntimeVersion =
-		client.rpc().state_get_runtime_version(None).await?.into();
-	let chain = opt::Chain::from_str(&runtime_version.spec_name)?;
+
+	let runtime_version: polkadot_sdk::sp_version::RuntimeVersion = client
+		.chain_api()
+		.runtime_api()
+		.at_latest()
+		.await?
+		.call_raw("Core_version", None)
+		.await?;
+
+	let chain = opt::Chain::try_from(&runtime_version)?;
 	if let Err(e) = prometheus::run(prometheus_port).await {
 		log::warn!("Failed to start prometheus endpoint: {}", e);
 	}
@@ -114,8 +119,19 @@ async fn main() -> Result<(), Error> {
 
 	let fut = match command {
 		Command::Info => async {
-			let remote_node = serde_json::to_string_pretty(&runtime_version)
-				.expect("Serialize is infallible; qed");
+			// Create a simple map for serialization since SDK RuntimeVersion doesn't derive
+			// Serialize. All these field must exist on substrate-based chains
+			// (see https://docs.rs/sp-version/latest/sp_version/struct.RuntimeVersion.html)
+			let runtime_info = serde_json::json!({
+				"spec_name": runtime_version.spec_name.to_string(),
+				"impl_name": runtime_version.impl_name.to_string(),
+				"spec_version": runtime_version.spec_version,
+				"impl_version": runtime_version.impl_version,
+				"authoring_version": runtime_version.authoring_version,
+				"transaction_version": runtime_version.transaction_version
+			});
+			let remote_node =
+				serde_json::to_string_pretty(&runtime_info).expect("Serialize is infallible; qed");
 
 			eprintln!("Remote_node:\n{remote_node}");
 
@@ -239,7 +255,7 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::commands::types::{Listen, MultiBlockMonitorConfig, SubmissionStrategy};
+	use crate::commands::types::{MultiBlockMonitorConfig, SubmissionStrategy};
 
 	#[test]
 	fn cli_monitor_works() {
@@ -262,7 +278,6 @@ mod tests {
 			log: "info".to_string(),
 			command: Command::Monitor(MultiBlockMonitorConfig {
 				seed_or_path: "//Alice".to_string(),
-				listen: Listen::Finalized,                          // Default
 				submission_strategy: SubmissionStrategy::IfLeading, // Default
 				do_reduce: true,
 				chunk_size: 0,               // Default
@@ -288,7 +303,6 @@ mod tests {
 			opt.command,
 			Command::Monitor(MultiBlockMonitorConfig {
 				seed_or_path: "//Alice".to_string(),
-				listen: Listen::Finalized,
 				submission_strategy: SubmissionStrategy::IfLeading,
 				do_reduce: false,            // Default
 				chunk_size: 0,               // Default
@@ -315,7 +329,6 @@ mod tests {
 			opt.command,
 			Command::Monitor(MultiBlockMonitorConfig {
 				seed_or_path: "//Alice".to_string(),
-				listen: Listen::Finalized,
 				submission_strategy: SubmissionStrategy::IfLeading,
 				do_reduce: false,            // Default
 				chunk_size: 4,               // Explicitly set
@@ -342,7 +355,6 @@ mod tests {
 			opt.command,
 			Command::Monitor(MultiBlockMonitorConfig {
 				seed_or_path: "//Alice".to_string(),
-				listen: Listen::Finalized,
 				submission_strategy: SubmissionStrategy::IfLeading,
 				do_reduce: false,           // Default
 				chunk_size: 0,              // Default
