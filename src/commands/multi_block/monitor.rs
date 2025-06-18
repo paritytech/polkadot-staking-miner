@@ -433,7 +433,7 @@ where
 	//   on-chain, and submits pages, etc. This is a slow operation compared to the speed of block
 	//   production.
 	// - the channel buffer allows one block to be queued while processing another one
-	// - block N+1 gets queued right after N before the miner tasks starts processing N
+	// - block N+1 gets queued right after N before the miner task starts processing N
 	// - block N+2, N+3, ... , N+M are immediately discarded because the miner task is busy
 	//   (`TrySendError::Full` => backpressure)
 	// - When the miner task completes processing block N, it finally processes block N+1. However,
