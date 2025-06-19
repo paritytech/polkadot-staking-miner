@@ -4,7 +4,9 @@
 
 ## Why do we need a staking miner?
 
-Polkadot uses a **Nominated Proof-of-Stake (NPoS)** consensus mechanism where validators are selected through a complex election process. This election determines the active validators in the next era and how stake is distributed among them to maximize security and decentralization.
+Polkadot uses a **Nominated Proof-of-Stake (NPoS)** consensus mechanism where validators are
+selected through a complex election process. This election determines the active validators in the
+next era and how stake is distributed among them to maximize security and decentralization.
 
 The nomination process in a nutshell:
 
@@ -15,12 +17,13 @@ The nomination process in a nutshell:
 where
 
 - Nominators choose validators they trust with their stake
-- Phragmén algorithm selects the optimal validator aiming to
+- Phragmén algorithm selects the optimal validator with the following goals:
   - **Maximize total stake**: Select validators with the most backing stake
   - **Minimize variance**: Distribute stake as evenly as possible among selected validators
   - **Support diversity**: Enable smaller validators to participate
 
-This optimization is computationally intensive and cannot yet be solved on-chain due to block time and resource constraints. Instead, the blockchain runs a **multi-phase election**:
+This optimization is computationally intensive and cannot _yet_ be solved on-chain due to block time
+and resource constraints. Instead, the blockchain runs a **multi-phase election**:
 
 1. **Snapshot Phase**: Collect all staking data (validators, nominators, stakes)
 2. **Signed Phase**: Off-chain actors (miners) compute optimal solutions and submit them
@@ -34,35 +37,44 @@ This optimization is computationally intensive and cannot yet be solved on-chain
 - Compete to provide the most optimal validator selection
 - Ensure the election completes successfully even under high load
 
-Without miners, elections could fail or produce suboptimal results, compromising network security and decentralization.
+Without miners, elections could fail or produce suboptimal results, compromising network security
+and decentralization.
+
+More details about staking on Polkadot can be found [here](https://wiki.polkadot.network/learn/learn-staking/).
 
 ## Overview
 
-This is a re-write of the [staking miner](https://github.com/paritytech/polkadot/tree/master/utils/staking-miner) using [subxt](https://github.com/paritytech/subxt) to avoid hard dependency to each runtime version.
+This is a re-write of the
+[staking miner](https://github.com/paritytech/polkadot/tree/master/utils/staking-miner) using
+[subxt](https://github.com/paritytech/subxt) to avoid hard dependency to each runtime version.
 
-A key difference is that the miner only interacts with AssetHub nodes that support multi-page async staking and in particular the new multi-phase, multi-block election provider pallet (`EPMB`), while the old legacy miner is designed to work with the previous multi-phase, single-page election provider pallet.
+A key difference is that the miner only interacts with AssetHub nodes that support multi-page async
+staking and in particular the new multi-phase, multi-block election provider pallet (`EPMB`), while
+the old legacy miner is designed to work with the previous multi-phase, single-page election
+provider pallet.
 
-The miner includes an automatic deposit recovery system that cleans up old discarded submissions to reclaim locked deposits, ensuring optimal economic efficiency for operators.
+The miner includes an automatic deposit recovery system that cleans up old discarded submissions to
+reclaim locked deposits, ensuring optimal economic efficiency for operators.
 
-The binary itself embeds [multi-block static metadata](./artifacts/multi_block.scale) to
-generate a rust codegen at compile-time that [subxt provides](https://github.com/paritytech/subxt).
+The binary itself embeds [multi-block static metadata](./artifacts/multi_block.scale) to generate a
+rust codegen at compile-time that [subxt provides](https://github.com/paritytech/subxt).
 
-Runtime upgrades are handled by the polkadot-staking-miner by upgrading storage constants
-and that will work unless there is a breaking change in the pallets `pallet-election-provider-multi-block` or `frame_system`.
+Runtime upgrades are handled by the polkadot-staking-miner by upgrading storage constants and that
+will work unless there is a breaking change in the pallets `pallet-election-provider-multi-block` or
+`frame_system`.
 
-Because detecting breaking changes when connecting to a RPC node when using
-`polkadot-staking-miner` is hard, this repo performs daily integration tests
-against `polkadot master` and in most cases [updating the metadata](#update-metadata)
-and fixing the compile errors are sufficient.
+Because detecting breaking changes when connecting to a RPC node when using `polkadot-staking-miner`
+is hard, this repo performs daily integration tests against `polkadot master` and in most cases
+[updating the metadata](#update-metadata) and fixing the compile errors are sufficient.
 
-It's also possible to use the `info` command to check whether the metadata
-embedded in the binary is compatible with a remote node, [see the info the command for further information](#info-command)
+It's also possible to use the `info` command to check whether the metadata embedded in the binary is
+compatible with a remote node, [see the info the command for further information](#info-command)
 
-Each release will specify which runtime version it was tested against but
-it's not possible to know in advance which runtimes it will work with.
+Each release will specify which runtime version it was tested against but it's not possible to know
+in advance which runtimes it will work with.
 
-Thus, it's important to subscribe to releases to this repo or
-add some logic that triggers an alert once the polkadot-staking-miner crashes.
+Thus, it's important to subscribe to releases to this repo or add some logic that triggers an alert
+once the polkadot-staking-miner crashes.
 
 ## Usage
 
@@ -108,21 +120,26 @@ Here are some notable options you can use with the command:
 
 Refer to `--help` for the full list of options.
 
-NOTE: the miner only listens to finalized blocks. Listening to the best blocks is not offered as an option.
+NOTE: the miner only listens to finalized blocks. Listening to the best blocks is not offered as an
+option.
 
 ### Automatic Deposit Recovery
 
 The miner automatically handles deposit recovery for discarded submissions:
 
-- **Automatic Cleanup**: Scans for old submissions from previous rounds that were not selected as winners
-- **Deposit Recovery**: Calls `clear_old_round_data()` to reclaim locked deposits from discarded solutions
+- **Automatic Cleanup**: Scans for old submissions from previous rounds that were not selected as
+  winners
+- **Deposit Recovery**: Calls `clear_old_round_data()` to reclaim locked deposits from discarded
+  solutions
 - **Triggered on Phase Transitions**: Activates when transitioning from Done/Export to Off phase
 
-This ensures that deposits from unsuccessful submissions are automatically recovered, maintaining the economic viability of long-term mining operations.
+This ensures that deposits from unsuccessful submissions are automatically recovered, maintaining
+the economic viability of long-term mining operations.
 
 ### Prepare your SEED
 
-While you could pass your seed directly to the cli or Docker, this is highly **NOT** recommended. Instead, you should use an ENV variable.
+While you could pass your seed directly to the cli or Docker, this is highly **NOT** recommended.
+Instead, you should use an ENV variable.
 
 You can set it manually using:
 
@@ -131,8 +148,8 @@ You can set it manually using:
  SEED=0x1234...
 ```
 
-Alternatively, for development, you may store your seed in a `.env` file that
-can be loaded to make your seed available:
+Alternatively, for development, you may store your seed in a `.env` file that can be loaded to make
+your seed available:
 
 `.env`:
 
@@ -164,8 +181,8 @@ docker run --rm -it \
 **Do not run multiple instances of the miner with the same account.**
 
 The miner uses the on-chain nonce for a given user to submit solutions, which can lead to nonce
-collisions if multiple miners are running with the same account. This can cause transaction
-failures and potentially result in lost rewards or other issues.
+collisions if multiple miners are running with the same account. This can cause transaction failures
+and potentially result in lost rewards or other issues.
 
 ## Update metadata
 
@@ -186,9 +203,9 @@ $ subxt codegen --file artifacts/metadata.scale | rustfmt > code.rs
 
 ## Test locally
 
-Because elections occurs quite rarely and if you want to test it locally
-it's possible build the polkadot binary with `feature --fast-runtime`
-to ensure that elections occurs more often (in order of minutes rather hours/days).
+Because elections occurs quite rarely and if you want to test it locally it's possible build the
+polkadot binary with `feature --fast-runtime` to ensure that elections occurs more often (in order
+of minutes rather hours/days).
 
 ```bash
 # from the root of polkadot-sdk branch
@@ -202,8 +219,7 @@ $ ./build-and-run-zn.sh
 
 ## Prometheus metrics
 
-The staking-miner starts a prometheus server on port 9999 and that metrics can
-be fetched by:
+The staking-miner starts a prometheus server on port 9999 and that metrics can be fetched by:
 
 ```bash
 $ curl localhost:9999/metrics
@@ -265,36 +281,40 @@ staking_miner_janitor_old_submissions_cleared 2
 
 ## Architecture
 
-The polkadot-staking-miner uses a multi-task architecture to efficiently handle different responsibilities:
+The polkadot-staking-miner uses a multi-task architecture to efficiently handle different
+responsibilities:
 
 ### Task Overview
 
 The miner consists of **three independent tasks** that communicate via bounded channels:
 
-1. **Listener Task**: Monitors blockchain for phase changes and new blocks
+1. **Listener Task**: Monitors blockchain for phase changes and new (`finalized` only) blocks.
 2. **Miner Task**: Handles solution mining and submission operations
 3. **Janitor Task**: Manages automatic deposit recovery from old submissions
 
 ### Task Communication
 
 ```
-┌─────────────────┐    bounded chan(1)    ┌─────────────────┐
-│  Listener Task  │ ─────────────────────▶│   Miner Task    │
-│                 │                       │                 │
-│ ┌─────────────┐ │                       │ ┌─────────────┐ │
-│ │Block Stream │ │                       │ │   Process   │ │
-│ │Subscription │ │                       │ │    Block    │ │
-│ └─────────────┘ │                       │ └─────────────┘ │
-│        │        │                       │                 │
-│        ▼        │                       └─────────────────┘
-│ ┌─────────────┐ │    bounded chan(1)    ┌─────────────────┐
-│ │Phase Check  │ │ ─────────────────────▶│  Janitor Task   │
-│ │(fast)       │ │                       │                 │
-│ └─────────────┘ │                       │ ┌─────────────┐ │
-│                 │                       │ │   Cleanup   │ │
-│                 │                       │ │ Old Rounds  │ │
-│                 │                       │ └─────────────┘ │
-└─────────────────┘                       └─────────────────┘
+(finalized blocks)
+┌────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                                |
+│   ┌─────────────────┐    bounded ch(1)      ┌─────────────────┐                ┌─────────────────┐
+└──▶│  Listener Task  │ ─────────────────────▶│   Miner Task    │                │   Blockchain    │
+    │                 │  Snapshot / Signed    │                 │                │                 │
+    │ ┌─────────────┐ │                       │ ┌─────────────┐ │  (solutions)   │                 │
+    │ │Block Stream │ │                       │ │   Process   │ │ ──────────────▶│                 │
+    │ │Subscription │ │                       │ │    Block    │ │                │                 │
+    │ └─────────────┘ │                       │ └─────────────┘ │                │                 │
+    │        │        │                       │                 │                │                 │
+    │        ▼        │                       └─────────────────┘                │                 │
+    │ ┌─────────────┐ │    bounded ch(1)      ┌─────────────────┐                │                 │
+    │ │Phase Check  │ │ ─────────────────────▶│  Janitor Task   │                │                 │
+    │ │(fast)       │ │ Done/Extract(0)->Off  │                 │                │                 │
+    │ └─────────────┘ │                       │ ┌─────────────┐ │  (cleanup)     │                 │
+    │                 │                       │ │   Cleanup   │ │ ──────────────▶│                 │
+    │                 │                       │ │ Old Rounds  │ │                │                 │
+    │                 │                       │ └─────────────┘ │                │                 │
+    └─────────────────┘                       └─────────────────┘                └─────────────────┘
 ```
 
 ### Key Design Principles
@@ -310,4 +330,3 @@ The miner consists of **three independent tasks** that communicate via bounded c
 - **Reliable Mining**: Core mining functionality is never blocked by ancillary operations
 - **Automatic Maintenance**: Deposit recovery runs seamlessly in the background
 - **Scalable Architecture**: Tasks can be optimized independently for their workloads
-- **Easy Monitoring**: Clear separation makes debugging and metrics collection straightforward

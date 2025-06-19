@@ -101,7 +101,7 @@ enum JanitorMessage {
 /// ```text
 /// ┌─────────────────┐    bounded chan(1)    ┌─────────────────┐
 /// │  Listener Task  │ ─────────────────────▶│   Miner Task    │
-/// │                 │                       │                 │
+/// │                 │  Snapshot / Signed    │                 │
 /// │ ┌─────────────┐ │                       │ ┌─────────────┐ │
 /// │ │Block Stream │ │                       │ │   Process   │ │
 /// │ │Subscription │ │                       │ │    Block    │ │
@@ -110,7 +110,7 @@ enum JanitorMessage {
 /// │        ▼        │                       └─────────────────┘
 /// │ ┌─────────────┐ │    bounded chan(1)    ┌─────────────────┐
 /// │ │Phase Check  │ │ ─────────────────────▶│  Janitor Task   │
-/// │ │(fast)       │ │                       │                 │
+/// │ │(fast)       │ │  Done/Extract(0)->Off │                 │
 /// │ └─────────────┘ │                       │ ┌─────────────┐ │
 /// │                 │                       │ │   Cleanup   │ │
 /// │                 │                       │ │ Old Rounds  │ │
@@ -243,8 +243,10 @@ where
 /// Listener task that follows the chain and signals the miner when appropriate
 ///
 /// This task is responsible for:
-/// - Subscribing to block updates (head or finalized)
-/// - Performing fast phase checks to identify signed/snapshot phases
+/// - Subscribing to finalized block updates
+/// - Performing fast phase checks to identify
+///   - signed/snapshot phases to inform the miner task
+///   - transition from Done/Export(0) to Off to inform the janitor task
 /// - Using backpressure to skip blocks when miner is busy
 /// - Managing phase transitions and snapshot cleanup
 /// - Never blocking on slow operations to avoid subscription buffering
@@ -305,7 +307,6 @@ where
 			.await?;
 
 		let block_number = at.number;
-		let phase_for_logging = phase.clone();
 
 		match phase {
 			Phase::Done | Phase::Off => {
@@ -335,7 +336,10 @@ where
 					{
 						match e {
 							mpsc::error::TrySendError::Full(_) => {
-								log::trace!(target: LOG_TARGET, "Janitor busy, skipping janitor tick for round {}", current_round);
+								// this shouldn't happen. Janitor is triggered once per round. If
+								// it's still busy after a round, it means that it has taken
+								// insanely long.
+								log::warn!(target: LOG_TARGET, "Janitor busy, skipping janitor tick for round {}.", current_round);
 							},
 							mpsc::error::TrySendError::Closed(_) => {
 								log::error!(target: LOG_TARGET, "Janitor channel closed unexpectedly during janitor tick");
@@ -349,7 +353,7 @@ where
 					}
 				}
 
-				log::trace!(target: LOG_TARGET, "Block #{}, Phase {:?} - nothing to do", block_number, phase_for_logging);
+				log::trace!(target: LOG_TARGET, "Block #{}, Phase {:?} - nothing to do", block_number, phase);
 				prev_phase = Some(phase);
 				continue;
 			},
@@ -357,7 +361,7 @@ where
 				// Relevant phases for mining - continue processing
 			},
 			_ => {
-				log::trace!(target: LOG_TARGET, "Block #{}, Phase {:?} - nothing to do", block_number, phase_for_logging);
+				log::trace!(target: LOG_TARGET, "Block #{}, Phase {:?} - nothing to do", block_number, phase);
 				prev_phase = Some(phase);
 				continue;
 			},
