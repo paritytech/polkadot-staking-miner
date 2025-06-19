@@ -2,9 +2,47 @@
 
 [![Daily compatibility check against latest polkadot](https://github.com/paritytech/polkadot-staking-miner/actions/workflows/nightly.yml/badge.svg)](https://github.com/paritytech/polkadot-staking-miner/actions/workflows/nightly.yml)
 
+## Why do we need a staking miner?
+
+Polkadot uses a **Nominated Proof-of-Stake (NPoS)** consensus mechanism where validators are selected through a complex election process. This election determines the active validators in the next era and how stake is distributed among them to maximize security and decentralization.
+
+The nomination process in a nutshell:
+
+```text
+ Nominators → Stake DOT → Nominate Validators → Validator Set Selection
+```
+
+where
+
+- Nominators choose validators they trust with their stake
+- Phragmén algorithm selects the optimal validator aiming to
+  - **Maximize total stake**: Select validators with the most backing stake
+  - **Minimize variance**: Distribute stake as evenly as possible among selected validators
+  - **Support diversity**: Enable smaller validators to participate
+
+This optimization is computationally intensive and cannot yet be solved on-chain due to block time and resource constraints. Instead, the blockchain runs a **multi-phase election**:
+
+1. **Snapshot Phase**: Collect all staking data (validators, nominators, stakes)
+2. **Signed Phase**: Off-chain actors (miners) compute optimal solutions and submit them
+3. **Unsigned Phase**: Validators can submit solutions if no good ones were found
+4. **Export Phase**: The best solution is chosen and applied
+
+**Staking miners** are essential participants who:
+
+- Compute high-quality election solutions off-chain
+- Submit solutions during the signed phase to earn rewards
+- Compete to provide the most optimal validator selection
+- Ensure the election completes successfully even under high load
+
+Without miners, elections could fail or produce suboptimal results, compromising network security and decentralization.
+
+## Overview
+
 This is a re-write of the [staking miner](https://github.com/paritytech/polkadot/tree/master/utils/staking-miner) using [subxt](https://github.com/paritytech/subxt) to avoid hard dependency to each runtime version.
 
 A key difference is that the miner only interacts with AssetHub nodes that support multi-page async staking and in particular the new multi-phase, multi-block election provider pallet (`EPMB`), while the old legacy miner is designed to work with the previous multi-phase, single-page election provider pallet.
+
+The miner includes an automatic deposit recovery system that cleans up old discarded submissions to reclaim locked deposits, ensuring optimal economic efficiency for operators.
 
 The binary itself embeds [multi-block static metadata](./artifacts/multi_block.scale) to
 generate a rust codegen at compile-time that [subxt provides](https://github.com/paritytech/subxt).
@@ -25,14 +63,6 @@ it's not possible to know in advance which runtimes it will work with.
 
 Thus, it's important to subscribe to releases to this repo or
 add some logic that triggers an alert once the polkadot-staking-miner crashes.
-
-## Important Warning
-
-**Do not run multiple instances of the miner with the same account.**
-
-The miner uses the on-chain nonce for a given user to submit solutions, which can lead to nonce
-collisions if multiple miners are running with the same account. This can cause transaction
-failures and potentially result in lost rewards or other issues.
 
 ## Usage
 
@@ -80,6 +110,16 @@ Refer to `--help` for the full list of options.
 
 NOTE: the miner only listens to finalized blocks. Listening to the best blocks is not offered as an option.
 
+### Automatic Deposit Recovery
+
+The miner automatically handles deposit recovery for discarded submissions:
+
+- **Automatic Cleanup**: Scans for old submissions from previous rounds that were not selected as winners
+- **Deposit Recovery**: Calls `clear_old_round_data()` to reclaim locked deposits from discarded solutions
+- **Triggered on Phase Transitions**: Activates when transitioning from Done/Export to Off phase
+
+This ensures that deposits from unsuccessful submissions are automatically recovered, maintaining the economic viability of long-term mining operations.
+
 ### Prepare your SEED
 
 While you could pass your seed directly to the cli or Docker, this is highly **NOT** recommended. Instead, you should use an ENV variable.
@@ -118,6 +158,14 @@ docker run --rm -it \
     -e URI=wss://your-node:9946 \
     polkadot-staking-miner monitor
 ```
+
+### Important Warning
+
+**Do not run multiple instances of the miner with the same account.**
+
+The miner uses the on-chain nonce for a given user to submit solutions, which can lead to nonce
+collisions if multiple miners are running with the same account. This can cause transaction
+failures and potentially result in lost rewards or other issues.
 
 ## Update metadata
 
@@ -162,12 +210,26 @@ $ curl localhost:9999/metrics
 ```
 
 ```bash
+# Core Mining Metrics
 # HELP staking_miner_balance The balance of the staking miner account
 # TYPE staking_miner_balance gauge
 staking_miner_balance 88756574897390270
 # HELP staking_miner_mining_duration_ms The mined solution time in milliseconds.
 # TYPE staking_miner_mining_duration_ms gauge
 staking_miner_mining_duration_ms 50
+# HELP staking_miner_submit_and_watch_duration_ms The time in milliseconds it took to submit the solution to chain and to be included in block
+# TYPE staking_miner_submit_and_watch_duration_ms gauge
+staking_miner_submit_and_watch_duration_ms 17283
+
+# Submission Tracking
+# HELP staking_miner_submissions_started Number of submissions started
+# TYPE staking_miner_submissions_started counter
+staking_miner_submissions_started 12
+# HELP staking_miner_submissions_success Number of submissions finished successfully
+# TYPE staking_miner_submissions_success counter
+staking_miner_submissions_success 10
+
+# Solution Quality Metrics
 # HELP staking_miner_score_minimal_stake The minimal winner, in terms of total backing stake
 # TYPE staking_miner_score_minimal_stake gauge
 staking_miner_score_minimal_stake 24426059484170936
@@ -177,17 +239,75 @@ staking_miner_score_sum_stake 2891461667266507300
 # HELP staking_miner_score_sum_stake_squared The sum squared of the total backing of all winners, aka. the variance.
 # TYPE staking_miner_score_sum_stake_squared gauge
 staking_miner_score_sum_stake_squared 83801161022319280000000000000000000
-# HELP staking_miner_solution_length_bytes Number of bytes in the solution submitted
-# TYPE staking_miner_solution_length_bytes gauge
-staking_miner_solution_length_bytes 2947
-# HELP staking_miner_solution_weight Weight of the solution submitted
-# TYPE staking_miner_solution_weight gauge
-staking_miner_solution_weight 8285574626
-# HELP staking_miner_submit_and_watch_duration_ms The time in milliseconds it took to submit the solution to chain and to be included in block
-# TYPE staking_miner_submit_and_watch_duration_ms gauge
-staking_miner_submit_and_watch_duration_ms 17283
+
+# Runtime Upgrades
+# HELP staking_miner_runtime_upgrades Number of runtime upgrades performed
+# TYPE staking_miner_runtime_upgrades counter
+staking_miner_runtime_upgrades 2
+
+# Janitor (Deposit Recovery) Metrics
+# HELP staking_miner_janitor_cleanup_success_total Total number of successful janitor cleanup operations
+# TYPE staking_miner_janitor_cleanup_success_total counter
+staking_miner_janitor_cleanup_success_total 3
+# HELP staking_miner_janitor_cleanup_failures_total Total number of failed janitor cleanup operations
+# TYPE staking_miner_janitor_cleanup_failures_total counter
+staking_miner_janitor_cleanup_failures_total 0
+# HELP staking_miner_janitor_cleanup_duration_ms The time in milliseconds it takes to complete janitor cleanup
+# TYPE staking_miner_janitor_cleanup_duration_ms gauge
+staking_miner_janitor_cleanup_duration_ms 1250
+# HELP staking_miner_janitor_old_submissions_found Number of old submissions found during last janitor run
+# TYPE staking_miner_janitor_old_submissions_found gauge
+staking_miner_janitor_old_submissions_found 2
+# HELP staking_miner_janitor_old_submissions_cleared Number of old submissions successfully cleared during last janitor run
+# TYPE staking_miner_janitor_old_submissions_cleared gauge
+staking_miner_janitor_old_submissions_cleared 2
 ```
 
-## Related projects
+## Architecture
 
-- [substrate-etl](https://github.com/gpestana/substrate-etl) - a tool fetch state from substrate-based chains.
+The polkadot-staking-miner uses a multi-task architecture to efficiently handle different responsibilities:
+
+### Task Overview
+
+The miner consists of **three independent tasks** that communicate via bounded channels:
+
+1. **Listener Task**: Monitors blockchain for phase changes and new blocks
+2. **Miner Task**: Handles solution mining and submission operations
+3. **Janitor Task**: Manages automatic deposit recovery from old submissions
+
+### Task Communication
+
+```
+┌─────────────────┐    bounded chan(1)    ┌─────────────────┐
+│  Listener Task  │ ─────────────────────▶│   Miner Task    │
+│                 │                       │                 │
+│ ┌─────────────┐ │                       │ ┌─────────────┐ │
+│ │Block Stream │ │                       │ │   Process   │ │
+│ │Subscription │ │                       │ │    Block    │ │
+│ └─────────────┘ │                       │ └─────────────┘ │
+│        │        │                       │                 │
+│        ▼        │                       └─────────────────┘
+│ ┌─────────────┐ │    bounded chan(1)    ┌─────────────────┐
+│ │Phase Check  │ │ ─────────────────────▶│  Janitor Task   │
+│ │(fast)       │ │                       │                 │
+│ └─────────────┘ │                       │ ┌─────────────┐ │
+│                 │                       │ │   Cleanup   │ │
+│                 │                       │ │ Old Rounds  │ │
+│                 │                       │ └─────────────┘ │
+└─────────────────┘                       └─────────────────┘
+```
+
+### Key Design Principles
+
+- **Separation of Concerns**: Each task has a single, well-defined responsibility
+- **Non-Blocking Operations**: Tasks operate independently without blocking each other
+- **Backpressure Handling**: Bounded channels prevent memory bloat and ensure fresh work
+- **Fault Isolation**: Task failures are isolated and handled appropriately
+- **Performance Optimization**: Mining operations are never delayed by cleanup tasks
+
+### Benefits
+
+- **Reliable Mining**: Core mining functionality is never blocked by ancillary operations
+- **Automatic Maintenance**: Deposit recovery runs seamlessly in the background
+- **Scalable Architecture**: Tasks can be optimized independently for their workloads
+- **Easy Monitoring**: Clear separation makes debugging and metrics collection straightforward
