@@ -44,12 +44,15 @@ enum MinerMessage {
 
 	/// Signal to clear snapshots (phase ended)
 	ClearSnapshots,
+}
 
+/// Message types for communication between listener and janitor
+enum JanitorMessage {
 	/// Signal to run janitor cleanup for old submissions
 	JanitorTick { current_round: u32 },
 }
 
-/// The monitor command splits the work into two communicating tasks:
+/// The monitor command splits the work into three communicating tasks:
 ///
 /// ### Listener Task
 /// - Always follows the chain (head or finalized blocks)
@@ -68,19 +71,23 @@ enum MinerMessage {
 /// - Handles snapshot management and cleanup
 /// - Handles janitor cleanup to reclaim deposits from old discarded solutions
 ///
-/// ### Janitor Functionality
+/// ### Janitor Task
+/// - Independent task that handles deposit recovery operations
 /// - Automatically scans for and cleans up old submissions from previous rounds
 /// - Reclaims deposits from discarded solutions that were not selected
 /// - Runs exactly once when transitioning from Done/Export to Off phase (first Off block only)
 /// - Scans only the last JANITOR_SCAN_ROUNDS rounds for old submissions
 /// - Calls `clear_old_round_data()` to remove stale data and recover deposits
+/// - **Non-blocking**: Does not interfere with mining operations
 ///
 /// ### Communication
-/// - Uses bounded channels (buffer=1) for automatic flow control
+/// - **Miner Channel**: Bounded channel (buffer=1) for mining work with automatic backpressure
+/// - **Janitor Channel**: Bounded channel (buffer=1) for cleanup operations
 /// - **Backpressure mechanism**: When miner is busy processing a block:
 ///   - Channel becomes full, listener's try_send() returns immediately
 ///   - Listener skips current block and moves to next (fresher) block
 ///   - No blocking, no buffering of stale work
+/// - **Separation of concerns**: Mining and janitor operations are completely independent
 /// - No submission locks needed since miner is single-threaded by design
 ///
 /// ## Error Handling Strategy
@@ -88,29 +95,27 @@ enum MinerMessage {
 /// - **Miner errors**: Classified as critical or recoverable
 ///   - Critical: Account doesn't exist, invalid metadata, persistent RPC failures
 ///   - Recoverable: Already submitted, wrong phase, temporary mining issues
+/// - **Janitor errors**: Classified as critical or recoverable (same as miner)
 /// - **RPC issues**: Handled transparently by reconnecting RPC client
 ///
 /// ```text
-/// ┌─────────────────┐                    ┌─────────────────┐
-/// │  Listener Task  │                    │   Miner Task    │
-/// │                 │                    │                 │
-/// │ ┌─────────────┐ │  bounded chan(1)   │ ┌─────────────┐ │
-/// │ │Block Stream │ │ ──────────────────▶│ │   Process   │ │
-/// │ │Subscription │ │                    │ │    Block    │ │
-/// │ └─────────────┘ │                    │ └─────────────┘ │
-/// │        │        │                    │                 │
-/// │        ▼        │                    │                 │
-/// │ ┌─────────────┐ │                    │                 │
-/// │ │Phase Check  │ │   ┌─ Channel Full? │                 │
-/// │ │(fast)       │ │   │                │                 │
-/// │ └─────────────┘ │   │    YES ──────▶ │ Skip block      │
-/// │        │        │   │                │ (backpressure)  │
-/// │        ▼        │   │                │                 │
-/// │ ┌─────────────┐ │───┘                │                 │
-/// │ │try_send()   │ │    NO ────────────▶│ Accept work     │
-/// │ │(non-block)  │ │                    │                 │
-/// │ └─────────────┘ │                    │                 │
-/// └─────────────────┘                    └─────────────────┘
+/// ┌─────────────────┐    bounded chan(1)    ┌─────────────────┐
+/// │  Listener Task  │ ─────────────────────▶│   Miner Task    │
+/// │                 │                       │                 │
+/// │ ┌─────────────┐ │                       │ ┌─────────────┐ │
+/// │ │Block Stream │ │                       │ │   Process   │ │
+/// │ │Subscription │ │                       │ │    Block    │ │
+/// │ └─────────────┘ │                       │ └─────────────┘ │
+/// │        │        │                       │                 │
+/// │        ▼        │                       └─────────────────┘
+/// │ ┌─────────────┐ │    bounded chan(1)    ┌─────────────────┐
+/// │ │Phase Check  │ │ ─────────────────────▶│  Janitor Task   │
+/// │ │(fast)       │ │                       │                 │
+/// │ └─────────────┘ │                       │ ┌─────────────┐ │
+/// │                 │                       │ │   Cleanup   │ │
+/// │                 │                       │ │ Old Rounds  │ │
+/// │                 │                       │ └─────────────┘ │
+/// └─────────────────┘                       └─────────────────┘
 /// ```
 pub async fn monitor_cmd<T>(client: Client, config: MultiBlockMonitorConfig) -> Result<(), Error>
 where
@@ -156,6 +161,10 @@ where
 	// - Eliminates the need for explicit busy-checking or submission locks
 	let (miner_tx, miner_rx) = mpsc::channel::<MinerMessage>(1);
 
+	// Create bounded channel for communication between listener and janitor
+	// Buffer size of 1 is sufficient since janitor runs once at every round change.
+	let (janitor_tx, janitor_rx) = mpsc::channel::<JanitorMessage>(1);
+
 	// Spawn the miner task
 	let miner_handle = {
 		let client = client.clone();
@@ -164,14 +173,21 @@ where
 		tokio::spawn(async move { miner_task::<T>(client, signer, config, miner_rx).await })
 	};
 
+	// Spawn the janitor task
+	let janitor_handle = {
+		let client = client.clone();
+		let signer = signer.clone();
+		tokio::spawn(async move { janitor_task::<T>(client, signer, janitor_rx).await })
+	};
+
 	// Spawn the listener task
 	let listener_handle = {
 		let client = client.clone();
-		tokio::spawn(async move { listener_task::<T>(client, miner_tx).await })
+		tokio::spawn(async move { listener_task::<T>(client, miner_tx, janitor_tx).await })
 	};
 
-	// Wait for either task to complete (which should never happen in normal operation)
-	// If either task exits, the whole process should exit
+	// Wait for any task to complete (which should never happen in normal operation)
+	// If any task exits, the whole process should exit
 	tokio::select! {
 		result = listener_handle => {
 			match result {
@@ -205,6 +221,22 @@ where
 				}
 			}
 		}
+		result = janitor_handle => {
+			match result {
+				Ok(Ok(())) => {
+					log::error!(target: LOG_TARGET, "Janitor task completed unexpectedly");
+					Err(Error::Other("Janitor task should never complete".to_string()))
+				}
+				Ok(Err(e)) => {
+					log::error!(target: LOG_TARGET, "Janitor task failed: {}", e);
+					Err(e)
+				}
+				Err(e) => {
+					log::error!(target: LOG_TARGET, "Janitor task panicked: {}", e);
+					Err(Error::Other(format!("Janitor task panicked: {}", e)))
+				}
+			}
+		}
 	}
 }
 
@@ -217,7 +249,11 @@ where
 /// - Managing phase transitions and snapshot cleanup
 /// - Never blocking on slow operations to avoid subscription buffering
 /// - Any error causes the entire process to exit
-async fn listener_task<T>(client: Client, miner_tx: mpsc::Sender<MinerMessage>) -> Result<(), Error>
+async fn listener_task<T>(
+	client: Client,
+	miner_tx: mpsc::Sender<MinerMessage>,
+	janitor_tx: mpsc::Sender<JanitorMessage>,
+) -> Result<(), Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
 	T::Solution: Send + Sync + 'static,
@@ -294,19 +330,17 @@ where
 						.await?;
 					log::debug!(target: LOG_TARGET, "Detected {:?} -> Off transition, triggering janitor cleanup for round {}", prev_phase, current_round);
 
-					if let Err(e) = miner_tx.try_send(MinerMessage::JanitorTick { current_round }) {
+					if let Err(e) =
+						janitor_tx.try_send(JanitorMessage::JanitorTick { current_round })
+					{
 						match e {
 							mpsc::error::TrySendError::Full(_) => {
-								// this should never happen, the miner is busy just in the signed
-								// phase while mining and submitting a solution! If we end up in
-								// this situation, it means that our submission process has taken
-								// unreasonably too long.
-								log::warn!(target: LOG_TARGET, "Miner busy, should never happen! Skipping janitor tick for round {}. We will retry at the next round.", current_round);
+								log::trace!(target: LOG_TARGET, "Janitor busy, skipping janitor tick for round {}", current_round);
 							},
 							mpsc::error::TrySendError::Closed(_) => {
-								log::error!(target: LOG_TARGET, "Miner channel closed unexpectedly during janitor tick. We will retry at the next round.");
+								log::error!(target: LOG_TARGET, "Janitor channel closed unexpectedly during janitor tick");
 								return Err(Error::Other(
-									"Miner channel closed unexpectedly".to_string(),
+									"Janitor channel closed unexpectedly".to_string(),
 								));
 							},
 						}
@@ -421,7 +455,37 @@ where
 				log::trace!(target: LOG_TARGET, "Clearing snapshots");
 				snapshot.clear();
 			},
-			MinerMessage::JanitorTick { current_round } => {
+		}
+	}
+
+	// This should never be reached as miner runs indefinitely
+	log::error!(target: LOG_TARGET, "Miner task loop exited unexpectedly");
+	Err(Error::Other("Miner task completed unexpectedly".to_string()))
+}
+
+/// Janitor task - handles deposit recovery operations independently from mining
+///
+/// This task runs in its own thread and processes janitor cleanup requests without
+/// blocking the miner task. It maintains separation of concerns by focusing solely
+/// on deposit recovery while the miner focuses on mining and submission operations.
+async fn janitor_task<T>(
+	client: Client,
+	signer: Signer,
+	mut janitor_rx: mpsc::Receiver<JanitorMessage>,
+) -> Result<(), Error>
+where
+	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
+	T::Solution: Send + Sync + 'static,
+	T::Pages: Send + Sync + 'static,
+	T::TargetSnapshotPerBlock: Send + Sync + 'static,
+	T::VoterSnapshotPerBlock: Send + Sync + 'static,
+	T::MaxVotesPerVoter: Send + Sync + 'static,
+{
+	log::trace!(target: LOG_TARGET, "Janitor task started");
+
+	while let Some(message) = janitor_rx.recv().await {
+		match message {
+			JanitorMessage::JanitorTick { current_round } => {
 				log::trace!(target: LOG_TARGET, "Running janitor cleanup for round {}", current_round);
 
 				let start_time = std::time::Instant::now();
@@ -453,9 +517,9 @@ where
 		}
 	}
 
-	// This should never be reached as miner runs indefinitely
-	log::error!(target: LOG_TARGET, "Miner task loop exited unexpectedly");
-	Err(Error::Other("Miner task completed unexpectedly".to_string()))
+	// This should never be reached as janitor runs indefinitely
+	log::error!(target: LOG_TARGET, "Janitor task loop exited unexpectedly");
+	Err(Error::Other("Janitor task completed unexpectedly".to_string()))
 }
 
 /// Process a single block
