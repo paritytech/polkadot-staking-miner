@@ -57,7 +57,8 @@ enum MinerMessage {
 /// - Checks if miner is busy before sending work
 /// - Never blocks on slow operations
 /// - **Any error causes entire process to exit** (RPC errors handled by reconnecting client)
-/// - Triggers janitor cleanup when transitioning from Done to Off phase (first Off block only)
+/// - Triggers janitor cleanup when transitioning from Done/Export to Off phase (first Off block
+///   only)
 ///
 /// ### Miner Task
 /// - Single-threaded processor that handles one block at a time
@@ -70,7 +71,7 @@ enum MinerMessage {
 /// ### Janitor Functionality
 /// - Automatically scans for and cleans up old submissions from previous rounds
 /// - Reclaims deposits from discarded solutions that were not selected
-/// - Runs exactly once when transitioning from Done to Off phase (first Off block only)
+/// - Runs exactly once when transitioning from Done/Export to Off phase (first Off block only)
 /// - Scans only the last JANITOR_SCAN_ROUNDS rounds for old submissions
 /// - Calls `clear_old_round_data()` to remove stale data and recover deposits
 ///
@@ -284,12 +285,14 @@ where
 					prev_block_signed_phase = false;
 				}
 
-				// Trigger janitor cleanup when transitioning from Done to Off phase
-				if matches!(phase, Phase::Off) && matches!(prev_phase, Some(Phase::Done)) {
+				// Trigger janitor cleanup when transitioning to Off phase from Done or Export
+				if matches!(phase, Phase::Off) &&
+					matches!(prev_phase, Some(Phase::Done) | Some(Phase::Export(_)))
+				{
 					let current_round = storage
 						.fetch_or_default(&runtime::storage().multi_block_election().round())
 						.await?;
-					log::trace!(target: LOG_TARGET, "Detected Done -> Off transition, triggering janitor cleanup for round {}", current_round);
+					log::debug!(target: LOG_TARGET, "Detected {:?} -> Off transition, triggering janitor cleanup for round {}", prev_phase, current_round);
 
 					if let Err(e) = miner_tx.try_send(MinerMessage::JanitorTick { current_round }) {
 						match e {
@@ -321,6 +324,7 @@ where
 			},
 			_ => {
 				log::trace!(target: LOG_TARGET, "Block #{}, Phase {:?} - nothing to do", block_number, phase_for_logging);
+				prev_phase = Some(phase);
 				continue;
 			},
 		}
