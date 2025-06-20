@@ -295,7 +295,7 @@ The miner consists of **three independent tasks** that communicate via bounded c
 ### Task Communication
 
 ```
-
+                      (finalized blocks)
 ┌──────────────────────────────────────────────────────────────────────────┐
 │   ┌─────────────┐                      ┌─────────────┐            ┌─────────────┐
 └──▶│ Listener    │                      │   Miner     │            │ Blockchain  │
