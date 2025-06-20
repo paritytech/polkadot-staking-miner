@@ -487,14 +487,22 @@ where
 {
 	log::trace!(target: LOG_TARGET, "Janitor task started");
 
+	// Track the last round we've scanned to avoid rescanning
+	let mut last_scanned_round: Option<u32> = None;
+
 	while let Some(message) = janitor_rx.recv().await {
 		match message {
 			JanitorMessage::JanitorTick { current_round } => {
 				log::trace!(target: LOG_TARGET, "Running janitor cleanup for round {}", current_round);
 
 				let start_time = std::time::Instant::now();
-				let result =
-					run_janitor_cleanup::<T>(client.clone(), signer.clone(), current_round).await;
+				let result = run_janitor_cleanup::<T>(
+					client.clone(),
+					signer.clone(),
+					current_round,
+					&mut last_scanned_round,
+				)
+				.await;
 				let duration = start_time.elapsed().as_millis() as f64;
 				prometheus::observe_janitor_cleanup_duration(duration);
 
@@ -853,6 +861,7 @@ async fn run_janitor_cleanup<T>(
 	client: Client,
 	signer: Signer,
 	current_round: u32,
+	last_scanned_round: &mut Option<u32>,
 ) -> Result<u32, Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
@@ -866,12 +875,29 @@ where
 	let mut cleaned_count = 0u32;
 	let mut found_count = 0u32;
 
-	// Scan for old submissions from the last few rounds only
-	let start_round = current_round.saturating_sub(JANITOR_SCAN_ROUNDS);
+	// Determine the starting round to avoid rescanning
+	let start_round = match last_scanned_round {
+		Some(last) => {
+			// Start from the round after the last scanned, but ensure we don't go beyond
+			// the scan window
+			let min_round = current_round.saturating_sub(JANITOR_SCAN_ROUNDS);
+			(*last + 1).max(min_round)
+		},
+		None => {
+			// First run - scan the full window
+			current_round.saturating_sub(JANITOR_SCAN_ROUNDS)
+		},
+	};
 
 	// Handle edge case where current_round is 0 (no previous rounds exist)
 	if current_round == 0 {
 		log::trace!(target: LOG_TARGET, "Current round is 0, no previous rounds to clean");
+		return Ok(0);
+	}
+
+	// Skip if there's nothing new to scan
+	if start_round >= current_round {
+		log::trace!(target: LOG_TARGET, "No new rounds to scan (start: {}, current: {})", start_round, current_round);
 		return Ok(0);
 	}
 
@@ -933,6 +959,10 @@ where
 	}
 
 	prometheus::set_janitor_old_submissions_found(found_count);
+
+	// Update the last scanned round to current_round - 1 (since we scanned up to but not including
+	// current_round)
+	*last_scanned_round = Some(current_round.saturating_sub(1));
 
 	Ok(cleaned_count)
 }
