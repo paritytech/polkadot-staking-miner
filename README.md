@@ -17,12 +17,12 @@ The nomination process in a nutshell:
 where
 
 - Nominators choose validators they trust with their stake
-- Phragmén algorithm selects the optimal validator with the following goals:
-  - **Maximize total stake**: Select validators with the most backing stake
-  - **Minimize variance**: Distribute stake as evenly as possible among selected validators
-  - **Support diversity**: Enable smaller validators to participate
+- _Phragmén_ algorithm tries to optimize three main objectives:
+  - **Proportional Representation**: The algorithm ensures that the voting power is distributed proportionally among validators based on the stake backing them. This means that validators with more nominated stake should have a proportionally higher chance of being selected, maintaining fairness in representation.
+  - **Security Maximization**: The algorithm aims to maximize the total stake backing the elected validator set. By selecting validators with the highest combined nominated stake, it enhances the economic security of the network, as it becomes more expensive for malicious actors to attack the system.
+  - **Balanced Distribution**: The algorithm tries to minimize variance, distributing nominators' stakes as evenly as possible across the elected validators. This prevents scenarios where some validators have significantly more stake than others, which could create imbalances in the network's security and decentralization.
 
-This optimization is computationally intensive and cannot _yet_ be solved on-chain due to block time
+This multi-objective optimization is a NP-complete problem and cannot _yet_ be solved on-chain due to block time
 and resource constraints. Instead, the blockchain runs a **multi-phase election**:
 
 1. **Snapshot Phase**: Collect all staking data (validators, nominators, stakes)
@@ -295,26 +295,25 @@ The miner consists of **three independent tasks** that communicate via bounded c
 ### Task Communication
 
 ```
-(finalized blocks)
-┌────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                                                                                |
-│   ┌─────────────────┐    bounded ch(1)      ┌─────────────────┐                ┌─────────────────┐
-└──▶│  Listener Task  │ ─────────────────────▶│   Miner Task    │                │   Blockchain    │
-    │                 │  Snapshot / Signed    │                 │                │                 │
-    │ ┌─────────────┐ │                       │ ┌─────────────┐ │  (solutions)   │                 │
-    │ │Block Stream │ │                       │ │   Process   │ │ ──────────────▶│                 │
-    │ │Subscription │ │                       │ │    Block    │ │                │                 │
-    │ └─────────────┘ │                       │ └─────────────┘ │                │                 │
-    │        │        │                       │                 │                │                 │
-    │        ▼        │                       └─────────────────┘                │                 │
-    │ ┌─────────────┐ │    bounded ch(1)      ┌─────────────────┐                │                 │
-    │ │Phase Check  │ │ ─────────────────────▶│  Janitor Task   │                │                 │
-    │ │(fast)       │ │ Round Increment       │                 │                │                 │
-    │ └─────────────┘ │                       │ ┌─────────────┐ │  (cleanup)     │                 │
-    │                 │                       │ │   Cleanup   │ │ ──────────────▶│                 │
-    │                 │                       │ │ Old Rounds  │ │                │                 │
-    │                 │                       │ └─────────────┘ │                │                 │
-    └─────────────────┘                       └─────────────────┘                └─────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│   ┌─────────────┐                      ┌─────────────┐            ┌─────────────┐
+└──▶│ Listener    │                      │   Miner     │            │ Blockchain  │
+    │             │  Snapshot/Signed     │             │            │             │
+    │ ┌─────────┐ │ ────────────────────▶│ ┌─────────┐ │ (solutions)│             │
+    │ │ Stream  │ │  (mining work)       │ │ Mining  │ │───────────▶│             │
+    │ └─────────┘ │                      │ └─────────┘ │            │             │
+    │      │      │  Round++             │ ┌─────────┐ │            │             │
+    │      ▼      │ ────────────────────▶│ │ Clear   │ │            │             │
+    │ ┌─────────┐ │                      │ │ Snapshot│ │            │             │
+    │ │ Phase   │ │                      │ └─────────┘ │            │             │
+    │ │ Check   │ │  Round++             └─────────────┘            │             │
+    │ └─────────┘ │ ────────────────────▶┌─────────────┐            │             │
+    │             │  (deposit cleanup)   │  Janitor    │ (cleanup)  │             │
+    │             │                      │ ┌─────────┐ │───────────▶│             │
+    │             │                      │ │ Cleanup │ │            │             │
+    │             │                      │ └─────────┘ │            │             │
+    └─────────────┘                      └─────────────┘            └─────────────┘
 ```
 
 ### Key Design Principles

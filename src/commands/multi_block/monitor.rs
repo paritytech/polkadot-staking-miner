@@ -38,7 +38,7 @@ async fn signed_phase(client: &Client) -> Result<bool, Error> {
 }
 
 /// Handle round increment by triggering janitor and snapshot cleanup
-async fn on_round_changed(
+async fn on_round_increment(
 	last_round: u32,
 	current_round: u32,
 	phase: &Phase,
@@ -103,15 +103,14 @@ enum JanitorMessage {
 /// - Checks if miner is busy before sending work
 /// - Never blocks on slow operations
 /// - **Any error causes entire process to exit** (RPC errors handled by reconnecting client)
-/// - Triggers janitor cleanup when round number increments (once per new round)
+/// - Triggers janitor cleanup and snapshot clearing when round increments
 ///
 /// ### Miner Task
 /// - Single-threaded processor that handles one block at a time
-/// - Performs the expensive mining and submission operations
+/// - **Mining**: Processes Snapshot/Signed phases for solution mining and submission
+/// - **Cleanup**: Clears snapshots when round increments (in Off phase)
 /// - **Critical errors cause process exit** (e.g. account doesn't exist)
 /// - **Non-critical errors are recoverable** (log and continue)
-/// - Handles snapshot management and cleanup
-/// - Handles janitor cleanup to reclaim deposits from old discarded solutions
 ///
 /// ### Janitor Task
 /// - Independent task that handles deposit recovery operations
@@ -123,8 +122,9 @@ enum JanitorMessage {
 /// - **Non-blocking**: Does not interfere with mining operations
 ///
 /// ### Communication
-/// - **Miner Channel**: Bounded channel (buffer=1) for mining work with automatic backpressure
-/// - **Janitor Channel**: Bounded channel (buffer=1) for cleanup operations
+/// - **Miner Channel**: Bounded channel (buffer=1) for mining work + snapshot cleanup
+/// - **Janitor Channel**: Bounded channel (buffer=1) for deposit recovery operations
+/// - **Dual Triggers**: Listener sends mining work (Snapshot/Signed) + cleanup signals (round++)
 /// - **Backpressure mechanism**: When miner is busy processing a block:
 ///   - Channel becomes full, listener's try_send() returns immediately
 ///   - Listener skips current block and moves to next (fresher) block
@@ -141,23 +141,25 @@ enum JanitorMessage {
 /// - **RPC issues**: Handled transparently by reconnecting RPC client
 ///
 /// ```text
-/// ┌─────────────────┐    bounded chan(1)    ┌─────────────────┐
-/// │  Listener Task  │ ─────────────────────▶│   Miner Task    │
-/// │                 │  Snapshot / Signed    │                 │
-/// │ ┌─────────────┐ │                       │ ┌─────────────┐ │
-/// │ │Block Stream │ │                       │ │   Process   │ │
-/// │ │Subscription │ │                       │ │    Block    │ │
-/// │ └─────────────┘ │                       │ └─────────────┘ │
-/// │        │        │                       │                 │
-/// │        ▼        │                       └─────────────────┘
-/// │ ┌─────────────┐ │    bounded chan(1)    ┌─────────────────┐
-/// │ │Phase Check  │ │ ─────────────────────▶│  Janitor Task   │
-/// │ │(fast)       │ │  Done/Extract(0)->Off │                 │
-/// │ └─────────────┘ │                       │ ┌─────────────┐ │
-/// │                 │                       │ │   Cleanup   │ │
-/// │                 │                       │ │ Old Rounds  │ │
-/// │                 │                       │ └─────────────┘ │
-/// └─────────────────┘                       └─────────────────┘
+/// (finalized blocks)
+/// ┌──────────────────────────────────────────────────────────────────────────┐
+/// │   ┌─────────────┐                      ┌─────────────┐            ┌─────────────┐
+/// └──▶│ Listener    │                      │   Miner     │            │ Blockchain  │
+///     │             │  Snapshot/Signed     │             │            │             │
+///     │ ┌─────────┐ │ ────────────────────▶│ ┌─────────┐ │ (solutions)│             │
+///     │ │ Stream  │ │  (mining work)       │ │ Mining  │ │───────────▶│             │
+///     │ └─────────┘ │                      │ └─────────┘ │            │             │
+///     │      │      │  Round++             │ ┌─────────┐ │            │             │
+///     │      ▼      │ ────────────────────▶│ │ Clear   │ │            │             │
+///     │ ┌─────────┐ │                      │ │ Snapshot│ │            │             │
+///     │ │ Phase   │ │                      │ └─────────┘ │            │             │
+///     │ │ Check   │ │  Round++             └─────────────┘            │             │
+///     │ └─────────┘ │ ────────────────────▶┌─────────────┐            │             │
+///     │             │  (deposit cleanup)   │  Janitor    │ (cleanup)  │             │
+///     │             │                      │ ┌─────────┐ │───────────▶│             │
+///     │             │                      │ │ Cleanup │ │            │             │
+///     │             │                      │ └─────────┘ │            │             │
+///     └─────────────┘                      └─────────────┘            └─────────────┘
 /// ```
 pub async fn monitor_cmd<T>(client: Client, config: MultiBlockMonitorConfig) -> Result<(), Error>
 where
@@ -351,7 +353,8 @@ where
 
 		if let Some(last_round) = prev_round {
 			if current_round > last_round {
-				on_round_changed(last_round, current_round, &phase, &miner_tx, &janitor_tx).await?;
+				on_round_increment(last_round, current_round, &phase, &miner_tx, &janitor_tx)
+					.await?;
 			}
 		}
 
@@ -899,7 +902,7 @@ where
 	}
 
 	for old_round in start_round..current_round {
-		log::trace!(target: LOG_TARGET, "Scanning round {} for old submissions (current round: {}, checking last {} rounds)", old_round, current_round, JANITOR_SCAN_ROUNDS.min(current_round));
+		log::trace!(target: LOG_TARGET, "Scanning round {} for old submissions", old_round);
 
 		// Check if we have a submission for this old round
 		let maybe_submission = storage
