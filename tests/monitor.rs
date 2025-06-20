@@ -82,6 +82,9 @@ fn run_miner(port: u16, seed: &str) -> KillChildOnDrop {
 /// Consider factors such as the duration of the signed phase, the number of solutions that can be
 /// verified in the SignedValidation phase, and the length of the Unsigned phase. A limit of 60
 /// minutes should be reasonably conservative.
+/// TODO: Instead of using a hard-coded value, it would be better to read the constants related to
+/// the length of the different phases from the multi-block election pallet to properly estimate a
+/// reasonable timeout.
 pub async fn wait_for_two_miners_solution(port: u16) -> anyhow::Result<()> {
 	const MAX_DURATION_FOR_SUBMIT_SOLUTION: std::time::Duration =
 		std::time::Duration::from_secs(60 * 60);
