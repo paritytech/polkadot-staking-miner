@@ -16,7 +16,7 @@ use polkadot_staking_miner::{
 	prelude::ChainClient,
 	runtime::multi_block::{
 		self as runtime,
-		multi_block_election_signed::events::{Discarded, Registered, Rewarded, Stored},
+		multi_block_election_signed::events::{Discarded, Registered, Rewarded, Slashed, Stored},
 	},
 };
 use std::{
@@ -34,19 +34,32 @@ async fn submit_works() {
 	init_logger();
 
 	let (_node, port) = run_zombienet().await;
-	let _miner_alice = run_miner(port, "//Alice");
-	let _miner_bob = run_miner(port, "//Bob");
-	assert!(wait_for_two_miners_solution(port).await.is_ok());
+	let _miner_alice = run_miner(port, "//Alice", false);
+	let _miner_bob = run_miner(port, "//Bob", false);
+	let _miner_charlie = run_miner(port, "//Charlie", true);
+	assert!(wait_for_three_miners_solution(port).await.is_ok());
 }
 
-fn run_miner(port: u16, seed: &str) -> KillChildOnDrop {
-	log::info!("Starting miner with seed {}", seed);
+fn run_miner(port: u16, seed: &str, shady: bool) -> KillChildOnDrop {
+	log::info!("Starting miner with seed {} (shady: {})", seed, shady);
+
+	let mut args = vec![
+		"--uri".to_string(),
+		format!("ws://127.0.0.1:{}", port),
+		"monitor".to_string(),
+		"--seed-or-path".to_string(),
+		seed.to_string(),
+	];
+
+	if shady {
+		args.push("--shady".to_string());
+	}
 
 	let mut miner = KillChildOnDrop(
 		std::process::Command::new(cargo_bin(env!("CARGO_PKG_NAME")))
 			.stdout(Stdio::piped())
 			.stderr(Stdio::piped())
-			.args(["--uri", &format!("ws://127.0.0.1:{}", port), "monitor", "--seed-or-path", seed])
+			.args(args)
 			.env("RUST_LOG", "polkadot_staking_miner=trace,info")
 			.spawn()
 			.unwrap(),
@@ -63,19 +76,21 @@ fn run_miner(port: u16, seed: &str) -> KillChildOnDrop {
 	miner
 }
 
-/// Wait until solutions are ready on chain for two miners, all pages are submitted,
-/// and one user is rewarded while the other is discarded.
+/// Wait until solutions are ready on chain for three miners, with the third being malicious.
 /// This function strictly checks that:
-/// 1. Both miners submit solutions (scores registered)
-/// 2. Both miners submit all pages
-/// 3. One miner receives a reward and the other gets discarded
-///  - Note that both miners will submit an identical solution, so it is not deterministic who will
-///    be rewarded. However, that is not the focus of this test!
+/// 1. All three miners submit scores (Alice, Bob, Charlie)
+/// 2. Alice and Bob submit all pages (legitimate solutions)
+/// 3. Charlie only submits score (malicious incomplete solution with ElectionScore::max_value())
+/// 4. One of Alice/Bob receives a reward and the other gets discarded
+/// 5. Charlie gets slashed for incomplete submission
+///  - Note that both Alice and Bob will submit an identical solution, so it is not deterministic
+///    who will be rewarded. However, that is not the focus of this test!
 ///
-/// The `Rewarded` event is sent at the end of the SignedValidation phase. In contrast, the
-/// Discarded event is expected to be sent in the next round after the miner calls
-/// `clear_old_round_data()` upon detecting that its previous round's solution was not the winning
-/// one.
+/// The `Rewarded` event is sent at the end of the SignedValidation phase.
+/// The `Slashed` event is also sent at the end of the SignedValidation phase for incomplete
+/// submissions. In contrast, the `Discarded` event is expected to be sent in the next round after
+/// the miner calls `clear_old_round_data()` upon detecting that its previous round's solution was
+/// not the winning one.
 ///
 /// Timeout's after 60 minutes then it's regarded as an error.
 /// This timeout needs to be adjusted based on the settings on the SDK's staking-async side.
@@ -85,12 +100,12 @@ fn run_miner(port: u16, seed: &str) -> KillChildOnDrop {
 /// TODO: Instead of using a hard-coded value, it would be better to read the constants related to
 /// the length of the different phases from the multi-block election pallet to properly estimate a
 /// reasonable timeout.
-pub async fn wait_for_two_miners_solution(port: u16) -> anyhow::Result<()> {
+pub async fn wait_for_three_miners_solution(port: u16) -> anyhow::Result<()> {
 	const MAX_DURATION_FOR_SUBMIT_SOLUTION: std::time::Duration =
 		std::time::Duration::from_secs(60 * 60);
 
 	let now = Instant::now();
-	log::info!("Starting to wait for two miners' solutions on port {}", port);
+	log::info!("Starting to wait for three miners' solutions on port {}", port);
 
 	let api = loop {
 		if let Ok(api) = ChainClient::from_url(&format!("ws://127.0.0.1:{}", port)).await {
@@ -114,9 +129,13 @@ pub async fn wait_for_two_miners_solution(port: u16) -> anyhow::Result<()> {
 	let mut bob_pages_submitted = HashSet::new();
 	let mut bob_all_pages_submitted = false;
 
+	// Track Charlie's progress (malicious miner)
+	let mut charlie_score_submitted = false;
+
 	// Track final outcomes
 	let mut rewarded_account: Option<AccountId32> = None;
 	let mut discarded_account: Option<AccountId32> = None;
+	let mut slashed_account: Option<AccountId32> = None;
 
 	let mut blocks_sub = api.blocks().subscribe_finalized().await?;
 	let pages = api
@@ -143,6 +162,9 @@ pub async fn wait_for_two_miners_solution(port: u16) -> anyhow::Result<()> {
 				} else if item.1 == bob() {
 					log::info!("Bob score registered");
 					bob_score_submitted = true;
+				} else if item.1 == charlie() {
+					log::info!("Charlie score registered (malicious)");
+					charlie_score_submitted = true;
 				}
 			}
 
@@ -187,6 +209,15 @@ pub async fn wait_for_two_miners_solution(port: u16) -> anyhow::Result<()> {
 				}
 			}
 
+			// Check for slash events - this is sent by the chain at the end of SignedValidation
+			// phase for incomplete/invalid submissions
+			if let Some(item) = ev.as_event::<Slashed>()? {
+				if item.1 == charlie() {
+					log::info!("Charlie slashed for incomplete/invalid submission!");
+					slashed_account = Some(charlie());
+				}
+			}
+
 			// Check for discard events - this is sent by the chain at the next round after a miner
 			// has called `clear_old_round_data()` to reclaim deposit back for a discarded solution.
 			if let Some(item) = ev.as_event::<Discarded>()? {
@@ -199,12 +230,16 @@ pub async fn wait_for_two_miners_solution(port: u16) -> anyhow::Result<()> {
 				}
 			}
 
-			// Check if we have both outcomes
-			if rewarded_account.is_some() && discarded_account.is_some() {
+			// Check if we have all three outcomes
+			if rewarded_account.is_some() &&
+				discarded_account.is_some() &&
+				slashed_account.is_some()
+			{
 				let rewarded = rewarded_account.as_ref().unwrap();
 				let discarded = discarded_account.as_ref().unwrap();
+				let slashed = slashed_account.as_ref().unwrap();
 
-				// Verify that both miners submitted scores and pages
+				// Verify that Alice and Bob submitted scores and pages properly
 				let rewarded_submitted_properly = if *rewarded == alice() {
 					alice_score_submitted && alice_all_pages_submitted
 				} else {
@@ -217,17 +252,24 @@ pub async fn wait_for_two_miners_solution(port: u16) -> anyhow::Result<()> {
 					bob_score_submitted && bob_all_pages_submitted
 				};
 
-				if rewarded_submitted_properly && discarded_submitted_properly {
+				// Verify that Charlie only submitted score (malicious behavior)
+				let charlie_behaved_maliciously = *slashed == charlie() && charlie_score_submitted;
+
+				if rewarded_submitted_properly &&
+					discarded_submitted_properly &&
+					charlie_behaved_maliciously
+				{
 					log::info!(
-						"🤑 Successfully completed two-miner test: both submitted solutions, one rewarded, one discarded! Duration: {:?} 🤑",
+						"🤑 Successfully completed three-miner test: Alice and Bob submitted solutions (one rewarded, one discarded), Charlie slashed for malicious behavior! Duration: {:?} 🤑",
 						now.elapsed()
 					);
 					return Ok(());
 				} else {
 					log::error!(
-						"Inconsistent state: rewarded properly: {}, discarded properly: {}",
+						"Inconsistent state: rewarded properly: {}, discarded properly: {}, charlie malicious: {}",
 						rewarded_submitted_properly,
-						discarded_submitted_properly
+						discarded_submitted_properly,
+						charlie_behaved_maliciously
 					);
 					break 'outer;
 				}
@@ -235,17 +277,19 @@ pub async fn wait_for_two_miners_solution(port: u16) -> anyhow::Result<()> {
 		}
 	}
 
-	log::info!("Failed to complete two-miner test after {:?}", now.elapsed());
+	log::info!("Failed to complete three-miner test after {:?}", now.elapsed());
 	Err(anyhow::anyhow!(
-		"Two-miner test failed: Alice - score: {}, pages: {}/{}, Bob - score: {}, pages: {}/{}, rewarded: {:?}, discarded: {:?}; timeout after {}s",
+		"Three-miner test failed: Alice - score: {}, pages: {}/{}, Bob - score: {}, pages: {}/{}, Charlie - score: {}, rewarded: {:?}, discarded: {:?}, slashed: {:?}; timeout after {}s",
 		alice_score_submitted,
 		alice_pages_submitted.len(),
 		pages,
 		bob_score_submitted,
 		bob_pages_submitted.len(),
 		pages,
+		charlie_score_submitted,
 		rewarded_account.is_some(),
 		discarded_account.is_some(),
+		slashed_account.is_some(),
 		MAX_DURATION_FOR_SUBMIT_SOLUTION.as_secs()
 	))
 }
@@ -344,6 +388,14 @@ fn bob() -> AccountId32 {
 	use polkadot_sdk::sp_core::crypto::Pair;
 
 	let pair = polkadot_staking_miner::prelude::Pair::from_string("//Bob", None).unwrap();
+	let public = pair.public();
+	AccountId32::from(public.0)
+}
+
+fn charlie() -> AccountId32 {
+	use polkadot_sdk::sp_core::crypto::Pair;
+
+	let pair = polkadot_staking_miner::prelude::Pair::from_string("//Charlie", None).unwrap();
 	let public = pair.public();
 	AccountId32::from(public.0)
 }
