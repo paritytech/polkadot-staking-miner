@@ -37,6 +37,49 @@ async fn signed_phase(client: &Client) -> Result<bool, Error> {
 	Ok(matches!(current_phase, Phase::Signed(_)))
 }
 
+/// Handle round increment by triggering janitor and snapshot cleanup
+async fn on_round_changed(
+	last_round: u32,
+	current_round: u32,
+	phase: &Phase,
+	miner_tx: &mpsc::Sender<MinerMessage>,
+	janitor_tx: &mpsc::Sender<JanitorMessage>,
+) -> Result<(), Error> {
+	log::debug!(target: LOG_TARGET, "Detected round increment {} -> {}", last_round, current_round);
+
+	// 1. Trigger janitor cleanup
+	if let Err(e) = janitor_tx.try_send(JanitorMessage::JanitorTick { current_round }) {
+		match e {
+			mpsc::error::TrySendError::Full(_) => {
+				// this shouldn't happen. Janitor is triggered once per round.
+				// If it's still busy after a round, it means that it has taken
+				// insanely long.
+				log::warn!(target: LOG_TARGET, "Janitor busy, skipping janitor tick for round {}.", current_round);
+			},
+			mpsc::error::TrySendError::Closed(_) => {
+				log::error!(target: LOG_TARGET, "Janitor channel closed unexpectedly during janitor tick");
+				return Err(Error::Other("Janitor channel closed unexpectedly".to_string()));
+			},
+		}
+	} else {
+		log::trace!(target: LOG_TARGET, "Sent janitor tick for round {}", current_round);
+	}
+
+	// 2. Clear snapshots
+	if matches!(phase, Phase::Off) {
+		log::debug!(target: LOG_TARGET, "Round increment in Off phase, signaling snapshot cleanup");
+		if let Err(e) = miner_tx.send(MinerMessage::ClearSnapshots).await {
+			log::error!(target: LOG_TARGET, "Failed to send clear snapshots signal: {}", e);
+			return Err(Error::Other(format!("Failed to send clear snapshots signal: {}", e)));
+		}
+	} else {
+		// this should really never happen, a new round should always starts with Off phase!
+		log::warn!(target: LOG_TARGET, "Round increment in {:?} phase, skipping snapshot cleanup", phase);
+	}
+
+	Ok(())
+}
+
 /// Message types for communication between listener and miner
 enum MinerMessage {
 	/// Request to process a block with given details
@@ -60,8 +103,7 @@ enum JanitorMessage {
 /// - Checks if miner is busy before sending work
 /// - Never blocks on slow operations
 /// - **Any error causes entire process to exit** (RPC errors handled by reconnecting client)
-/// - Triggers janitor cleanup when transitioning from Done/Export to Off phase (first Off block
-///   only)
+/// - Triggers janitor cleanup when round number increments (once per new round)
 ///
 /// ### Miner Task
 /// - Single-threaded processor that handles one block at a time
@@ -75,7 +117,7 @@ enum JanitorMessage {
 /// - Independent task that handles deposit recovery operations
 /// - Automatically scans for and cleans up old submissions from previous rounds
 /// - Reclaims deposits from discarded solutions that were not selected
-/// - Runs exactly once when transitioning from Done/Export to Off phase (first Off block only)
+/// - Runs exactly once per round when round number increments
 /// - Scans only the last JANITOR_SCAN_ROUNDS rounds for old submissions
 /// - Calls `clear_old_round_data()` to remove stale data and recover deposits
 /// - **Non-blocking**: Does not interfere with mining operations
@@ -266,8 +308,7 @@ where
 {
 	let mut subscription = client.chain_api().blocks().subscribe_finalized().await?;
 
-	let mut prev_block_signed_phase = false;
-	let mut prev_phase: Option<Phase> = None;
+	let mut prev_round: Option<u32> = None;
 
 	log::trace!(target: LOG_TARGET, "Listener task started, watching for finalized blocks");
 
@@ -298,80 +339,36 @@ where
 			}
 		};
 
-		// Early exit optimization: check the phase before calling BlockDetails::new(), where we
-		// we fetch `storage_at()`, `round()`, and `desired_targets()`.
-		// This approach saves us 3 RPC calls.
 		let storage = utils::storage_at(Some(block_hash), client.chain_api()).await?;
 		let phase = storage
 			.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
 			.await?;
 
+		// Check for round increment to trigger janitor and snapshot cleanup
+		let current_round = storage
+			.fetch_or_default(&runtime::storage().multi_block_election().round())
+			.await?;
+
+		if let Some(last_round) = prev_round {
+			if current_round > last_round {
+				on_round_changed(last_round, current_round, &phase, &miner_tx, &janitor_tx).await?;
+			}
+		}
+
+		prev_round = Some(current_round);
 		let block_number = at.number;
 
 		match phase {
-			Phase::Done | Phase::Off => {
-				if prev_block_signed_phase {
-					log::debug!(target: LOG_TARGET, "Election round complete (phase {:?}), signaling snapshot cleanup", phase);
-					if let Err(e) = miner_tx.send(MinerMessage::ClearSnapshots).await {
-						log::error!(target: LOG_TARGET, "Failed to send clear snapshots signal: {}", e);
-						return Err(Error::Other(format!(
-							"Failed to send clear snapshots signal: {}",
-							e
-						)));
-					}
-					prev_block_signed_phase = false;
-				}
-
-				// Trigger janitor cleanup when transitioning to Off phase from Done or Export
-				if matches!(phase, Phase::Off) &&
-					matches!(prev_phase, Some(Phase::Done) | Some(Phase::Export(_)))
-				{
-					let current_round = storage
-						.fetch_or_default(&runtime::storage().multi_block_election().round())
-						.await?;
-					log::debug!(target: LOG_TARGET, "Detected {:?} -> Off transition, triggering janitor cleanup for round {}", prev_phase, current_round);
-
-					if let Err(e) =
-						janitor_tx.try_send(JanitorMessage::JanitorTick { current_round })
-					{
-						match e {
-							mpsc::error::TrySendError::Full(_) => {
-								// this shouldn't happen. Janitor is triggered once per round. If
-								// it's still busy after a round, it means that it has taken
-								// insanely long.
-								log::warn!(target: LOG_TARGET, "Janitor busy, skipping janitor tick for round {}.", current_round);
-							},
-							mpsc::error::TrySendError::Closed(_) => {
-								log::error!(target: LOG_TARGET, "Janitor channel closed unexpectedly during janitor tick");
-								return Err(Error::Other(
-									"Janitor channel closed unexpectedly".to_string(),
-								));
-							},
-						}
-					} else {
-						log::trace!(target: LOG_TARGET, "Sent janitor tick for round {}", current_round);
-					}
-				}
-
-				log::trace!(target: LOG_TARGET, "Block #{}, Phase {:?} - nothing to do", block_number, phase);
-				prev_phase = Some(phase);
-				continue;
-			},
 			Phase::Signed(_) | Phase::Snapshot(_) => {
 				// Relevant phases for mining - continue processing
 			},
 			_ => {
 				log::trace!(target: LOG_TARGET, "Block #{}, Phase {:?} - nothing to do", block_number, phase);
-				prev_phase = Some(phase);
 				continue;
 			},
 		}
 
-		// We're in a relevant phase (Signed or Snapshot)
-		prev_block_signed_phase = true;
-
-		let state = BlockDetails::new(&client, at, phase, block_hash).await?;
-		prev_phase = Some(state.phase.clone());
+		let state = BlockDetails::new(&client, at, phase, block_hash, current_round).await?;
 
 		// Use try_send for backpressure - if miner is busy, skip this block
 		let message = MinerMessage::ProcessBlock { state };

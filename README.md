@@ -131,7 +131,7 @@ The miner automatically handles deposit recovery for discarded submissions:
   winners
 - **Deposit Recovery**: Calls `clear_old_round_data()` to reclaim locked deposits from discarded
   solutions
-- **Triggered on Phase Transitions**: Activates when transitioning from Done/Export to Off phase
+- **Triggered on Round Increments**: Activates when the election round number increments
 
 This ensures that deposits from unsuccessful submissions are automatically recovered, maintaining
 the economic viability of long-term mining operations.
@@ -309,7 +309,7 @@ The miner consists of **three independent tasks** that communicate via bounded c
     │        ▼        │                       └─────────────────┘                │                 │
     │ ┌─────────────┐ │    bounded ch(1)      ┌─────────────────┐                │                 │
     │ │Phase Check  │ │ ─────────────────────▶│  Janitor Task   │                │                 │
-    │ │(fast)       │ │ Done/Extract(0)->Off  │                 │                │                 │
+    │ │(fast)       │ │ Round Increment       │                 │                │                 │
     │ └─────────────┘ │                       │ ┌─────────────┐ │  (cleanup)     │                 │
     │                 │                       │ │   Cleanup   │ │ ──────────────▶│                 │
     │                 │                       │ │ Old Rounds  │ │                │                 │
