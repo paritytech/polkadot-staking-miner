@@ -98,11 +98,9 @@ impl BlockDetails {
 		at: Header,
 		phase: Phase,
 		block_hash: Hash,
+		round: u32,
 	) -> Result<Self, Error> {
 		let storage = utils::storage_at(Some(block_hash), client.chain_api()).await?;
-		let round = storage
-			.fetch_or_default(&runtime::storage().multi_block_election().round())
-			.await?;
 
 		let desired_targets = storage
 			.fetch(&runtime::storage().multi_block_election().desired_targets(round))
