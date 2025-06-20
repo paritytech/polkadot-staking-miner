@@ -73,4 +73,9 @@ pub struct MultiBlockMonitorConfig {
 	/// incomplete submissions and will bail any existing incomplete submissions.
 	#[clap(long, default_value_t = 10, value_parser = clap::value_parser!(u32).range(1..))]
 	pub min_signed_phase_blocks: u32,
+
+	/// Simulate malicious behavior by submitting max score with no solution pages.
+	/// This creates invalid submissions to test the system's response to spam attacks.
+	#[clap(long, default_value_t = false, hide = true)]
+	pub shady: bool,
 }
