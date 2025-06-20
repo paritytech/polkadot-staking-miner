@@ -16,7 +16,7 @@ use polkadot_staking_miner::{
 	prelude::ChainClient,
 	runtime::multi_block::{
 		self as runtime,
-		multi_block_election_signed::events::{Registered, Rewarded, Stored},
+		multi_block_election_signed::events::{Discarded, Registered, Rewarded, Stored},
 	},
 };
 use std::{
@@ -34,24 +34,19 @@ async fn submit_works() {
 	init_logger();
 
 	let (_node, port) = run_zombienet().await;
-	let _miner = run_miner(port);
-	assert!(wait_for_mined_solution(port).await.is_ok());
+	let _miner_alice = run_miner(port, "//Alice");
+	let _miner_bob = run_miner(port, "//Bob");
+	assert!(wait_for_two_miners_solution(port).await.is_ok());
 }
 
-fn run_miner(port: u16) -> KillChildOnDrop {
-	log::info!("Starting miner");
+fn run_miner(port: u16, seed: &str) -> KillChildOnDrop {
+	log::info!("Starting miner with seed {}", seed);
 
 	let mut miner = KillChildOnDrop(
 		std::process::Command::new(cargo_bin(env!("CARGO_PKG_NAME")))
 			.stdout(Stdio::piped())
 			.stderr(Stdio::piped())
-			.args([
-				"--uri",
-				&format!("ws://127.0.0.1:{}", port),
-				"monitor",
-				"--seed-or-path",
-				"//Alice",
-			])
+			.args(["--uri", &format!("ws://127.0.0.1:{}", port), "monitor", "--seed-or-path", seed])
 			.env("RUST_LOG", "polkadot_staking_miner=trace,info")
 			.spawn()
 			.unwrap(),
@@ -68,19 +63,31 @@ fn run_miner(port: u16) -> KillChildOnDrop {
 	miner
 }
 
-/// Wait until a solution is ready on chain, all pages are submitted, and the user is rewarded.
+/// Wait until solutions are ready on chain for two miners, all pages are submitted,
+/// and one user is rewarded while the other is discarded.
 /// This function strictly checks that:
-/// 1. The solution score is registered
-/// 2. All solution pages are successfully submitted
-/// 3. The user receives a reward after satisfying conditions 1 and 2
+/// 1. Both miners submit solutions (scores registered)
+/// 2. Both miners submit all pages
+/// 3. One miner receives a reward and the other gets discarded
+///  - Note that both miners will submit an identical solution, so it is not deterministic who will
+///    be rewarded. However, that is not the focus of this test!
 ///
-/// Timeout's after 40 minutes then it's regarded as an error.
-pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
+/// The `Rewarded` event is sent at the end of the SignedValidation phase. In contrast, the
+/// Discarded event is expected to be sent in the next round after the miner calls
+/// `clear_old_round_data()` upon detecting that its previous round's solution was not the winning
+/// one.
+///
+/// Timeout's after 60 minutes then it's regarded as an error.
+/// This timeout needs to be adjusted based on the settings on the SDK's staking-async side.
+/// Consider factors such as the duration of the signed phase, the number of solutions that can be
+/// verified in the SignedValidation phase, and the length of the Unsigned phase. A limit of 60
+/// minutes should be reasonably conservative.
+pub async fn wait_for_two_miners_solution(port: u16) -> anyhow::Result<()> {
 	const MAX_DURATION_FOR_SUBMIT_SOLUTION: std::time::Duration =
-		std::time::Duration::from_secs(60 * 40);
+		std::time::Duration::from_secs(60 * 60);
 
 	let now = Instant::now();
-	log::info!("Starting to wait for a mined solution on port {}", port);
+	log::info!("Starting to wait for two miners' solutions on port {}", port);
 
 	let api = loop {
 		if let Ok(api) = ChainClient::from_url(&format!("ws://127.0.0.1:{}", port)).await {
@@ -94,9 +101,19 @@ pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
 		tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 	};
 
-	let mut score_submitted = false;
-	let mut pages_submitted = HashSet::new();
-	let mut all_pages_submitted = false;
+	// Track Alice's progress
+	let mut alice_score_submitted = false;
+	let mut alice_pages_submitted = HashSet::new();
+	let mut alice_all_pages_submitted = false;
+
+	// Track Bob's progress
+	let mut bob_score_submitted = false;
+	let mut bob_pages_submitted = HashSet::new();
+	let mut bob_all_pages_submitted = false;
+
+	// Track final outcomes
+	let mut rewarded_account: Option<AccountId32> = None;
+	let mut discarded_account: Option<AccountId32> = None;
 
 	let mut blocks_sub = api.blocks().subscribe_finalized().await?;
 	let pages = api
@@ -118,8 +135,11 @@ pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
 			// Score registration.
 			if let Some(item) = ev.as_event::<Registered>()? {
 				if item.1 == alice() {
-					log::info!("Score registered");
-					score_submitted = true;
+					log::info!("Alice score registered");
+					alice_score_submitted = true;
+				} else if item.1 == bob() {
+					log::info!("Bob score registered");
+					bob_score_submitted = true;
 				}
 			}
 
@@ -127,47 +147,102 @@ pub async fn wait_for_mined_solution(port: u16) -> anyhow::Result<()> {
 			if let Some(item) = ev.as_event::<Stored>()? {
 				if item.1 == alice() {
 					log::info!(
-						"Adding page {} to pages_submitted (was size {})",
+						"Adding Alice page {} to pages_submitted (was size {})",
 						item.2,
-						pages_submitted.len()
+						alice_pages_submitted.len()
 					);
-					pages_submitted.insert(item.2);
+					alice_pages_submitted.insert(item.2);
+				} else if item.1 == bob() {
+					log::info!(
+						"Adding Bob page {} to pages_submitted (was size {})",
+						item.2,
+						bob_pages_submitted.len()
+					);
+					bob_pages_submitted.insert(item.2);
 				}
 			}
 
-			if !all_pages_submitted && pages_submitted.len() == pages as usize {
-				log::info!("All pages submitted");
-				all_pages_submitted = true;
+			if !alice_all_pages_submitted && alice_pages_submitted.len() == pages as usize {
+				log::info!("All Alice pages submitted");
+				alice_all_pages_submitted = true;
 			}
 
-			// Verify that the user receives a reward.
+			if !bob_all_pages_submitted && bob_pages_submitted.len() == pages as usize {
+				log::info!("All Bob pages submitted");
+				bob_all_pages_submitted = true;
+			}
+
+			// Check for reward events - this is sent by the chain upon successful verification of a
+			// solution
 			if let Some(item) = ev.as_event::<Rewarded>()? {
 				if item.1 == alice() {
-					log::info!("Rewarded!");
+					log::info!("Alice rewarded!");
+					rewarded_account = Some(alice());
+				} else if item.1 == bob() {
+					log::info!("Bob rewarded!");
+					rewarded_account = Some(bob());
+				}
+			}
 
-					if score_submitted && all_pages_submitted {
-						log::info!(
-							"🤑 Successfully mined solution: score registered, all {} pages submitted, and user rewarded! Duration: {:?} 🤑",
-							pages,
-							now.elapsed()
-						);
-						return Ok(());
-					}
-					// It should never happen that the user gets rewarded without score and all
-					// pages being submitted. Log the error outside both loops.
+			// Check for discard events - this is sent by the chain at the next round after a miner
+			// has called `clear_old_round_data()` to reclaim deposit back for a discarded solution.
+			if let Some(item) = ev.as_event::<Discarded>()? {
+				if item.1 == alice() {
+					log::info!("Alice solution discarded!");
+					discarded_account = Some(alice());
+				} else if item.1 == bob() {
+					log::info!("Bob solution discarded!");
+					discarded_account = Some(bob());
+				}
+			}
+
+			// Check if we have both outcomes
+			if rewarded_account.is_some() && discarded_account.is_some() {
+				let rewarded = rewarded_account.as_ref().unwrap();
+				let discarded = discarded_account.as_ref().unwrap();
+
+				// Verify that both miners submitted scores and pages
+				let rewarded_submitted_properly = if *rewarded == alice() {
+					alice_score_submitted && alice_all_pages_submitted
+				} else {
+					bob_score_submitted && bob_all_pages_submitted
+				};
+
+				let discarded_submitted_properly = if *discarded == alice() {
+					alice_score_submitted && alice_all_pages_submitted
+				} else {
+					bob_score_submitted && bob_all_pages_submitted
+				};
+
+				if rewarded_submitted_properly && discarded_submitted_properly {
+					log::info!(
+						"🤑 Successfully completed two-miner test: both submitted solutions, one rewarded, one discarded! Duration: {:?} 🤑",
+						now.elapsed()
+					);
+					return Ok(());
+				} else {
+					log::error!(
+						"Inconsistent state: rewarded properly: {}, discarded properly: {}",
+						rewarded_submitted_properly,
+						discarded_submitted_properly
+					);
 					break 'outer;
 				}
 			}
 		}
 	}
 
-	log::info!("Failed to mine solution after {:?}", now.elapsed());
+	log::info!("Failed to complete two-miner test after {:?}", now.elapsed());
 	Err(anyhow::anyhow!(
-		"Test failed: score_submitted: {}, all_pages_submitted: {} ({}/{} pages); timeout after {}s",
-		score_submitted,
-		all_pages_submitted,
-		pages_submitted.len(),
+		"Two-miner test failed: Alice - score: {}, pages: {}/{}, Bob - score: {}, pages: {}/{}, rewarded: {:?}, discarded: {:?}; timeout after {}s",
+		alice_score_submitted,
+		alice_pages_submitted.len(),
 		pages,
+		bob_score_submitted,
+		bob_pages_submitted.len(),
+		pages,
+		rewarded_account.is_some(),
+		discarded_account.is_some(),
 		MAX_DURATION_FOR_SUBMIT_SOLUTION.as_secs()
 	))
 }
@@ -258,6 +333,14 @@ fn alice() -> AccountId32 {
 	use polkadot_sdk::sp_core::crypto::Pair;
 
 	let pair = polkadot_staking_miner::prelude::Pair::from_string("//Alice", None).unwrap();
+	let public = pair.public();
+	AccountId32::from(public.0)
+}
+
+fn bob() -> AccountId32 {
+	use polkadot_sdk::sp_core::crypto::Pair;
+
+	let pair = polkadot_staking_miner::prelude::Pair::from_string("//Bob", None).unwrap();
 	let public = pair.public();
 	AccountId32::from(public.0)
 }
