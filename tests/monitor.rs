@@ -203,7 +203,7 @@ pub async fn wait_for_three_miners_solution(port: u16) -> anyhow::Result<()> {
 				bob_all_pages_submitted = true;
 			}
 
-			// Check for reward events - this is sent by the chain upon successful verification of a
+			// Check for reward event - this is sent by the chain upon successful verification of a
 			// solution
 			if let Some(item) = ev.as_event::<Rewarded>()? {
 				if item.1 == alice() {
@@ -215,8 +215,8 @@ pub async fn wait_for_three_miners_solution(port: u16) -> anyhow::Result<()> {
 				}
 			}
 
-			// Check for slash events - this is sent by the chain at the end of SignedValidation
-			// phase for incomplete/invalid submissions
+			// Check for slash event - this is sent by the chain once it detects an invalid
+			// submissions.
 			if let Some(item) = ev.as_event::<Slashed>()? {
 				if item.1 == charlie() {
 					log::info!("Charlie slashed for incomplete/invalid submission!");
@@ -224,7 +224,7 @@ pub async fn wait_for_three_miners_solution(port: u16) -> anyhow::Result<()> {
 				}
 			}
 
-			// Check for discard events - this is sent by the chain at the next round after a miner
+			// Check for discard event - this is sent by the chain at the next round after a miner
 			// has called `clear_old_round_data()` to reclaim deposit back for a discarded solution.
 			if let Some(item) = ev.as_event::<Discarded>()? {
 				if item.1 == alice() {
