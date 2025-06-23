@@ -432,6 +432,7 @@ where
 					do_reduce: config.do_reduce,
 					chunk_size: config.chunk_size,
 					min_signed_phase_blocks: config.min_signed_phase_blocks,
+					shady: config.shady,
 				};
 				let result = process_block::<T>(
 					client.clone(),
@@ -553,6 +554,7 @@ struct ProcessConfig {
 	do_reduce: bool,
 	chunk_size: usize,
 	min_signed_phase_blocks: u32,
+	shady: bool,
 }
 
 async fn process_block<T>(
@@ -642,6 +644,11 @@ where
 		},
 	};
 
+	// Handle shady behavior if enabled
+	if config.shady {
+		return execute_shady_behavior(&client, &signer).await;
+	}
+
 	// Get latest storage state (chain may have progressed while we were mining)
 	let storage_head = utils::storage_at_head(&client).await?;
 
@@ -711,9 +718,10 @@ where
 		},
 	};
 
-	// Check if our score is competitive
-	if !score_better(&storage_head, paged_raw_solution.score, round, config.submission_strategy)
-		.await?
+	// Check if our score is competitive (skip this check in shady mode)
+	if !should_bypass_competitive_check(config.shady) &&
+		!score_better(&storage_head, paged_raw_solution.score, round, config.submission_strategy)
+			.await?
 	{
 		log::debug!(target: LOG_TARGET, "Our score is not competitive, skipping submission");
 		return Ok(());
@@ -829,6 +837,70 @@ async fn has_submitted(
 	match get_submission(storage, round, who, n_pages).await? {
 		CurrentSubmission::Done(_) => Ok(true),
 		_ => Ok(false),
+	}
+}
+
+/// Execute shady behavior: register malicious max score without submitting pages
+async fn execute_shady_behavior(client: &Client, signer: &Signer) -> Result<(), Error> {
+	log::warn!(target: LOG_TARGET, "🔥 SHADY MODE: Registering malicious max score with no page submission!");
+
+	// Create a malicious score with max values
+	let malicious_score = ElectionScore {
+		minimal_stake: u128::MAX,
+		sum_stake: u128::MAX,
+		sum_stake_squared: u128::MAX,
+	};
+
+	// Just register the score and return - no page submission
+	// TODO: In the future, we might want to add more variants, such as register score - submit an
+	// invalid page (to simulate an early failure in the validation)
+	let mut i = 0;
+	let tx_status = loop {
+		let nonce = client.chain_api().tx().account_nonce(signer.account_id()).await?;
+
+		// Register score only
+		match dynamic::submit_inner(
+			client,
+			signer.clone(),
+			dynamic::MultiBlockTransaction::register_score(malicious_score)?,
+			nonce,
+		)
+		.await
+		{
+			Ok(tx) => break tx,
+			Err(Error::Subxt(boxed_err))
+				if matches!(boxed_err.as_ref(), subxt::Error::Transaction(_)) =>
+			{
+				i += 1;
+				if i >= 10 {
+					return Err(Error::Subxt(boxed_err));
+				}
+				log::debug!(target: LOG_TARGET, "Failed to register malicious score: {:?}; retrying", boxed_err);
+				tokio::time::sleep(std::time::Duration::from_secs(6)).await;
+			},
+			Err(e) => return Err(e),
+		}
+	};
+
+	// Wait for the malicious score registration to be included
+	let tx = utils::wait_tx_in_finalized_block(tx_status).await?;
+	let events = tx.wait_for_success().await?;
+	if !events.has::<runtime::multi_block_election_signed::events::Registered>()? {
+		return Err(Error::MissingTxEvent("Register malicious score".to_string()));
+	};
+
+	log::warn!(target: LOG_TARGET, "🔥 SHADY MODE: Malicious max score registered successfully at block {:?} - NO PAGES WILL BE SUBMITTED!", tx.block_hash());
+	prometheus::set_score(malicious_score);
+	Ok(())
+}
+
+/// Check if competitive score validation should be bypassed
+fn should_bypass_competitive_check(shady: bool) -> bool {
+	if shady {
+		log::warn!(target: LOG_TARGET, "🔥 SHADY MODE: Bypassing competitive score check!");
+		true
+	} else {
+		false
 	}
 }
 
