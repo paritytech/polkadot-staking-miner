@@ -60,7 +60,7 @@ fn run_miner(port: u16, seed: &str, shady: bool) -> KillChildOnDrop {
 			.stdout(Stdio::piped())
 			.stderr(Stdio::piped())
 			.args(args)
-			.env("RUST_LOG", "polkadot_staking_miner=trace,info")
+			.env("RUST_LOG", "polkadot-staking-miner=trace")
 			.spawn()
 			.unwrap(),
 	);
@@ -99,6 +99,7 @@ pub async fn wait_for_three_miners_solution(port: u16) -> anyhow::Result<()> {
 	let now = Instant::now();
 	log::info!("Starting to wait for three miners' solutions on port {}", port);
 
+	// API should be ready immediately since run_zombienet waits for it
 	let api = ChainClient::from_url(&format!("ws://127.0.0.1:{}", port)).await?;
 
 	// Read pallet constants to calculate proper timeout
@@ -348,11 +349,11 @@ async fn read_pallet_constants(api: &ChainClient) -> anyhow::Result<PalletConsta
 
 /// The timeout is dynamically calculated based on the MultiBlockElection pallet constants and an
 /// average block production rate of one block every six seconds. The calculation includes all
-/// phases of a complete election round plus a 20% buffer (in case block production takes longer
-/// than 6s and to take into account initial `Off` blocks)
+/// phases of a complete election round plus a 50% buffer (in case block production takes longer
+/// than 6s and to take into account initial `Off` blocks, potential network issues, etc)
 fn calculate_test_timeout(constants: &PalletConstants) -> std::time::Duration {
 	const BLOCK_TIME_SECS: u32 = 6;
-	const BUFFER_MULTIPLIER: f64 = 1.2; // take into account some buffer in case block production takes longer + initial `Off` blocks
+	const BUFFER_MULTIPLIER: f64 = 1.5;
 
 	let total_blocks = constants.pages + 1 + // snapshot
 		constants.signed_phase +
@@ -404,28 +405,48 @@ async fn run_zombienet() -> (KillChildOnDrop, u16) {
 		}
 	});
 
-	log::info!("Waiting for parachain collator on port {} to be ready...", rpc_port);
+	log::trace!("Waiting for parachain collator on port {} to be ready...", rpc_port);
 
 	// Wait for parachain collator to be ready with a 2 minute timeout
 	let addr = format!("127.0.0.1:{}", rpc_port);
 	let ws_url = format!("ws://{}", addr);
 
-	match tokio::time::timeout(
-		std::time::Duration::from_secs(120), // 2 minute timeout
-		ChainClient::from_url(&ws_url),
-	)
-	.await
-	{
-		Ok(Ok(_)) => {
-			log::info!("Parachain collator on port {} is up and running", rpc_port);
-		},
-		Ok(Err(e)) => {
-			log::trace!("Connected to port but WebSocket initialization failed: {}", e);
-			// We still continue as the node might be partially ready
-		},
-		Err(_) => {
-			panic!("Timed out waiting for parachain collator on port {} to be ready", rpc_port);
-		},
+	// Wait for API to be fully ready with retries
+	let start_time = std::time::Instant::now();
+	let timeout = std::time::Duration::from_secs(240);
+
+	loop {
+		match ChainClient::from_url(&ws_url).await {
+			Ok(api) => {
+				// Test that the API is actually functional by reading a basic constant
+				match api.constants().at(&runtime::constants().multi_block_election().pages()) {
+					Ok(_) => {
+						log::info!("Parachain collator on port {} is fully ready", rpc_port);
+						break;
+					},
+					Err(e) => {
+						log::debug!("API connected but not fully ready: {}", e);
+					},
+				}
+			},
+			Err(e) => {
+				log::error!(
+					"Failed to connect to API ({}s elapsed): {}",
+					start_time.elapsed().as_secs(),
+					e
+				);
+			},
+		}
+
+		if start_time.elapsed() > timeout {
+			panic!(
+				"Timed out waiting for parachain collator on port {} to be ready after {} seconds",
+				rpc_port,
+				timeout.as_secs()
+			);
+		}
+
+		tokio::time::sleep(std::time::Duration::from_secs(10)).await;
 	}
 
 	(node_cmd, rpc_port)
