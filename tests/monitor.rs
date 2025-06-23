@@ -60,7 +60,7 @@ fn run_miner(port: u16, seed: &str, shady: bool) -> KillChildOnDrop {
 			.stdout(Stdio::piped())
 			.stderr(Stdio::piped())
 			.args(args)
-			.env("RUST_LOG", "polkadot-staking-miner=trace")
+			.env("RUST_LOG", "polkadot-staking-miner=debug")
 			.spawn()
 			.unwrap(),
 	);
@@ -349,16 +349,17 @@ async fn read_pallet_constants(api: &ChainClient) -> anyhow::Result<PalletConsta
 
 /// The timeout is dynamically calculated based on the MultiBlockElection pallet constants and an
 /// average block production rate of one block every six seconds. The calculation includes all
-/// phases of a complete election round plus a 50% buffer (in case block production takes longer
+/// phases of a complete election round plus a buffer (in case block production takes longer
 /// than 6s and to take into account initial `Off` blocks, potential network issues, etc)
 fn calculate_test_timeout(constants: &PalletConstants) -> std::time::Duration {
 	const BLOCK_TIME_SECS: u32 = 6;
-	const BUFFER_MULTIPLIER: f64 = 1.5;
+	const BUFFER_MULTIPLIER: f64 = 2.0;
 
 	let total_blocks = constants.pages + 1 + // snapshot
 		constants.signed_phase +
 		constants.signed_validation_phase +
 		constants.unsigned_phase +
+        1 + // done
 		constants.pages; // export
 	let total_secs = total_blocks * BLOCK_TIME_SECS;
 	let buffered_secs = (total_secs as f64 * BUFFER_MULTIPLIER) as u64;
@@ -391,7 +392,7 @@ async fn run_zombienet() -> (KillChildOnDrop, u16) {
 			.stdout(Stdio::piped())
 			.stderr(Stdio::piped())
 			.args(["--provider", "native", "-l", "text", "spawn", config_path])
-			.env("RUST_LOG", "runtime::multiblock-election=debug")
+			.env("RUST_LOG", "runtime::multiblock-election=trace")
 			.spawn()
 			.unwrap(),
 	);
