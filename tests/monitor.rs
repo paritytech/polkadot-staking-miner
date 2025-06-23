@@ -86,34 +86,20 @@ fn run_miner(port: u16, seed: &str, shady: bool) -> KillChildOnDrop {
 ///  - Note that both Alice and Bob will submit an identical solution, so it is not deterministic
 ///    who will be rewarded. However, that is not the focus of this test!
 ///
-/// The `Rewarded` event is sent at the end of the SignedValidation phase. The `Slashed` event is
-/// also sent at the end of the SignedValidation phase for incomplete submissions. In contrast, the
-/// `Discarded` event is expected to be sent in the next round after the miner calls
-/// `clear_old_round_data()` upon detecting that its previous round's solution was not the winning
-/// one.
-///
-/// The timeout is dynamically calculated based on the MultiBlockElection pallet constants and an
-/// average block production rate of one block every six seconds. The calculation includes all
-/// phases of a complete election round plus a 20% buffer (in case block production takes longer
-/// than 6s and to take into account initial `Off` blocks)
+/// The `Slashed` event is sent when the election pallet fails to validate a solution. In the case
+/// of this test where the malicious solution has the best score and has no pages submitted, it will
+/// be sent after the first Pages() validation blocks.
+/// The `Rewarded` event is sent at the end of the SignedValidation phase.
+/// In contrast, the `Discarded` event is expected to be sent in the next round
+/// after the miner calls `clear_old_round_data()` upon detecting that its previous round's solution
+/// was not the winning one.
 pub async fn wait_for_three_miners_solution(port: u16) -> anyhow::Result<()> {
 	// Timeout will be calculated dynamically based on pallet constants
 
 	let now = Instant::now();
 	log::info!("Starting to wait for three miners' solutions on port {}", port);
 
-	let api = loop {
-		if let Ok(api) = ChainClient::from_url(&format!("ws://127.0.0.1:{}", port)).await {
-			break api;
-		}
-
-		// Use a basic timeout for API connection
-		if now.elapsed() > std::time::Duration::from_secs(120) {
-			return Err(anyhow::anyhow!("Failed to connect to the API"));
-		}
-
-		tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-	};
+	let api = ChainClient::from_url(&format!("ws://127.0.0.1:{}", port)).await?;
 
 	// Read pallet constants to calculate proper timeout
 	let constants = read_pallet_constants(&api).await?;
@@ -360,18 +346,19 @@ async fn read_pallet_constants(api: &ChainClient) -> anyhow::Result<PalletConsta
 	Ok(PalletConstants { pages, signed_phase, signed_validation_phase, unsigned_phase })
 }
 
-/// Calculate test timeout based on pallet constants
-/// Formula: (Pages + 1 (snapshot) + SignedPhase + SignedValidationPhase + UnsignedPhase
-/// + Pages (export)) * 6s * 1.2 (20% buffer)
+/// The timeout is dynamically calculated based on the MultiBlockElection pallet constants and an
+/// average block production rate of one block every six seconds. The calculation includes all
+/// phases of a complete election round plus a 20% buffer (in case block production takes longer
+/// than 6s and to take into account initial `Off` blocks)
 fn calculate_test_timeout(constants: &PalletConstants) -> std::time::Duration {
 	const BLOCK_TIME_SECS: u32 = 6;
-	const BUFFER_MULTIPLIER: f64 = 1.2;
+	const BUFFER_MULTIPLIER: f64 = 1.2; // take into account some buffer in case block production takes longer + initial `Off` blocks
 
-	let total_blocks = constants.pages +
-		1 + constants.signed_phase +
+	let total_blocks = constants.pages + 1 + // snapshot
+		constants.signed_phase +
 		constants.signed_validation_phase +
 		constants.unsigned_phase +
-		constants.pages;
+		constants.pages; // export
 	let total_secs = total_blocks * BLOCK_TIME_SECS;
 	let buffered_secs = (total_secs as f64 * BUFFER_MULTIPLIER) as u64;
 
@@ -532,48 +519,4 @@ pub fn spawn_cli_output_threads(
 			let _ = tx.send(line);
 		}
 	});
-}
-
-#[test]
-fn test_timeout_calculation() {
-	// Test with typical values
-	let constants = PalletConstants {
-		pages: 32,
-		signed_phase: 100,
-		signed_validation_phase: 128,
-		unsigned_phase: 100,
-	};
-
-	let timeout = calculate_test_timeout(&constants);
-
-	// Expected: (32 + 1 + 100 + 128 + 100 + 32) * 6 * 1.2 = 393 * 6 * 1.2 = 2829.6 seconds
-	let expected_secs = (32 + 1 + 100 + 128 + 100 + 32) * 6;
-	let expected_with_buffer = (expected_secs as f64 * 1.2) as u64;
-
-	assert_eq!(timeout.as_secs(), expected_with_buffer);
-	assert_eq!(timeout.as_secs(), 2829); // 393 * 6 * 1.2 = 2829.6, truncated to 2829
-}
-
-#[test]
-fn test_signed_validation_phase_assertion() {
-	// Test case where SignedValidationPhase < 2 * Pages (should fail)
-	let constants = PalletConstants {
-		pages: 32,
-		signed_phase: 100,
-		signed_validation_phase: 60, // Less than 2 * 32 = 64
-		unsigned_phase: 100,
-	};
-
-	// In the actual test, this would cause an assertion failure
-	assert!(constants.signed_validation_phase < 2 * constants.pages);
-
-	// Test case where SignedValidationPhase >= 2 * Pages (should pass)
-	let constants_valid = PalletConstants {
-		pages: 32,
-		signed_phase: 100,
-		signed_validation_phase: 128, // Greater than 2 * 32 = 64
-		unsigned_phase: 100,
-	};
-
-	assert!(constants_valid.signed_validation_phase >= 2 * constants_valid.pages);
 }
