@@ -86,11 +86,12 @@ fn run_miner(port: u16, seed: &str, shady: bool) -> KillChildOnDrop {
 ///  - Note that both Alice and Bob will submit an identical solution, so it is not deterministic
 ///    who will be rewarded. However, that is not the focus of this test!
 ///
-/// The `Rewarded` event is sent at the end of the SignedValidation phase.
-/// The `Slashed` event is also sent at the end of the SignedValidation phase for incomplete
-/// submissions. In contrast, the `Discarded` event is expected to be sent in the next round after
-/// the miner calls `clear_old_round_data()` upon detecting that its previous round's solution was
-/// not the winning one.
+/// In order for the test to be successful, it is expected that the SignedValidation phase lasts at
+/// least T::Pages() * 2 otherwise only a solution can be fully validated. The `Rewarded` event is
+/// sent at the end of the SignedValidation phase. The `Slashed` event is also sent at the end of
+/// the SignedValidation phase for incomplete submissions. In contrast, the `Discarded` event is
+/// expected to be sent in the next round after the miner calls `clear_old_round_data()` upon
+/// detecting that its previous round's solution was not the winning one.
 ///
 /// Timeout's after 60 minutes then it's regarded as an error.
 /// This timeout needs to be adjusted based on the settings on the SDK's staking-async side.
