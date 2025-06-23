@@ -860,7 +860,7 @@ async fn execute_shady_behavior(client: &Client, signer: &Signer) -> Result<(), 
 
 		// Register score only
 		match dynamic::submit_inner(
-			&client,
+			client,
 			signer.clone(),
 			dynamic::MultiBlockTransaction::register_score(malicious_score)?,
 			nonce,
