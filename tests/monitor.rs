@@ -86,24 +86,18 @@ fn run_miner(port: u16, seed: &str, shady: bool) -> KillChildOnDrop {
 ///  - Note that both Alice and Bob will submit an identical solution, so it is not deterministic
 ///    who will be rewarded. However, that is not the focus of this test!
 ///
-/// In order for the test to be successful, it is expected that the SignedValidation phase lasts at
-/// least T::Pages() * 2 otherwise only a solution can be fully validated. The `Rewarded` event is
-/// sent at the end of the SignedValidation phase. The `Slashed` event is also sent at the end of
-/// the SignedValidation phase for incomplete submissions. In contrast, the `Discarded` event is
-/// expected to be sent in the next round after the miner calls `clear_old_round_data()` upon
-/// detecting that its previous round's solution was not the winning one.
+/// The `Rewarded` event is sent at the end of the SignedValidation phase. The `Slashed` event is
+/// also sent at the end of the SignedValidation phase for incomplete submissions. In contrast, the
+/// `Discarded` event is expected to be sent in the next round after the miner calls
+/// `clear_old_round_data()` upon detecting that its previous round's solution was not the winning
+/// one.
 ///
-/// Timeout's after 60 minutes then it's regarded as an error.
-/// This timeout needs to be adjusted based on the settings on the SDK's staking-async side.
-/// Consider factors such as the duration of the signed phase, the number of solutions that can be
-/// verified in the SignedValidation phase, and the length of the Unsigned phase. A limit of 60
-/// minutes should be reasonably conservative.
-/// TODO: Instead of using a hard-coded value, it would be better to read the constants related to
-/// the length of the different phases from the multi-block election pallet to properly estimate a
-/// reasonable timeout.
+/// The timeout is dynamically calculated based on the MultiBlockElection pallet constants and an
+/// average block production rate of one block every six seconds. The calculation includes all
+/// phases of a complete election round plus a 20% buffer (in case block production takes longer
+/// than 6s and to take into account initial `Off` blocks)
 pub async fn wait_for_three_miners_solution(port: u16) -> anyhow::Result<()> {
-	const MAX_DURATION_FOR_SUBMIT_SOLUTION: std::time::Duration =
-		std::time::Duration::from_secs(60 * 60);
+	// Timeout will be calculated dynamically based on pallet constants
 
 	let now = Instant::now();
 	log::info!("Starting to wait for three miners' solutions on port {}", port);
@@ -113,12 +107,37 @@ pub async fn wait_for_three_miners_solution(port: u16) -> anyhow::Result<()> {
 			break api;
 		}
 
-		if now.elapsed() > MAX_DURATION_FOR_SUBMIT_SOLUTION {
+		// Use a basic timeout for API connection
+		if now.elapsed() > std::time::Duration::from_secs(120) {
 			return Err(anyhow::anyhow!("Failed to connect to the API"));
 		}
 
 		tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 	};
+
+	// Read pallet constants to calculate proper timeout
+	let constants = read_pallet_constants(&api).await?;
+
+	// In order for the test to be successful, it is expected that the SignedValidation phase lasts
+	// at least T::Pages() * 2 otherwise only a solution can be fully validated.
+	if constants.signed_validation_phase < 2 * constants.pages {
+		return Err(anyhow::anyhow!(
+			"Test requirement not met: SignedValidationPhase ({}) must be at least 2 * Pages ({})",
+			constants.signed_validation_phase,
+			2 * constants.pages
+		));
+	}
+
+	// Calculate timeout based on block time and phase durations
+	let max_duration = calculate_test_timeout(&constants);
+	log::info!(
+		"🧮 Test timeout calculated: {:?} (Pages: {}, SignedPhase: {}, SignedValidationPhase: {}, UnsignedPhase: {})",
+		max_duration,
+		constants.pages,
+		constants.signed_phase,
+		constants.signed_validation_phase,
+		constants.unsigned_phase
+	);
 
 	// Track Alice's progress
 	let mut alice_score_submitted = false;
@@ -145,7 +164,7 @@ pub async fn wait_for_three_miners_solution(port: u16) -> anyhow::Result<()> {
 		.unwrap();
 
 	'outer: while let Some(block) = blocks_sub.next().await {
-		if now.elapsed() > MAX_DURATION_FOR_SUBMIT_SOLUTION {
+		if now.elapsed() > max_duration {
 			break;
 		}
 
@@ -291,8 +310,72 @@ pub async fn wait_for_three_miners_solution(port: u16) -> anyhow::Result<()> {
 		rewarded_account.is_some(),
 		discarded_account.is_some(),
 		slashed_account.is_some(),
-		MAX_DURATION_FOR_SUBMIT_SOLUTION.as_secs()
+		max_duration.as_secs()
 	))
+}
+
+/// Pallet constants needed for test timeout calculation
+#[derive(Debug)]
+struct PalletConstants {
+	pages: u32,
+	signed_phase: u32,
+	signed_validation_phase: u32,
+	unsigned_phase: u32,
+}
+
+/// Read the MultiBlockElection pallet constants
+async fn read_pallet_constants(api: &ChainClient) -> anyhow::Result<PalletConstants> {
+	let pages = api
+		.constants()
+		.at(&runtime::constants().multi_block_election().pages())
+		.map_err(|e| anyhow::anyhow!("Failed to read Pages constant: {}", e))?;
+
+	let signed_phase = api
+		.constants()
+		.at(&subxt::dynamic::constant("MultiBlockElection", "SignedPhase"))
+		.map_err(|e| anyhow::anyhow!("Failed to read SignedPhase constant: {}", e))?
+		.to_value()
+		.map_err(|e| anyhow::anyhow!("Failed to decode SignedPhase: {}", e))?;
+	let signed_phase: u32 = scale_value::serde::from_value(signed_phase)
+		.map_err(|e| anyhow::anyhow!("Failed to deserialize SignedPhase: {}", e))?;
+
+	let signed_validation_phase = api
+		.constants()
+		.at(&subxt::dynamic::constant("MultiBlockElection", "SignedValidationPhase"))
+		.map_err(|e| anyhow::anyhow!("Failed to read SignedValidationPhase constant: {}", e))?
+		.to_value()
+		.map_err(|e| anyhow::anyhow!("Failed to decode SignedValidationPhase: {}", e))?;
+	let signed_validation_phase: u32 = scale_value::serde::from_value(signed_validation_phase)
+		.map_err(|e| anyhow::anyhow!("Failed to deserialize SignedValidationPhase: {}", e))?;
+
+	let unsigned_phase = api
+		.constants()
+		.at(&subxt::dynamic::constant("MultiBlockElection", "UnsignedPhase"))
+		.map_err(|e| anyhow::anyhow!("Failed to read UnsignedPhase constant: {}", e))?
+		.to_value()
+		.map_err(|e| anyhow::anyhow!("Failed to decode UnsignedPhase: {}", e))?;
+	let unsigned_phase: u32 = scale_value::serde::from_value(unsigned_phase)
+		.map_err(|e| anyhow::anyhow!("Failed to deserialize UnsignedPhase: {}", e))?;
+
+	Ok(PalletConstants { pages, signed_phase, signed_validation_phase, unsigned_phase })
+}
+
+/// Calculate test timeout based on pallet constants
+/// Formula: (Pages + 1 (snapshot) + SignedPhase + SignedValidationPhase + UnsignedPhase
+/// + Pages (export)) * 6s * 1.2 (20% buffer)
+fn calculate_test_timeout(constants: &PalletConstants) -> std::time::Duration {
+	const BLOCK_TIME_SECS: u32 = 6;
+	const BUFFER_MULTIPLIER: f64 = 1.2;
+
+	let total_blocks = constants.pages +
+		1 + constants.signed_phase +
+		constants.signed_validation_phase +
+		constants.unsigned_phase +
+		constants.pages;
+	let total_secs = total_blocks * BLOCK_TIME_SECS;
+	let buffered_secs = (total_secs as f64 * BUFFER_MULTIPLIER) as u64;
+
+	std::time::Duration::from_secs(buffered_secs)
 }
 
 // TODO: the zombienet process starts multiple child processes: 2 relay chain nodes and a
@@ -449,4 +532,48 @@ pub fn spawn_cli_output_threads(
 			let _ = tx.send(line);
 		}
 	});
+}
+
+#[test]
+fn test_timeout_calculation() {
+	// Test with typical values
+	let constants = PalletConstants {
+		pages: 32,
+		signed_phase: 100,
+		signed_validation_phase: 128,
+		unsigned_phase: 100,
+	};
+
+	let timeout = calculate_test_timeout(&constants);
+
+	// Expected: (32 + 1 + 100 + 128 + 100 + 32) * 6 * 1.2 = 393 * 6 * 1.2 = 2829.6 seconds
+	let expected_secs = (32 + 1 + 100 + 128 + 100 + 32) * 6;
+	let expected_with_buffer = (expected_secs as f64 * 1.2) as u64;
+
+	assert_eq!(timeout.as_secs(), expected_with_buffer);
+	assert_eq!(timeout.as_secs(), 2829); // 393 * 6 * 1.2 = 2829.6, truncated to 2829
+}
+
+#[test]
+fn test_signed_validation_phase_assertion() {
+	// Test case where SignedValidationPhase < 2 * Pages (should fail)
+	let constants = PalletConstants {
+		pages: 32,
+		signed_phase: 100,
+		signed_validation_phase: 60, // Less than 2 * 32 = 64
+		unsigned_phase: 100,
+	};
+
+	// In the actual test, this would cause an assertion failure
+	assert!(constants.signed_validation_phase < 2 * constants.pages);
+
+	// Test case where SignedValidationPhase >= 2 * Pages (should pass)
+	let constants_valid = PalletConstants {
+		pages: 32,
+		signed_phase: 100,
+		signed_validation_phase: 128, // Greater than 2 * 32 = 64
+		unsigned_phase: 100,
+	};
+
+	assert!(constants_valid.signed_validation_phase >= 2 * constants_valid.pages);
 }
