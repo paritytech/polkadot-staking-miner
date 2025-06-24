@@ -159,8 +159,7 @@ pub(crate) async fn submit_inner(
 	log::trace!(target: LOG_TARGET, "submit `{kind}` nonce={nonce}");
 
 	// Set mortality based on SignedPhase duration for precise transaction lifetime
-	let mortality = std::cmp::max(1, blocks_remaining); // At least 1 block
-	log::trace!(target: LOG_TARGET, "Setting transaction mortality to {} blocks (SignedPhase remaining: {})", mortality, blocks_remaining);
+	let mortality = blocks_remaining + 1;
 	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).mortal(mortality as u64).build();
 	let xt = client.chain_api().tx().create_signed(&tx, &*signer, xt_cfg).await?;
 
