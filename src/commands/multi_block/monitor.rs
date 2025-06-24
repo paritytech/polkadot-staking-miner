@@ -1098,6 +1098,9 @@ fn is_critical_miner_error(error: &Error) -> bool {
 			false, /* e.g. Subxt(Transaction(Invalid("Transaction is invalid (eg because of a bad */
 		// nonce, signature etc)"))))
 		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Rpc(_)) => false, /* e.g. Subxt(Rpc(ClientError(User(UserError { code: -32801, message: "Invalid block hash" })))) */
+		// Phase timing errors should not be critical - these are expected conditions
+		Error::InsufficientSignedPhaseBlocks { .. } => false,
+		Error::PhaseChangedDuringSubmission { .. } => false,
 		// Everything else we consider it critical e.g.
 		//  - Error::AccountDoesNotExists
 		//  - Error::InvalidMetadata(_)

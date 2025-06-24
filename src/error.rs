@@ -51,6 +51,12 @@ pub enum Error {
 	MissingTxEvent(String),
 	#[error("Failed to submit {0} pages")]
 	FailedToSubmitPages(usize),
+	#[error(
+		"Signed phase has insufficient blocks remaining: {blocks_remaining} (need at least {min_blocks})"
+	)]
+	InsufficientSignedPhaseBlocks { blocks_remaining: u32, min_blocks: u32 },
+	#[error("Phase changed from Signed to {new_phase:?} during submission for round {round}")]
+	PhaseChangedDuringSubmission { new_phase: String, round: u32 },
 }
 
 impl From<subxt_rpcs::Error> for Error {

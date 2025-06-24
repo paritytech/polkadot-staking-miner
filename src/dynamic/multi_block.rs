@@ -814,10 +814,10 @@ async fn validate_signed_phase_or_bail(
 					}
 				}
 
-				Err(Error::Other(format!(
-					"Signed phase has insufficient blocks remaining: {} (need at least {})",
-					blocks_remaining, min_signed_phase_blocks
-				)))
+				Err(Error::InsufficientSignedPhaseBlocks {
+					blocks_remaining: *blocks_remaining,
+					min_blocks: min_signed_phase_blocks,
+				})
 			} else {
 				log::trace!(
 					target: LOG_TARGET,
@@ -834,10 +834,10 @@ async fn validate_signed_phase_or_bail(
 				current_phase,
 				round
 			);
-			Err(Error::Other(format!(
-				"Phase changed from Signed to {:?} during submission for round {}",
-				current_phase, round
-			)))
+			Err(Error::PhaseChangedDuringSubmission {
+				new_phase: format!("{:?}", current_phase),
+				round,
+			})
 		},
 	}
 }
