@@ -646,7 +646,7 @@ where
 
 	// Handle shady behavior if enabled
 	if config.shady {
-		return execute_shady_behavior(&client, &signer).await;
+		return execute_shady_behavior(&client, &signer, &phase).await;
 	}
 
 	// Get latest storage state (chain may have progressed while we were mining)
@@ -680,6 +680,17 @@ where
 
 				log::info!(target: LOG_TARGET, "Submitting {} missing pages for existing submission", missing_pages.len());
 
+				// Get blocks remaining from current phase for mortality calculation
+				let blocks_remaining = match phase {
+					Phase::Signed(remaining) => remaining,
+					_ => {
+						log::error!(target: LOG_TARGET, "Attempting to submit missing pages but not in SignedPhase: {:?}", phase);
+						return Err(Error::Other(
+							"Not in SignedPhase when submitting missing pages".to_string(),
+						));
+					},
+				};
+
 				if config.chunk_size == 0 {
 					dynamic::inner_submit_pages_concurrent::<T>(
 						&client,
@@ -687,6 +698,7 @@ where
 						missing_pages,
 						round,
 						config.min_signed_phase_blocks,
+						blocks_remaining,
 					)
 					.await?;
 				} else {
@@ -697,6 +709,7 @@ where
 						config.chunk_size,
 						round,
 						config.min_signed_phase_blocks,
+						blocks_remaining,
 					)
 					.await?;
 				}
@@ -841,8 +854,21 @@ async fn has_submitted(
 }
 
 /// Execute shady behavior: register malicious max score without submitting pages
-async fn execute_shady_behavior(client: &Client, signer: &Signer) -> Result<(), Error> {
+async fn execute_shady_behavior(
+	client: &Client,
+	signer: &Signer,
+	phase: &Phase,
+) -> Result<(), Error> {
 	log::warn!(target: LOG_TARGET, "🔥 SHADY MODE: Registering malicious max score with no page submission!");
+
+	// Get blocks remaining for shady behavior mortality
+	let blocks_remaining = match phase {
+		Phase::Signed(remaining) => *remaining,
+		_ => {
+			log::error!(target: LOG_TARGET, "Shady behavior attempted but not in SignedPhase: {:?}", phase);
+			return Err(Error::Other("Not in SignedPhase for shady behavior".to_string()));
+		},
+	};
 
 	// Create a malicious score with max values
 	let malicious_score = ElectionScore {
@@ -864,6 +890,7 @@ async fn execute_shady_behavior(client: &Client, signer: &Signer) -> Result<(), 
 			signer.clone(),
 			dynamic::MultiBlockTransaction::register_score(malicious_score)?,
 			nonce,
+			blocks_remaining,
 		)
 		.await
 		{

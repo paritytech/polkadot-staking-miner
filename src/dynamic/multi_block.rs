@@ -150,13 +150,16 @@ pub(crate) async fn submit_inner(
 	signer: Signer,
 	tx: MultiBlockTransaction,
 	nonce: u64,
+	blocks_remaining: u32,
 ) -> Result<TxProgress<Config, ChainClient>, Error> {
 	let (kind, tx) = tx.into_parts();
 
 	log::trace!(target: LOG_TARGET, "submit `{kind}` nonce={nonce}");
 
-	// NOTE: subxt sets mortal extrinsic by default.
-	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
+	// Set mortality based on SignedPhase duration for precise transaction lifetime
+	let mortality = std::cmp::max(1, blocks_remaining); // At least 1 block
+	log::trace!(target: LOG_TARGET, "Setting transaction mortality to {} blocks (SignedPhase remaining: {})", mortality, blocks_remaining);
+	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).mortal(mortality as u64).build();
 	let xt = client.chain_api().tx().create_signed(&tx, &*signer, xt_cfg).await?;
 
 	xt.submit_and_watch()
@@ -342,6 +345,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 	if !validate_signed_phase_or_bail(client, signer, round, min_signed_phase_blocks).await? {
 		return Ok(());
 	}
+	let blocks_remaining = get_signed_phase_blocks_remaining(client).await?;
 
 	let mut i = 0;
 	let tx_status = loop {
@@ -353,6 +357,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 			signer.clone(),
 			MultiBlockTransaction::register_score(paged_raw_solution.score)?,
 			nonce,
+			blocks_remaining,
 		)
 		.await
 		{
@@ -387,6 +392,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 	if !validate_signed_phase_or_bail(client, signer, round, min_signed_phase_blocks).await? {
 		return Ok(());
 	}
+	let blocks_remaining = get_signed_phase_blocks_remaining(client).await?;
 
 	let solutions: Vec<(u32, T::Solution)> = paged_raw_solution
 		.solution_pages
@@ -403,6 +409,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 			solutions,
 			round,
 			min_signed_phase_blocks,
+			blocks_remaining,
 		)
 		.await?
 	} else {
@@ -413,6 +420,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 			chunk_size,
 			round,
 			min_signed_phase_blocks,
+			blocks_remaining,
 		)
 		.await?
 	};
@@ -434,6 +442,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 	if !validate_signed_phase_or_bail(client, signer, round, min_signed_phase_blocks).await? {
 		return Ok(());
 	}
+	let blocks_remaining = get_signed_phase_blocks_remaining(client).await?;
 
 	// 6. Retry failed pages, one time.
 	let mut solutions = Vec::new();
@@ -450,6 +459,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 			solutions,
 			round,
 			min_signed_phase_blocks,
+			blocks_remaining,
 		)
 		.await?
 	} else {
@@ -460,6 +470,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 			chunk_size,
 			round,
 			min_signed_phase_blocks,
+			blocks_remaining,
 		)
 		.await?
 	};
@@ -507,6 +518,7 @@ async fn submit_pages_batch<T: MinerConfig + 'static>(
 	pages_to_submit: Vec<(u32, T::Solution)>,
 	round: u32,
 	min_signed_phase_blocks: u32,
+	blocks_remaining: u32,
 ) -> Result<SubmissionResult, Error> {
 	// Check phase before submitting this batch
 	if !validate_signed_phase_or_bail(client, signer, round, min_signed_phase_blocks).await? {
@@ -527,6 +539,7 @@ async fn submit_pages_batch<T: MinerConfig + 'static>(
 			signer.clone(),
 			MultiBlockTransaction::submit_page::<T>(page, Some(solution))?,
 			nonce,
+			blocks_remaining,
 		)
 		.await?;
 
@@ -609,11 +622,18 @@ pub(crate) async fn inner_submit_pages_concurrent<T: MinerConfig + 'static>(
 	paged_raw_solution: Vec<(u32, T::Solution)>,
 	round: u32,
 	min_signed_phase_blocks: u32,
+	blocks_remaining: u32,
 ) -> Result<Vec<u32>, Error> {
 	// Submit all pages in a single batch
-	let result =
-		submit_pages_batch::<T>(client, signer, paged_raw_solution, round, min_signed_phase_blocks)
-			.await?;
+	let result = submit_pages_batch::<T>(
+		client,
+		signer,
+		paged_raw_solution,
+		round,
+		min_signed_phase_blocks,
+		blocks_remaining,
+	)
+	.await?;
 
 	// If all pages were submitted successfully, we're done
 	if result.all_successful() {
@@ -632,6 +652,7 @@ pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
 	chunk_size: usize,
 	round: u32,
 	min_signed_phase_blocks: u32,
+	blocks_remaining: u32,
 ) -> Result<Vec<u32>, Error> {
 	assert!(chunk_size > 0, "Chunk size must be greater than 0");
 
@@ -663,9 +684,15 @@ pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
 		);
 
 		// Submit the current chunk
-		let result =
-			submit_pages_batch::<T>(client, signer, chunk_vec, round, min_signed_phase_blocks)
-				.await?;
+		let result = submit_pages_batch::<T>(
+			client,
+			signer,
+			chunk_vec,
+			round,
+			min_signed_phase_blocks,
+			blocks_remaining,
+		)
+		.await?;
 
 		// Check if we have failed pages before extending the overall lists
 		if !result.all_successful() {
@@ -710,9 +737,30 @@ pub(crate) async fn bail(client: &Client, signer: &Signer) -> Result<(), Error> 
 	Ok(())
 }
 
+/// Get the blocks remaining in the current signed phase.
+/// Should only be called after validate_signed_phase_or_bail returns true.
+/// Panics if not in SignedPhase (indicates programming error).
+async fn get_signed_phase_blocks_remaining(client: &Client) -> Result<u32, Error> {
+	let storage = utils::storage_at_head(client).await?;
+	let current_phase = storage
+		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
+		.await?;
+
+	use crate::runtime::multi_block::runtime_types::pallet_election_provider_multi_block::types::Phase;
+
+	if let Phase::Signed(blocks_remaining) = current_phase {
+		Ok(blocks_remaining)
+	} else {
+		panic!(
+			"get_signed_phase_blocks_remaining called but not in SignedPhase: {:?}. This indicates a programming error.",
+			current_phase
+		);
+	}
+}
+
 /// Helper function to validate that we're still in Signed phase
-/// If not in Signed phase, we have an incomplete submission and less than min_signed_phase_blocks,
-/// bail it.
+/// If not in Signed phase or insufficient blocks remaining, we have an incomplete submission
+/// and should bail it.
 /// Returns true if we should continue, false if we should abort
 async fn validate_signed_phase_or_bail(
 	client: &Client,
