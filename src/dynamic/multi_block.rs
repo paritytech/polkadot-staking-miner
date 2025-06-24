@@ -11,7 +11,9 @@ use crate::{
 	},
 	error::Error,
 	prelude::{AccountId, ChainClient, Config, ExtrinsicParamsBuilder, Hash, LOG_TARGET, Storage},
-	runtime::multi_block as runtime,
+	runtime::multi_block::{
+		self as runtime, runtime_types::pallet_election_provider_multi_block::types::Phase,
+	},
 	signer::Signer,
 	utils,
 };
@@ -341,11 +343,15 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 	// Record that a submission has started
 	crate::prometheus::on_submission_started();
 
-	// 1. Check phase before registering score
-	if !validate_signed_phase_or_bail(client, signer, round, min_signed_phase_blocks).await? {
-		return Ok(());
-	}
-	let blocks_remaining = get_signed_phase_blocks_remaining(client).await?;
+	// 1. Get current phase and validate
+	let storage = utils::storage_at_head(client).await?;
+	let current_phase = storage
+		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
+		.await?;
+
+	validate_signed_phase_or_bail(&current_phase, client, signer, round, min_signed_phase_blocks)
+		.await?;
+	let blocks_remaining = get_signed_phase_blocks_remaining(&current_phase)?;
 
 	let mut i = 0;
 	let tx_status = loop {
@@ -388,11 +394,14 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 
 	log::info!(target: LOG_TARGET, "Score registered at block {:?}", tx.block_hash());
 
-	// 2. Check phase before submitting pages
-	if !validate_signed_phase_or_bail(client, signer, round, min_signed_phase_blocks).await? {
-		return Ok(());
-	}
-	let blocks_remaining = get_signed_phase_blocks_remaining(client).await?;
+	// 2. Get current phase and validate before submitting pages
+	let storage = utils::storage_at_head(client).await?;
+	let current_phase = storage
+		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
+		.await?;
+
+	validate_signed_phase_or_bail(&current_phase, client, signer, round, min_signed_phase_blocks)
+		.await?;
 
 	let solutions: Vec<(u32, T::Solution)> = paged_raw_solution
 		.solution_pages
@@ -409,7 +418,6 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 			solutions,
 			round,
 			min_signed_phase_blocks,
-			blocks_remaining,
 		)
 		.await?
 	} else {
@@ -420,7 +428,6 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 			chunk_size,
 			round,
 			min_signed_phase_blocks,
-			blocks_remaining,
 		)
 		.await?
 	};
@@ -438,11 +445,14 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 		failed_pages.len()
 	);
 
-	// 5. Check phase before retrying failed pages
-	if !validate_signed_phase_or_bail(client, signer, round, min_signed_phase_blocks).await? {
-		return Ok(());
-	}
-	let blocks_remaining = get_signed_phase_blocks_remaining(client).await?;
+	// 5. Get current phase and validate before retrying failed pages
+	let storage = utils::storage_at_head(client).await?;
+	let current_phase = storage
+		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
+		.await?;
+
+	validate_signed_phase_or_bail(&current_phase, client, signer, round, min_signed_phase_blocks)
+		.await?;
 
 	// 6. Retry failed pages, one time.
 	let mut solutions = Vec::new();
@@ -459,7 +469,6 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 			solutions,
 			round,
 			min_signed_phase_blocks,
-			blocks_remaining,
 		)
 		.await?
 	} else {
@@ -470,7 +479,6 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 			chunk_size,
 			round,
 			min_signed_phase_blocks,
-			blocks_remaining,
 		)
 		.await?
 	};
@@ -486,10 +494,19 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 			"All page submission attempts failed, attempting final bail to avoid slashing"
 		);
 
-		if !validate_signed_phase_or_bail(client, signer, round, min_signed_phase_blocks).await? {
-			log::info!(target: LOG_TARGET, "Bailed incomplete submission due to insufficient blocks remaining");
-			return Ok(());
-		}
+		let storage = utils::storage_at_head(client).await?;
+		let current_phase = storage
+			.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
+			.await?;
+
+		validate_signed_phase_or_bail(
+			&current_phase,
+			client,
+			signer,
+			round,
+			min_signed_phase_blocks,
+		)
+		.await?;
 
 		Err(Error::FailedToSubmitPages(failed_pages.len()))
 	}
@@ -518,14 +535,15 @@ async fn submit_pages_batch<T: MinerConfig + 'static>(
 	pages_to_submit: Vec<(u32, T::Solution)>,
 	round: u32,
 	min_signed_phase_blocks: u32,
-	blocks_remaining: u32,
 ) -> Result<SubmissionResult, Error> {
 	// Check phase before submitting this batch
-	if !validate_signed_phase_or_bail(client, signer, round, min_signed_phase_blocks).await? {
-		// Return all pages as failed if phase changed
-		let failed_pages: Vec<u32> = pages_to_submit.iter().map(|(page, _)| *page).collect();
-		return Ok(SubmissionResult { failed_pages, submitted_pages: HashSet::new() });
-	}
+	let storage = utils::storage_at_head(client).await?;
+	let current_phase = storage
+		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
+		.await?;
+
+	validate_signed_phase_or_bail(&current_phase, client, signer, round, min_signed_phase_blocks)
+		.await?;
 	let mut txs = FuturesUnordered::new();
 	let mut nonce = client.chain_api().tx().account_nonce(signer.account_id()).await?;
 
@@ -534,6 +552,13 @@ async fn submit_pages_batch<T: MinerConfig + 'static>(
 
 	// 1. Submit all pages in the batch
 	for (page, solution) in pages_to_submit.into_iter() {
+		// Get current phase for precise mortality
+		let storage = utils::storage_at_head(client).await?;
+		let current_phase = storage
+			.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
+			.await?;
+		let blocks_remaining = get_signed_phase_blocks_remaining(&current_phase)?;
+
 		let tx_status = submit_inner(
 			client,
 			signer.clone(),
@@ -622,18 +647,11 @@ pub(crate) async fn inner_submit_pages_concurrent<T: MinerConfig + 'static>(
 	paged_raw_solution: Vec<(u32, T::Solution)>,
 	round: u32,
 	min_signed_phase_blocks: u32,
-	blocks_remaining: u32,
 ) -> Result<Vec<u32>, Error> {
 	// Submit all pages in a single batch
-	let result = submit_pages_batch::<T>(
-		client,
-		signer,
-		paged_raw_solution,
-		round,
-		min_signed_phase_blocks,
-		blocks_remaining,
-	)
-	.await?;
+	let result =
+		submit_pages_batch::<T>(client, signer, paged_raw_solution, round, min_signed_phase_blocks)
+			.await?;
 
 	// If all pages were submitted successfully, we're done
 	if result.all_successful() {
@@ -652,7 +670,6 @@ pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
 	chunk_size: usize,
 	round: u32,
 	min_signed_phase_blocks: u32,
-	blocks_remaining: u32,
 ) -> Result<Vec<u32>, Error> {
 	assert!(chunk_size > 0, "Chunk size must be greater than 0");
 
@@ -663,12 +680,19 @@ pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
 	// Process pages in chunks
 	for chunk in paged_raw_solution.chunks(chunk_size) {
 		// Check phase before each chunk
-		if !validate_signed_phase_or_bail(client, signer, round, min_signed_phase_blocks).await? {
-			// Add remaining pages to failed list
-			let remaining_pages: Vec<u32> = chunk.iter().map(|(page, _)| *page).collect();
-			failed_pages.extend(remaining_pages);
-			break;
-		}
+		let storage = utils::storage_at_head(client).await?;
+		let current_phase = storage
+			.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
+			.await?;
+
+		validate_signed_phase_or_bail(
+			&current_phase,
+			client,
+			signer,
+			round,
+			min_signed_phase_blocks,
+		)
+		.await?;
 
 		// Convert the chunk slice to a Vec to pass to submit_pages_batch
 		let chunk_vec = chunk.to_vec();
@@ -684,15 +708,9 @@ pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
 		);
 
 		// Submit the current chunk
-		let result = submit_pages_batch::<T>(
-			client,
-			signer,
-			chunk_vec,
-			round,
-			min_signed_phase_blocks,
-			blocks_remaining,
-		)
-		.await?;
+		let result =
+			submit_pages_batch::<T>(client, signer, chunk_vec, round, min_signed_phase_blocks)
+				.await?;
 
 		// Check if we have failed pages before extending the overall lists
 		if !result.all_successful() {
@@ -737,19 +755,12 @@ pub(crate) async fn bail(client: &Client, signer: &Signer) -> Result<(), Error> 
 	Ok(())
 }
 
-/// Get the blocks remaining in the current signed phase.
+/// Get the blocks remaining from a SignedPhase.
 /// Should only be called after validate_signed_phase_or_bail returns true.
 /// Panics if not in SignedPhase (indicates programming error).
-async fn get_signed_phase_blocks_remaining(client: &Client) -> Result<u32, Error> {
-	let storage = utils::storage_at_head(client).await?;
-	let current_phase = storage
-		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
-		.await?;
-
-	use crate::runtime::multi_block::runtime_types::pallet_election_provider_multi_block::types::Phase;
-
+fn get_signed_phase_blocks_remaining(current_phase: &Phase) -> Result<u32, Error> {
 	if let Phase::Signed(blocks_remaining) = current_phase {
-		Ok(blocks_remaining)
+		Ok(*blocks_remaining)
 	} else {
 		panic!(
 			"get_signed_phase_blocks_remaining called but not in SignedPhase: {:?}. This indicates a programming error.",
@@ -761,24 +772,17 @@ async fn get_signed_phase_blocks_remaining(client: &Client) -> Result<u32, Error
 /// Helper function to validate that we're still in Signed phase
 /// If not in Signed phase or insufficient blocks remaining, we have an incomplete submission
 /// and should bail it.
-/// Returns true if we should continue, false if we should abort
+/// Returns Ok(()) if we should continue, Error if we should abort
 async fn validate_signed_phase_or_bail(
+	current_phase: &Phase,
 	client: &Client,
 	signer: &Signer,
 	round: u32,
 	min_signed_phase_blocks: u32,
-) -> Result<bool, Error> {
-	let storage = utils::storage_at_head(client).await?;
-	let current_phase = storage
-		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
-		.await?;
-
-	// Import Phase enum from runtime types
-	use crate::runtime::multi_block::runtime_types::pallet_election_provider_multi_block::types::Phase;
-
+) -> Result<(), Error> {
 	match current_phase {
 		Phase::Signed(blocks_remaining) => {
-			if blocks_remaining <= min_signed_phase_blocks {
+			if *blocks_remaining <= min_signed_phase_blocks {
 				log::warn!(
 					target: LOG_TARGET,
 					"Signed phase has only {} blocks remaining (need at least {}), checking for incomplete submission",
@@ -787,6 +791,7 @@ async fn validate_signed_phase_or_bail(
 				);
 
 				// Check if we have a partial submission and bail it
+				let storage = utils::storage_at_head(client).await?;
 				let maybe_submission = storage
 					.fetch(
 						&runtime::storage()
@@ -810,14 +815,17 @@ async fn validate_signed_phase_or_bail(
 					}
 				}
 
-				Ok(false)
+				Err(Error::Other(format!(
+					"Signed phase has insufficient blocks remaining: {} (need at least {})",
+					blocks_remaining, min_signed_phase_blocks
+				)))
 			} else {
 				log::trace!(
 					target: LOG_TARGET,
 					"Signed phase has {} blocks remaining, enough blocks to continue",
 					blocks_remaining
 				);
-				Ok(true)
+				Ok(())
 			}
 		},
 		_ => {
@@ -827,7 +835,10 @@ async fn validate_signed_phase_or_bail(
 				current_phase,
 				round
 			);
-			Ok(false)
+			Err(Error::Other(format!(
+				"Phase changed from Signed to {:?} during submission for round {}",
+				current_phase, round
+			)))
 		},
 	}
 }

@@ -680,17 +680,6 @@ where
 
 				log::info!(target: LOG_TARGET, "Submitting {} missing pages for existing submission", missing_pages.len());
 
-				// Get blocks remaining from current phase for mortality calculation
-				let blocks_remaining = match phase {
-					Phase::Signed(remaining) => remaining,
-					_ => {
-						log::error!(target: LOG_TARGET, "Attempting to submit missing pages but not in SignedPhase: {:?}", phase);
-						return Err(Error::Other(
-							"Not in SignedPhase when submitting missing pages".to_string(),
-						));
-					},
-				};
-
 				if config.chunk_size == 0 {
 					dynamic::inner_submit_pages_concurrent::<T>(
 						&client,
@@ -698,7 +687,6 @@ where
 						missing_pages,
 						round,
 						config.min_signed_phase_blocks,
-						blocks_remaining,
 					)
 					.await?;
 				} else {
@@ -709,7 +697,6 @@ where
 						config.chunk_size,
 						round,
 						config.min_signed_phase_blocks,
-						blocks_remaining,
 					)
 					.await?;
 				}
