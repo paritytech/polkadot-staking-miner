@@ -646,7 +646,7 @@ where
 
 	// Handle shady behavior if enabled
 	if config.shady {
-		return execute_shady_behavior(&client, &signer).await;
+		return execute_shady_behavior(&client, &signer, &phase).await;
 	}
 
 	// Get latest storage state (chain may have progressed while we were mining)
@@ -841,8 +841,21 @@ async fn has_submitted(
 }
 
 /// Execute shady behavior: register malicious max score without submitting pages
-async fn execute_shady_behavior(client: &Client, signer: &Signer) -> Result<(), Error> {
+async fn execute_shady_behavior(
+	client: &Client,
+	signer: &Signer,
+	phase: &Phase,
+) -> Result<(), Error> {
 	log::warn!(target: LOG_TARGET, "🔥 SHADY MODE: Registering malicious max score with no page submission!");
+
+	// Get blocks remaining for shady behavior mortality
+	let blocks_remaining = match phase {
+		Phase::Signed(remaining) => *remaining,
+		_ => {
+			log::error!(target: LOG_TARGET, "Shady behavior attempted but not in SignedPhase: {:?}", phase);
+			return Err(Error::Other("Not in SignedPhase for shady behavior".to_string()));
+		},
+	};
 
 	// Create a malicious score with max values
 	let malicious_score = ElectionScore {
@@ -864,6 +877,7 @@ async fn execute_shady_behavior(client: &Client, signer: &Signer) -> Result<(), 
 			signer.clone(),
 			dynamic::MultiBlockTransaction::register_score(malicious_score)?,
 			nonce,
+			blocks_remaining,
 		)
 		.await
 		{
@@ -1084,6 +1098,9 @@ fn is_critical_miner_error(error: &Error) -> bool {
 			false, /* e.g. Subxt(Transaction(Invalid("Transaction is invalid (eg because of a bad */
 		// nonce, signature etc)"))))
 		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Rpc(_)) => false, /* e.g. Subxt(Rpc(ClientError(User(UserError { code: -32801, message: "Invalid block hash" })))) */
+		// Phase timing errors should not be critical - these are expected conditions
+		Error::InsufficientSignedPhaseBlocks { .. } => false,
+		Error::PhaseChangedDuringSubmission { .. } => false,
 		// Everything else we consider it critical e.g.
 		//  - Error::AccountDoesNotExists
 		//  - Error::InvalidMetadata(_)
