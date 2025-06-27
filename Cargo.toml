@@ -44,7 +44,7 @@ polkadot-sdk = { git = "https://github.com/paritytech/polkadot-sdk", features = 
     "sp-runtime",
     "sp-version",
     "pallet-election-provider-multi-block",
-], branch = "donal-ahm" }
+], branch = "master" }
 
 # prometheus
 prometheus = "0.14"
