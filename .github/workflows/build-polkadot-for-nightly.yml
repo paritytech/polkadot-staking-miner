@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: paritytech/polkadot-sdk
-          ref: donal-ahm
+          ref: master
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
