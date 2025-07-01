@@ -57,6 +57,16 @@ pub enum Error {
 	InsufficientSignedPhaseBlocks { blocks_remaining: u32, min_blocks: u32 },
 	#[error("Phase changed from Signed to {new_phase:?} during submission for round {round}")]
 	PhaseChangedDuringSubmission { new_phase: String, round: u32 },
+	#[error(
+		"Solution validation failed: desired_targets ({desired_targets}) != solution winner count ({solution_winner_count})"
+	)]
+	SolutionValidation { desired_targets: u32, solution_winner_count: u32 },
+	#[error("Wrong page count: solution has {solution_pages} pages but maximum is {max_pages}")]
+	WrongPageCount { solution_pages: u32, max_pages: u32 },
+	#[error(
+		"Wrong round: solution is for round {solution_round} but current round is {current_round}"
+	)]
+	WrongRound { solution_round: u32, current_round: u32 },
 }
 
 impl From<subxt_rpcs::Error> for Error {

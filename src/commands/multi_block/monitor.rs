@@ -644,6 +644,61 @@ where
 		},
 	};
 
+	// Validate the solution similarly to OffChainWorker logic, similar to OffChainWorker logic (see
+	// OffchainWorkerMiner::check_solution -> Pallet::snapshot_independent_checks in the unsigned
+	// pallet). These checks prevent submitting invalid solutions on chain.
+
+	// Ensure round is current
+	if round != paged_raw_solution.round {
+		log::error!(
+			target: LOG_TARGET,
+			"Solution validation failed: solution is for round {} but current round is {}",
+			paged_raw_solution.round,
+			round
+		);
+		return Err(Error::WrongRound {
+			solution_round: paged_raw_solution.round,
+			current_round: round,
+		});
+	}
+
+	// Ensure solution pages are no more than the snapshot, similar to OffChainWorker
+	let solution_page_count = paged_raw_solution.solution_pages.len() as u32;
+	let max_pages = static_types::Pages::get();
+	if solution_page_count > max_pages {
+		log::error!(
+			target: LOG_TARGET,
+			"Solution validation failed: solution has {} pages but maximum is {}",
+			solution_page_count,
+			max_pages
+		);
+		return Err(Error::WrongPageCount { solution_pages: solution_page_count, max_pages });
+	}
+
+	// Validate that the solution has the expected number of unique targets
+	let solution_winner_count =
+		paged_raw_solution.winner_count_single_page_target_snapshot() as u32;
+	if desired_targets != solution_winner_count {
+		log::error!(
+			target: LOG_TARGET,
+			"Solution validation failed: desired_targets ({}) != solution winner count ({})",
+			desired_targets,
+			solution_winner_count
+		);
+		return Err(Error::SolutionValidation { desired_targets, solution_winner_count });
+	}
+
+	log::debug!(
+		target: LOG_TARGET,
+		"Solution validation passed: desired_targets ({}) == solution winner count ({}), pages ({}) <= max ({}), round ({}) matches current ({})",
+		desired_targets,
+		solution_winner_count,
+		solution_page_count,
+		max_pages,
+		paged_raw_solution.round,
+		round
+	);
+
 	// Handle shady behavior if enabled
 	if config.shady {
 		return execute_shady_behavior(&client, &signer, &phase).await;
@@ -1092,7 +1147,10 @@ fn is_critical_miner_error(error: &Error) -> bool {
 		Error::Join(_) |
 		Error::Feasibility(_) |
 		Error::EmptySnapshot |
-		Error::FailedToSubmitPages(_) => false,
+		Error::FailedToSubmitPages(_) |
+		Error::SolutionValidation { .. } |
+		Error::WrongPageCount { .. } |
+		Error::WrongRound { .. } => false,
 		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Runtime(_)) => false, /* e.g. Subxt(Runtime(Module(ModuleError(<MultiBlockElectionSigned::Duplicate>)))) */
 		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Transaction(_)) =>
 			false, /* e.g. Subxt(Transaction(Invalid("Transaction is invalid (eg because of a bad */
