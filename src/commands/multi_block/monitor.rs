@@ -644,7 +644,7 @@ where
 		},
 	};
 
-	// Validate the solution similarly to OffChainWorker logic, similar to OffChainWorker logic (see
+	// Validate the solution similar to OffChainWorker logic (see
 	// OffchainWorkerMiner::check_solution -> Pallet::snapshot_independent_checks in the unsigned
 	// pallet). These checks prevent submitting invalid solutions on chain.
 
@@ -662,7 +662,7 @@ where
 		});
 	}
 
-	// Ensure solution pages are no more than the snapshot, similar to OffChainWorker
+	// Ensure solution pages are no more than the snapshot
 	let solution_page_count = paged_raw_solution.solution_pages.len() as u32;
 	let max_pages = static_types::Pages::get();
 	if solution_page_count > max_pages {
