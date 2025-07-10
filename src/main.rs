@@ -43,10 +43,7 @@ mod utils;
 
 use clap::Parser;
 use error::Error;
-use futures::{
-	StreamExt,
-	future::{BoxFuture, FutureExt},
-};
+use futures::future::{BoxFuture, FutureExt};
 use tokio::sync::oneshot;
 use tracing_subscriber::EnvFilter;
 
@@ -213,7 +210,7 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 	};
 
 	loop {
-		// Handle runtime upgrade subscription responses with 15-minute timeout:
+		// Handle runtime upgrade subscription responses with 1-hour timeout:
 		// - Some(Ok(update)): process the update
 		// - Some(Err(e)): retry if recoverable, otherwise quit
 		// - None: stream ended (connection dead), quit immediately
@@ -241,8 +238,8 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 					},
 				}
 			},
-			_ = tokio::time::sleep_until(tokio::time::Instant::from_std(last_update_time + std::time::Duration::from_secs(15 * 60))) => {
-				log::warn!(target: LOG_TARGET, "No runtime updates received for 15 minutes - subscription may be stalled, recreating subscription...");
+			_ = tokio::time::sleep_until(tokio::time::Instant::from_std(last_update_time + std::time::Duration::from_secs(60 * 60))) => {
+				log::warn!(target: LOG_TARGET, "No runtime updates received for 1 hour - subscription may be stalled, recreating subscription...");
 
 				// Recreate the subscription
 				match updater.runtime_updates().await {
