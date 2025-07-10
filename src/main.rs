@@ -43,7 +43,10 @@ mod utils;
 
 use clap::Parser;
 use error::Error;
-use futures::future::{BoxFuture, FutureExt};
+use futures::{
+	StreamExt,
+	future::{BoxFuture, FutureExt},
+};
 use tokio::sync::oneshot;
 use tracing_subscriber::EnvFilter;
 
@@ -199,6 +202,7 @@ async fn run_command(
 /// Runs until the RPC connection fails or updating the metadata failed.
 async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 	let updater = client.updater();
+	let mut last_update_time = std::time::Instant::now();
 
 	let mut update_stream = match updater.runtime_updates().await {
 		Ok(u) => u,
@@ -209,25 +213,51 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 	};
 
 	loop {
-		// Handle runtime upgrade subscription responses:
+		// Handle runtime upgrade subscription responses with 15-minute timeout:
 		// - Some(Ok(update)): process the update
 		// - Some(Err(e)): retry if recoverable, otherwise quit
 		// - None: stream ended (connection dead), quit immediately
-		let update = match update_stream.next().await {
-			Some(Ok(update)) => update,
-			Some(Err(e)) => {
-				if e.is_disconnected_will_reconnect() {
-					log::warn!(target: LOG_TARGET, "Runtime upgrade subscription disconnected, but will reconnect automatically");
-					continue;
+		// - Timeout: subscription may be stalled, recreate it
+		let update = tokio::select! {
+			maybe_update = update_stream.next() => {
+				match maybe_update {
+					Some(Ok(update)) => {
+						last_update_time = std::time::Instant::now();
+						update
+					},
+					Some(Err(e)) => {
+						if e.is_disconnected_will_reconnect() {
+							log::warn!(target: LOG_TARGET, "Runtime upgrade subscription disconnected, but will reconnect automatically");
+							continue;
+						}
+						log::error!(target: LOG_TARGET, "Runtime upgrade subscription error: {:?}", e);
+						let _ = tx.send(e.into());
+						return;
+					},
+					None => {
+						log::error!(target: LOG_TARGET, "Runtime upgrade subscription stream ended. Connection is dead. Shutting down.");
+						let _ = tx.send(Error::Other("Runtime upgrade subscription stream ended".into()));
+						return;
+					},
 				}
-				log::error!(target: LOG_TARGET, "Runtime upgrade subscription error: {:?}", e);
-				let _ = tx.send(e.into());
-				return;
 			},
-			None => {
-				log::error!(target: LOG_TARGET, "Runtime upgrade subscription stream ended. Connection is dead. Shutting down.");
-				let _ = tx.send(Error::Other("Runtime upgrade subscription stream ended".into()));
-				return;
+			_ = tokio::time::sleep_until(tokio::time::Instant::from_std(last_update_time + std::time::Duration::from_secs(15 * 60))) => {
+				log::warn!(target: LOG_TARGET, "No runtime updates received for 15 minutes - subscription may be stalled, recreating subscription...");
+
+				// Recreate the subscription
+				match updater.runtime_updates().await {
+					Ok(new_stream) => {
+						update_stream = new_stream;
+						last_update_time = std::time::Instant::now();
+						log::info!(target: LOG_TARGET, "Successfully recreated runtime upgrade subscription");
+						continue;
+					},
+					Err(e) => {
+						log::error!(target: LOG_TARGET, "Failed to recreate runtime upgrade subscription: {:?}", e);
+						let _ = tx.send(e.into());
+						return;
+					},
+				}
 			},
 		};
 
@@ -242,7 +272,7 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 				log::info!(target: LOG_TARGET, "upgrade to version: {} successful", version);
 			},
 			Err(e) => {
-				log::debug!(target: LOG_TARGET, "upgrade to version: {} failed: {:?}", version, e);
+				log::trace!(target: LOG_TARGET, "upgrade to version: {} failed: {:?}", version, e);
 			},
 		}
 	}
@@ -268,19 +298,22 @@ mod tests {
 		])
 		.unwrap();
 
-		assert_eq!(opt, Opt {
-			uri: "hi".to_string(),
-			prometheus_port: 9999,
-			log: "info".to_string(),
-			command: Command::Monitor(MultiBlockMonitorConfig {
-				seed_or_path: "//Alice".to_string(),
-				submission_strategy: SubmissionStrategy::IfLeading, // Default
-				do_reduce: true,
-				chunk_size: 0,               // Default
-				min_signed_phase_blocks: 10, // Default
-				shady: false,                // Default
-			}),
-		});
+		assert_eq!(
+			opt,
+			Opt {
+				uri: "hi".to_string(),
+				prometheus_port: 9999,
+				log: "info".to_string(),
+				command: Command::Monitor(MultiBlockMonitorConfig {
+					seed_or_path: "//Alice".to_string(),
+					submission_strategy: SubmissionStrategy::IfLeading, // Default
+					do_reduce: true,
+					chunk_size: 0,               // Default
+					min_signed_phase_blocks: 10, // Default
+					shady: false,                // Default
+				}),
+			}
+		);
 	}
 
 	#[test]
