@@ -104,6 +104,7 @@ where
 		}
 		_ = tokio::time::sleep_until(tokio::time::Instant::from_std(*last_block_time + std::time::Duration::from_secs(60))) => {
 			log::warn!(target: LOG_TARGET, "No blocks received for 60 seconds - subscription may be stalled, recreating subscription...");
+			crate::prometheus::on_listener_subscription_stall();
 			// Recreate the subscription
 			match client.chain_api().blocks().subscribe_finalized().await {
 				Ok(new_subscription) => {

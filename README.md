@@ -277,6 +277,14 @@ staking_miner_janitor_old_submissions_found 2
 # HELP staking_miner_janitor_old_submissions_cleared Number of old submissions successfully cleared during last janitor run
 # TYPE staking_miner_janitor_old_submissions_cleared gauge
 staking_miner_janitor_old_submissions_cleared 2
+
+# Subscription Health Metrics
+# HELP staking_miner_listener_subscription_stalls_total Total number of times the listener subscription was detected as stalled and recreated
+# TYPE staking_miner_listener_subscription_stalls_total counter
+staking_miner_listener_subscription_stalls_total 1
+# HELP staking_miner_updater_subscription_stalls_total Total number of times the updater subscription was detected as stalled and recreated
+# TYPE staking_miner_updater_subscription_stalls_total counter
+staking_miner_updater_subscription_stalls_total 0
 ```
 
 ## Architecture

@@ -204,6 +204,22 @@ mod hidden {
 		.unwrap()
 	});
 
+	static LISTENER_SUBSCRIPTION_STALLS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_listener_subscription_stalls_total",
+			"Total number of times the listener subscription was detected as stalled and recreated"
+		))
+		.unwrap()
+	});
+
+	static UPDATER_SUBSCRIPTION_STALLS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_updater_subscription_stalls_total",
+			"Total number of times the updater subscription was detected as stalled and recreated"
+		))
+		.unwrap()
+	});
+
 	pub fn on_runtime_upgrade() {
 		RUNTIME_UPGRADES.inc();
 	}
@@ -249,5 +265,13 @@ mod hidden {
 
 	pub fn observe_janitor_cleanup_duration(time: f64) {
 		JANITOR_CLEANUP_DURATION.set(time);
+	}
+
+	pub fn on_listener_subscription_stall() {
+		LISTENER_SUBSCRIPTION_STALLS.inc();
+	}
+
+	pub fn on_updater_subscription_stall() {
+		UPDATER_SUBSCRIPTION_STALLS.inc();
 	}
 }
