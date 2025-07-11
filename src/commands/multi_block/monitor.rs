@@ -21,12 +21,17 @@ use polkadot_sdk::{
 };
 use std::collections::HashSet;
 
+use subxt::backend::StreamOf;
 use tokio::sync::mpsc;
 
 /// Number of previous rounds to scan for old submissions during janitor cleanup.
 /// This provides a reasonable buffer for offline periods while avoiding inefficient
 /// scanning of potentially gazillions of historical rounds.
 const JANITOR_SCAN_ROUNDS: u32 = 5;
+
+/// Timeout in seconds for detecting stalled block subscriptions.
+/// If no blocks are received within this duration, the subscription will be recreated.
+const BLOCK_SUBSCRIPTION_TIMEOUT_SECS: u64 = 60;
 
 async fn signed_phase(client: &Client) -> Result<bool, Error> {
 	let storage = utils::storage_at_head(client).await?;
@@ -35,6 +40,168 @@ async fn signed_phase(client: &Client) -> Result<bool, Error> {
 		.await?;
 
 	Ok(matches!(current_phase, Phase::Signed(_)))
+}
+
+/// Action to take after processing a listener iteration
+enum ListenerAction {
+	/// Continue to the next iteration
+	Continue,
+	/// Subscription was recreated, continue processing
+	SubscriptionRecreated,
+}
+
+/// Type alias for the finalized block subscription stream
+type SubscriptionStream = StreamOf<
+	Result<
+		subxt::blocks::Block<subxt::PolkadotConfig, subxt::OnlineClient<subxt::PolkadotConfig>>,
+		subxt::Error,
+	>,
+>;
+
+/// Process a single iteration of the listener loop
+///
+/// This inner function contains all the logic for processing one block or timeout,
+/// with comprehensive error handling that allows the outer loop to decide whether
+/// to continue or exit based on error classification.
+async fn process_listener_iteration<T>(
+	client: &Client,
+	subscription: &mut SubscriptionStream,
+	prev_round: &mut Option<u32>,
+	last_block_time: &mut std::time::Instant,
+	miner_tx: &mpsc::Sender<MinerMessage>,
+	janitor_tx: &mpsc::Sender<JanitorMessage>,
+) -> Result<ListenerAction, Error>
+where
+	T: MinerConfig<AccountId = AccountId> + Send + Sync,
+	T::Solution: Send + Sync,
+	T::Pages: Send + Sync,
+	T::TargetSnapshotPerBlock: Send + Sync,
+	T::VoterSnapshotPerBlock: Send + Sync,
+	T::MaxVotesPerVoter: Send + Sync,
+{
+	let (at, block_hash) = tokio::select! {
+		maybe_block = subscription.next() => {
+			match maybe_block {
+				Some(Ok(block)) => {
+					*last_block_time = std::time::Instant::now();
+					(block.header().clone(), block.hash())
+				},
+				Some(Err(e)) => {
+					// Handle reconnection case with the reconnecting RPC client
+					if e.is_disconnected_will_reconnect() {
+						log::warn!(target: LOG_TARGET, "RPC connection lost, but will reconnect automatically. Continuing...");
+						return Ok(ListenerAction::Continue);
+					}
+					log::error!(target: LOG_TARGET, "subscription failed: {:?}", e);
+					return Err(e.into());
+				},
+				// The subscription was dropped unexpectedly
+				None => {
+					log::error!(target: LOG_TARGET, "Subscription to finalized blocks terminated unexpectedly");
+					return Err(Error::Other("Subscription terminated unexpectedly".to_string()));
+				}
+			}
+		}
+		_ = tokio::time::sleep_until(tokio::time::Instant::from_std(*last_block_time + std::time::Duration::from_secs(BLOCK_SUBSCRIPTION_TIMEOUT_SECS))) => {
+			log::warn!(target: LOG_TARGET, "No blocks received for {} seconds - subscription may be stalled, recreating subscription...", BLOCK_SUBSCRIPTION_TIMEOUT_SECS);
+			crate::prometheus::on_listener_subscription_stall();
+			// Recreate the subscription
+			match client.chain_api().blocks().subscribe_finalized().await {
+				Ok(new_subscription) => {
+					*subscription = new_subscription;
+					*last_block_time = std::time::Instant::now();
+					log::info!(target: LOG_TARGET, "Successfully recreated finalized block subscription");
+					return Ok(ListenerAction::SubscriptionRecreated);
+				},
+				Err(e) => {
+					log::error!(target: LOG_TARGET, "Failed to recreate subscription: {:?}", e);
+					return Err(e.into());
+				}
+			}
+		}
+	};
+
+	let (_storage, phase, current_round) = get_block_state(client, block_hash).await?;
+
+	if let Some(last_round) = *prev_round {
+		if current_round > last_round {
+			on_round_increment(last_round, current_round, &phase, miner_tx, janitor_tx).await?;
+		}
+	}
+
+	*prev_round = Some(current_round);
+	let block_number = at.number;
+
+	match phase {
+		Phase::Signed(_) | Phase::Snapshot(_) => {
+			// Relevant phases for mining - continue processing
+		},
+		_ => {
+			log::trace!(target: LOG_TARGET, "Block #{}, Phase {:?} - nothing to do", block_number, phase);
+			return Ok(ListenerAction::Continue);
+		},
+	}
+
+	let state = BlockDetails::new(client, at, phase, block_hash, current_round).await?;
+
+	let message = MinerMessage::ProcessBlock { state };
+
+	// Use try_send for backpressure - if miner is busy, skip this block
+	match miner_tx.try_send(message) {
+		Ok(()) => {
+			log::trace!(target: LOG_TARGET, "Sent block #{} to miner", block_number);
+			// Don't wait for response to allow proper backpressure - listener must continue
+			// processing blocks
+		},
+		Err(mpsc::error::TrySendError::Full(_)) => {
+			// Miner is busy processing another block - apply backpressure by skipping
+			log::trace!(target: LOG_TARGET, "Miner busy, skipping block #{}", block_number);
+		},
+		Err(mpsc::error::TrySendError::Closed(_)) => {
+			log::error!(target: LOG_TARGET, "Miner channel closed unexpectedly");
+			return Err(Error::Other("Miner channel closed unexpectedly".to_string()));
+		},
+	}
+
+	Ok(ListenerAction::Continue)
+}
+
+/// Determine if a listener error is critical and should cause the process to exit
+fn is_critical_listener_error(error: &Error) -> bool {
+	match error {
+		// RPC errors are generally recoverable with the reconnecting client
+		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Rpc(_)) => false,
+		// Storage query failures can happen due to stale block hashes
+		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Runtime(_)) => false,
+		// Transaction errors are not relevant for the listener
+		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Transaction(_)) =>
+			false,
+		// Channel errors are critical - indicates miner task has died
+		Error::Other(msg) if msg.contains("channel closed") => true,
+		// Subscription termination is critical
+		Error::Other(msg) if msg.contains("Subscription terminated") => true,
+		// Everything else is considered recoverable for the listener
+		// This includes temporary issues like:
+		// - BlockDetails creation failures
+		// - Storage access issues
+		// - Temporary network problems
+		_ => false,
+	}
+}
+
+/// Get block state with better error handling for storage queries
+async fn get_block_state(
+	client: &Client,
+	block_hash: polkadot_sdk::sp_core::H256,
+) -> Result<(Storage, Phase, u32), Error> {
+	let storage = utils::storage_at(Some(block_hash), client.chain_api()).await?;
+	let phase = storage
+		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
+		.await?;
+	let current_round = storage
+		.fetch_or_default(&runtime::storage().multi_block_election().round())
+		.await?;
+	Ok((storage, phase, current_round))
 }
 
 /// Handle round increment by triggering janitor and snapshot cleanup
@@ -309,86 +476,38 @@ where
 	T::MaxVotesPerVoter: Send + Sync + 'static,
 {
 	let mut subscription = client.chain_api().blocks().subscribe_finalized().await?;
-
 	let mut prev_round: Option<u32> = None;
+	let mut last_block_time = std::time::Instant::now();
 
 	log::trace!(target: LOG_TARGET, "Listener task started, watching for finalized blocks");
 
 	loop {
-		let (at, block_hash) = tokio::select! {
-			maybe_block = subscription.next() => {
-				match maybe_block {
-					Some(block_result) => {
-						match block_result {
-							Ok(block) => (block.header().clone(), block.hash()),
-							Err(e) => {
-								// Handle reconnection case with the reconnecting RPC client
-								if e.is_disconnected_will_reconnect() {
-									log::warn!(target: LOG_TARGET, "RPC connection lost, but will reconnect automatically. Continuing...");
-									continue;
-								}
-								log::error!(target: LOG_TARGET, "subscription failed: {:?}", e);
-								return Err(e.into());
-							}
-						}
-					}
-					// The subscription was dropped unexpectedly
-					None => {
-						log::error!(target: LOG_TARGET, "Subscription to finalized blocks terminated unexpectedly");
-						return Err(Error::Other("Subscription terminated unexpectedly".to_string()));
-					}
-				}
-			}
-		};
-
-		let storage = utils::storage_at(Some(block_hash), client.chain_api()).await?;
-		let phase = storage
-			.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
-			.await?;
-
-		// Check for round increment to trigger janitor and snapshot cleanup
-		let current_round = storage
-			.fetch_or_default(&runtime::storage().multi_block_election().round())
-			.await?;
-
-		if let Some(last_round) = prev_round {
-			if current_round > last_round {
-				on_round_increment(last_round, current_round, &phase, &miner_tx, &janitor_tx)
-					.await?;
-			}
-		}
-
-		prev_round = Some(current_round);
-		let block_number = at.number;
-
-		match phase {
-			Phase::Signed(_) | Phase::Snapshot(_) => {
-				// Relevant phases for mining - continue processing
-			},
-			_ => {
-				log::trace!(target: LOG_TARGET, "Block #{}, Phase {:?} - nothing to do", block_number, phase);
+		match process_listener_iteration::<T>(
+			&client,
+			&mut subscription,
+			&mut prev_round,
+			&mut last_block_time,
+			&miner_tx,
+			&janitor_tx,
+		)
+		.await
+		{
+			Ok(ListenerAction::Continue) => continue,
+			Ok(ListenerAction::SubscriptionRecreated) => {
+				log::info!(target: LOG_TARGET, "Successfully processed subscription recreation");
 				continue;
 			},
-		}
-
-		let state = BlockDetails::new(&client, at, phase, block_hash, current_round).await?;
-
-		// Use try_send for backpressure - if miner is busy, skip this block
-		let message = MinerMessage::ProcessBlock { state };
-
-		match miner_tx.try_send(message) {
-			Ok(()) => {
-				log::trace!(target: LOG_TARGET, "Sent block #{} to miner", block_number);
-				// Don't wait for response to allow proper backpressure - listener must continue
-				// processing blocks
-			},
-			Err(mpsc::error::TrySendError::Full(_)) => {
-				// Miner is busy processing another block - apply backpressure by skipping
-				log::trace!(target: LOG_TARGET, "Miner busy, skipping block #{}", block_number);
-			},
-			Err(mpsc::error::TrySendError::Closed(_)) => {
-				log::error!(target: LOG_TARGET, "Miner channel closed unexpectedly");
-				return Err(Error::Other("Miner channel closed unexpectedly".to_string()));
+			Err(e) => {
+				// Classify the error to decide whether to retry or exit
+				if is_critical_listener_error(&e) {
+					log::error!(target: LOG_TARGET, "Critical listener error, exiting: {:?}", e);
+					return Err(e);
+				} else {
+					log::warn!(target: LOG_TARGET, "Non-critical listener error, continuing: {:?}", e);
+					// Add a small delay to prevent tight error loops
+					tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+					continue;
+				}
 			},
 		}
 	}
