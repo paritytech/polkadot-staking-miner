@@ -29,6 +29,10 @@ use tokio::sync::mpsc;
 /// scanning of potentially gazillions of historical rounds.
 const JANITOR_SCAN_ROUNDS: u32 = 5;
 
+/// Timeout in seconds for detecting stalled block subscriptions.
+/// If no blocks are received within this duration, the subscription will be recreated.
+const BLOCK_SUBSCRIPTION_TIMEOUT_SECS: u64 = 60;
+
 async fn signed_phase(client: &Client) -> Result<bool, Error> {
 	let storage = utils::storage_at_head(client).await?;
 	let current_phase = storage
@@ -102,8 +106,8 @@ where
 				}
 			}
 		}
-		_ = tokio::time::sleep_until(tokio::time::Instant::from_std(*last_block_time + std::time::Duration::from_secs(60))) => {
-			log::warn!(target: LOG_TARGET, "No blocks received for 60 seconds - subscription may be stalled, recreating subscription...");
+		_ = tokio::time::sleep_until(tokio::time::Instant::from_std(*last_block_time + std::time::Duration::from_secs(BLOCK_SUBSCRIPTION_TIMEOUT_SECS))) => {
+			log::warn!(target: LOG_TARGET, "No blocks received for {} seconds - subscription may be stalled, recreating subscription...", BLOCK_SUBSCRIPTION_TIMEOUT_SECS);
 			crate::prometheus::on_listener_subscription_stall();
 			// Recreate the subscription
 			match client.chain_api().blocks().subscribe_finalized().await {
