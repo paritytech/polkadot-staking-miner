@@ -82,23 +82,19 @@ where
 	let (at, block_hash) = tokio::select! {
 		maybe_block = subscription.next() => {
 			match maybe_block {
-				Some(block_result) => {
-					match block_result {
-						Ok(block) => {
-							*last_block_time = std::time::Instant::now();
-							(block.header().clone(), block.hash())
-						},
-						Err(e) => {
-							// Handle reconnection case with the reconnecting RPC client
-							if e.is_disconnected_will_reconnect() {
-								log::warn!(target: LOG_TARGET, "RPC connection lost, but will reconnect automatically. Continuing...");
-								return Ok(ListenerAction::Continue);
-							}
-							log::error!(target: LOG_TARGET, "subscription failed: {:?}", e);
-							return Err(e.into());
-						}
+				Some(Ok(block)) => {
+					*last_block_time = std::time::Instant::now();
+					(block.header().clone(), block.hash())
+				},
+				Some(Err(e)) => {
+					// Handle reconnection case with the reconnecting RPC client
+					if e.is_disconnected_will_reconnect() {
+						log::warn!(target: LOG_TARGET, "RPC connection lost, but will reconnect automatically. Continuing...");
+						return Ok(ListenerAction::Continue);
 					}
-				}
+					log::error!(target: LOG_TARGET, "subscription failed: {:?}", e);
+					return Err(e.into());
+				},
 				// The subscription was dropped unexpectedly
 				None => {
 					log::error!(target: LOG_TARGET, "Subscription to finalized blocks terminated unexpectedly");
