@@ -795,7 +795,7 @@ async fn validate_signed_phase_or_bail(
 					.fetch(
 						&runtime::storage()
 							.multi_block_election_signed()
-							.submission_metadata_storage(round, signer.account_id()),
+							.submission_metadata_storage(round, signer.account_id().clone()),
 					)
 					.await?;
 
