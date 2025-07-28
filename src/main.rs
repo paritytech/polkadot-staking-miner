@@ -42,6 +42,7 @@ mod static_types;
 mod utils;
 
 use clap::Parser;
+use codec::Decode;
 use error::Error;
 use futures::future::{BoxFuture, FutureExt};
 use tokio::sync::oneshot;
@@ -94,13 +95,15 @@ async fn main() -> Result<(), Error> {
 
 	let client = Client::new(&uri).await?;
 
-	let runtime_version: polkadot_sdk::sp_version::RuntimeVersion = client
+	let version_bytes = client
 		.chain_api()
 		.runtime_api()
 		.at_latest()
 		.await?
 		.call_raw("Core_version", None)
 		.await?;
+	let runtime_version: polkadot_sdk::sp_version::RuntimeVersion =
+		Decode::decode(&mut &version_bytes[..])?;
 
 	let chain = opt::Chain::try_from(&runtime_version)?;
 	if let Err(e) = prometheus::run(prometheus_port).await {

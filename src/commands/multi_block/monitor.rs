@@ -346,7 +346,7 @@ where
 			.storage()
 			.at_latest()
 			.await?
-			.fetch(&runtime::storage().system().account(signer.account_id()))
+			.fetch(&runtime::storage().system().account(signer.account_id().clone()))
 			.await?
 			.ok_or(Error::AccountDoesNotExists)?;
 		prometheus::set_balance(account_info.data.free as f64);
@@ -697,7 +697,7 @@ where
 
 	// Update balance
 	let account_info = storage
-		.fetch(&runtime::storage().system().account(signer.account_id()))
+		.fetch(&runtime::storage().system().account(signer.account_id().clone()))
 		.await?
 		.ok_or(Error::AccountDoesNotExists)?;
 	prometheus::set_balance(account_info.data.free as f64);
@@ -973,7 +973,7 @@ async fn get_submission(
 		.fetch(
 			&runtime::storage()
 				.multi_block_election_signed()
-				.submission_metadata_storage(round, who),
+				.submission_metadata_storage(round, who.clone()),
 		)
 		.await?;
 
@@ -1169,7 +1169,7 @@ where
 			.fetch(
 				&runtime::storage()
 					.multi_block_election_signed()
-					.submission_metadata_storage(old_round, signer.account_id()),
+					.submission_metadata_storage(old_round, signer.account_id().clone()),
 			)
 			.await?;
 
