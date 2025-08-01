@@ -84,7 +84,7 @@ jobs:
         run: |
           # Build the node binaries that zombienet needs
           echo "🔧 Building polkadot and polkadot-parachain binaries..."
-          cargo build --release --features fast-runtime -p polkadot -p polkadot-parachain-bin -p polkadot-prepare-worker -p polkadot-execute-worker
+          cargo build --release --features fast-runtime -p polkadot -p polkadot-parachain-bin
 
           # Run setup steps manually instead of `just setup` to avoid running zombienet setup twice
           # (one to generate descriptors, one to actually run the test setup)
