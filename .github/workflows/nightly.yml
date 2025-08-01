@@ -103,7 +103,7 @@ jobs:
       - name: Build integration test
         run: |
           echo "🔧 Building integration test..."
-          cargo build --release --features integration-tests --bin polkadot-staking-miner
+          cargo test --release --features integration-tests --no-run
 
       - name: Start zombienet
         working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
@@ -142,7 +142,7 @@ jobs:
 
       - name: Run integration test
         run: |
-          RUST_LOG="monitor=trace" cargo test --features integration-tests tests::monitor::submit_works -- --nocapture
+          RUST_LOG="monitor=trace" cargo test --release --features integration-tests submit_works -- --nocapture
 
       - name: Cleanup zombienet
         if: always()
