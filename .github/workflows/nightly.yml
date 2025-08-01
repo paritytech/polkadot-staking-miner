@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: paritytech/polkadot-sdk
-          ref: master
+          ref: sigurpol-fix-signal-propagation-justfile # temporarily until https://github.com/paritytech/polkadot-sdk/pull/9411 is merged
           path: polkadot-sdk
 
       - name: Install dependencies
@@ -80,7 +80,6 @@ jobs:
 
       - name: Setup polkadot-sdk test environment
         working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
-        shell: bash -e {0}
         run: |
           just setup
 
