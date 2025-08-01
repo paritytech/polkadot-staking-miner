@@ -104,7 +104,7 @@ jobs:
         shell: bash
         run: |
           # Start zombienet and wait for ws endpoints to be ready
-          just run fake-dot 2>&1 &
+          just run fake-dev 2>&1 &
 
           echo "⏳ Waiting for chains to be ready (ws endpoints on 9944, 9945 and 9946)..."
           for port in 9944 9945 9946; do
