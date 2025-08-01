@@ -113,9 +113,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Get Polkadot binaries
-        uses: ./.github/workflows/actions/prepare-binaries
-
       - name: Cache Rust dependencies
         uses: swatinem/rust-cache@v2
         with:
