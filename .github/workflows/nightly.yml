@@ -87,12 +87,13 @@ jobs:
           cargo build --release --features fast-runtime -p polkadot -p polkadot-parachain-bin -p polkadot-prepare-worker -p polkadot-execute-worker
 
           # Run setup steps manually instead of `just setup` to avoid running zombienet setup twice
+          # (one to generate descriptors, one to actually run the test setup)
           just install || echo "🚧 Generate and installed missing descriptors..."
 
           # Now build chain specs
           just build-and-generate-chains
 
-          # Create symlinks so zombienet can find the binaries
+          # Create symlinks so zombienet can find the binaries when spawning a new bash shell
           ln -sf "$(pwd)/../../../../../target/release/polkadot" /usr/local/bin/polkadot
           ln -sf "$(pwd)/../../../../../target/release/polkadot-parachain" /usr/local/bin/polkadot-parachain
           ln -sf "$(pwd)/../../../../../target/release/polkadot-prepare-worker" /usr/local/bin/polkadot-prepare-worker
