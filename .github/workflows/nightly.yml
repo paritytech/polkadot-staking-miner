@@ -33,8 +33,33 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Get Polkadot binaries
-        uses: ./.github/workflows/actions/prepare-binaries
+      - name: Checkout polkadot-sdk
+        uses: actions/checkout@v4
+        with:
+          repository: paritytech/polkadot-sdk
+          ref: master
+          path: polkadot-sdk
+
+      - name: Install dependencies
+        run: |
+          # Check if we need sudo
+          echo "Current user: $(whoami)"
+          echo "EUID: $EUID"
+          if [ "$EUID" -ne 0 ]; then
+            echo "Not running as root, will use sudo"
+            SUDO="sudo"
+          else
+            echo "Running as root, no sudo needed"
+            SUDO=""
+          fi
+
+          # Install netcat for port checking
+          $SUDO apt-get update && $SUDO apt-get install -y netcat
+          # Install just using the official script
+          curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to ${SUDO:+$SUDO} /usr/local/bin
+          # Install bun
+          curl -fsSL https://bun.sh/install | bash
+          echo "$HOME/.bun/bin" >> $GITHUB_PATH
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -44,41 +69,90 @@ jobs:
       - name: Install zombienet globally
         run: npm install -g @zombienet/cli
 
-      - name: Verify zombienet installation
-        run: zombienet --help
+      - name: Verify installations
+        run: |
+          zombienet --help
+          just --version
+          bun --version
 
-      - name: Cache Rust dependencies
+      - name: Cache Rust dependencies for polkadot-sdk
         uses: swatinem/rust-cache@v2
         with:
-          key: ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
+          workspaces: |
+            polkadot-sdk
+          key: ${{ runner.os }}-rust-polkadot-sdk-${{ hashFiles('polkadot-sdk/**/Cargo.lock') }}
           cache-on-failure: true
+
+      - name: Cache Rust dependencies for staking-miner
+        uses: swatinem/rust-cache@v2
+        with:
+          key: ${{ runner.os }}-rust-staking-miner-${{ hashFiles('**/Cargo.lock') }}
+          cache-on-failure: true
+
+      - name: Setup polkadot-sdk test environment
+        working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
+        run: |
+          just setup
+
+      - name: Start zombienet with fake-dot preset
+        working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
+        run: |
+          # Start zombienet in background
+          just run fake-dot &
+          ZOMBIENET_PID=$!
+          echo "ZOMBIENET_PID=$ZOMBIENET_PID" >> $GITHUB_ENV
+
+          # Wait for port 9946 to be ready (maximum wait time = 5min)
+          echo "Waiting for parachain collator on port 9946..."
+          for i in {1..60}; do
+            if nc -z localhost 9946; then
+              echo "Port 9946 is ready!"
+              break
+            fi
+            sleep 5
+            if [ $i -eq 60 ]; then
+              echo "Timeout waiting for port 9946"
+              kill $ZOMBIENET_PID || true
+              exit 1
+            fi
+          done
 
       - name: Run nightly tests
         run: |
           RUST_LOG="monitor=trace" cargo test --workspace --all-features -- --nocapture
 
-      - name: Create an issue on failure
-        if: failure()
-        uses: JasonEtco/create-an-issue@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          FAILED_WORKFLOW_RUN_URL: https://github.com/${{ github.repository }}/commit/${{ github.sha }}/checks/${{ github.run_id }}
-        with:
-          # Use this issue template:
-          filename: .github/issue_templates/nightly_run_failed.md
-          # Update existing issue if found; hopefully will make it clearer
-          # that it is still an issue:
-          update_existing: true
-          # Look for new *open* issues in this search (we want to
-          # create a new one if we only find closed versions):
-          search_existing: open
+      - name: Cleanup zombienet
+        if: always()
+        run: |
+          if [ ! -z "$ZOMBIENET_PID" ]; then
+            kill $ZOMBIENET_PID || true
+          fi
+          pkill -f zombienet || true
+          pkill -f polkadot || true
+          pkill -f polkadot-parachain || true
 
-      - name: Notify daily integration tests failure
-        if: failure()
-        uses: s3krit/matrix-message-action@70ad3fb812ee0e45ff8999d6af11cafad11a6ecf # v0.0.3
-        with:
-          room_id: ${{ matrix.channel.room }}
-          access_token: ${{ secrets.MATRIX_ACCESS_TOKEN }}
-          server: m.parity.io
-          message: |
-            @room Daily integration tests failed https://github.com/${{ github.repository }}/commit/${{ github.sha }}/checks/${{ github.run_id }}
+      # - name: Create an issue on failure
+      #   if: failure()
+      #   uses: JasonEtco/create-an-issue@v2
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     FAILED_WORKFLOW_RUN_URL: https://github.com/${{ github.repository }}/commit/${{ github.sha }}/checks/${{ github.run_id }}
+      #   with:
+      #     # Use this issue template:
+      #     filename: .github/issue_templates/nightly_run_failed.md
+      #     # Update existing issue if found; hopefully will make it clearer
+      #     # that it is still an issue:
+      #     update_existing: true
+      #     # Look for new *open* issues in this search (we want to
+      #     # create a new one if we only find closed versions):
+      #     search_existing: open
+
+      # - name: Notify daily integration tests failure
+      #   if: failure()
+      #   uses: s3krit/matrix-message-action@70ad3fb812ee0e45ff8999d6af11cafad11a6ecf # v0.0.3
+      #   with:
+      #     room_id: ${{ matrix.channel.room }}
+      #     access_token: ${{ secrets.MATRIX_ACCESS_TOKEN }}
+      #     server: m.parity.io
+      #     message: |
+      #       @room Daily integration tests failed https://github.com/${{ github.repository }}/commit/${{ github.sha }}/checks/${{ github.run_id }}

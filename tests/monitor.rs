@@ -1,16 +1,6 @@
 #![cfg(feature = "integration-tests")]
-//! Integration tests for the multi-block monitor (pallet-election-multi-block)
-//! which requires the following artifacts to be installed in the path:
-//! 1. `zombienet`
-//! 2. `polkadot --features fast-runtime`
-//! 3. `polkadot-parachain`
-//! 4. `chainspecs (rc.json and parachain.json)`
-//!
-//! See ../zombienet-staking-runtimes.toml for further details
-//!
-//! Requires a `polkadot binary ` built with `--features fast-runtime` in the path to run
-//! integration tests against.
-
+//! Integration tests for the multi-block monitor (pallet-election-multi-block).
+//! See nightly.yml for instructions on how to run it compared vs a zombienet setup.
 use assert_cmd::cargo::cargo_bin;
 use polkadot_staking_miner::{
 	prelude::ChainClient,
@@ -33,11 +23,12 @@ use tracing_subscriber::EnvFilter;
 async fn submit_works() {
 	init_logger();
 
-	let (_node, port) = run_zombienet().await;
-	let _miner_alice = run_miner(port, "//Alice", false);
-	let _miner_bob = run_miner(port, "//Bob", false);
-	let _miner_charlie = run_miner(port, "//Charlie", true);
-	assert!(wait_for_three_miners_solution(port).await.is_ok());
+	// Zombienet is expected to be already running on port 9946 (hardcoded for the time being!)
+	const PORT: u16 = 9946;
+	let _miner_alice = run_miner(PORT, "//Alice", false);
+	let _miner_bob = run_miner(PORT, "//Bob", false);
+	let _miner_charlie = run_miner(PORT, "//Charlie", true);
+	assert!(wait_for_three_miners_solution(PORT).await.is_ok());
 }
 
 fn run_miner(port: u16, seed: &str, shady: bool) -> KillChildOnDrop {
@@ -60,7 +51,7 @@ fn run_miner(port: u16, seed: &str, shady: bool) -> KillChildOnDrop {
 			.stdout(Stdio::piped())
 			.stderr(Stdio::piped())
 			.args(args)
-			.env("RUST_LOG", "polkadot-staking-miner=debug")
+			.env("RUST_LOG", "polkadot-staking-miner=trace,runtime::multiblock-election=trace")
 			.spawn()
 			.unwrap(),
 	);
@@ -365,108 +356,6 @@ fn calculate_test_timeout(constants: &PalletConstants) -> std::time::Duration {
 	let buffered_secs = (total_secs as f64 * BUFFER_MULTIPLIER) as u64;
 
 	std::time::Duration::from_secs(buffered_secs)
-}
-
-// TODO: the zombienet process starts multiple child processes: 2 relay chain nodes and a
-// polkadot-parachain node. Each of these further spawns additional child processes like workers.
-// The `KillChildOnDrop` is only killing the zombienet process but killing a parent process doesn't
-// automatically kill all its children. E.g. on most Linux systems like Ubuntu, child processes are
-// re-parented to the init process. Since the test is meant to run on a docker container
-// environment, proper cleanup is less crucial. For local testing, it's up to the tester to simply
-// kill any lingering processes before starting new tests. A better platform-specific solution on
-// CI/CD could leverage process grouping so that if process are running in the same process group,
-// sending a signal to the group will terminate all processes in the group.
-async fn run_zombienet() -> (KillChildOnDrop, u16) {
-	// First, parse the zombienet config file to get the RPC port
-	let config_path = "zombienet-staking-runtimes.toml";
-	let config_content =
-		std::fs::read_to_string(config_path).expect("Failed to read zombienet config file");
-	let rpc_port = extract_parachain_rpc_port(&config_content)
-		.expect("Failed to extract RPC port from zombienet config");
-
-	log::trace!("Found parachain collator RPC port in config: {}", rpc_port);
-
-	// zombienet --provider native -l text spawn zombienet-staking-runtimes.toml
-	let mut node_cmd = KillChildOnDrop(
-		std::process::Command::new("zombienet")
-			.stdout(Stdio::piped())
-			.stderr(Stdio::piped())
-			.args(["--provider", "native", "-l", "text", "spawn", config_path])
-			.env("RUST_LOG", "runtime::multiblock-election=trace")
-			.spawn()
-			.unwrap(),
-	);
-
-	let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-	spawn_cli_output_threads(node_cmd.stdout.take().unwrap(), node_cmd.stderr.take().unwrap(), tx);
-
-	tokio::spawn(async move {
-		while let Some(line) = rx.recv().await {
-			log::info!("{}", line);
-		}
-	});
-
-	log::trace!("Waiting for parachain collator on port {} to be ready...", rpc_port);
-
-	// Wait for parachain collator to be ready with a 2 minute timeout
-	let addr = format!("127.0.0.1:{}", rpc_port);
-	let ws_url = format!("ws://{}", addr);
-
-	// Wait for API to be fully ready with retries
-	let start_time = std::time::Instant::now();
-	let timeout = std::time::Duration::from_secs(240);
-
-	loop {
-		match ChainClient::from_url(&ws_url).await {
-			Ok(api) => {
-				// Test that the API is actually functional by reading a basic constant
-				match api.constants().at(&runtime::constants().multi_block_election().pages()) {
-					Ok(_) => {
-						log::info!("Parachain collator on port {} is fully ready", rpc_port);
-						break;
-					},
-					Err(e) => {
-						log::debug!("API connected but not fully ready: {}", e);
-					},
-				}
-			},
-			Err(e) => {
-				log::error!(
-					"Failed to connect to API ({}s elapsed): {}",
-					start_time.elapsed().as_secs(),
-					e
-				);
-			},
-		}
-
-		if start_time.elapsed() > timeout {
-			panic!(
-				"Timed out waiting for parachain collator on port {} to be ready after {} seconds",
-				rpc_port,
-				timeout.as_secs()
-			);
-		}
-
-		tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-	}
-
-	(node_cmd, rpc_port)
-}
-
-// Function to extract the parachain collator's RPC port from the config file content
-fn extract_parachain_rpc_port(config_content: &str) -> Option<u16> {
-	// Look for the [parachains.collator] section and then find rpc_port
-	let collator_section = config_content.split("[parachains.collator]").nth(1)?;
-	let port = collator_section
-		.lines()
-		.find(|line| line.trim().starts_with("rpc_port"))?
-		.split('=')
-		.nth(1)?
-		.trim()
-		.parse::<u16>()
-		.ok()?;
-
-	Some(port)
 }
 
 fn alice() -> AccountId32 {
