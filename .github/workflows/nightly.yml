@@ -42,21 +42,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # Check if we need sudo
-          echo "Current user: $(whoami)"
-          echo "EUID: $EUID"
-          if [ "$EUID" -ne 0 ]; then
-            echo "Not running as root, will use sudo"
-            SUDO="sudo"
-          else
-            echo "Running as root, no sudo needed"
-            SUDO=""
-          fi
-
           # Install netcat for port checking
-          $SUDO apt-get update && $SUDO apt-get install -y netcat
-          # Install just using the official script
-          curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to ${SUDO:+$SUDO} /usr/local/bin
+          apt-get update && $SUDO apt-get install -y netcat
+          # Install just
+          curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin
           # Install bun
           curl -fsSL https://bun.sh/install | bash
           echo "$HOME/.bun/bin" >> $GITHUB_PATH
@@ -89,30 +78,20 @@ jobs:
           key: ${{ runner.os }}-rust-staking-miner-${{ hashFiles('**/Cargo.lock') }}
           cache-on-failure: true
 
+      - name: Patch justfile to fix killall recipe
+        working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
+        run: |
+          # TEMPORARY HACK: Add shebang to killall recipe to prevent SIGTERM
+          # Without this, `just setup` -> `just killall` exits with SIGTERM (exit code 143)
+          # when pkill finds no processes in fresh containers, despite having `|| true`
+          # This should be fixed upstream in polkadot-sdk
+          sed -i '/^killall:$/a\  #!/usr/bin/env bash' justfile
+          echo "Patched justfile - killall recipe now has shebang to prevent signal propagation"
+
       - name: Setup polkadot-sdk test environment
         working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
-        continue-on-error: true
-        id: setup
         run: |
           just setup
-      
-      - name: Verify setup completed
-        working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
-        run: |
-          # Check if setup actually succeeded by verifying expected outputs
-          if [ ! -f "parachain.json" ]; then
-            echo "❌ Missing parachain.json"
-            exit 1
-          fi
-          if [ ! -f "rc.json" ]; then
-            echo "❌ Missing rc.json"
-            exit 1
-          fi
-          if [ ! -d ".papi" ]; then
-            echo "❌ Missing .papi directory"
-            exit 1
-          fi
-          echo "✅ All expected files present - setup completed successfully"
 
       - name: Start zombienet with fake-dot preset
         working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
