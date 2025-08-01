@@ -43,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: |
           # Install netcat for port checking
-          apt-get update && $SUDO apt-get install -y netcat
+          apt-get update && apt-get install -y netcat
           # Install just
           curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin
           # Install bun
@@ -87,23 +87,32 @@ jobs:
           just install || echo "🚧 Generate and installed missing descriptors..."
           just build-and-generate-chains
 
-          # Debug: Check if binaries exist
+          # Debug: Find where binaries actually are
           echo "Current directory: $(pwd)"
-          echo "Checking for binaries in: $(pwd)/../../../../../target/release/"
-          ls -la ../../../../../target/release/polkadot* || echo "Binaries not found!"
+          echo "Expected path should be: ../../../../../target/release/"
+          echo "Searching for polkadot binaries in the entire workspace..."
 
-          # Create symlinks in /usr/local/bin so the shell spawned by zombienet can find them
-          sudo ln -sf "$(realpath ../../../../../target/release/polkadot)" /usr/local/bin/polkadot || echo "Failed to create polkadot symlink"
-          sudo ln -sf "$(realpath ../../../../../target/release/polkadot-parachain)" /usr/local/bin/polkadot-parachain || echo "Failed to create polkadot-parachain symlink"
-          sudo ln -sf "$(realpath ../../../../../target/release/polkadot-prepare-worker)" /usr/local/bin/polkadot-prepare-worker || echo "Failed to create prepare-worker symlink"
-          sudo ln -sf "$(realpath ../../../../../target/release/polkadot-execute-worker)" /usr/local/bin/polkadot-execute-worker || echo "Failed to create execute-worker symlink"
+          # Search broadly to find where they actually are
+          find /__w -name "polkadot" -type f -executable 2>/dev/null | head -5
+          find /__w -name "polkadot-parachain" -type f -executable 2>/dev/null | head -5
 
-          # Verify the binaries are accessible
-          which polkadot && polkadot --version || echo "polkadot not accessible"
-          which polkadot-parachain && polkadot-parachain --version || echo "polkadot-parachain not accessible"
+          # Set the binary paths
+          POLKADOT_BIN=$(find /__w -name "polkadot" -type f -executable 2>/dev/null | head -1)
+          POLKADOT_PARACHAIN_BIN=$(find /__w -name "polkadot-parachain" -type f -executable 2>/dev/null | head -1)
 
-          # Test if bash -c can find them
-          bash -c "which polkadot-parachain" || echo "bash -c cannot find polkadot-parachain"
+          if [ -n "$POLKADOT_BIN" ] && [ -n "$POLKADOT_PARACHAIN_BIN" ]; then
+            echo "Creating symlinks for: $POLKADOT_BIN and $POLKADOT_PARACHAIN_BIN"
+            ln -sf "$POLKADOT_BIN" /usr/local/bin/polkadot
+            ln -sf "$POLKADOT_PARACHAIN_BIN" /usr/local/bin/polkadot-parachain
+
+            # Verify they work
+            which polkadot && polkadot --version
+            which polkadot-parachain && polkadot-parachain --version
+            bash -c "which polkadot-parachain"
+          else
+            echo "❌ Could not find polkadot binaries"
+            exit 1
+          fi
 
           # Start zombienet and wait for ws endpoints to be ready
           zombienet --provider native -l text spawn zn-s.toml 2>&1 &
