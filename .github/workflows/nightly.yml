@@ -78,52 +78,47 @@ jobs:
           key: ${{ runner.os }}-rust-staking-miner-${{ hashFiles('**/Cargo.lock') }}
           cache-on-failure: true
 
-      - name: Setup polkadot-sdk test environment
+      - name: Start zombienet for tests
         working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
         run: |
-          # Make sure binaries will be accessible to zombienet during setup
-          # From papi-tests directory, the path to target/release is ../../../../../target/release
-          export PATH="../../../../../target/release:$PATH"
-          echo "PATH is now: $PATH"
-          
-          just setup
+          # Run setup steps manually instead of `just setup` to avoid to run the zombienet setup twice
+          # (one to generate descriptors, one to actually run the setup for the tests)
+          just install || echo "🚧 Generate and installed missing descriptors..."
+          just build-and-generate-chains
 
-      - name: Start zombienet with fake-dot preset
-        working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
-        run: |
-          # Make sure polkadot binaries are in PATH for zombienet
-          export PATH="../../../../../target/release:$PATH"
-          
-          # Force zombienet to use native provider
-          export ZOMBIENET_PROVIDER=native
-          
-          # Verify binaries exist and are executable
-          ls -la ../../../../../target/release/polkadot* || echo "Polkadot binaries not found"
-          which polkadot || echo "polkadot not in PATH"
-          which polkadot-parachain || echo "polkadot-parachain not in PATH"
-          
-          # Debug: Show what zombienet command will be run
-          echo "Running: bun run src/index.ts run --para-preset fake-dot"
-          
-          # Start zombienet in background using just
-          just run fake-dot &
+          # Create symlinks in /usr/local/bin so the shell spawned by zombienet can find them
+          ln -sf "$(pwd)/../../../../../target/release/polkadot" /usr/local/bin/polkadot
+          ln -sf "$(pwd)/../../../../../target/release/polkadot-parachain" /usr/local/bin/polkadot-parachain
+          ln -sf "$(pwd)/../../../../../target/release/polkadot-prepare-worker" /usr/local/bin/polkadot-prepare-worker
+          ln -sf "$(pwd)/../../../../../target/release/polkadot-execute-worker" /usr/local/bin/polkadot-execute-worker
+
+          # Verify the binaries are accessible
+          which polkadot && polkadot --version
+          which polkadot-parachain && polkadot-parachain --version
+
+          # Start zombienet and wait for ws endpoints to be ready
+          zombienet --provider native -l text spawn zn-s.toml 2>&1 &
           ZOMBIENET_PID=$!
           echo "ZOMBIENET_PID=$ZOMBIENET_PID" >> $GITHUB_ENV
 
-          # Wait for port 9946 to be ready (maximum wait time = 5min)
-          echo "Waiting for parachain collator on port 9946..."
-          for i in {1..60}; do
-            if nc -z localhost 9946; then
-              echo "Port 9946 is ready!"
-              break
-            fi
-            sleep 5
-            if [ $i -eq 60 ]; then
-              echo "Timeout waiting for port 9946"
-              kill $ZOMBIENET_PID || true
-              exit 1
-            fi
+          echo "⏳ Waiting for chains to be ready (ws endpoints on 9944, 9945 and 9946)..."
+          for port in 9944 9945 9946; do
+            for i in {1..24}; do
+              if nc -z localhost $port; then
+                echo "✅ Port $port is open."
+                break
+              fi
+              sleep 10
+              if [ $i -eq 24 ]; then
+                echo "❌ Timeout waiting for port $port"
+                kill $ZOMBIENET_PID || true
+                pkill -f zombienet || true
+                exit 1
+              fi
+            done
           done
+
+          echo "✅ Zombienet is ready for tests!"
 
       - name: Run nightly tests
         run: |
@@ -131,13 +126,12 @@ jobs:
 
       - name: Cleanup zombienet
         if: always()
+        working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
         run: |
           if [ ! -z "$ZOMBIENET_PID" ]; then
             kill $ZOMBIENET_PID || true
           fi
-          pkill -f zombienet || true
-          pkill -f polkadot || true
-          pkill -f polkadot-parachain || true
+          just killall
 
       # - name: Create an issue on failure
       #   if: failure()
