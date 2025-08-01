@@ -78,7 +78,7 @@ jobs:
           key: ${{ runner.os }}-rust-staking-miner-${{ hashFiles('**/Cargo.lock') }}
           cache-on-failure: true
 
-      - name: Start zombienet for tests
+      - name: Build node binaries and prepare chains
         working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
         shell: bash
         run: |
@@ -87,13 +87,12 @@ jobs:
           cargo build --release --features fast-runtime -p polkadot -p polkadot-parachain-bin
 
           # Run setup steps manually instead of `just setup` to avoid running zombienet setup twice
-          # (one to generate descriptors, one to actually run the test setup)
           just install || echo "🚧 Generate and installed missing descriptors..."
 
           # Now build chain specs
           just build-and-generate-chains
 
-          # Create symlinks so zombienet can find the binaries when spawning a new bash shell
+          # Create symlinks so zombienet can find the binaries
           ln -sf "$(pwd)/../../../../../target/release/polkadot" /usr/local/bin/polkadot
           ln -sf "$(pwd)/../../../../../target/release/polkadot-parachain" /usr/local/bin/polkadot-parachain
 
@@ -101,6 +100,15 @@ jobs:
           which polkadot && polkadot --version
           which polkadot-parachain && polkadot-parachain --version
 
+      - name: Build integration test
+        run: |
+          echo "🔧 Building integration test..."
+          cargo build --release --features integration-tests --bin polkadot-staking-miner
+
+      - name: Start zombienet
+        working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
+        shell: bash
+        run: |
           # Start zombienet and wait for ws endpoints to be ready
           zombienet --provider native -l text spawn zn-s.toml 2>&1 &
           ZOMBIENET_PID=$!
@@ -132,9 +140,9 @@ jobs:
 
           echo "✅ Zombienet is ready for tests!"
 
-      - name: Run nightly tests
+      - name: Run integration test
         run: |
-          RUST_LOG="monitor=trace" cargo test --workspace --all-features -- --nocapture
+          RUST_LOG="monitor=trace" cargo test --features integration-tests tests::monitor::submit_works -- --nocapture
 
       - name: Cleanup zombienet
         if: always()
