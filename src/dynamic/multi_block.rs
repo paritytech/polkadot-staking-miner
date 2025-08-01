@@ -166,7 +166,7 @@ pub(crate) async fn submit_inner(
 	xt.submit_and_watch()
 		.await
 		.map_err(|e| {
-			log::error!(target: LOG_TARGET, "submit tx {kind} failed: {:?}", e);
+			log::error!(target: LOG_TARGET, "submit tx {kind} failed: {e:?}");
 			e
 		})
 		.map_err(Into::into)
@@ -217,18 +217,18 @@ where
 	// Mine solution
 	tokio::task::spawn_blocking(move || {
 		let paged_raw_solution =
-			Miner::<T>::mine_solution(input).map_err(|e| Error::Other(format!("{:?}", e)))?;
+			Miner::<T>::mine_solution(input).map_err(|e| Error::Other(format!("{e:?}")))?;
 		Miner::<T>::check_feasibility(
 			&paged_raw_solution,
 			&voter_pages,
 			&target_snapshot,
 			desired_targets,
 		)
-		.map_err(|e| Error::Feasibility(format!("{:?}", e)))?;
+		.map_err(|e| Error::Feasibility(format!("{e:?}")))?;
 		Ok(paged_raw_solution)
 	})
 	.await
-	.map_err(|e| Error::Other(format!("{:?}", e)))?
+	.map_err(|e| Error::Other(format!("{e:?}")))?
 }
 
 /// Fetches the target snapshot and all voter snapshots which are missing
@@ -374,7 +374,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 				if i >= 10 {
 					return Err(Error::Subxt(boxed_err));
 				}
-				log::debug!(target: LOG_TARGET, "Failed to register score: {:?}; retrying", boxed_err);
+				log::debug!(target: LOG_TARGET, "Failed to register score: {boxed_err:?}; retrying");
 				tokio::time::sleep(std::time::Duration::from_secs(6)).await;
 			},
 			Err(e) => return Err(e),
@@ -600,8 +600,7 @@ async fn submit_pages_batch<T: MinerConfig + 'static>(
 
 						log::debug!(
 							target: LOG_TARGET,
-							"Page {page} included in block {:?}",
-							hash
+							"Page {page} included in block {hash:?}"
 						);
 
 						submitted_pages.insert(solution_stored.2);
@@ -629,8 +628,7 @@ async fn submit_pages_batch<T: MinerConfig + 'static>(
 	if !failed_pages_set.is_empty() {
 		log::warn!(
 			target: LOG_TARGET,
-			"Some pages were not included in blocks: {:?}",
-			failed_pages_set
+			"Some pages were not included in blocks: {failed_pages_set:?}"
 		);
 	}
 
@@ -730,8 +728,7 @@ pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
 
 		log::info!(
 			target: LOG_TARGET,
-			"All pages {:?} were successfully included in blocks",
-			chunk_page_numbers
+			"All pages {chunk_page_numbers:?} were successfully included in blocks"
 		);
 
 		// If all pages have been submitted, we're done
@@ -762,8 +759,7 @@ fn get_signed_phase_blocks_remaining(current_phase: &Phase) -> Result<u32, Error
 		Ok(*blocks_remaining)
 	} else {
 		panic!(
-			"get_signed_phase_blocks_remaining called but not in SignedPhase: {:?}. This indicates a programming error.",
-			current_phase
+			"get_signed_phase_blocks_remaining called but not in SignedPhase: {current_phase:?}. This indicates a programming error."
 		);
 	}
 }
@@ -784,9 +780,7 @@ async fn validate_signed_phase_or_bail(
 			if *blocks_remaining <= min_signed_phase_blocks {
 				log::warn!(
 					target: LOG_TARGET,
-					"Signed phase has only {} blocks remaining (need at least {}), checking for incomplete submission",
-					blocks_remaining,
-					min_signed_phase_blocks
+					"Signed phase has only {blocks_remaining} blocks remaining (need at least {min_signed_phase_blocks}), checking for incomplete submission"
 				);
 
 				// Check if we have a partial submission and bail it
@@ -805,12 +799,11 @@ async fn validate_signed_phase_or_bail(
 					if !is_complete {
 						log::info!(
 							target: LOG_TARGET,
-							"Bailing incomplete submission for round {} due to insufficient signed blocks remaining",
-							round
+							"Bailing incomplete submission for round {round} due to insufficient signed blocks remaining"
 						);
 
 						bail(client, signer).await?;
-						log::info!(target: LOG_TARGET, "Successfully bailed incomplete submission for round {}", round);
+						log::info!(target: LOG_TARGET, "Successfully bailed incomplete submission for round {round}");
 					}
 				}
 
@@ -821,8 +814,7 @@ async fn validate_signed_phase_or_bail(
 			} else {
 				log::trace!(
 					target: LOG_TARGET,
-					"Signed phase has {} blocks remaining, enough blocks to continue",
-					blocks_remaining
+					"Signed phase has {blocks_remaining} blocks remaining, enough blocks to continue"
 				);
 				Ok(())
 			}
@@ -830,12 +822,10 @@ async fn validate_signed_phase_or_bail(
 		_ => {
 			log::warn!(
 				target: LOG_TARGET,
-				"Phase changed from Signed to {:?} during submission for round {}",
-				current_phase,
-				round
+				"Phase changed from Signed to {current_phase:?} during submission for round {round}"
 			);
 			Err(Error::PhaseChangedDuringSubmission {
-				new_phase: format!("{:?}", current_phase),
+				new_phase: format!("{current_phase:?}"),
 				round,
 			})
 		},

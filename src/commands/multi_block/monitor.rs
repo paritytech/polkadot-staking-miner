@@ -92,7 +92,7 @@ where
 						log::warn!(target: LOG_TARGET, "RPC connection lost, but will reconnect automatically. Continuing...");
 						return Ok(ListenerAction::Continue);
 					}
-					log::error!(target: LOG_TARGET, "subscription failed: {:?}", e);
+					log::error!(target: LOG_TARGET, "subscription failed: {e:?}");
 					return Err(e.into());
 				},
 				// The subscription was dropped unexpectedly
@@ -103,7 +103,7 @@ where
 			}
 		}
 		_ = tokio::time::sleep_until(tokio::time::Instant::from_std(*last_block_time + std::time::Duration::from_secs(BLOCK_SUBSCRIPTION_TIMEOUT_SECS))) => {
-			log::warn!(target: LOG_TARGET, "No blocks received for {} seconds - subscription may be stalled, recreating subscription...", BLOCK_SUBSCRIPTION_TIMEOUT_SECS);
+			log::warn!(target: LOG_TARGET, "No blocks received for {BLOCK_SUBSCRIPTION_TIMEOUT_SECS} seconds - subscription may be stalled, recreating subscription...");
 			crate::prometheus::on_listener_subscription_stall();
 			// Recreate the subscription
 			match client.chain_api().blocks().subscribe_finalized().await {
@@ -114,7 +114,7 @@ where
 					return Ok(ListenerAction::SubscriptionRecreated);
 				},
 				Err(e) => {
-					log::error!(target: LOG_TARGET, "Failed to recreate subscription: {:?}", e);
+					log::error!(target: LOG_TARGET, "Failed to recreate subscription: {e:?}");
 					return Err(e.into());
 				}
 			}
@@ -137,7 +137,7 @@ where
 			// Relevant phases for mining - continue processing
 		},
 		_ => {
-			log::trace!(target: LOG_TARGET, "Block #{}, Phase {:?} - nothing to do", block_number, phase);
+			log::trace!(target: LOG_TARGET, "Block #{block_number}, Phase {phase:?} - nothing to do");
 			return Ok(ListenerAction::Continue);
 		},
 	}
@@ -149,13 +149,13 @@ where
 	// Use try_send for backpressure - if miner is busy, skip this block
 	match miner_tx.try_send(message) {
 		Ok(()) => {
-			log::trace!(target: LOG_TARGET, "Sent block #{} to miner", block_number);
+			log::trace!(target: LOG_TARGET, "Sent block #{block_number} to miner");
 			// Don't wait for response to allow proper backpressure - listener must continue
 			// processing blocks
 		},
 		Err(mpsc::error::TrySendError::Full(_)) => {
 			// Miner is busy processing another block - apply backpressure by skipping
-			log::trace!(target: LOG_TARGET, "Miner busy, skipping block #{}", block_number);
+			log::trace!(target: LOG_TARGET, "Miner busy, skipping block #{block_number}");
 		},
 		Err(mpsc::error::TrySendError::Closed(_)) => {
 			log::error!(target: LOG_TARGET, "Miner channel closed unexpectedly");
@@ -212,7 +212,7 @@ async fn on_round_increment(
 	miner_tx: &mpsc::Sender<MinerMessage>,
 	janitor_tx: &mpsc::Sender<JanitorMessage>,
 ) -> Result<(), Error> {
-	log::debug!(target: LOG_TARGET, "Detected round increment {} -> {}", last_round, current_round);
+	log::debug!(target: LOG_TARGET, "Detected round increment {last_round} -> {current_round}");
 
 	// 1. Trigger janitor cleanup
 	if let Err(e) = janitor_tx.try_send(JanitorMessage::JanitorTick { current_round }) {
@@ -221,7 +221,7 @@ async fn on_round_increment(
 				// this shouldn't happen. Janitor is triggered once per round.
 				// If it's still busy after a round, it means that it has taken
 				// insanely long.
-				log::warn!(target: LOG_TARGET, "Janitor busy, skipping janitor tick for round {}.", current_round);
+				log::warn!(target: LOG_TARGET, "Janitor busy, skipping janitor tick for round {current_round}.");
 			},
 			mpsc::error::TrySendError::Closed(_) => {
 				log::error!(target: LOG_TARGET, "Janitor channel closed unexpectedly during janitor tick");
@@ -229,19 +229,19 @@ async fn on_round_increment(
 			},
 		}
 	} else {
-		log::trace!(target: LOG_TARGET, "Sent janitor tick for round {}", current_round);
+		log::trace!(target: LOG_TARGET, "Sent janitor tick for round {current_round}");
 	}
 
 	// 2. Clear snapshots
 	if matches!(phase, Phase::Off) {
 		log::debug!(target: LOG_TARGET, "Round increment in Off phase, signaling snapshot cleanup");
 		if let Err(e) = miner_tx.send(MinerMessage::ClearSnapshots).await {
-			log::error!(target: LOG_TARGET, "Failed to send clear snapshots signal: {}", e);
-			return Err(Error::Other(format!("Failed to send clear snapshots signal: {}", e)));
+			log::error!(target: LOG_TARGET, "Failed to send clear snapshots signal: {e}");
+			return Err(Error::Other(format!("Failed to send clear snapshots signal: {e}")));
 		}
 	} else {
 		// this should really never happen, a new round should always starts with Off phase!
-		log::warn!(target: LOG_TARGET, "Round increment in {:?} phase, skipping snapshot cleanup", phase);
+		log::warn!(target: LOG_TARGET, "Round increment in {phase:?} phase, skipping snapshot cleanup");
 	}
 
 	Ok(())
@@ -407,12 +407,12 @@ where
 					Err(Error::Other("Listener task should never complete".to_string()))
 				}
 				Ok(Err(e)) => {
-					log::error!(target: LOG_TARGET, "Listener task failed: {}", e);
+					log::error!(target: LOG_TARGET, "Listener task failed: {e}");
 					Err(e)
 				}
 				Err(e) => {
-					log::error!(target: LOG_TARGET, "Listener task panicked: {}", e);
-					Err(Error::Other(format!("Listener task panicked: {}", e)))
+					log::error!(target: LOG_TARGET, "Listener task panicked: {e}");
+					Err(Error::Other(format!("Listener task panicked: {e}")))
 				}
 			}
 		}
@@ -423,12 +423,12 @@ where
 					Err(Error::Other("Miner task should never complete".to_string()))
 				}
 				Ok(Err(e)) => {
-					log::error!(target: LOG_TARGET, "Miner task failed: {}", e);
+					log::error!(target: LOG_TARGET, "Miner task failed: {e}");
 					Err(e)
 				}
 				Err(e) => {
-					log::error!(target: LOG_TARGET, "Miner task panicked: {}", e);
-					Err(Error::Other(format!("Miner task panicked: {}", e)))
+					log::error!(target: LOG_TARGET, "Miner task panicked: {e}");
+					Err(Error::Other(format!("Miner task panicked: {e}")))
 				}
 			}
 		}
@@ -439,12 +439,12 @@ where
 					Err(Error::Other("Janitor task should never complete".to_string()))
 				}
 				Ok(Err(e)) => {
-					log::error!(target: LOG_TARGET, "Janitor task failed: {}", e);
+					log::error!(target: LOG_TARGET, "Janitor task failed: {e}");
 					Err(e)
 				}
 				Err(e) => {
-					log::error!(target: LOG_TARGET, "Janitor task panicked: {}", e);
-					Err(Error::Other(format!("Janitor task panicked: {}", e)))
+					log::error!(target: LOG_TARGET, "Janitor task panicked: {e}");
+					Err(Error::Other(format!("Janitor task panicked: {e}")))
 				}
 			}
 		}
@@ -500,10 +500,10 @@ where
 			Err(e) => {
 				// Classify the error to decide whether to retry or exit
 				if is_critical_listener_error(&e) {
-					log::error!(target: LOG_TARGET, "Critical listener error, exiting: {:?}", e);
+					log::error!(target: LOG_TARGET, "Critical listener error, exiting: {e:?}");
 					return Err(e);
 				} else {
-					log::warn!(target: LOG_TARGET, "Non-critical listener error, continuing: {:?}", e);
+					log::warn!(target: LOG_TARGET, "Non-critical listener error, continuing: {e:?}");
 					// Add a small delay to prevent tight error loops
 					tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 					continue;
@@ -568,10 +568,10 @@ where
 					},
 					Err(e) =>
 						if is_critical_miner_error(&e) {
-							log::error!(target: LOG_TARGET, "Critical miner error - process will exit: {:?}", e);
+							log::error!(target: LOG_TARGET, "Critical miner error - process will exit: {e:?}");
 							return Err(e);
 						} else {
-							log::warn!(target: LOG_TARGET, "Block processing failed, continuing: {:?}", e);
+							log::warn!(target: LOG_TARGET, "Block processing failed, continuing: {e:?}");
 						},
 				}
 			},
@@ -613,7 +613,7 @@ where
 	while let Some(message) = janitor_rx.recv().await {
 		match message {
 			JanitorMessage::JanitorTick { current_round } => {
-				log::trace!(target: LOG_TARGET, "Running janitor cleanup for round {}", current_round);
+				log::trace!(target: LOG_TARGET, "Running janitor cleanup for round {current_round}");
 
 				let start_time = std::time::Instant::now();
 				let result = run_janitor_cleanup::<T>(
@@ -638,10 +638,10 @@ where
 					Err(e) => {
 						prometheus::on_janitor_cleanup_failure();
 						if is_critical_miner_error(&e) {
-							log::error!(target: LOG_TARGET, "Critical janitor error - process will exit: {:?}", e);
+							log::error!(target: LOG_TARGET, "Critical janitor error - process will exit: {e:?}");
 							return Err(e);
 						} else {
-							log::warn!(target: LOG_TARGET, "Janitor cleanup failed, continuing: {:?}", e);
+							log::warn!(target: LOG_TARGET, "Janitor cleanup failed, continuing: {e:?}");
 						}
 					},
 				}
@@ -693,7 +693,7 @@ where
 {
 	let BlockDetails { storage, phase, round, n_pages, desired_targets, block_number, .. } = state;
 
-	log::trace!(target: LOG_TARGET, "Processing block #{} (round {}, phase {:?})", block_number, round, phase);
+	log::trace!(target: LOG_TARGET, "Processing block #{block_number} (round {round}, phase {phase:?})");
 
 	// Update balance
 	let account_info = storage
@@ -718,10 +718,10 @@ where
 				);
 				return Ok(());
 			}
-			log::trace!(target: LOG_TARGET, "Signed phase with {} blocks remaining - checking for mining opportunity", blocks_remaining);
+			log::trace!(target: LOG_TARGET, "Signed phase with {blocks_remaining} blocks remaining - checking for mining opportunity");
 		},
 		_ => {
-			log::trace!(target: LOG_TARGET, "Phase {:?} - nothing to do", phase);
+			log::trace!(target: LOG_TARGET, "Phase {phase:?} - nothing to do");
 			return Ok(());
 		},
 	}
@@ -734,12 +734,12 @@ where
 	if has_submitted(&utils::storage_at_head(&client).await?, round, signer.account_id(), n_pages)
 		.await?
 	{
-		log::trace!(target: LOG_TARGET, "Already submitted for round {}, skipping", round);
+		log::trace!(target: LOG_TARGET, "Already submitted for round {round}, skipping");
 		return Ok(());
 	}
 
 	// Mine the solution
-	log::debug!(target: LOG_TARGET, "Mining solution for block #{} round {}", block_number, round);
+	log::debug!(target: LOG_TARGET, "Mining solution for block #{block_number} round {round}");
 	let paged_raw_solution = match dynamic::mine_solution::<T>(
 		target_snapshot,
 		voter_snapshot,
@@ -787,9 +787,7 @@ where
 	if solution_page_count > max_pages {
 		log::error!(
 			target: LOG_TARGET,
-			"Solution validation failed: solution has {} pages but maximum is {}",
-			solution_page_count,
-			max_pages
+			"Solution validation failed: solution has {solution_page_count} pages but maximum is {max_pages}"
 		);
 		return Err(Error::WrongPageCount { solution_pages: solution_page_count, max_pages });
 	}
@@ -800,9 +798,7 @@ where
 	if desired_targets != solution_winner_count {
 		log::error!(
 			target: LOG_TARGET,
-			"Solution validation failed: desired_targets ({}) != solution winner count ({})",
-			desired_targets,
-			solution_winner_count
+			"Solution validation failed: desired_targets ({desired_targets}) != solution winner count ({solution_winner_count})"
 		);
 		return Err(Error::SolutionValidation { desired_targets, solution_winner_count });
 	}
@@ -1026,7 +1022,7 @@ async fn execute_shady_behavior(
 	let blocks_remaining = match phase {
 		Phase::Signed(remaining) => *remaining,
 		_ => {
-			log::error!(target: LOG_TARGET, "Shady behavior attempted but not in SignedPhase: {:?}", phase);
+			log::error!(target: LOG_TARGET, "Shady behavior attempted but not in SignedPhase: {phase:?}");
 			return Err(Error::Other("Not in SignedPhase for shady behavior".to_string()));
 		},
 	};
@@ -1063,7 +1059,7 @@ async fn execute_shady_behavior(
 				if i >= 10 {
 					return Err(Error::Subxt(boxed_err));
 				}
-				log::debug!(target: LOG_TARGET, "Failed to register malicious score: {:?}; retrying", boxed_err);
+				log::debug!(target: LOG_TARGET, "Failed to register malicious score: {boxed_err:?}; retrying");
 				tokio::time::sleep(std::time::Duration::from_secs(6)).await;
 			},
 			Err(e) => return Err(e),
@@ -1157,12 +1153,12 @@ where
 
 	// Skip if there's nothing new to scan
 	if start_round >= current_round {
-		log::trace!(target: LOG_TARGET, "No new rounds to scan (start: {}, current: {})", start_round, current_round);
+		log::trace!(target: LOG_TARGET, "No new rounds to scan (start: {start_round}, current: {current_round})");
 		return Ok(0);
 	}
 
 	for old_round in start_round..current_round {
-		log::trace!(target: LOG_TARGET, "Scanning round {} for old submissions", old_round);
+		log::trace!(target: LOG_TARGET, "Scanning round {old_round} for old submissions");
 
 		// Check if we have a submission for this old round
 		let maybe_submission = storage
@@ -1189,8 +1185,7 @@ where
 			if witness_pages == 0 {
 				log::warn!(
 					target: LOG_TARGET,
-					"Skipping cleanup for round {} - no pages were submitted",
-					old_round
+					"Skipping cleanup for round {old_round} - no pages were submitted"
 				);
 				continue;
 			}
@@ -1201,17 +1196,13 @@ where
 					cleaned_count += 1;
 					log::info!(
 						target: LOG_TARGET,
-						"Successfully cleaned up old submission from round {} ({} witness pages)",
-						old_round,
-						witness_pages
+						"Successfully cleaned up old submission from round {old_round} ({witness_pages} witness pages)"
 					);
 				},
 				Err(e) => {
 					log::warn!(
 						target: LOG_TARGET,
-						"Failed to clean up old submission from round {}: {:?}",
-						old_round,
-						e
+						"Failed to clean up old submission from round {old_round}: {e:?}"
 					);
 				},
 			}
@@ -1239,9 +1230,7 @@ async fn clear_old_round_data(
 ) -> Result<(), Error> {
 	log::debug!(
 		target: LOG_TARGET,
-		"Clearing old round data for round {} with {} witness pages",
-		round,
-		witness_pages
+		"Clearing old round data for round {round} with {witness_pages} witness pages"
 	);
 
 	// Construct the extrinsic call using the static types from the runtime module
@@ -1256,7 +1245,7 @@ async fn clear_old_round_data(
 	let tx_progress = xt.submit_and_watch().await?;
 	utils::wait_tx_in_finalized_block(tx_progress).await?;
 
-	log::debug!(target: LOG_TARGET, "Successfully submitted clear_old_round_data for round {}", round);
+	log::debug!(target: LOG_TARGET, "Successfully submitted clear_old_round_data for round {round}");
 	Ok(())
 }
 

@@ -56,9 +56,9 @@ pub async fn run(port: u16) -> Result<(), String> {
 	// Bind the TCP listener
 	let listener = TcpListener::bind(&addr)
 		.await
-		.map_err(|e| format!("Failed to bind socket on port {}: {:?}", port, e))?;
+		.map_err(|e| format!("Failed to bind socket on port {port}: {e:?}"))?;
 
-	log::info!(target: LOG_TARGET, "Started prometheus endpoint on http://{}", addr);
+	log::info!(target: LOG_TARGET, "Started prometheus endpoint on http://{addr}");
 
 	// Create a graceful shutdown handler
 	let graceful = GracefulShutdown::new();
@@ -83,12 +83,12 @@ pub async fn run(port: u16) -> Result<(), String> {
 
 					tokio::spawn(async move {
 						if let Err(err) = conn.await {
-							log::debug!(target: LOG_TARGET, "connection error: {:?}", err);
+							log::debug!(target: LOG_TARGET, "connection error: {err:?}");
 						}
 					});
 				},
 				Err(e) => {
-					log::debug!(target: LOG_TARGET, "Error accepting connection: {:?}", e);
+					log::debug!(target: LOG_TARGET, "Error accepting connection: {e:?}");
 					continue;
 				},
 			}
