@@ -91,27 +91,28 @@ jobs:
 
       - name: Setup polkadot-sdk test environment
         working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
+        continue-on-error: true
+        id: setup
         run: |
-          # Debug: Let's see what happens when we run pkill directly
-          echo "Testing pkill directly:"
-          pkill -f zombienet || echo "pkill zombienet returned: $?"
-          
-          # Try using just with set +e to ignore errors
-          set +e
           just setup
-          SETUP_EXIT_CODE=$?
-          set -e
-          
-          echo "just setup exited with code: $SETUP_EXIT_CODE"
-          
-          # Check if setup actually succeeded by verifying the output files exist
-          if [ -f "parachain.json" ] && [ -f "rc.json" ]; then
-            echo "Setup completed successfully despite exit code"
-            exit 0
-          else
-            echo "Setup failed - missing expected files"
+      
+      - name: Verify setup completed
+        working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
+        run: |
+          # Check if setup actually succeeded by verifying expected outputs
+          if [ ! -f "parachain.json" ]; then
+            echo "❌ Missing parachain.json"
             exit 1
           fi
+          if [ ! -f "rc.json" ]; then
+            echo "❌ Missing rc.json"
+            exit 1
+          fi
+          if [ ! -d ".papi" ]; then
+            echo "❌ Missing .papi directory"
+            exit 1
+          fi
+          echo "✅ All expected files present - setup completed successfully"
 
       - name: Start zombienet with fake-dot preset
         working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
