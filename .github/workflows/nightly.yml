@@ -78,18 +78,9 @@ jobs:
           key: ${{ runner.os }}-rust-staking-miner-${{ hashFiles('**/Cargo.lock') }}
           cache-on-failure: true
 
-      - name: Patch justfile to fix killall recipe
-        working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
-        run: |
-          # TEMPORARY HACK: Add shebang to killall recipe to prevent SIGTERM
-          # Without this, `just setup` -> `just killall` exits with SIGTERM (exit code 143)
-          # when pkill finds no processes in fresh containers, despite having `|| true`
-          # This should be fixed upstream in polkadot-sdk
-          sed -i '/^killall:$/a\  #!/usr/bin/env bash' justfile
-          echo "Patched justfile - killall recipe now has shebang to prevent signal propagation"
-
       - name: Setup polkadot-sdk test environment
         working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
+        shell: bash -e {0}
         run: |
           just setup
 
