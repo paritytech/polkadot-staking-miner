@@ -86,7 +86,22 @@ jobs:
       - name: Start zombienet with fake-dot preset
         working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
         run: |
-          # Start zombienet in background
+          # Make sure polkadot binaries are in PATH for zombienet
+          export PATH="../../../../../../target/release:$PATH"
+          
+          # Force zombienet to use native provider and disable Docker
+          export ZOMBIENET_PROVIDER=native
+          export NO_DOCKER=1
+          
+          # Verify binaries exist and are executable
+          ls -la ../../../../../../target/release/polkadot* || echo "Polkadot binaries not found"
+          which polkadot || echo "polkadot not in PATH"
+          which polkadot-parachain || echo "polkadot-parachain not in PATH"
+          
+          # Debug: Show what zombienet command will be run
+          echo "Running: bun run src/index.ts run --para-preset fake-dot"
+          
+          # Start zombienet in background using just
           just run fake-dot &
           ZOMBIENET_PID=$!
           echo "ZOMBIENET_PID=$ZOMBIENET_PID" >> $GITHUB_ENV
