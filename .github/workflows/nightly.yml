@@ -96,14 +96,10 @@ jobs:
           # Create symlinks so zombienet can find the binaries when spawning a new bash shell
           ln -sf "$(pwd)/../../../../../target/release/polkadot" /usr/local/bin/polkadot
           ln -sf "$(pwd)/../../../../../target/release/polkadot-parachain" /usr/local/bin/polkadot-parachain
-          ln -sf "$(pwd)/../../../../../target/release/polkadot-prepare-worker" /usr/local/bin/polkadot-prepare-worker
-          ln -sf "$(pwd)/../../../../../target/release/polkadot-execute-worker" /usr/local/bin/polkadot-execute-worker
 
           # Verify binaries are accessible
           which polkadot && polkadot --version
           which polkadot-parachain && polkadot-parachain --version
-          which polkadot-prepare-worker && polkadot-prepare-worker --version
-          which polkadot-execute-worker && polkadot-execute-worker --version
 
           # Start zombienet and wait for ws endpoints to be ready
           zombienet --provider native -l text spawn zn-s.toml 2>&1 &
