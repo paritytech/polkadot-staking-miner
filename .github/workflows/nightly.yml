@@ -81,6 +81,8 @@ jobs:
       - name: Setup polkadot-sdk test environment
         working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
         run: |
+          # Make sure binaries will be accessible to zombienet during setup
+          export PATH="../../../../../../target/release:$PATH"
           just setup
 
       - name: Start zombienet with fake-dot preset
