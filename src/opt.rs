@@ -37,7 +37,7 @@ impl fmt::Display for Chain {
 			Self::SubstrateNode => "node",
 			Self::StakingAsync => "staking-async",
 		};
-		write!(f, "{}", chain)
+		write!(f, "{chain}")
 	}
 }
 

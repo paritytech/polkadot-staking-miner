@@ -107,9 +107,9 @@ async fn main() -> Result<(), Error> {
 
 	let chain = opt::Chain::try_from(&runtime_version)?;
 	if let Err(e) = prometheus::run(prometheus_port).await {
-		log::warn!("Failed to start prometheus endpoint: {}", e);
+		log::warn!("Failed to start prometheus endpoint: {e}");
 	}
-	log::info!(target: LOG_TARGET, "Connected to chain: {}", chain);
+	log::info!(target: LOG_TARGET, "Connected to chain: {chain}");
 
 	SHARED_CLIENT.set(client.clone()).expect("shared client only set once; qed");
 
@@ -150,7 +150,7 @@ async fn main() -> Result<(), Error> {
 
 	let res = run_command(fut, rx_upgrade).await;
 
-	log::debug!(target: LOG_TARGET, "round of execution finished. outcome = {:?}", res);
+	log::debug!(target: LOG_TARGET, "round of execution finished. outcome = {res:?}");
 	res
 }
 
@@ -244,7 +244,7 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 							log::warn!(target: LOG_TARGET, "Runtime upgrade subscription disconnected, but will reconnect automatically");
 							continue;
 						}
-						log::error!(target: LOG_TARGET, "Runtime upgrade subscription error: {:?}", e);
+						log::error!(target: LOG_TARGET, "Runtime upgrade subscription error: {e:?}");
 						let _ = tx.send(e.into());
 						return;
 					},
@@ -264,7 +264,7 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 						log::trace!(target: LOG_TARGET, "RPC health check OK");
 					},
 					Err(e) => {
-						log::warn!(target: LOG_TARGET, "RPC health check failed: {:?} - recreating runtime upgrade subscription", e);
+						log::warn!(target: LOG_TARGET, "RPC health check failed: {e:?} - recreating runtime upgrade subscription");
 						crate::prometheus::on_updater_subscription_stall();
 
 						// Recreate the subscription
@@ -274,7 +274,7 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 								log::info!(target: LOG_TARGET, "Successfully recreated runtime upgrade subscription after health check failure");
 							},
 							Err(e) => {
-								log::error!(target: LOG_TARGET, "Failed to recreate runtime upgrade subscription: {:?}", e);
+								log::error!(target: LOG_TARGET, "Failed to recreate runtime upgrade subscription: {e:?}");
 								let _ = tx.send(e.into());
 								return;
 							},

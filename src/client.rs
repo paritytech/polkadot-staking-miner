@@ -14,7 +14,7 @@ pub struct Client {
 
 impl Client {
 	pub async fn new(uri: &str) -> Result<Self, subxt::Error> {
-		log::debug!(target: LOG_TARGET, "attempting to connect to {:?}", uri);
+		log::debug!(target: LOG_TARGET, "attempting to connect to {uri:?}");
 
 		// Create a reconnecting RPC client with exponential backoff
 		let reconnecting_rpc =
@@ -26,13 +26,13 @@ impl Client {
 				)
 				.build(uri.to_string())
 				.await
-				.map_err(|e| subxt::Error::Other(format!("Failed to connect: {:?}", e)))?;
+				.map_err(|e| subxt::Error::Other(format!("Failed to connect: {e:?}")))?;
 
 		let backend: ChainHeadBackend<Config> =
 			ChainHeadBackendBuilder::default().build_with_background_driver(reconnecting_rpc);
 		let chain_api = ChainClient::from_backend(Arc::new(backend)).await?;
 
-		log::info!(target: LOG_TARGET, "Connected to {} with ChainHead backend", uri);
+		log::info!(target: LOG_TARGET, "Connected to {uri} with ChainHead backend");
 
 		Ok(Self { chain_api })
 	}
