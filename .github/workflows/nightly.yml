@@ -82,21 +82,23 @@ jobs:
         working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
         run: |
           # Make sure binaries will be accessible to zombienet during setup
-          export PATH="../../../../../../target/release:$PATH"
+          # From papi-tests directory, the path to target/release is ../../../../../target/release
+          export PATH="../../../../../target/release:$PATH"
+          echo "PATH is now: $PATH"
+          
           just setup
 
       - name: Start zombienet with fake-dot preset
         working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
         run: |
           # Make sure polkadot binaries are in PATH for zombienet
-          export PATH="../../../../../../target/release:$PATH"
+          export PATH="../../../../../target/release:$PATH"
           
-          # Force zombienet to use native provider and disable Docker
+          # Force zombienet to use native provider
           export ZOMBIENET_PROVIDER=native
-          export NO_DOCKER=1
           
           # Verify binaries exist and are executable
-          ls -la ../../../../../../target/release/polkadot* || echo "Polkadot binaries not found"
+          ls -la ../../../../../target/release/polkadot* || echo "Polkadot binaries not found"
           which polkadot || echo "polkadot not in PATH"
           which polkadot-parachain || echo "polkadot-parachain not in PATH"
           
