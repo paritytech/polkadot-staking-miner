@@ -202,7 +202,6 @@ async fn run_command(
 /// Runs until the RPC connection fails or updating the metadata failed.
 async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 	let updater = client.updater();
-	let mut last_update_time = std::time::Instant::now();
 
 	let mut update_stream = match updater.runtime_updates().await {
 		Ok(u) => u,
@@ -218,30 +217,31 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 		// - Some(Err(e)): retry if recoverable, otherwise quit
 		// - None: stream ended (connection dead), quit immediately
 		// - Timeout: subscription may be stalled, recreate it
-		let update = tokio::select! {
-			maybe_update = update_stream.next() => {
-				match maybe_update {
-					Some(Ok(update)) => {
-						last_update_time = std::time::Instant::now();
-						update
-					},
-					Some(Err(e)) => {
-						if e.is_disconnected_will_reconnect() {
-							log::warn!(target: LOG_TARGET, "Runtime upgrade subscription disconnected, but will reconnect automatically");
-							continue;
-						}
-						log::error!(target: LOG_TARGET, "Runtime upgrade subscription error: {:?}", e);
-						let _ = tx.send(e.into());
-						return;
-					},
-					None => {
-						log::error!(target: LOG_TARGET, "Runtime upgrade subscription stream ended. Connection is dead. Shutting down.");
-						let _ = tx.send(Error::Other("Runtime upgrade subscription stream ended".into()));
-						return;
-					},
-				}
+		let update = match tokio::time::timeout(
+			std::time::Duration::from_secs(60 * 60),
+			update_stream.next(),
+		)
+		.await
+		{
+			Ok(maybe_update) => match maybe_update {
+				Some(Ok(update)) => update,
+				Some(Err(e)) => {
+					if e.is_disconnected_will_reconnect() {
+						log::warn!(target: LOG_TARGET, "Runtime upgrade subscription disconnected, but will reconnect automatically");
+						continue;
+					}
+					log::error!(target: LOG_TARGET, "Runtime upgrade subscription error: {:?}", e);
+					let _ = tx.send(e.into());
+					return;
+				},
+				None => {
+					log::error!(target: LOG_TARGET, "Runtime upgrade subscription stream ended. Connection is dead. Shutting down.");
+					let _ =
+						tx.send(Error::Other("Runtime upgrade subscription stream ended".into()));
+					return;
+				},
 			},
-			_ = tokio::time::sleep_until(tokio::time::Instant::from_std(last_update_time + std::time::Duration::from_secs(60 * 60))) => {
+			Err(_) => {
 				log::warn!(target: LOG_TARGET, "No runtime updates received for 1 hour - subscription may be stalled, recreating subscription...");
 				crate::prometheus::on_updater_subscription_stall();
 
@@ -249,7 +249,6 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 				match updater.runtime_updates().await {
 					Ok(new_stream) => {
 						update_stream = new_stream;
-						last_update_time = std::time::Instant::now();
 						log::info!(target: LOG_TARGET, "Successfully recreated runtime upgrade subscription");
 						continue;
 					},
