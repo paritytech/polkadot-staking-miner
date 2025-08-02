@@ -79,8 +79,13 @@ where
 	T::VoterSnapshotPerBlock: Send + Sync,
 	T::MaxVotesPerVoter: Send + Sync,
 {
-	let (at, block_hash) = tokio::select! {
-		maybe_block = subscription.next() => {
+	let (at, block_hash) = match tokio::time::timeout(
+		std::time::Duration::from_secs(BLOCK_SUBSCRIPTION_TIMEOUT_SECS),
+		subscription.next(),
+	)
+	.await
+	{
+		Ok(maybe_block) => {
 			match maybe_block {
 				Some(Ok(block)) => {
 					*last_block_time = std::time::Instant::now();
@@ -99,10 +104,10 @@ where
 				None => {
 					log::error!(target: LOG_TARGET, "Subscription to finalized blocks terminated unexpectedly");
 					return Err(Error::Other("Subscription terminated unexpectedly".to_string()));
-				}
+				},
 			}
-		}
-		_ = tokio::time::sleep_until(tokio::time::Instant::from_std(*last_block_time + std::time::Duration::from_secs(BLOCK_SUBSCRIPTION_TIMEOUT_SECS))) => {
+		},
+		Err(_) => {
 			log::warn!(target: LOG_TARGET, "No blocks received for {} seconds - subscription may be stalled, recreating subscription...", BLOCK_SUBSCRIPTION_TIMEOUT_SECS);
 			crate::prometheus::on_listener_subscription_stall();
 			// Recreate the subscription
@@ -116,9 +121,9 @@ where
 				Err(e) => {
 					log::error!(target: LOG_TARGET, "Failed to recreate subscription: {:?}", e);
 					return Err(e.into());
-				}
+				},
 			}
-		}
+		},
 	};
 
 	let (_storage, phase, current_round) = get_block_state(client, block_hash).await?;
