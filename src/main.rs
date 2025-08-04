@@ -211,68 +211,76 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 		},
 	};
 
-	loop {
-		// Handle runtime upgrade subscription responses with 1-hour timeout:
-		// - Some(Ok(update)): process the update
-		// - Some(Err(e)): retry if recoverable, otherwise quit
-		// - None: stream ended (connection dead), quit immediately
-		// - Timeout: subscription may be stalled, recreate it
-		let update = match tokio::time::timeout(
-			std::time::Duration::from_secs(60 * 60),
-			update_stream.next(),
-		)
-		.await
-		{
-			Ok(maybe_update) => match maybe_update {
-				Some(Ok(update)) => update,
-				Some(Err(e)) => {
-					if e.is_disconnected_will_reconnect() {
-						log::warn!(target: LOG_TARGET, "Runtime upgrade subscription disconnected, but will reconnect automatically");
-						continue;
-					}
-					log::error!(target: LOG_TARGET, "Runtime upgrade subscription error: {:?}", e);
-					let _ = tx.send(e.into());
-					return;
-				},
-				None => {
-					log::error!(target: LOG_TARGET, "Runtime upgrade subscription stream ended. Connection is dead. Shutting down.");
-					let _ =
-						tx.send(Error::Other("Runtime upgrade subscription stream ended".into()));
-					return;
-				},
-			},
-			Err(_) => {
-				log::warn!(target: LOG_TARGET, "No runtime updates received for 1 hour - subscription may be stalled, recreating subscription...");
-				crate::prometheus::on_updater_subscription_stall();
+	// Health check interval - check RPC connection every 1 hour
+	const HEALTH_CHECK_INTERVAL_SECS: u64 = 60 * 60;
+	let mut health_check_interval =
+		tokio::time::interval(std::time::Duration::from_secs(HEALTH_CHECK_INTERVAL_SECS));
+	health_check_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-				// Recreate the subscription
-				match updater.runtime_updates().await {
-					Ok(new_stream) => {
-						update_stream = new_stream;
-						log::info!(target: LOG_TARGET, "Successfully recreated runtime upgrade subscription");
-						continue;
+	loop {
+		// Use select to handle both runtime updates and periodic health checks
+		tokio::select! {
+			maybe_update = update_stream.next() => {
+				match maybe_update {
+					Some(Ok(update)) => {
+						// Process the update
+						let version = update.runtime_version().spec_version;
+						match updater.apply_update(update) {
+							Ok(()) => {
+								if let Err(e) = dynamic::update_metadata_constants(&client) {
+									let _ = tx.send(e);
+									return;
+								}
+								prometheus::on_runtime_upgrade();
+								log::info!(target: LOG_TARGET, "upgrade to version: {} successful", version);
+							},
+							Err(e) => {
+								log::trace!(target: LOG_TARGET, "upgrade to version: {} failed: {:?}", version, e);
+							},
+						}
 					},
-					Err(e) => {
-						log::error!(target: LOG_TARGET, "Failed to recreate runtime upgrade subscription: {:?}", e);
+					Some(Err(e)) => {
+						if e.is_disconnected_will_reconnect() {
+							log::warn!(target: LOG_TARGET, "Runtime upgrade subscription disconnected, but will reconnect automatically");
+							continue;
+						}
+						log::error!(target: LOG_TARGET, "Runtime upgrade subscription error: {:?}", e);
 						let _ = tx.send(e.into());
+						return;
+					},
+					None => {
+						log::error!(target: LOG_TARGET, "Runtime upgrade subscription stream ended. Connection is dead. Shutting down.");
+						let _ = tx.send(Error::Other("Runtime upgrade subscription stream ended".into()));
 						return;
 					},
 				}
 			},
-		};
+			_ = health_check_interval.tick() => {
+				log::trace!(target: LOG_TARGET, "Runtime upgrade subscription: periodic RPC health check");
 
-		let version = update.runtime_version().spec_version;
-		match updater.apply_update(update) {
-			Ok(()) => {
-				if let Err(e) = dynamic::update_metadata_constants(&client) {
-					let _ = tx.send(e);
-					return;
+				// Try to get the current block number as a health check
+				match client.blocks().at_latest().await {
+					Ok(_) => {
+						log::trace!(target: LOG_TARGET, "RPC health check OK");
+					},
+					Err(e) => {
+						log::warn!(target: LOG_TARGET, "RPC health check failed: {:?} - recreating runtime upgrade subscription", e);
+						crate::prometheus::on_updater_subscription_stall();
+
+						// Recreate the subscription
+						match updater.runtime_updates().await {
+							Ok(new_stream) => {
+								update_stream = new_stream;
+								log::info!(target: LOG_TARGET, "Successfully recreated runtime upgrade subscription after health check failure");
+							},
+							Err(e) => {
+								log::error!(target: LOG_TARGET, "Failed to recreate runtime upgrade subscription: {:?}", e);
+								let _ = tx.send(e.into());
+								return;
+							},
+						}
+					}
 				}
-				prometheus::on_runtime_upgrade();
-				log::info!(target: LOG_TARGET, "upgrade to version: {} successful", version);
-			},
-			Err(e) => {
-				log::trace!(target: LOG_TARGET, "upgrade to version: {} failed: {:?}", version, e);
 			},
 		}
 	}
@@ -298,19 +306,22 @@ mod tests {
 		])
 		.unwrap();
 
-		assert_eq!(opt, Opt {
-			uri: "hi".to_string(),
-			prometheus_port: 9999,
-			log: "info".to_string(),
-			command: Command::Monitor(MultiBlockMonitorConfig {
-				seed_or_path: "//Alice".to_string(),
-				submission_strategy: SubmissionStrategy::IfLeading, // Default
-				do_reduce: true,
-				chunk_size: 0,               // Default
-				min_signed_phase_blocks: 10, // Default
-				shady: false,                // Default
-			}),
-		});
+		assert_eq!(
+			opt,
+			Opt {
+				uri: "hi".to_string(),
+				prometheus_port: 9999,
+				log: "info".to_string(),
+				command: Command::Monitor(MultiBlockMonitorConfig {
+					seed_or_path: "//Alice".to_string(),
+					submission_strategy: SubmissionStrategy::IfLeading, // Default
+					do_reduce: true,
+					chunk_size: 0,               // Default
+					min_signed_phase_blocks: 10, // Default
+					shady: false,                // Default
+				}),
+			}
+		);
 	}
 
 	#[test]
