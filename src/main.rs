@@ -232,10 +232,10 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 									return;
 								}
 								prometheus::on_runtime_upgrade();
-								log::info!(target: LOG_TARGET, "upgrade to version: {} successful", version);
+								log::info!(target: LOG_TARGET, "upgrade to version: {version} successful");
 							},
 							Err(e) => {
-								log::trace!(target: LOG_TARGET, "upgrade to version: {} failed: {:?}", version, e);
+								log::trace!(target: LOG_TARGET, "upgrade to version: {version} failed: {e:?}");
 							},
 						}
 					},
