@@ -202,7 +202,6 @@ async fn run_command(
 /// Runs until the RPC connection fails or updating the metadata failed.
 async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 	let updater = client.updater();
-	let mut last_update_time = std::time::Instant::now();
 
 	let mut update_stream = match updater.runtime_updates().await {
 		Ok(u) => u,
@@ -212,18 +211,33 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 		},
 	};
 
+	// Health check interval - check RPC connection every 1 hour
+	const HEALTH_CHECK_INTERVAL_SECS: u64 = 60 * 60;
+	let mut health_check_interval =
+		tokio::time::interval(std::time::Duration::from_secs(HEALTH_CHECK_INTERVAL_SECS));
+	health_check_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
 	loop {
-		// Handle runtime upgrade subscription responses with 1-hour timeout:
-		// - Some(Ok(update)): process the update
-		// - Some(Err(e)): retry if recoverable, otherwise quit
-		// - None: stream ended (connection dead), quit immediately
-		// - Timeout: subscription may be stalled, recreate it
-		let update = tokio::select! {
+		// Use select to handle both runtime updates and periodic health checks
+		tokio::select! {
 			maybe_update = update_stream.next() => {
 				match maybe_update {
 					Some(Ok(update)) => {
-						last_update_time = std::time::Instant::now();
-						update
+						// Process the update
+						let version = update.runtime_version().spec_version;
+						match updater.apply_update(update) {
+							Ok(()) => {
+								if let Err(e) = dynamic::update_metadata_constants(&client) {
+									let _ = tx.send(e);
+									return;
+								}
+								prometheus::on_runtime_upgrade();
+								log::info!(target: LOG_TARGET, "upgrade to version: {} successful", version);
+							},
+							Err(e) => {
+								log::trace!(target: LOG_TARGET, "upgrade to version: {} failed: {:?}", version, e);
+							},
+						}
 					},
 					Some(Err(e)) => {
 						if e.is_disconnected_will_reconnect() {
@@ -241,39 +255,32 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 					},
 				}
 			},
-			_ = tokio::time::sleep_until(tokio::time::Instant::from_std(last_update_time + std::time::Duration::from_secs(60 * 60))) => {
-				log::warn!(target: LOG_TARGET, "No runtime updates received for 1 hour - subscription may be stalled, recreating subscription...");
-				crate::prometheus::on_updater_subscription_stall();
+			_ = health_check_interval.tick() => {
+				log::trace!(target: LOG_TARGET, "Runtime upgrade subscription: periodic RPC health check");
 
-				// Recreate the subscription
-				match updater.runtime_updates().await {
-					Ok(new_stream) => {
-						update_stream = new_stream;
-						last_update_time = std::time::Instant::now();
-						log::info!(target: LOG_TARGET, "Successfully recreated runtime upgrade subscription");
-						continue;
+				// Try to get the current block number as a health check
+				match client.blocks().at_latest().await {
+					Ok(_) => {
+						log::trace!(target: LOG_TARGET, "RPC health check OK");
 					},
 					Err(e) => {
-						log::error!(target: LOG_TARGET, "Failed to recreate runtime upgrade subscription: {:?}", e);
-						let _ = tx.send(e.into());
-						return;
-					},
-				}
-			},
-		};
+						log::warn!(target: LOG_TARGET, "RPC health check failed: {:?} - recreating runtime upgrade subscription", e);
+						crate::prometheus::on_updater_subscription_stall();
 
-		let version = update.runtime_version().spec_version;
-		match updater.apply_update(update) {
-			Ok(()) => {
-				if let Err(e) = dynamic::update_metadata_constants(&client) {
-					let _ = tx.send(e);
-					return;
+						// Recreate the subscription
+						match updater.runtime_updates().await {
+							Ok(new_stream) => {
+								update_stream = new_stream;
+								log::info!(target: LOG_TARGET, "Successfully recreated runtime upgrade subscription after health check failure");
+							},
+							Err(e) => {
+								log::error!(target: LOG_TARGET, "Failed to recreate runtime upgrade subscription: {:?}", e);
+								let _ = tx.send(e.into());
+								return;
+							},
+						}
+					}
 				}
-				prometheus::on_runtime_upgrade();
-				log::info!(target: LOG_TARGET, "upgrade to version: {} successful", version);
-			},
-			Err(e) => {
-				log::trace!(target: LOG_TARGET, "upgrade to version: {} failed: {:?}", version, e);
 			},
 		}
 	}
