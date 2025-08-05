@@ -10,19 +10,9 @@ use crate::{
 };
 use polkadot_sdk::pallet_election_provider_multi_block::unsigned::miner::MinerConfig;
 
-use subxt::backend::StreamOf;
-
 /// Timeout in seconds for detecting stalled block subscriptions.
 /// If no blocks are received within this duration, the subscription will be recreated.
 const BLOCK_SUBSCRIPTION_TIMEOUT_SECS: u64 = 60;
-
-/// Type alias for the finalized block subscription stream
-type SubscriptionStream = StreamOf<
-	Result<
-		subxt::blocks::Block<subxt::PolkadotConfig, subxt::OnlineClient<subxt::PolkadotConfig>>,
-		subxt::Error,
-	>,
->;
 
 /// Get block state with better error handling for storage queries
 async fn get_block_state(
@@ -68,7 +58,6 @@ where
 /// - No miner or janitor communication
 async fn dummy_listener_task(client: Client) -> Result<(), Error> {
 	let mut subscription = client.chain_api().blocks().subscribe_finalized().await?;
-	let mut last_block_time = std::time::Instant::now();
 
 	log::info!(target: LOG_TARGET, "Dummy listener started, watching for finalized blocks");
 
@@ -80,10 +69,7 @@ async fn dummy_listener_task(client: Client) -> Result<(), Error> {
 		.await
 		{
 			Ok(maybe_block) => match maybe_block {
-				Some(Ok(block)) => {
-					last_block_time = std::time::Instant::now();
-					(block.header().clone(), block.hash())
-				},
+				Some(Ok(block)) => (block.header().clone(), block.hash()),
 				Some(Err(e)) => {
 					if e.is_disconnected_will_reconnect() {
 						log::warn!(target: LOG_TARGET, "RPC connection lost, but will reconnect automatically. Continuing...");
@@ -102,7 +88,6 @@ async fn dummy_listener_task(client: Client) -> Result<(), Error> {
 				match client.chain_api().blocks().subscribe_finalized().await {
 					Ok(new_subscription) => {
 						subscription = new_subscription;
-						last_block_time = std::time::Instant::now();
 						log::info!(target: LOG_TARGET, "Successfully recreated finalized block subscription");
 						continue;
 					},
