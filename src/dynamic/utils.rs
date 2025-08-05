@@ -8,7 +8,7 @@ use subxt::dynamic::Value;
 type TypeId = u32;
 
 pub fn invalid_metadata_error<E: std::error::Error>(item: String, err: E) -> Error {
-	Error::InvalidMetadata(format!("{} failed: {}", item, err))
+	Error::InvalidMetadata(format!("{item} failed: {err}"))
 }
 
 pub fn make_type<T: scale_info::TypeInfo + 'static>() -> (TypeId, PortableRegistry) {

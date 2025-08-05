@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE: docker.io/paritytech/ci-unified:bullseye-1.85.0-2025-01-28-v202504231537
+  IMAGE: docker.io/paritytech/ci-unified:bullseye-1.88.0-2025-06-27-v202507112050
   RUST_INFO: rustup show && cargo --version && rustup +nightly show && cargo +nightly --version
 
 jobs:
@@ -33,8 +33,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Get Polkadot binaries
-        uses: ./.github/workflows/actions/prepare-binaries
+      - name: Checkout polkadot-sdk
+        uses: actions/checkout@v4
+        with:
+          repository: paritytech/polkadot-sdk
+          ref: master
+          path: polkadot-sdk
+
+      - name: Install dependencies
+        run: |
+          # Install netcat for port checking
+          apt-get update && apt-get install -y netcat
+          # Install just
+          curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin
+          # Install bun
+          curl -fsSL https://bun.sh/install | bash
+          echo "$HOME/.bun/bin" >> $GITHUB_PATH
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -44,18 +58,84 @@ jobs:
       - name: Install zombienet globally
         run: npm install -g @zombienet/cli
 
-      - name: Verify zombienet installation
-        run: zombienet --help
+      - name: Verify installations
+        run: |
+          zombienet --help
+          just --version
+          bun --version
 
-      - name: Cache Rust dependencies
+      - name: Cache Rust dependencies for polkadot-sdk
         uses: swatinem/rust-cache@v2
         with:
-          key: ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
+          workspaces: |
+            polkadot-sdk
+          key: ${{ runner.os }}-rust-polkadot-sdk-${{ hashFiles('polkadot-sdk/**/Cargo.lock') }}
           cache-on-failure: true
 
-      - name: Run nightly tests
+      - name: Cache Rust dependencies for staking-miner
+        uses: swatinem/rust-cache@v2
+        with:
+          key: ${{ runner.os }}-rust-staking-miner-${{ hashFiles('**/Cargo.lock') }}
+          cache-on-failure: true
+
+      - name: Build node binaries and prepare chains
+        working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
+        shell: bash
         run: |
-          RUST_LOG="monitor=trace" cargo test --workspace --all-features -- --nocapture
+          # Build the node binaries that zombienet needs
+          echo "🔧 Building polkadot and polkadot-parachain binaries..."
+          cargo build --release --features fast-runtime -p polkadot -p polkadot-parachain-bin
+
+          # Create symlinks so zombienet can find the binaries when it spawns a new bash shell
+          ln -sf "$(pwd)/../../../../../target/release/polkadot" /usr/local/bin/polkadot
+          ln -sf "$(pwd)/../../../../../target/release/polkadot-parachain" /usr/local/bin/polkadot-parachain
+          ln -sf "$(pwd)/../../../../../target/release/polkadot-execute-worker" /usr/local/bin/polkadot-execute-worker
+          ln -sf "$(pwd)/../../../../../target/release/polkadot-prepare-worker" /usr/local/bin/polkadot-prepare-worker
+
+          just setup
+
+      - name: Build integration test
+        run: |
+          echo "🔧 Building integration test..."
+          cargo test --release --features integration-tests --no-run
+
+      - name: Start zombienet
+        working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
+        shell: bash
+        run: |
+          # Start zombienet and wait for ws endpoints to be ready
+          # TODO: use fake-dot instead (or run the test for each profile: fake-dot, fake-ksm, fake-dev, ...).
+          # Currently there is an issue for which while running with `fake-dot/ksm` profile, Zombienet setup doesn't work correctly,
+          # election doesn't start and we are stuck in election phase.
+          just run fake-dev 2>&1 &
+
+          echo "⏳ Waiting for chains to be ready (ws endpoints on 9944, 9945 and 9946)..."
+          for port in 9944 9945 9946; do
+            for i in {1..24}; do
+              if nc -z localhost $port; then
+                echo "✅ Port $port is open."
+                break
+              fi
+              sleep 10
+              if [ $i -eq 24 ]; then
+                echo "❌ Timeout waiting for port $port"
+                just killall
+                exit 1
+              fi
+            done
+          done
+
+          echo "✅ Zombienet is ready for tests!"
+
+      - name: Run integration test
+        run: |
+          RUST_LOG="monitor=trace" cargo test --release --features integration-tests submit_works -- --nocapture
+
+      - name: Cleanup zombienet
+        if: always()
+        working-directory: polkadot-sdk/substrate/frame/staking-async/runtimes/papi-tests
+        run: |
+          just killall
 
       - name: Create an issue on failure
         if: failure()
