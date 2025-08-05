@@ -1261,9 +1261,7 @@ async fn clear_old_round_data(
 	let tx_hash = xt.submit().await?;
 	log::debug!(
 		target: LOG_TARGET,
-		"Successfully submitted clear_old_round_data for round {} with tx hash: {:?}",
-		round,
-		tx_hash
+		"Successfully submitted clear_old_round_data for round {round} with tx hash: {tx_hash:?}"
 	);
 	Ok(())
 }
