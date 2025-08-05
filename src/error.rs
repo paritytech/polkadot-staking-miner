@@ -33,8 +33,6 @@ pub enum Error {
 	InvalidChain(String),
 	#[error("Other error: `{0}`")]
 	Other(String),
-	#[error("Invalid metadata: {0}")]
-	InvalidMetadata(String),
 }
 
 impl From<subxt_rpcs::Error> for Error {
