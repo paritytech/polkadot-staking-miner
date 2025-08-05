@@ -106,10 +106,7 @@ async fn dummy_listener_task(client: Client) -> Result<(), Error> {
 		// Print the block information
 		log::info!(
 			target: LOG_TARGET,
-			"Received Block #{} - Phase {:?} - Round {}",
-			block_number,
-			phase,
-			current_round
+			"Received Block #{block_number} - Phase {phase:?} - Round {current_round}"
 		);
 	}
 }

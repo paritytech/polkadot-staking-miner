@@ -24,12 +24,8 @@ pub enum Error {
 	Rpc(#[from] jsonrpsee::core::ClientError),
 	#[error("subxt error: `{0}`")]
 	Subxt(#[from] Box<subxt::Error>),
-	#[error("Crypto error: `{0:?}`")]
-	Crypto(polkadot_sdk::sp_core::crypto::SecretStringError),
 	#[error("Codec error: `{0}`")]
 	Codec(#[from] codec::Error),
-	#[error("The account does not exist")]
-	AccountDoesNotExists,
 
 	#[error(
 		"Invalid chain: `{0}`, staking-miner supports only polkadot, kusama, westend, node and asset-hub-next"
@@ -39,34 +35,6 @@ pub enum Error {
 	Other(String),
 	#[error("Invalid metadata: {0}")]
 	InvalidMetadata(String),
-	#[error("Dynamic transaction error: {0}")]
-	DynamicTransaction(String),
-	#[error("Feasibility error: {0}")]
-	Feasibility(String),
-	#[error("{0}")]
-	Join(#[from] tokio::task::JoinError),
-	#[error("Empty snapshot")]
-	EmptySnapshot,
-	#[error("Missing event for transaction: {0}")]
-	MissingTxEvent(String),
-	#[error("Failed to submit {0} pages")]
-	FailedToSubmitPages(usize),
-	#[error(
-		"Signed phase has insufficient blocks remaining: {blocks_remaining} (need at least {min_blocks})"
-	)]
-	InsufficientSignedPhaseBlocks { blocks_remaining: u32, min_blocks: u32 },
-	#[error("Phase changed from Signed to {new_phase:?} during submission for round {round}")]
-	PhaseChangedDuringSubmission { new_phase: String, round: u32 },
-	#[error(
-		"Solution validation failed: desired_targets ({desired_targets}) != solution winner count ({solution_winner_count})"
-	)]
-	SolutionValidation { desired_targets: u32, solution_winner_count: u32 },
-	#[error("Wrong page count: solution has {solution_pages} pages but maximum is {max_pages}")]
-	WrongPageCount { solution_pages: u32, max_pages: u32 },
-	#[error(
-		"Wrong round: solution is for round {solution_round} but current round is {current_round}"
-	)]
-	WrongRound { solution_round: u32, current_round: u32 },
 }
 
 impl From<subxt_rpcs::Error> for Error {
@@ -78,11 +46,5 @@ impl From<subxt_rpcs::Error> for Error {
 impl From<subxt::Error> for Error {
 	fn from(e: subxt::Error) -> Self {
 		Self::Subxt(Box::new(e))
-	}
-}
-
-impl From<subxt::backend::legacy::rpc_methods::DryRunDecodeError> for Error {
-	fn from(_e: subxt::backend::legacy::rpc_methods::DryRunDecodeError) -> Self {
-		Self::Other("Failed to decode dry run result".to_string())
 	}
 }

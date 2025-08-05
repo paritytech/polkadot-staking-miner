@@ -15,12 +15,11 @@
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
 use crate::prelude::LOG_TARGET;
-pub use hidden::*;
 use http_body_util::Full;
 use hyper::{Method, Request, Response, body::Bytes, header::CONTENT_TYPE, service::service_fn};
 use hyper_util::{
 	rt::{TokioExecutor, TokioIo},
-	server::{conn::auto::Builder, graceful::GracefulShutdown},
+	server::conn::auto::Builder,
 };
 use prometheus::{Encoder, TextEncoder};
 use std::net::SocketAddr;
@@ -49,229 +48,35 @@ async fn serve_req(req: Request<hyper::body::Incoming>) -> Result<Response<Body>
 	Ok(response)
 }
 
-pub async fn run(port: u16) -> Result<(), String> {
-	// Create the address to bind to
+pub async fn run(port: u16) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	let addr = SocketAddr::from(([0, 0, 0, 0], port));
-
-	// Bind the TCP listener
-	let listener = TcpListener::bind(&addr)
-		.await
-		.map_err(|e| format!("Failed to bind socket on port {port}: {e:?}"))?;
-
-	log::info!(target: LOG_TARGET, "Started prometheus endpoint on http://{addr}");
-
-	// Create a graceful shutdown handler
-	let graceful = GracefulShutdown::new();
-
-	// Spawn the server task
-	tokio::spawn(async move {
-		let executor = TokioExecutor::new();
-		let server = Builder::new(executor);
-
-		loop {
-			match listener.accept().await {
-				Ok((stream, _)) => {
-					let io = TokioIo::new(stream);
-
-					// Create a service for this connection
-					let service = service_fn(serve_req);
-
-					// Serve the connection with graceful shutdown
-					let conn = server.serve_connection_with_upgrades(io, service).into_owned();
-
-					let conn = graceful.watch(conn);
-
-					tokio::spawn(async move {
-						if let Err(err) = conn.await {
-							log::debug!(target: LOG_TARGET, "connection error: {err:?}");
-						}
-					});
-				},
-				Err(e) => {
-					log::debug!(target: LOG_TARGET, "Error accepting connection: {e:?}");
-					continue;
-				},
-			}
-		}
-	});
-
-	Ok(())
+	run_server(addr).await
 }
 
-mod hidden {
-	use once_cell::sync::Lazy;
-	use polkadot_sdk::sp_npos_elections;
-	use prometheus::{Counter, Gauge, opts, register_counter, register_gauge};
+pub fn on_runtime_upgrade() {
+	// No-op for dummy miner
+}
 
-	static MINED_SOLUTION_DURATION: Lazy<Gauge> = Lazy::new(|| {
-		register_gauge!(
-			"staking_miner_mining_duration_ms",
-			"The mined solution time in milliseconds."
-		)
-		.unwrap()
-	});
-	static SUBMIT_SOLUTION_AND_WATCH_DURATION: Lazy<Gauge> = Lazy::new(|| {
-		register_gauge!(
-			"staking_miner_submit_and_watch_duration_ms",
-			"The time in milliseconds it took to submit the solution to chain and to be included in block",
-		)
-		.unwrap()
-	});
-	static BALANCE: Lazy<Gauge> = Lazy::new(|| {
-		register_gauge!(opts!("staking_miner_balance", "The balance of the staking miner account"))
-			.unwrap()
-	});
-	static SCORE_MINIMAL_STAKE: Lazy<Gauge> = Lazy::new(|| {
-		register_gauge!(opts!(
-			"staking_miner_score_minimal_stake",
-			"The minimal winner, in terms of total backing stake"
-		))
-		.unwrap()
-	});
-	static SCORE_SUM_STAKE: Lazy<Gauge> = Lazy::new(|| {
-		register_gauge!(opts!(
-			"staking_miner_score_sum_stake",
-			"The sum of the total backing of all winners",
-		))
-		.unwrap()
-	});
-	static SCORE_SUM_STAKE_SQUARED: Lazy<Gauge> = Lazy::new(|| {
-		register_gauge!(opts!(
-			"staking_miner_score_sum_stake_squared",
-			"The sum squared of the total backing of all winners, aka. the variance.",
-		))
-		.unwrap()
-	});
-	static RUNTIME_UPGRADES: Lazy<Counter> = Lazy::new(|| {
-		register_counter!(opts!(
-			"staking_miner_runtime_upgrades",
-			"Number of runtime upgrades performed",
-		))
-		.unwrap()
-	});
-	static SUBMISSIONS_STARTED: Lazy<Counter> = Lazy::new(|| {
-		register_counter!(opts!(
-			"staking_miner_submissions_started",
-			"Number of submissions started",
-		))
-		.unwrap()
-	});
-	static SUBMISSIONS_SUCCESS: Lazy<Counter> = Lazy::new(|| {
-		register_counter!(opts!(
-			"staking_miner_submissions_success",
-			"Number of submissions finished successfully",
-		))
-		.unwrap()
-	});
+pub fn on_updater_subscription_stall() {
+	// No-op for dummy miner
+}
 
-	static JANITOR_CLEANUP_SUCCESS: Lazy<Counter> = Lazy::new(|| {
-		register_counter!(opts!(
-			"staking_miner_janitor_cleanup_success_total",
-			"Total number of successful janitor cleanup operations"
-		))
-		.unwrap()
-	});
+pub async fn run_server(addr: SocketAddr) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+	let listener = TcpListener::bind(addr).await?;
 
-	static JANITOR_CLEANUP_FAILURES: Lazy<Counter> = Lazy::new(|| {
-		register_counter!(opts!(
-			"staking_miner_janitor_cleanup_failures_total",
-			"Total number of failed janitor cleanup operations"
-		))
-		.unwrap()
-	});
+	loop {
+		let (stream, _) = listener.accept().await?;
+		let io = TokioIo::new(stream);
 
-	static JANITOR_OLD_SUBMISSIONS_FOUND: Lazy<Gauge> = Lazy::new(|| {
-		register_gauge!(opts!(
-			"staking_miner_janitor_old_submissions_found",
-			"Number of old submissions found during last janitor run"
-		))
-		.unwrap()
-	});
+		tokio::spawn(async move {
+			let builder = Builder::new(TokioExecutor::new());
+			let conn = builder.serve_connection(io, service_fn(serve_req));
 
-	static JANITOR_OLD_SUBMISSIONS_CLEARED: Lazy<Gauge> = Lazy::new(|| {
-		register_gauge!(opts!(
-			"staking_miner_janitor_old_submissions_cleared",
-			"Number of old submissions successfully cleared during last janitor run"
-		))
-		.unwrap()
-	});
+			if let Err(err) = conn.await {
+				log::error!(target: LOG_TARGET, "Error serving connection: {err:?}");
+			}
 
-	static JANITOR_CLEANUP_DURATION: Lazy<Gauge> = Lazy::new(|| {
-		register_gauge!(
-			"staking_miner_janitor_cleanup_duration_ms",
-			"The time in milliseconds it takes to complete janitor cleanup"
-		)
-		.unwrap()
-	});
-
-	static LISTENER_SUBSCRIPTION_STALLS: Lazy<Counter> = Lazy::new(|| {
-		register_counter!(opts!(
-			"staking_miner_listener_subscription_stalls_total",
-			"Total number of times the listener subscription was detected as stalled and recreated"
-		))
-		.unwrap()
-	});
-
-	static UPDATER_SUBSCRIPTION_STALLS: Lazy<Counter> = Lazy::new(|| {
-		register_counter!(opts!(
-			"staking_miner_updater_subscription_stalls_total",
-			"Total number of times the updater subscription was detected as stalled and recreated"
-		))
-		.unwrap()
-	});
-
-	pub fn on_runtime_upgrade() {
-		RUNTIME_UPGRADES.inc();
-	}
-
-	pub fn set_balance(balance: f64) {
-		BALANCE.set(balance);
-	}
-
-	pub fn set_score(score: sp_npos_elections::ElectionScore) {
-		SCORE_MINIMAL_STAKE.set(score.minimal_stake as f64);
-		SCORE_SUM_STAKE.set(score.sum_stake as f64);
-		SCORE_SUM_STAKE_SQUARED.set(score.sum_stake_squared as f64);
-	}
-
-	pub fn observe_submit_and_watch_duration(time: f64) {
-		SUBMIT_SOLUTION_AND_WATCH_DURATION.set(time);
-	}
-
-	pub fn observe_mined_solution_duration(time: f64) {
-		MINED_SOLUTION_DURATION.set(time);
-	}
-
-	pub fn on_submission_started() {
-		SUBMISSIONS_STARTED.inc();
-	}
-
-	pub fn on_submission_success() {
-		SUBMISSIONS_SUCCESS.inc();
-	}
-
-	pub fn on_janitor_cleanup_success(cleared_count: u32) {
-		JANITOR_CLEANUP_SUCCESS.inc();
-		JANITOR_OLD_SUBMISSIONS_CLEARED.set(cleared_count as f64);
-	}
-
-	pub fn on_janitor_cleanup_failure() {
-		JANITOR_CLEANUP_FAILURES.inc();
-	}
-
-	pub fn set_janitor_old_submissions_found(count: u32) {
-		JANITOR_OLD_SUBMISSIONS_FOUND.set(count as f64);
-	}
-
-	pub fn observe_janitor_cleanup_duration(time: f64) {
-		JANITOR_CLEANUP_DURATION.set(time);
-	}
-
-	pub fn on_listener_subscription_stall() {
-		LISTENER_SUBSCRIPTION_STALLS.inc();
-	}
-
-	pub fn on_updater_subscription_stall() {
-		UPDATER_SUBSCRIPTION_STALLS.inc();
+			log::trace!(target: LOG_TARGET, "Connection dropped");
+		});
 	}
 }
