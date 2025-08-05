@@ -57,6 +57,7 @@ where
 /// - Prints block number and phase
 /// - No miner or janitor communication
 async fn dummy_listener_task(client: Client) -> Result<(), Error> {
+	log::info!(target: LOG_TARGET, "Creating finalized block subscription...");
 	let mut subscription = client.chain_api().blocks().subscribe_finalized().await?;
 
 	log::info!(target: LOG_TARGET, "Dummy listener started, watching for finalized blocks");
@@ -69,7 +70,10 @@ async fn dummy_listener_task(client: Client) -> Result<(), Error> {
 		.await
 		{
 			Ok(maybe_block) => match maybe_block {
-				Some(Ok(block)) => (block.header().clone(), block.hash()),
+				Some(Ok(block)) => {
+					log::debug!(target: LOG_TARGET, "Received block #{}", block.header().number);
+					(block.header().clone(), block.hash())
+				},
 				Some(Err(e)) => {
 					if e.is_disconnected_will_reconnect() {
 						log::warn!(target: LOG_TARGET, "RPC connection lost, but will reconnect automatically. Continuing...");
@@ -99,14 +103,22 @@ async fn dummy_listener_task(client: Client) -> Result<(), Error> {
 			},
 		};
 
-		// Get block state
-		let (_storage, phase, current_round) = get_block_state(&client, block_hash).await?;
 		let block_number = at.number;
+		log::debug!(target: LOG_TARGET, "Processing block #{block_number}");
 
-		// Print the block information
-		log::info!(
-			target: LOG_TARGET,
-			"Received Block #{block_number} - Phase {phase:?} - Round {current_round}"
-		);
+		// Get block state
+		match get_block_state(&client, block_hash).await {
+			Ok((_storage, phase, current_round)) => {
+				// Print the block information
+				log::info!(
+					target: LOG_TARGET,
+					"Received Block #{block_number} - Phase {phase:?} - Round {current_round}"
+				);
+			},
+			Err(e) => {
+				log::warn!(target: LOG_TARGET, "Failed to get block state for #{block_number}: {e:?}");
+				continue;
+			},
+		}
 	}
 }

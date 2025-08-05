@@ -31,6 +31,8 @@ pub enum Error {
 		"Invalid chain: `{0}`, staking-miner supports only polkadot, kusama, westend, node and asset-hub-next"
 	)]
 	InvalidChain(String),
+	#[error("Invalid metadata: `{0}`")]
+	InvalidMetadata(String),
 	#[error("Other error: `{0}`")]
 	Other(String),
 }

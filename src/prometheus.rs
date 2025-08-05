@@ -48,9 +48,41 @@ async fn serve_req(req: Request<hyper::body::Incoming>) -> Result<Response<Body>
 	Ok(response)
 }
 
-pub async fn run(port: u16) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn run(port: u16) -> Result<(), String> {
 	let addr = SocketAddr::from(([0, 0, 0, 0], port));
-	run_server(addr).await
+
+	let listener = TcpListener::bind(&addr)
+		.await
+		.map_err(|e| format!("Failed to bind socket on port {port}: {e:?}"))?;
+
+	log::info!(target: LOG_TARGET, "Started prometheus endpoint on http://{addr}");
+
+	// Spawn the server in a background task
+	tokio::spawn(async move {
+		loop {
+			match listener.accept().await {
+				Ok((stream, _)) => {
+					let io = TokioIo::new(stream);
+
+					tokio::spawn(async move {
+						let executor = TokioExecutor::new();
+						let server = Builder::new(executor);
+						let service = service_fn(serve_req);
+						let conn = server.serve_connection(io, service);
+
+						if let Err(err) = conn.await {
+							log::error!(target: LOG_TARGET, "Error serving connection: {err:?}");
+						}
+					});
+				},
+				Err(e) => {
+					log::error!(target: LOG_TARGET, "Error accepting connection: {e:?}");
+				},
+			}
+		}
+	});
+
+	Ok(())
 }
 
 pub fn on_runtime_upgrade() {
@@ -59,24 +91,4 @@ pub fn on_runtime_upgrade() {
 
 pub fn on_updater_subscription_stall() {
 	// No-op for dummy miner
-}
-
-pub async fn run_server(addr: SocketAddr) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-	let listener = TcpListener::bind(addr).await?;
-
-	loop {
-		let (stream, _) = listener.accept().await?;
-		let io = TokioIo::new(stream);
-
-		tokio::spawn(async move {
-			let builder = Builder::new(TokioExecutor::new());
-			let conn = builder.serve_connection(io, service_fn(serve_req));
-
-			if let Err(err) = conn.await {
-				log::error!(target: LOG_TARGET, "Error serving connection: {err:?}");
-			}
-
-			log::trace!(target: LOG_TARGET, "Connection dropped");
-		});
-	}
 }
