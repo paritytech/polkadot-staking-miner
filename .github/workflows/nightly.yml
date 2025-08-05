@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: paritytech/polkadot-sdk
-          ref: sigurpol-fix-signal-propagation-justfile # temporarily until https://github.com/paritytech/polkadot-sdk/pull/9411 is merged
+          ref: master
           path: polkadot-sdk
 
       - name: Install dependencies
@@ -104,6 +104,9 @@ jobs:
         shell: bash
         run: |
           # Start zombienet and wait for ws endpoints to be ready
+          # TODO: use fake-dot instead (or run the test for each profile: fake-dot, fake-ksm, fake-dev, ...).
+          # Currently there is an issue for which while running with `fake-dot/ksm` profile, Zombienet setup doesn't work correctly,
+          # election doesn't start and we are stuck in election phase.
           just run fake-dev 2>&1 &
 
           echo "⏳ Waiting for chains to be ready (ws endpoints on 9944, 9945 and 9946)..."
@@ -134,28 +137,28 @@ jobs:
         run: |
           just killall
 
-      # - name: Create an issue on failure
-      #   if: failure()
-      #   uses: JasonEtco/create-an-issue@v2
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #     FAILED_WORKFLOW_RUN_URL: https://github.com/${{ github.repository }}/commit/${{ github.sha }}/checks/${{ github.run_id }}
-      #   with:
-      #     # Use this issue template:
-      #     filename: .github/issue_templates/nightly_run_failed.md
-      #     # Update existing issue if found; hopefully will make it clearer
-      #     # that it is still an issue:
-      #     update_existing: true
-      #     # Look for new *open* issues in this search (we want to
-      #     # create a new one if we only find closed versions):
-      #     search_existing: open
+      - name: Create an issue on failure
+        if: failure()
+        uses: JasonEtco/create-an-issue@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FAILED_WORKFLOW_RUN_URL: https://github.com/${{ github.repository }}/commit/${{ github.sha }}/checks/${{ github.run_id }}
+        with:
+          # Use this issue template:
+          filename: .github/issue_templates/nightly_run_failed.md
+          # Update existing issue if found; hopefully will make it clearer
+          # that it is still an issue:
+          update_existing: true
+          # Look for new *open* issues in this search (we want to
+          # create a new one if we only find closed versions):
+          search_existing: open
 
-      # - name: Notify daily integration tests failure
-      #   if: failure()
-      #   uses: s3krit/matrix-message-action@70ad3fb812ee0e45ff8999d6af11cafad11a6ecf # v0.0.3
-      #   with:
-      #     room_id: ${{ matrix.channel.room }}
-      #     access_token: ${{ secrets.MATRIX_ACCESS_TOKEN }}
-      #     server: m.parity.io
-      #     message: |
-      #       @room Daily integration tests failed https://github.com/${{ github.repository }}/commit/${{ github.sha }}/checks/${{ github.run_id }}
+      - name: Notify daily integration tests failure
+        if: failure()
+        uses: s3krit/matrix-message-action@70ad3fb812ee0e45ff8999d6af11cafad11a6ecf # v0.0.3
+        with:
+          room_id: ${{ matrix.channel.room }}
+          access_token: ${{ secrets.MATRIX_ACCESS_TOKEN }}
+          server: m.parity.io
+          message: |
+            @room Daily integration tests failed https://github.com/${{ github.repository }}/commit/${{ github.sha }}/checks/${{ github.run_id }}
