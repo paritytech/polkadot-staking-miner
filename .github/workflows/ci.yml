@@ -188,7 +188,7 @@ jobs:
 
   publish-docker-image:
     name: Build and publish Docker image
-    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dummy_miner_just_listening' ||  github.ref_type == 'tag' }}
+    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dummy_miner_just_listening' || github.ref_type == 'tag' || (github.event_name == 'pull_request' && github.head_ref == 'dummy_miner_just_listening') }}
     runs-on: ubuntu-latest
     environment: main_and_tags
     needs: [check-fmt, check-clippy, check-docs, check-code, test, build]
@@ -210,7 +210,7 @@ jobs:
           chmod +x ./artifacts/polkadot-staking-miner
 
       - name: Log in to Docker Hub
-        if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dummy_miner_just_listening' ||  github.ref_type == 'tag' }}
+        if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dummy_miner_just_listening' || github.ref_type == 'tag' || (github.event_name == 'pull_request' && github.head_ref == 'dummy_miner_just_listening') }}
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
