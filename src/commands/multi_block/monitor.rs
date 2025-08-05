@@ -1247,10 +1247,24 @@ async fn clear_old_round_data(
 	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
 	let xt = client.chain_api().tx().create_signed(&tx, &**signer, xt_cfg).await?;
 
-	let tx_progress = xt.submit_and_watch().await?;
-	utils::wait_tx_in_finalized_block(tx_progress).await?;
-
-	log::debug!(target: LOG_TARGET, "Successfully submitted clear_old_round_data for round {round}");
+	// Submit without waiting for finalization to avoid blocking the shared client connection.
+	// NOTE: Each task (listener, miner, janitor) gets a cloned Client, but these clones
+	// share the same underlying backend through Arc. This means all tasks share the same
+	// ReconnectingRpcClient and ChainHeadBackend.
+	// With the janitor implementing a synchronous wait for finalization, we experienced an issue on
+	// the field where the listener task was stalled after the janitor task ran. While we are still
+	// investigating the exact cause, the synchronous wait for finalization may have led to
+	// resource contention at the connection or backend level, preventing the listener from
+	// receiving new blocks. Additionally, regardless of the previous issue, using fire-and-forget
+	// submission is more suitable for cleanup operations. This approach prevents the janitor from
+	// blocking shared resources that the listener requires for longer than necessary.
+	let tx_hash = xt.submit().await?;
+	log::debug!(
+		target: LOG_TARGET,
+		"Successfully submitted clear_old_round_data for round {} with tx hash: {:?}",
+		round,
+		tx_hash
+	);
 	Ok(())
 }
 
