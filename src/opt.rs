@@ -47,8 +47,8 @@ impl std::str::FromStr for Chain {
 	fn from_str(s: &str) -> Result<Self, Error> {
 		match s {
 			"polkadot" => Ok(Self::Polkadot),
-			"statemint" => Ok(Self::Polkadot), // Polkadot AH
-			"paseo" => Ok(Self::Polkadot),     // Paseo AH
+			"statemint" => Ok(Self::Polkadot),       // Polkadot AH
+			"asset-hub-paseo" => Ok(Self::Polkadot), // Paseo AH
 			"kusama" => Ok(Self::Kusama),
 			"statemine" => Ok(Self::Kusama), // Kusama AH
 			"westend" => Ok(Self::Westend),
