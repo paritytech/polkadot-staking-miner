@@ -24,6 +24,7 @@ macro_rules! impl_u32_parameter_type {
 			}
 
 			impl $name {
+				#[allow(dead_code)]
 				pub fn set(val: u32) {
 					VAL.store(val, std::sync::atomic::Ordering::SeqCst);
 				}

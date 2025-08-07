@@ -74,16 +74,6 @@ pub mod multi_block {
 		pub const VOTER_SNAPSHOT_PER_BLOCK: PalletConstant<u32> =
 			PalletConstant::new(NAME, "VoterSnapshotPerBlock");
 	}
-
-	pub mod storage {
-		use super::{super::*, *};
-		pub const PAGED_TARGET_SNAPSHOT: PalletItem = PalletItem::new(NAME, "PagedTargetSnapshot");
-		pub const PAGED_TARGET_SNAPSHOT_HASH: PalletItem =
-			PalletItem::new(NAME, "PagedTargetSnapshotHash");
-		pub const PAGED_VOTER_SNAPSHOT: PalletItem = PalletItem::new(NAME, "PagedVoterSnapshot");
-		pub const PAGED_VOTER_SNAPSHOT_HASH: PalletItem =
-			PalletItem::new(NAME, "PagedVoterSnapshotHash");
-	}
 }
 
 pub mod multi_block_verifier {
@@ -95,16 +85,6 @@ pub mod multi_block_verifier {
 			PalletConstant::new(NAME, "MaxWinnersPerPage");
 		pub const MAX_BACKERS_PER_WINNER: PalletConstant<u32> =
 			PalletConstant::new(NAME, "MaxBackersPerWinner");
-	}
-}
-
-pub mod multi_block_signed {
-	pub const NAME: &str = "MultiBlockElectionSigned";
-
-	pub mod tx {
-		use super::{super::*, *};
-		pub const SUBMIT_PAGE: PalletItem = PalletItem::new(NAME, "submit_page");
-		pub const REGISTER: PalletItem = PalletItem::new(NAME, "register");
 	}
 }
 

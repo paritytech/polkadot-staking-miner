@@ -94,7 +94,9 @@ async fn main() -> Result<(), Error> {
 	tracing_subscriber::fmt().with_env_filter(filter).init();
 
 	let client = Client::new(&uri).await?;
+	log::debug!(target: LOG_TARGET, "Client created successfully");
 
+	log::debug!(target: LOG_TARGET, "Getting runtime version...");
 	let version_bytes = client
 		.chain_api()
 		.runtime_api()
@@ -104,8 +106,13 @@ async fn main() -> Result<(), Error> {
 		.await?;
 	let runtime_version: polkadot_sdk::sp_version::RuntimeVersion =
 		Decode::decode(&mut &version_bytes[..])?;
+	log::debug!(target: LOG_TARGET, "Runtime version decoded successfully");
 
+	log::debug!(target: LOG_TARGET, "Determining chain from runtime version...");
 	let chain = opt::Chain::try_from(&runtime_version)?;
+	log::debug!(target: LOG_TARGET, "Chain determined: {chain}");
+
+	log::debug!(target: LOG_TARGET, "Starting prometheus endpoint...");
 	if let Err(e) = prometheus::run(prometheus_port).await {
 		log::warn!("Failed to start prometheus endpoint: {e}");
 	}
@@ -115,10 +122,13 @@ async fn main() -> Result<(), Error> {
 
 	// Start a new tokio task to perform the runtime updates in the background.
 	// if this fails then the miner will be stopped and has to be re-started.
+	log::debug!(target: LOG_TARGET, "Starting runtime upgrade task...");
 	let (tx_upgrade, rx_upgrade) = oneshot::channel::<Error>();
 	tokio::spawn(runtime_upgrade_task(client.chain_api().clone(), tx_upgrade));
 
+	log::debug!(target: LOG_TARGET, "Updating metadata constants...");
 	update_metadata_constants(client.chain_api())?;
+	log::debug!(target: LOG_TARGET, "Metadata constants update completed");
 
 	let fut = match command {
 		Command::Info => async {
