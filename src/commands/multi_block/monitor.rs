@@ -33,6 +33,10 @@ const JANITOR_SCAN_ROUNDS: u32 = 5;
 /// If no blocks are received within this duration, the subscription will be recreated.
 const BLOCK_SUBSCRIPTION_TIMEOUT_SECS: u64 = 60;
 
+/// Timeout in seconds for detecting stalled block processing.
+/// If block processing takes longer than this, we'll recreate the subscription.
+const BLOCK_PROCESSING_TIMEOUT_SECS: u64 = 90;
+
 async fn signed_phase(client: &Client) -> Result<bool, Error> {
 	let storage = utils::storage_at_head(client).await?;
 	let current_phase = storage
@@ -48,6 +52,8 @@ enum ListenerAction {
 	Continue,
 	/// Subscription was recreated, continue processing
 	SubscriptionRecreated,
+	/// Block processing timed out, subscription needs recreation
+	BlockProcessingTimeout,
 }
 
 /// Type alias for the finalized block subscription stream
@@ -57,6 +63,88 @@ type SubscriptionStream = StreamOf<
 		subxt::Error,
 	>,
 >;
+
+/// Process the block after subscription.next() succeeds
+///
+/// This function contains all the logic that happens AFTER we receive a block
+/// from the subscription. This is the part that can hang internally and needs
+/// to be wrapped with timeout.
+async fn process_block_internal<T>(
+	client: &Client,
+	at: crate::prelude::Header,
+	block_hash: subxt::utils::H256,
+	prev_round: &mut Option<u32>,
+	miner_tx: &mpsc::Sender<MinerMessage>,
+	janitor_tx: &mpsc::Sender<JanitorMessage>,
+) -> Result<ListenerAction, Error>
+where
+	T: MinerConfig<AccountId = AccountId> + Send + Sync,
+	T::Solution: Send + Sync,
+	T::Pages: Send + Sync,
+	T::TargetSnapshotPerBlock: Send + Sync,
+	T::VoterSnapshotPerBlock: Send + Sync,
+	T::MaxVotesPerVoter: Send + Sync,
+{
+	log::trace!(target: LOG_TARGET, "Listener: Getting block state for block #{}", at.number);
+	let block_state_start = std::time::Instant::now();
+	let (_storage, phase, current_round) = get_block_state(client, block_hash).await?;
+	let block_state_duration = block_state_start.elapsed();
+	log::trace!(target: LOG_TARGET, "Listener: Got block state in {}ms for block #{}, phase: {:?}, round: {}", block_state_duration.as_millis(), at.number, phase, current_round);
+	prometheus::observe_block_state_duration(block_state_duration.as_millis() as f64);
+
+	if let Some(last_round) = *prev_round {
+		if current_round > last_round {
+			log::trace!(target: LOG_TARGET, "Listener: Processing round increment from {} to {} for block #{}", last_round, current_round, at.number);
+			let round_increment_start = std::time::Instant::now();
+			on_round_increment(last_round, current_round, &phase, miner_tx, janitor_tx).await?;
+			let round_increment_duration = round_increment_start.elapsed();
+			log::trace!(target: LOG_TARGET, "Listener: Round increment processing took {}ms for block #{}", round_increment_duration.as_millis(), at.number);
+		}
+	}
+
+	*prev_round = Some(current_round);
+	let block_number = at.number;
+
+	match phase {
+		Phase::Signed(_) | Phase::Snapshot(_) => {
+			// Relevant phases for mining - continue processing
+		},
+		_ => {
+			log::trace!(target: LOG_TARGET, "Block #{block_number}, Phase {phase:?} - nothing to do");
+			return Ok(ListenerAction::Continue);
+		},
+	}
+
+	log::trace!(target: LOG_TARGET, "Listener: Creating BlockDetails for block #{block_number}");
+	let block_details_start = std::time::Instant::now();
+	let state = BlockDetails::new(client, at, phase, block_hash, current_round).await?;
+	let block_details_duration = block_details_start.elapsed();
+	log::trace!(target: LOG_TARGET, "Listener: BlockDetails creation took {}ms for block #{}", block_details_duration.as_millis(), block_number);
+	prometheus::observe_block_details_duration(block_details_duration.as_millis() as f64);
+
+	let message = MinerMessage::ProcessBlock { state };
+
+	// Use try_send for backpressure - if miner is busy, skip this block
+	match miner_tx.try_send(message) {
+		Ok(()) => {
+			log::trace!(target: LOG_TARGET, "Sent block #{block_number} to miner");
+			// Update timestamp of successful block processing
+			prometheus::set_last_block_processing_time();
+			// Don't wait for response to allow proper backpressure - listener must continue
+			// processing blocks
+		},
+		Err(mpsc::error::TrySendError::Full(_)) => {
+			// Miner is busy processing another block - apply backpressure by skipping
+			log::trace!(target: LOG_TARGET, "Miner busy, skipping block #{block_number}");
+		},
+		Err(mpsc::error::TrySendError::Closed(_)) => {
+			log::error!(target: LOG_TARGET, "Miner channel closed unexpectedly");
+			return Err(Error::Other("Miner channel closed unexpectedly".to_string()));
+		},
+	}
+
+	Ok(ListenerAction::Continue)
+}
 
 /// Process a single iteration of the listener loop
 ///
@@ -79,6 +167,7 @@ where
 	T::VoterSnapshotPerBlock: Send + Sync,
 	T::MaxVotesPerVoter: Send + Sync,
 {
+	log::trace!(target: LOG_TARGET, "Listener: Waiting for next block from subscription...");
 	let (at, block_hash) = match tokio::time::timeout(
 		std::time::Duration::from_secs(BLOCK_SUBSCRIPTION_TIMEOUT_SECS),
 		subscription.next(),
@@ -89,6 +178,7 @@ where
 			match maybe_block {
 				Some(Ok(block)) => {
 					*last_block_time = std::time::Instant::now();
+					log::trace!(target: LOG_TARGET, "Listener: Received block #{} from subscription", block.header().number);
 					(block.header().clone(), block.hash())
 				},
 				Some(Err(e)) => {
@@ -126,49 +216,39 @@ where
 		},
 	};
 
-	let (_storage, phase, current_round) = get_block_state(client, block_hash).await?;
-
-	if let Some(last_round) = *prev_round {
-		if current_round > last_round {
-			on_round_increment(last_round, current_round, &phase, miner_tx, janitor_tx).await?;
-		}
-	}
-
-	*prev_round = Some(current_round);
-	let block_number = at.number;
-
-	match phase {
-		Phase::Signed(_) | Phase::Snapshot(_) => {
-			// Relevant phases for mining - continue processing
-		},
-		_ => {
-			log::trace!(target: LOG_TARGET, "Block #{block_number}, Phase {phase:?} - nothing to do");
-			return Ok(ListenerAction::Continue);
-		},
-	}
-
-	let state = BlockDetails::new(client, at, phase, block_hash, current_round).await?;
-
-	let message = MinerMessage::ProcessBlock { state };
-
-	// Use try_send for backpressure - if miner is busy, skip this block
-	match miner_tx.try_send(message) {
-		Ok(()) => {
-			log::trace!(target: LOG_TARGET, "Sent block #{block_number} to miner");
-			// Don't wait for response to allow proper backpressure - listener must continue
-			// processing blocks
-		},
-		Err(mpsc::error::TrySendError::Full(_)) => {
-			// Miner is busy processing another block - apply backpressure by skipping
-			log::trace!(target: LOG_TARGET, "Miner busy, skipping block #{block_number}");
-		},
-		Err(mpsc::error::TrySendError::Closed(_)) => {
-			log::error!(target: LOG_TARGET, "Miner channel closed unexpectedly");
-			return Err(Error::Other("Miner channel closed unexpectedly".to_string()));
+	// Now wrap the entire block processing with timeout
+	log::trace!(target: LOG_TARGET, "Listener: Starting block processing with timeout for block #{}", at.number);
+	match tokio::time::timeout(
+		std::time::Duration::from_secs(BLOCK_PROCESSING_TIMEOUT_SECS),
+		process_block_internal::<T>(
+			client,
+			at.clone(),
+			block_hash,
+			prev_round,
+			miner_tx,
+			janitor_tx,
+		),
+	)
+	.await
+	{
+		Ok(result) => result,
+		Err(_) => {
+			log::warn!(target: LOG_TARGET, "Block processing timed out after {}s for block #{} - may indicate internal hang, recreating subscription...", BLOCK_PROCESSING_TIMEOUT_SECS, at.number);
+			prometheus::on_block_processing_stall();
+			match client.chain_api().blocks().subscribe_finalized().await {
+				Ok(new_subscription) => {
+					*subscription = new_subscription;
+					*last_block_time = std::time::Instant::now();
+					log::info!(target: LOG_TARGET, "Successfully recreated subscription after block processing timeout");
+					Ok(ListenerAction::BlockProcessingTimeout)
+				},
+				Err(e) => {
+					log::error!(target: LOG_TARGET, "Failed to recreate subscription after block processing timeout: {e:?}");
+					Err(e.into())
+				},
+			}
 		},
 	}
-
-	Ok(ListenerAction::Continue)
 }
 
 /// Determine if a listener error is critical and should cause the process to exit
@@ -199,13 +279,31 @@ async fn get_block_state(
 	client: &Client,
 	block_hash: polkadot_sdk::sp_core::H256,
 ) -> Result<(Storage, Phase, u32), Error> {
+	log::trace!(target: LOG_TARGET, "get_block_state: Getting storage for block {block_hash:?}");
+	let storage_start = std::time::Instant::now();
 	let storage = utils::storage_at(Some(block_hash), client.chain_api()).await?;
+	let storage_duration = storage_start.elapsed();
+	log::trace!(target: LOG_TARGET, "get_block_state: Got storage in {}ms", storage_duration.as_millis());
+	prometheus::observe_storage_query_duration(storage_duration.as_millis() as f64);
+
+	log::trace!(target: LOG_TARGET, "get_block_state: Fetching current_phase");
+	let phase_start = std::time::Instant::now();
 	let phase = storage
 		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
 		.await?;
+	let phase_duration = phase_start.elapsed();
+	log::trace!(target: LOG_TARGET, "get_block_state: Got current_phase in {}ms: {:?}", phase_duration.as_millis(), phase);
+	prometheus::observe_storage_query_duration(phase_duration.as_millis() as f64);
+
+	log::trace!(target: LOG_TARGET, "get_block_state: Fetching round");
+	let round_start = std::time::Instant::now();
 	let current_round = storage
 		.fetch_or_default(&runtime::storage().multi_block_election().round())
 		.await?;
+	let round_duration = round_start.elapsed();
+	log::trace!(target: LOG_TARGET, "get_block_state: Got round in {}ms: {}", round_duration.as_millis(), current_round);
+	prometheus::observe_storage_query_duration(round_duration.as_millis() as f64);
+
 	Ok((storage, phase, current_round))
 }
 
@@ -500,6 +598,10 @@ where
 			Ok(ListenerAction::Continue) => continue,
 			Ok(ListenerAction::SubscriptionRecreated) => {
 				log::info!(target: LOG_TARGET, "Successfully processed subscription recreation");
+				continue;
+			},
+			Ok(ListenerAction::BlockProcessingTimeout) => {
+				log::info!(target: LOG_TARGET, "Successfully processed subscription recreation after block processing timeout");
 				continue;
 			},
 			Err(e) => {
@@ -1247,10 +1349,12 @@ async fn clear_old_round_data(
 	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
 	let xt = client.chain_api().tx().create_signed(&tx, &**signer, xt_cfg).await?;
 
-	let tx_progress = xt.submit_and_watch().await?;
-	utils::wait_tx_in_finalized_block(tx_progress).await?;
+	// Submit without waiting for finalization to avoid blocking (fire-and-forget approach)
+	// This prevents potential resource contention with listener task's storage queries
+	let tx_hash = xt.submit().await?;
 
-	log::debug!(target: LOG_TARGET, "Successfully submitted clear_old_round_data for round {round}");
+	log::debug!(target: LOG_TARGET, "Successfully submitted clear_old_round_data for round {round}, tx_hash: {tx_hash:?}");
+	log::info!(target: LOG_TARGET, "Janitor: Fire-and-forget submission for round {round} cleanup");
 	Ok(())
 }
 
