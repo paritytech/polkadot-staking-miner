@@ -220,6 +220,46 @@ mod hidden {
 		.unwrap()
 	});
 
+	static STORAGE_QUERY_DURATION: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(
+			"staking_miner_storage_query_duration_ms",
+			"Duration of storage queries in milliseconds"
+		)
+		.unwrap()
+	});
+
+	static BLOCK_STATE_DURATION: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(
+			"staking_miner_block_state_duration_ms",
+			"Duration of get_block_state() calls in milliseconds"
+		)
+		.unwrap()
+	});
+
+	static BLOCK_DETAILS_DURATION: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(
+			"staking_miner_block_details_duration_ms",
+			"Duration of BlockDetails::new() calls in milliseconds"
+		)
+		.unwrap()
+	});
+
+	static LAST_BLOCK_PROCESSING_TIME: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(opts!(
+			"staking_miner_last_block_processing_timestamp",
+			"Unix timestamp of when the last block was successfully processed by listener"
+		))
+		.unwrap()
+	});
+
+	static BLOCK_PROCESSING_STALLS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_block_processing_stalls_total",
+			"Total number of times block processing was detected as stalled (different from subscription stalls)"
+		))
+		.unwrap()
+	});
+
 	pub fn on_runtime_upgrade() {
 		RUNTIME_UPGRADES.inc();
 	}
@@ -273,5 +313,28 @@ mod hidden {
 
 	pub fn on_updater_subscription_stall() {
 		UPDATER_SUBSCRIPTION_STALLS.inc();
+	}
+
+	pub fn observe_storage_query_duration(duration_ms: f64) {
+		STORAGE_QUERY_DURATION.set(duration_ms);
+	}
+
+	pub fn observe_block_state_duration(duration_ms: f64) {
+		BLOCK_STATE_DURATION.set(duration_ms);
+	}
+
+	pub fn observe_block_details_duration(duration_ms: f64) {
+		BLOCK_DETAILS_DURATION.set(duration_ms);
+	}
+
+	pub fn set_last_block_processing_time() {
+		use std::time::{SystemTime, UNIX_EPOCH};
+		let timestamp =
+			SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as f64;
+		LAST_BLOCK_PROCESSING_TIME.set(timestamp);
+	}
+
+	pub fn on_block_processing_stall() {
+		BLOCK_PROCESSING_STALLS.inc();
 	}
 }
