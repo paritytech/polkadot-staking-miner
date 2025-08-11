@@ -31,10 +31,10 @@ jobs:
             room: "!tXyUlsDAYvDfRKbzKx:parity.io"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Checkout polkadot-sdk
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: paritytech/polkadot-sdk
           ref: master
