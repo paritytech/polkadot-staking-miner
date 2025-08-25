@@ -92,7 +92,12 @@ where
 	log::trace!(target: LOG_TARGET, "Listener: Got block state in {}ms for block #{}, phase: {:?}, round: {}", block_state_duration.as_millis(), at.number, phase, current_round);
 	prometheus::observe_block_state_duration(block_state_duration.as_millis() as f64);
 
-	if let Some(last_round) = *prev_round {
+	// Update prev_round before processing round increment to avoid stale round detection in case of
+	// timeouts
+	let last_round = *prev_round;
+	*prev_round = Some(current_round);
+
+	if let Some(last_round) = last_round {
 		if current_round > last_round {
 			log::trace!(target: LOG_TARGET, "Listener: Processing round increment from {} to {} for block #{}", last_round, current_round, at.number);
 			let round_increment_start = std::time::Instant::now();
@@ -101,8 +106,6 @@ where
 			log::trace!(target: LOG_TARGET, "Listener: Round increment processing took {}ms for block #{}", round_increment_duration.as_millis(), at.number);
 		}
 	}
-
-	*prev_round = Some(current_round);
 	let block_number = at.number;
 
 	match phase {
