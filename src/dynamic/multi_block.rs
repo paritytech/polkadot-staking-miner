@@ -396,7 +396,7 @@ async fn submit_impl<T: MinerConfig + Send + Sync + 'static>(
 		}
 	};
 
-	// 1. Wait for the `register_score tx` to be included in a block.
+	// 2. Wait for the `register_score tx` to be included in a block.
 	//
 	// NOTE: It's slow to iterate over the events to check if the score was registered
 	// but it's performed for registering the score only once.
@@ -408,7 +408,7 @@ async fn submit_impl<T: MinerConfig + Send + Sync + 'static>(
 
 	log::info!(target: LOG_TARGET, "Score registered at block {:?}", tx.block_hash());
 
-	// 2. Get current phase and validate before submitting pages
+	// 3. Get current phase and validate before submitting pages
 	let storage = utils::storage_at_head(client).await?;
 	let current_phase = storage
 		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
@@ -424,7 +424,7 @@ async fn submit_impl<T: MinerConfig + Send + Sync + 'static>(
 		.map(|(page, solution)| (page as u32, solution.clone()))
 		.collect::<Vec<_>>();
 
-	// 3. Submit all solution pages using the appropriate strategy based on chunk_size
+	// 4. Submit all solution pages using the appropriate strategy based on chunk_size
 	let failed_pages = if chunk_size == 0 {
 		inner_submit_pages_concurrent::<T>(
 			client,
@@ -446,7 +446,7 @@ async fn submit_impl<T: MinerConfig + Send + Sync + 'static>(
 		.await?
 	};
 
-	// 4. All pages were submitted successfully, we are done.
+	// 5. All pages were submitted successfully, we are done.
 	if failed_pages.is_empty() {
 		// Record successful submission
 		crate::prometheus::on_submission_success();
@@ -459,7 +459,7 @@ async fn submit_impl<T: MinerConfig + Send + Sync + 'static>(
 		failed_pages.len()
 	);
 
-	// 5. Get current phase and validate before retrying failed pages
+	// 6. Get current phase and validate before retrying failed pages
 	let storage = utils::storage_at_head(client).await?;
 	let current_phase = storage
 		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
@@ -468,7 +468,7 @@ async fn submit_impl<T: MinerConfig + Send + Sync + 'static>(
 	validate_signed_phase_or_bail(&current_phase, client, signer, round, min_signed_phase_blocks)
 		.await?;
 
-	// 6. Retry failed pages, one time.
+	// 7. Retry failed pages, one time.
 	let mut solutions = Vec::new();
 	for page in failed_pages {
 		let solution = std::mem::take(&mut paged_raw_solution.solution_pages[page as usize]);
