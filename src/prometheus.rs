@@ -266,6 +266,13 @@ mod hidden {
 		))
 		.unwrap()
 	});
+	static MINING_TIMEOUTS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_mining_timeouts_total",
+			"Total number of solution mining timeouts"
+		))
+		.unwrap()
+	});
 
 	pub fn on_runtime_upgrade() {
 		RUNTIME_UPGRADES.inc();
@@ -346,5 +353,8 @@ mod hidden {
 	}
 	pub fn on_tx_finalization_timeout() {
 		TX_FINALIZATION_TIMEOUTS.inc();
+	}
+	pub fn on_mining_timeout() {
+		MINING_TIMEOUTS.inc();
 	}
 }

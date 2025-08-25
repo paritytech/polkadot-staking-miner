@@ -848,9 +848,11 @@ where
 		return Ok(());
 	}
 
-	// Mine the solution
+	// Mine the solution with timeout to prevent indefinite hanging
+	const MINING_TIMEOUT_SECS: u64 = 600; // 10 minutes should be much more than enough for most elections
 	log::debug!(target: LOG_TARGET, "Mining solution for block #{block_number} round {round}");
-	let paged_raw_solution = match dynamic::mine_solution::<T>(
+
+	let mining_future = dynamic::mine_solution::<T>(
 		target_snapshot,
 		voter_snapshot,
 		n_pages,
@@ -858,18 +860,27 @@ where
 		desired_targets,
 		block_number,
 		config.do_reduce,
+	);
+
+	let paged_raw_solution = match tokio::time::timeout(
+		std::time::Duration::from_secs(MINING_TIMEOUT_SECS),
+		mining_future.timed(),
 	)
-	.timed()
 	.await
 	{
-		(Ok(sol), dur) => {
+		Ok((Ok(sol), dur)) => {
 			log::info!(target: LOG_TARGET, "Mining solution took {}ms for block #{}", dur.as_millis(), block_number);
 			prometheus::observe_mined_solution_duration(dur.as_millis() as f64);
 			sol
 		},
-		(Err(e), dur) => {
+		Ok((Err(e), dur)) => {
 			log::error!(target: LOG_TARGET, "Mining failed after {}ms: {:?}", dur.as_millis(), e);
 			return Err(e);
+		},
+		Err(_) => {
+			log::error!(target: LOG_TARGET, "Mining solution timed out after {} seconds for block #{}", MINING_TIMEOUT_SECS, block_number);
+			prometheus::on_mining_timeout();
+			return Err(Error::MiningTimeout { timeout_secs: MINING_TIMEOUT_SECS });
 		},
 	};
 
@@ -1371,7 +1382,8 @@ fn is_critical_miner_error(error: &Error) -> bool {
 		Error::SolutionValidation { .. } |
 		Error::WrongPageCount { .. } |
 		Error::WrongRound { .. } |
-		Error::TxFinalizationTimeout { .. } => false,
+		Error::TxFinalizationTimeout { .. } |
+		Error::MiningTimeout { .. } => false,
 		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Runtime(_)) => false, /* e.g. Subxt(Runtime(Module(ModuleError(<MultiBlockElectionSigned::Duplicate>)))) */
 		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Transaction(_)) =>
 			false, /* e.g. Subxt(Transaction(Invalid("Transaction is invalid (eg because of a bad */

@@ -71,6 +71,8 @@ pub enum Error {
 		"Transaction finalization timed out after {timeout_secs} seconds for operation: {operation}"
 	)]
 	TxFinalizationTimeout { operation: String, timeout_secs: u64 },
+	#[error("Solution mining timed out after {timeout_secs} seconds")]
+	MiningTimeout { timeout_secs: u64 },
 }
 
 impl From<subxt_rpcs::Error> for Error {
