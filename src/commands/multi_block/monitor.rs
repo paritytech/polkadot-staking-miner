@@ -848,29 +848,38 @@ where
 		return Ok(());
 	}
 
-	// Mine the solution
+	// Mine the solution with timeout to prevent indefinite hanging
+	const MINING_TIMEOUT_SECS: u64 = 600; // 10 minutes
 	log::debug!(target: LOG_TARGET, "Mining solution for block #{block_number} round {round}");
 
-	let paged_raw_solution = match dynamic::mine_solution::<T>(
-		target_snapshot,
-		voter_snapshot,
-		n_pages,
-		round,
-		desired_targets,
-		block_number,
-		config.do_reduce,
+	let paged_raw_solution = match tokio::time::timeout(
+		std::time::Duration::from_secs(MINING_TIMEOUT_SECS),
+		dynamic::mine_solution::<T>(
+			target_snapshot,
+			voter_snapshot,
+			n_pages,
+			round,
+			desired_targets,
+			block_number,
+			config.do_reduce,
+		)
+		.timed(),
 	)
-	.timed()
 	.await
 	{
-		(Ok(sol), dur) => {
+		Ok((Ok(sol), dur)) => {
 			log::info!(target: LOG_TARGET, "Mining solution took {}ms for block #{}", dur.as_millis(), block_number);
 			prometheus::observe_mined_solution_duration(dur.as_millis() as f64);
 			sol
 		},
-		(Err(e), dur) => {
+		Ok((Err(e), dur)) => {
 			log::error!(target: LOG_TARGET, "Mining failed after {}ms: {:?}", dur.as_millis(), e);
 			return Err(e);
+		},
+		Err(_) => {
+			log::error!(target: LOG_TARGET, "Mining solution timed out after {MINING_TIMEOUT_SECS} seconds for block #{block_number}");
+			prometheus::on_mining_timeout();
+			return Err(Error::MiningTimeout { timeout_secs: MINING_TIMEOUT_SECS });
 		},
 	};
 
@@ -973,7 +982,24 @@ where
 				return Ok(());
 			}
 
-			dynamic::bail(&client, &signer).await?;
+			// Bail operation with timeout to prevent indefinite hanging
+			const BAIL_TIMEOUT_SECS: u64 = 120; // 2 minutes
+			match tokio::time::timeout(std::time::Duration::from_secs(BAIL_TIMEOUT_SECS), async {
+				let start_time = std::time::Instant::now();
+				dynamic::bail(&client, &signer).await?;
+				let duration = start_time.elapsed();
+				prometheus::observe_bail_duration(duration.as_millis() as f64);
+				Ok::<_, Error>(())
+			})
+			.await
+			{
+				Ok(result) => result?,
+				Err(_) => {
+					log::error!(target: LOG_TARGET, "Bail operation timed out after {BAIL_TIMEOUT_SECS} seconds for block #{block_number}");
+					prometheus::on_bail_timeout();
+					return Err(Error::BailTimeout { timeout_secs: BAIL_TIMEOUT_SECS });
+				},
+			};
 		},
 		CurrentSubmission::Incomplete(s) => {
 			if s.score() == paged_raw_solution.score {
@@ -1016,7 +1042,24 @@ where
 				return Ok(());
 			}
 
-			dynamic::bail(&client, &signer).await?;
+			// Bail operation with timeout to prevent indefinite hanging
+			const BAIL_TIMEOUT_SECS: u64 = 120; // 2 minutes
+			match tokio::time::timeout(std::time::Duration::from_secs(BAIL_TIMEOUT_SECS), async {
+				let start_time = std::time::Instant::now();
+				dynamic::bail(&client, &signer).await?;
+				let duration = start_time.elapsed();
+				prometheus::observe_bail_duration(duration.as_millis() as f64);
+				Ok::<_, Error>(())
+			})
+			.await
+			{
+				Ok(result) => result?,
+				Err(_) => {
+					log::error!(target: LOG_TARGET, "Bail operation timed out after {BAIL_TIMEOUT_SECS} seconds for block #{block_number}");
+					prometheus::on_bail_timeout();
+					return Err(Error::BailTimeout { timeout_secs: BAIL_TIMEOUT_SECS });
+				},
+			};
 		},
 		CurrentSubmission::NotStarted => {
 			log::debug!(target: LOG_TARGET, "No existing submission found");
@@ -1035,19 +1078,23 @@ where
 	prometheus::set_score(paged_raw_solution.score);
 	log::info!(target: LOG_TARGET, "Submitting solution with score {:?} for round {}", paged_raw_solution.score, round);
 
-	// Submit the solution
-	match dynamic::submit(
-		&client,
-		&signer,
-		paged_raw_solution,
-		config.chunk_size,
-		round,
-		config.min_signed_phase_blocks,
+	// Submit the solution with timeout to prevent indefinite hanging
+	const SUBMIT_TIMEOUT_SECS: u64 = 1800; // 30 minutes
+	match tokio::time::timeout(
+		std::time::Duration::from_secs(SUBMIT_TIMEOUT_SECS),
+		dynamic::submit(
+			&client,
+			&signer,
+			paged_raw_solution,
+			config.chunk_size,
+			round,
+			config.min_signed_phase_blocks,
+		)
+		.timed(),
 	)
-	.timed()
 	.await
 	{
-		(Ok(_), dur) => {
+		Ok((Ok(_), dur)) => {
 			log::info!(
 				target: LOG_TARGET,
 				"Successfully submitted solution for round {} in {}ms",
@@ -1056,7 +1103,7 @@ where
 			);
 			prometheus::observe_submit_and_watch_duration(dur.as_millis() as f64);
 		},
-		(Err(e), dur) => {
+		Ok((Err(e), dur)) => {
 			log::error!(
 				target: LOG_TARGET,
 				"Submission failed after {}ms: {:?}",
@@ -1064,6 +1111,11 @@ where
 				e
 			);
 			return Err(e);
+		},
+		Err(_) => {
+			log::error!(target: LOG_TARGET, "Submit operation timed out after {SUBMIT_TIMEOUT_SECS} seconds");
+			prometheus::on_submit_timeout();
+			return Err(Error::SubmitTimeout { timeout_secs: SUBMIT_TIMEOUT_SECS });
 		},
 	};
 

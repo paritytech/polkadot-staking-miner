@@ -189,61 +189,46 @@ where
 	T::VoterSnapshotPerBlock: Send,
 	T::MaxVotesPerVoter: Send,
 {
-	const MINING_TIMEOUT_SECS: u64 = 600; // 10 minutes
+	log::trace!(
+		target: LOG_TARGET,
+		"Mine_and_submit: election target snap size: {:?}, voter snap size: {:?}",
+		target_snapshot.len(),
+		voter_snapshot_paged.len()
+	);
 
-	let mining_task = async {
-		log::trace!(
-			target: LOG_TARGET,
-			"Mine_and_submit: election target snap size: {:?}, voter snap size: {:?}",
-			target_snapshot.len(),
-			voter_snapshot_paged.len()
-		);
+	let voter_pages: BoundedVec<VoterSnapshotPageOf<T>, T::Pages> =
+		BoundedVec::truncate_from(voter_snapshot_paged);
 
-		let voter_pages: BoundedVec<VoterSnapshotPageOf<T>, T::Pages> =
-			BoundedVec::truncate_from(voter_snapshot_paged);
+	log::trace!(
+		target: LOG_TARGET,
+		"MineInput: desired_targets={desired_targets},pages={n_pages},target_snapshot_len={},voters_pages_len={},do_reduce={do_reduce},round={round},at={block_number}",
+		target_snapshot.len(), voter_pages.len()
+	);
 
-		log::trace!(
-			target: LOG_TARGET,
-			"MineInput: desired_targets={desired_targets},pages={n_pages},target_snapshot_len={},voters_pages_len={},do_reduce={do_reduce},round={round},at={block_number}",
-			target_snapshot.len(), voter_pages.len()
-		);
-
-		let input = MineInput {
-			desired_targets,
-			all_targets: target_snapshot.clone(),
-			voter_pages: voter_pages.clone(),
-			pages: n_pages,
-			do_reduce,
-			round,
-		};
-
-		// Mine solution
-		tokio::task::spawn_blocking(move || {
-			let paged_raw_solution =
-				Miner::<T>::mine_solution(input).map_err(|e| Error::Other(format!("{e:?}")))?;
-			Miner::<T>::check_feasibility(
-				&paged_raw_solution,
-				&voter_pages,
-				&target_snapshot,
-				desired_targets,
-			)
-			.map_err(|e| Error::Feasibility(format!("{e:?}")))?;
-			Ok(paged_raw_solution)
-		})
-		.await
-		.map_err(|e| Error::Other(format!("{e:?}")))?
+	let input = MineInput {
+		desired_targets,
+		all_targets: target_snapshot.clone(),
+		voter_pages: voter_pages.clone(),
+		pages: n_pages,
+		do_reduce,
+		round,
 	};
 
-	match tokio::time::timeout(std::time::Duration::from_secs(MINING_TIMEOUT_SECS), mining_task)
-		.await
-	{
-		Ok(result) => result,
-		Err(_) => {
-			log::error!(target: LOG_TARGET, "Mining solution timed out after {MINING_TIMEOUT_SECS} seconds for block #{block_number}");
-			crate::prometheus::on_mining_timeout();
-			Err(Error::MiningTimeout { timeout_secs: MINING_TIMEOUT_SECS })
-		},
-	}
+	// Mine solution
+	tokio::task::spawn_blocking(move || {
+		let paged_raw_solution =
+			Miner::<T>::mine_solution(input).map_err(|e| Error::Other(format!("{e:?}")))?;
+		Miner::<T>::check_feasibility(
+			&paged_raw_solution,
+			&voter_pages,
+			&target_snapshot,
+			desired_targets,
+		)
+		.map_err(|e| Error::Feasibility(format!("{e:?}")))?;
+		Ok(paged_raw_solution)
+	})
+	.await
+	.map_err(|e| Error::Other(format!("{e:?}")))?
 }
 
 /// Fetches the target snapshot and all voter snapshots which are missing
@@ -346,7 +331,7 @@ pub(crate) async fn check_and_update_target_snapshot<T: MinerConfig>(
 /// Submit a multi-block solution.
 ///
 /// It registers the score and submits all solution pages.
-async fn submit_impl<T: MinerConfig + Send + Sync + 'static>(
+pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 	client: &Client,
 	signer: &Signer,
 	mut paged_raw_solution: PagedRawSolution<T>,
@@ -523,32 +508,6 @@ async fn submit_impl<T: MinerConfig + Send + Sync + 'static>(
 		.await?;
 
 		Err(Error::FailedToSubmitPages(failed_pages.len()))
-	}
-}
-
-/// Submit a multi-block solution with timeout and metrics.
-pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
-	client: &Client,
-	signer: &Signer,
-	paged_raw_solution: PagedRawSolution<T>,
-	chunk_size: usize,
-	round: u32,
-	min_signed_phase_blocks: u32,
-) -> Result<(), Error> {
-	const SUBMIT_TIMEOUT_SECS: u64 = 1800; // 30 minutes
-
-	match tokio::time::timeout(
-		std::time::Duration::from_secs(SUBMIT_TIMEOUT_SECS),
-		submit_impl(client, signer, paged_raw_solution, chunk_size, round, min_signed_phase_blocks),
-	)
-	.await
-	{
-		Ok(result) => result,
-		Err(_) => {
-			log::error!(target: LOG_TARGET, "Submit operation timed out after {SUBMIT_TIMEOUT_SECS} seconds");
-			crate::prometheus::on_submit_timeout();
-			Err(Error::SubmitTimeout { timeout_secs: SUBMIT_TIMEOUT_SECS })
-		},
 	}
 }
 
@@ -783,31 +742,13 @@ pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
 
 /// Submit a bail transaction to revert incomplete submissions
 pub(crate) async fn bail(client: &Client, signer: &Signer) -> Result<(), Error> {
-	const BAIL_TIMEOUT_SECS: u64 = 120; // 2 minutes
-
-	let bail_task = async {
-		let start_time = std::time::Instant::now();
-
-		let bail_tx = runtime::tx().multi_block_election_signed().bail();
-		let nonce = client.chain_api().tx().account_nonce(signer.account_id()).await?;
-		let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
-		let xt = client.chain_api().tx().create_signed(&bail_tx, &**signer, xt_cfg).await?;
-		let tx = xt.submit_and_watch().await?;
-		utils::wait_tx_in_finalized_block(tx).await?;
-
-		let duration = start_time.elapsed();
-		crate::prometheus::observe_bail_duration(duration.as_millis() as f64);
-		Ok::<_, Error>(())
-	};
-
-	match tokio::time::timeout(std::time::Duration::from_secs(BAIL_TIMEOUT_SECS), bail_task).await {
-		Ok(result) => result,
-		Err(_) => {
-			log::error!(target: LOG_TARGET, "Bail operation timed out after {BAIL_TIMEOUT_SECS} seconds");
-			crate::prometheus::on_bail_timeout();
-			Err(Error::BailTimeout { timeout_secs: BAIL_TIMEOUT_SECS })
-		},
-	}
+	let bail_tx = runtime::tx().multi_block_election_signed().bail();
+	let nonce = client.chain_api().tx().account_nonce(signer.account_id()).await?;
+	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
+	let xt = client.chain_api().tx().create_signed(&bail_tx, &**signer, xt_cfg).await?;
+	let tx = xt.submit_and_watch().await?;
+	utils::wait_tx_in_finalized_block(tx).await?;
+	Ok(())
 }
 
 /// Get the blocks remaining from a SignedPhase.
