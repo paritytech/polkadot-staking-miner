@@ -239,7 +239,7 @@ where
 	{
 		Ok(result) => result,
 		Err(_) => {
-			log::error!(target: LOG_TARGET, "Mining solution timed out after {} seconds for block #{}", MINING_TIMEOUT_SECS, block_number);
+			log::error!(target: LOG_TARGET, "Mining solution timed out after {MINING_TIMEOUT_SECS} seconds for block #{block_number}");
 			crate::prometheus::on_mining_timeout();
 			Err(Error::MiningTimeout { timeout_secs: MINING_TIMEOUT_SECS })
 		},
@@ -545,7 +545,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 	{
 		Ok(result) => result,
 		Err(_) => {
-			log::error!(target: LOG_TARGET, "Submit operation timed out after {} seconds", SUBMIT_TIMEOUT_SECS);
+			log::error!(target: LOG_TARGET, "Submit operation timed out after {SUBMIT_TIMEOUT_SECS} seconds");
 			crate::prometheus::on_submit_timeout();
 			Err(Error::SubmitTimeout { timeout_secs: SUBMIT_TIMEOUT_SECS })
 		},
@@ -803,7 +803,7 @@ pub(crate) async fn bail(client: &Client, signer: &Signer) -> Result<(), Error> 
 	match tokio::time::timeout(std::time::Duration::from_secs(BAIL_TIMEOUT_SECS), bail_task).await {
 		Ok(result) => result,
 		Err(_) => {
-			log::error!(target: LOG_TARGET, "Bail operation timed out after {} seconds", BAIL_TIMEOUT_SECS);
+			log::error!(target: LOG_TARGET, "Bail operation timed out after {BAIL_TIMEOUT_SECS} seconds");
 			crate::prometheus::on_bail_timeout();
 			Err(Error::BailTimeout { timeout_secs: BAIL_TIMEOUT_SECS })
 		},

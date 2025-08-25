@@ -949,7 +949,7 @@ where
 	{
 		Ok(result) => result?,
 		Err(_) => {
-			log::error!(target: LOG_TARGET, "Check existing submission timed out after {} seconds for block #{}", CHECK_EXISTING_SUBMISSION_TIMEOUT_SECS, block_number);
+			log::error!(target: LOG_TARGET, "Check existing submission timed out after {CHECK_EXISTING_SUBMISSION_TIMEOUT_SECS} seconds for block #{block_number}");
 			prometheus::on_check_existing_submission_timeout();
 			return Err(Error::CheckExistingSubmissionTimeout {
 				timeout_secs: CHECK_EXISTING_SUBMISSION_TIMEOUT_SECS,
