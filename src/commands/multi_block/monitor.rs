@@ -848,11 +848,10 @@ where
 		return Ok(());
 	}
 
-	// Mine the solution with timeout to prevent indefinite hanging
-	const MINING_TIMEOUT_SECS: u64 = 600; // 10 minutes should be much more than enough for most elections
+	// Mine the solution
 	log::debug!(target: LOG_TARGET, "Mining solution for block #{block_number} round {round}");
 
-	let mining_future = dynamic::mine_solution::<T>(
+	let paged_raw_solution = match dynamic::mine_solution::<T>(
 		target_snapshot,
 		voter_snapshot,
 		n_pages,
@@ -860,27 +859,18 @@ where
 		desired_targets,
 		block_number,
 		config.do_reduce,
-	);
-
-	let paged_raw_solution = match tokio::time::timeout(
-		std::time::Duration::from_secs(MINING_TIMEOUT_SECS),
-		mining_future.timed(),
 	)
+	.timed()
 	.await
 	{
-		Ok((Ok(sol), dur)) => {
+		(Ok(sol), dur) => {
 			log::info!(target: LOG_TARGET, "Mining solution took {}ms for block #{}", dur.as_millis(), block_number);
 			prometheus::observe_mined_solution_duration(dur.as_millis() as f64);
 			sol
 		},
-		Ok((Err(e), dur)) => {
+		(Err(e), dur) => {
 			log::error!(target: LOG_TARGET, "Mining failed after {}ms: {:?}", dur.as_millis(), e);
 			return Err(e);
-		},
-		Err(_) => {
-			log::error!(target: LOG_TARGET, "Mining solution timed out after {} seconds for block #{}", MINING_TIMEOUT_SECS, block_number);
-			prometheus::on_mining_timeout();
-			return Err(Error::MiningTimeout { timeout_secs: MINING_TIMEOUT_SECS });
 		},
 	};
 
@@ -940,11 +930,35 @@ where
 		return execute_shady_behavior(&client, &signer, &phase).await;
 	}
 
-	// Get latest storage state (chain may have progressed while we were mining)
-	let storage_head = utils::storage_at_head(&client).await?;
+	// Handle existing submissions with timeout to prevent indefinite hanging
+	const CHECK_EXISTING_SUBMISSION_TIMEOUT_SECS: u64 = 300; // 5 minutes should be enough for checking submissions
+	let (storage_head, existing_submission) = match tokio::time::timeout(
+		std::time::Duration::from_secs(CHECK_EXISTING_SUBMISSION_TIMEOUT_SECS),
+		async {
+			let start_time = std::time::Instant::now();
+			// Get latest storage state (chain may have progressed while we were mining)
+			let storage_head = utils::storage_at_head(&client).await?;
+			let existing_submission =
+				get_submission(&storage_head, round, signer.account_id(), n_pages).await?;
+			let duration = start_time.elapsed();
+			prometheus::observe_check_existing_submission_duration(duration.as_millis() as f64);
+			Ok::<_, Error>((storage_head, existing_submission))
+		},
+	)
+	.await
+	{
+		Ok(result) => result?,
+		Err(_) => {
+			log::error!(target: LOG_TARGET, "Check existing submission timed out after {} seconds for block #{}", CHECK_EXISTING_SUBMISSION_TIMEOUT_SECS, block_number);
+			prometheus::on_check_existing_submission_timeout();
+			return Err(Error::CheckExistingSubmissionTimeout {
+				timeout_secs: CHECK_EXISTING_SUBMISSION_TIMEOUT_SECS,
+			});
+		},
+	};
 
 	// Handle existing submissions
-	match get_submission(&storage_head, round, signer.account_id(), n_pages).await? {
+	match existing_submission {
 		CurrentSubmission::Done(score) => {
 			// We have already submitted the solution with a score
 			if !score_passes_strategy(paged_raw_solution.score, score, config.submission_strategy) {
@@ -1383,7 +1397,10 @@ fn is_critical_miner_error(error: &Error) -> bool {
 		Error::WrongPageCount { .. } |
 		Error::WrongRound { .. } |
 		Error::TxFinalizationTimeout { .. } |
-		Error::MiningTimeout { .. } => false,
+		Error::MiningTimeout { .. } |
+		Error::CheckExistingSubmissionTimeout { .. } |
+		Error::BailTimeout { .. } |
+		Error::SubmitTimeout { .. } => false,
 		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Runtime(_)) => false, /* e.g. Subxt(Runtime(Module(ModuleError(<MultiBlockElectionSigned::Duplicate>)))) */
 		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Transaction(_)) =>
 			false, /* e.g. Subxt(Transaction(Invalid("Transaction is invalid (eg because of a bad */

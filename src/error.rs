@@ -73,6 +73,12 @@ pub enum Error {
 	TxFinalizationTimeout { operation: String, timeout_secs: u64 },
 	#[error("Solution mining timed out after {timeout_secs} seconds")]
 	MiningTimeout { timeout_secs: u64 },
+	#[error("Checking existing submission timed out after {timeout_secs} seconds")]
+	CheckExistingSubmissionTimeout { timeout_secs: u64 },
+	#[error("Bail operation timed out after {timeout_secs} seconds")]
+	BailTimeout { timeout_secs: u64 },
+	#[error("Solution submission timed out after {timeout_secs} seconds")]
+	SubmitTimeout { timeout_secs: u64 },
 }
 
 impl From<subxt_rpcs::Error> for Error {

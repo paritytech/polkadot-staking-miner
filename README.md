@@ -11,7 +11,7 @@ next era and how stake is distributed among them to maximize security and decent
 The nomination process in a nutshell:
 
 ```text
- Nominators → Stake DOT → Nominate Validators → Validator Set Selection
+Nominators → Stake DOT → Nominate Validators → Validator Set Selection
 ```
 
 where
@@ -294,6 +294,23 @@ staking_miner_tx_finalization_timeouts_total 0
 # HELP staking_miner_mining_timeouts_total Total number of solution mining timeouts
 # TYPE staking_miner_mining_timeouts_total counter
 staking_miner_mining_timeouts_total 0
+# HELP staking_miner_check_existing_submission_timeouts_total Total number of check existing submission timeouts
+# TYPE staking_miner_check_existing_submission_timeouts_total counter
+staking_miner_check_existing_submission_timeouts_total 0
+# HELP staking_miner_bail_timeouts_total Total number of bail operation timeouts
+# TYPE staking_miner_bail_timeouts_total counter
+staking_miner_bail_timeouts_total 0
+# HELP staking_miner_submit_timeouts_total Total number of solution submission timeouts
+# TYPE staking_miner_submit_timeouts_total counter
+staking_miner_submit_timeouts_total 0
+
+# Performance Duration Metrics (for successful operations)
+# HELP staking_miner_check_existing_submission_duration_ms Duration of checking existing submissions in milliseconds
+# TYPE staking_miner_check_existing_submission_duration_ms gauge
+staking_miner_check_existing_submission_duration_ms 125
+# HELP staking_miner_bail_duration_ms Duration of bail operations in milliseconds
+# TYPE staking_miner_bail_duration_ms gauge
+staking_miner_bail_duration_ms 2340
 ```
 
 ## Architecture

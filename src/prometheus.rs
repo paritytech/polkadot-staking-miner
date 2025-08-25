@@ -243,6 +243,20 @@ mod hidden {
 		)
 		.unwrap()
 	});
+	static CHECK_EXISTING_SUBMISSION_DURATION: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(
+			"staking_miner_check_existing_submission_duration_ms",
+			"Duration of checking and handling existing submissions in milliseconds"
+		)
+		.unwrap()
+	});
+	static BAIL_DURATION: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(
+			"staking_miner_bail_duration_ms",
+			"Duration of bail operations in milliseconds"
+		)
+		.unwrap()
+	});
 
 	static LAST_BLOCK_PROCESSING_TIME: Lazy<Gauge> = Lazy::new(|| {
 		register_gauge!(opts!(
@@ -270,6 +284,27 @@ mod hidden {
 		register_counter!(opts!(
 			"staking_miner_mining_timeouts_total",
 			"Total number of solution mining timeouts"
+		))
+		.unwrap()
+	});
+	static CHECK_EXISTING_SUBMISSION_TIMEOUTS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_check_existing_submission_timeouts_total",
+			"Total number of check existing submission timeouts"
+		))
+		.unwrap()
+	});
+	static BAIL_TIMEOUTS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_bail_timeouts_total",
+			"Total number of bail operation timeouts"
+		))
+		.unwrap()
+	});
+	static SUBMIT_TIMEOUTS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_submit_timeouts_total",
+			"Total number of solution submission timeouts"
 		))
 		.unwrap()
 	});
@@ -340,6 +375,12 @@ mod hidden {
 	pub fn observe_block_details_duration(duration_ms: f64) {
 		BLOCK_DETAILS_DURATION.set(duration_ms);
 	}
+	pub fn observe_check_existing_submission_duration(duration_ms: f64) {
+		CHECK_EXISTING_SUBMISSION_DURATION.set(duration_ms);
+	}
+	pub fn observe_bail_duration(duration_ms: f64) {
+		BAIL_DURATION.set(duration_ms);
+	}
 
 	pub fn set_last_block_processing_time() {
 		use std::time::{SystemTime, UNIX_EPOCH};
@@ -356,5 +397,14 @@ mod hidden {
 	}
 	pub fn on_mining_timeout() {
 		MINING_TIMEOUTS.inc();
+	}
+	pub fn on_check_existing_submission_timeout() {
+		CHECK_EXISTING_SUBMISSION_TIMEOUTS.inc();
+	}
+	pub fn on_bail_timeout() {
+		BAIL_TIMEOUTS.inc();
+	}
+	pub fn on_submit_timeout() {
+		SUBMIT_TIMEOUTS.inc();
 	}
 }
