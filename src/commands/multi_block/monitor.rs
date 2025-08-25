@@ -5,7 +5,7 @@ use crate::{
 		types::{MultiBlockMonitorConfig, SubmissionStrategy},
 	},
 	dynamic::multi_block as dynamic,
-	error::Error,
+	error::{Error, TimeoutError::*},
 	prelude::{AccountId, ExtrinsicParamsBuilder, LOG_TARGET, Storage},
 	prometheus,
 	runtime::multi_block::{
@@ -880,9 +880,9 @@ where
 		Err(_) => {
 			log::error!(target: LOG_TARGET, "Check existing submission timed out after {CHECK_EXISTING_SUBMISSION_TIMEOUT_SECS} seconds for round {round}");
 			prometheus::on_check_existing_submission_timeout();
-			return Err(Error::CheckExistingSubmissionTimeout {
+			return Err(Error::Timeout(CheckExistingSubmission {
 				timeout_secs: CHECK_EXISTING_SUBMISSION_TIMEOUT_SECS,
-			});
+			}));
 		},
 	};
 
@@ -922,7 +922,7 @@ where
 		Err(_) => {
 			log::error!(target: LOG_TARGET, "Mining solution timed out after {MINING_TIMEOUT_SECS} seconds for block #{block_number}");
 			prometheus::on_mining_timeout();
-			return Err(Error::MiningTimeout { timeout_secs: MINING_TIMEOUT_SECS });
+			return Err(Error::Timeout(Mining { timeout_secs: MINING_TIMEOUT_SECS }));
 		},
 	};
 
@@ -1002,9 +1002,9 @@ where
 		Err(_) => {
 			log::error!(target: LOG_TARGET, "Check existing submission timed out after {CHECK_EXISTING_SUBMISSION_TIMEOUT_SECS} seconds for block #{block_number}");
 			prometheus::on_check_existing_submission_timeout();
-			return Err(Error::CheckExistingSubmissionTimeout {
+			return Err(Error::Timeout(CheckExistingSubmission {
 				timeout_secs: CHECK_EXISTING_SUBMISSION_TIMEOUT_SECS,
-			});
+			}));
 		},
 	};
 
@@ -1037,7 +1037,9 @@ where
 				Err(_) => {
 					log::error!(target: LOG_TARGET, "Phase check timed out after {PHASE_CHECK_TIMEOUT_SECS} seconds for round {round}");
 					prometheus::on_phase_check_timeout();
-					return Err(Error::PhaseCheckTimeout { timeout_secs: PHASE_CHECK_TIMEOUT_SECS });
+					return Err(Error::Timeout(PhaseCheck {
+						timeout_secs: PHASE_CHECK_TIMEOUT_SECS,
+					}));
 				},
 			};
 
@@ -1061,7 +1063,7 @@ where
 				Err(_) => {
 					log::error!(target: LOG_TARGET, "Bail operation timed out after {BAIL_TIMEOUT_SECS} seconds for block #{block_number}");
 					prometheus::on_bail_timeout();
-					return Err(Error::BailTimeout { timeout_secs: BAIL_TIMEOUT_SECS });
+					return Err(Error::Timeout(Bail { timeout_secs: BAIL_TIMEOUT_SECS }));
 				},
 			};
 		},
@@ -1113,9 +1115,9 @@ where
 					Err(_) => {
 						log::error!(target: LOG_TARGET, "Missing pages submission timed out after {MISSING_PAGES_TIMEOUT_SECS} seconds");
 						prometheus::on_missing_pages_timeout();
-						return Err(Error::MissingPagesTimeout {
+						return Err(Error::Timeout(MissingPages {
 							timeout_secs: MISSING_PAGES_TIMEOUT_SECS,
-						});
+						}));
 					},
 				}
 				return Ok(());
@@ -1142,7 +1144,9 @@ where
 				Err(_) => {
 					log::error!(target: LOG_TARGET, "Phase check timed out after {PHASE_CHECK_TIMEOUT_SECS} seconds for round {round}");
 					prometheus::on_phase_check_timeout();
-					return Err(Error::PhaseCheckTimeout { timeout_secs: PHASE_CHECK_TIMEOUT_SECS });
+					return Err(Error::Timeout(PhaseCheck {
+						timeout_secs: PHASE_CHECK_TIMEOUT_SECS,
+					}));
 				},
 			};
 
@@ -1166,7 +1170,7 @@ where
 				Err(_) => {
 					log::error!(target: LOG_TARGET, "Bail operation timed out after {BAIL_TIMEOUT_SECS} seconds for block #{block_number}");
 					prometheus::on_bail_timeout();
-					return Err(Error::BailTimeout { timeout_secs: BAIL_TIMEOUT_SECS });
+					return Err(Error::Timeout(Bail { timeout_secs: BAIL_TIMEOUT_SECS }));
 				},
 			};
 		},
@@ -1201,7 +1205,7 @@ where
 			Err(_) => {
 				log::error!(target: LOG_TARGET, "Score check timed out after {SCORE_CHECK_TIMEOUT_SECS} seconds for round {round}");
 				prometheus::on_score_check_timeout();
-				return Err(Error::ScoreCheckTimeout { timeout_secs: SCORE_CHECK_TIMEOUT_SECS });
+				return Err(Error::Timeout(ScoreCheck { timeout_secs: SCORE_CHECK_TIMEOUT_SECS }));
 			},
 		};
 
@@ -1251,7 +1255,7 @@ where
 		Err(_) => {
 			log::error!(target: LOG_TARGET, "Submit operation timed out after {SUBMIT_TIMEOUT_SECS} seconds");
 			prometheus::on_submit_timeout();
-			return Err(Error::SubmitTimeout { timeout_secs: SUBMIT_TIMEOUT_SECS });
+			return Err(Error::Timeout(Submit { timeout_secs: SUBMIT_TIMEOUT_SECS }));
 		},
 	};
 
@@ -1584,13 +1588,7 @@ fn is_critical_miner_error(error: &Error) -> bool {
 		Error::SolutionValidation { .. } |
 		Error::WrongPageCount { .. } |
 		Error::WrongRound { .. } |
-		Error::MiningTimeout { .. } |
-		Error::CheckExistingSubmissionTimeout { .. } |
-		Error::BailTimeout { .. } |
-		Error::SubmitTimeout { .. } |
-		Error::PhaseCheckTimeout { .. } |
-		Error::ScoreCheckTimeout { .. } |
-		Error::MissingPagesTimeout { .. } => false,
+		Error::Timeout(_) => false,
 		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Runtime(_)) => false, /* e.g. Subxt(Runtime(Module(ModuleError(<MultiBlockElectionSigned::Duplicate>)))) */
 		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Transaction(_)) =>
 			false, /* e.g. Subxt(Transaction(Invalid("Transaction is invalid (eg because of a bad */

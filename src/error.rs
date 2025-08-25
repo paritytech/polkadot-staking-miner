@@ -15,6 +15,24 @@
 // along with Polkadot.  If not, see <http://www.gnu.org/licenses/>.
 
 #[derive(thiserror::Error, Debug)]
+pub enum TimeoutError {
+	#[error("Solution mining timed out after {timeout_secs} seconds")]
+	Mining { timeout_secs: u64 },
+	#[error("Checking existing submission timed out after {timeout_secs} seconds")]
+	CheckExistingSubmission { timeout_secs: u64 },
+	#[error("Bail operation timed out after {timeout_secs} seconds")]
+	Bail { timeout_secs: u64 },
+	#[error("Solution submission timed out after {timeout_secs} seconds")]
+	Submit { timeout_secs: u64 },
+	#[error("Phase check timed out after {timeout_secs} seconds")]
+	PhaseCheck { timeout_secs: u64 },
+	#[error("Score check timed out after {timeout_secs} seconds")]
+	ScoreCheck { timeout_secs: u64 },
+	#[error("Missing pages submission timed out after {timeout_secs} seconds")]
+	MissingPages { timeout_secs: u64 },
+}
+
+#[derive(thiserror::Error, Debug)]
 pub enum Error {
 	#[error("Failed to parse log directive: `{0}´")]
 	LogParse(#[from] tracing_subscriber::filter::ParseError),
@@ -67,20 +85,8 @@ pub enum Error {
 		"Wrong round: solution is for round {solution_round} but current round is {current_round}"
 	)]
 	WrongRound { solution_round: u32, current_round: u32 },
-	#[error("Solution mining timed out after {timeout_secs} seconds")]
-	MiningTimeout { timeout_secs: u64 },
-	#[error("Checking existing submission timed out after {timeout_secs} seconds")]
-	CheckExistingSubmissionTimeout { timeout_secs: u64 },
-	#[error("Bail operation timed out after {timeout_secs} seconds")]
-	BailTimeout { timeout_secs: u64 },
-	#[error("Solution submission timed out after {timeout_secs} seconds")]
-	SubmitTimeout { timeout_secs: u64 },
-	#[error("Phase check timed out after {timeout_secs} seconds")]
-	PhaseCheckTimeout { timeout_secs: u64 },
-	#[error("Score check timed out after {timeout_secs} seconds")]
-	ScoreCheckTimeout { timeout_secs: u64 },
-	#[error("Missing pages submission timed out after {timeout_secs} seconds")]
-	MissingPagesTimeout { timeout_secs: u64 },
+	#[error("Operation timed out: {0}")]
+	Timeout(#[from] TimeoutError),
 }
 
 impl From<subxt_rpcs::Error> for Error {
