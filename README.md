@@ -288,9 +288,6 @@ staking_miner_updater_subscription_stalls_total 0
 # HELP staking_miner_block_processing_stalls_total Total number of times block processing was detected as stalled
 # TYPE staking_miner_block_processing_stalls_total counter
 staking_miner_block_processing_stalls_total 2
-# HELP staking_miner_tx_finalization_timeouts_total Total number of transaction finalization timeouts
-# TYPE staking_miner_tx_finalization_timeouts_total counter
-staking_miner_tx_finalization_timeouts_total 0
 # HELP staking_miner_mining_timeouts_total Total number of solution mining timeouts
 # TYPE staking_miner_mining_timeouts_total counter
 staking_miner_mining_timeouts_total 0

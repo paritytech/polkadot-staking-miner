@@ -273,13 +273,6 @@ mod hidden {
 		))
 		.unwrap()
 	});
-	static TX_FINALIZATION_TIMEOUTS: Lazy<Counter> = Lazy::new(|| {
-		register_counter!(opts!(
-			"staking_miner_tx_finalization_timeouts_total",
-			"Total number of transaction finalization timeouts"
-		))
-		.unwrap()
-	});
 	static MINING_TIMEOUTS: Lazy<Counter> = Lazy::new(|| {
 		register_counter!(opts!(
 			"staking_miner_mining_timeouts_total",
@@ -391,9 +384,6 @@ mod hidden {
 
 	pub fn on_block_processing_stall() {
 		BLOCK_PROCESSING_STALLS.inc();
-	}
-	pub fn on_tx_finalization_timeout() {
-		TX_FINALIZATION_TIMEOUTS.inc();
 	}
 	pub fn on_mining_timeout() {
 		MINING_TIMEOUTS.inc();

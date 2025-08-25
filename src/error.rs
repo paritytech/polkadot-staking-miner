@@ -67,10 +67,6 @@ pub enum Error {
 		"Wrong round: solution is for round {solution_round} but current round is {current_round}"
 	)]
 	WrongRound { solution_round: u32, current_round: u32 },
-	#[error(
-		"Transaction finalization timed out after {timeout_secs} seconds for operation: {operation}"
-	)]
-	TxFinalizationTimeout { operation: String, timeout_secs: u64 },
 	#[error("Solution mining timed out after {timeout_secs} seconds")]
 	MiningTimeout { timeout_secs: u64 },
 	#[error("Checking existing submission timed out after {timeout_secs} seconds")]

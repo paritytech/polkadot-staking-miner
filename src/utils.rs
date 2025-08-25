@@ -18,7 +18,7 @@ use crate::{
 	client::Client,
 	commands::types::SubmissionStrategy,
 	error::Error,
-	prelude::{ChainClient, Config, Hash, LOG_TARGET, Storage},
+	prelude::{ChainClient, Config, Hash, Storage},
 };
 use pin_project_lite::pin_project;
 use polkadot_sdk::{sp_npos_elections, sp_runtime::Perbill};
@@ -105,38 +105,11 @@ pub fn score_passes_strategy(
 	}
 }
 
-/// Timeout for transaction finalization in seconds.
-/// Should be long enough to handle normal finalization delays but short enough to prevent
-/// indefinite hanging.
-const TX_FINALIZATION_TIMEOUT_SECS: u64 = 120;
-
-/// Wait for the transaction to be included in a finalized block with timeout.
-/// This prevents indefinite hanging if finalization is stalled.
+/// Wait for the transaction to be included in a finalized block.
 pub async fn wait_tx_in_finalized_block(
 	tx: TxProgress<Config, ChainClient>,
-	operation_context: &str,
 ) -> Result<TxInBlock<Config, ChainClient>, Error> {
-	match tokio::time::timeout(
-		std::time::Duration::from_secs(TX_FINALIZATION_TIMEOUT_SECS),
-		tx.wait_for_finalized(),
-	)
-	.await
-	{
-		Ok(result) => result.map_err(Into::into),
-		Err(_) => {
-			log::error!(
-				target: LOG_TARGET,
-				"Transaction finalization timed out after {} seconds for operation: {}",
-				TX_FINALIZATION_TIMEOUT_SECS,
-				operation_context
-			);
-			crate::prometheus::on_tx_finalization_timeout();
-			Err(Error::TxFinalizationTimeout {
-				operation: operation_context.to_string(),
-				timeout_secs: TX_FINALIZATION_TIMEOUT_SECS,
-			})
-		},
-	}
+	tx.wait_for_finalized().await.map_err(Into::into)
 }
 
 #[cfg(test)]
