@@ -385,7 +385,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 	//
 	// NOTE: It's slow to iterate over the events to check if the score was registered
 	// but it's performed for registering the score only once.
-	let tx = utils::wait_tx_in_finalized_block(tx_status).await?;
+	let tx = utils::wait_tx_in_finalized_block(tx_status, "registering score").await?;
 	let events = tx.wait_for_success().await?;
 	if !events.has::<runtime::multi_block_election_signed::events::Registered>()? {
 		return Err(Error::MissingTxEvent("Register score".to_string()));
@@ -568,7 +568,9 @@ async fn submit_pages_batch<T: MinerConfig + 'static>(
 		.await?;
 
 		txs.push(async move {
-			match utils::wait_tx_in_finalized_block(tx_status).await {
+			match utils::wait_tx_in_finalized_block(tx_status, &format!("submitting page {}", page))
+				.await
+			{
 				Ok(tx) => Ok(tx),
 				Err(_) => Err(page),
 			}
@@ -747,7 +749,7 @@ pub(crate) async fn bail(client: &Client, signer: &Signer) -> Result<(), Error> 
 	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
 	let xt = client.chain_api().tx().create_signed(&bail_tx, &**signer, xt_cfg).await?;
 	let tx = xt.submit_and_watch().await?;
-	utils::wait_tx_in_finalized_block(tx).await?;
+	utils::wait_tx_in_finalized_block(tx, "bailing").await?;
 	Ok(())
 }
 

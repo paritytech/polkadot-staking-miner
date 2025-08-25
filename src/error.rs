@@ -67,6 +67,10 @@ pub enum Error {
 		"Wrong round: solution is for round {solution_round} but current round is {current_round}"
 	)]
 	WrongRound { solution_round: u32, current_round: u32 },
+	#[error(
+		"Transaction finalization timed out after {timeout_secs} seconds for operation: {operation}"
+	)]
+	TxFinalizationTimeout { operation: String, timeout_secs: u64 },
 }
 
 impl From<subxt_rpcs::Error> for Error {

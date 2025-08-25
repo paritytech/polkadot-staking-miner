@@ -1177,7 +1177,7 @@ async fn execute_shady_behavior(
 	};
 
 	// Wait for the malicious score registration to be included
-	let tx = utils::wait_tx_in_finalized_block(tx_status).await?;
+	let tx = utils::wait_tx_in_finalized_block(tx_status, "registering malicious score").await?;
 	let events = tx.wait_for_success().await?;
 	if !events.has::<runtime::multi_block_election_signed::events::Registered>()? {
 		return Err(Error::MissingTxEvent("Register malicious score".to_string()));
@@ -1370,7 +1370,8 @@ fn is_critical_miner_error(error: &Error) -> bool {
 		Error::FailedToSubmitPages(_) |
 		Error::SolutionValidation { .. } |
 		Error::WrongPageCount { .. } |
-		Error::WrongRound { .. } => false,
+		Error::WrongRound { .. } |
+		Error::TxFinalizationTimeout { .. } => false,
 		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Runtime(_)) => false, /* e.g. Subxt(Runtime(Module(ModuleError(<MultiBlockElectionSigned::Duplicate>)))) */
 		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Transaction(_)) =>
 			false, /* e.g. Subxt(Transaction(Invalid("Transaction is invalid (eg because of a bad */
