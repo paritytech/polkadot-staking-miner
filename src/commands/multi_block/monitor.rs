@@ -805,11 +805,31 @@ where
 
 	log::trace!(target: LOG_TARGET, "Processing block #{block_number} (round {round}, phase {phase:?})");
 
-	// Update balance
-	let account_info = storage
-		.fetch(&runtime::storage().system().account(signer.account_id().clone()))
-		.await?
-		.ok_or(Error::AccountDoesNotExists)?;
+	// Update balance with timeout to prevent hanging
+	const BALANCE_FETCH_TIMEOUT_SECS: u64 = 60; // 1 minute
+	let account_info = match tokio::time::timeout(
+		std::time::Duration::from_secs(BALANCE_FETCH_TIMEOUT_SECS),
+		async {
+			let start_time = std::time::Instant::now();
+			let result = storage
+				.fetch(&runtime::storage().system().account(signer.account_id().clone()))
+				.await?;
+			let duration = start_time.elapsed();
+			prometheus::observe_balance_fetch_duration(duration.as_millis() as f64);
+			Ok::<_, Error>(result)
+		},
+	)
+	.await
+	{
+		Ok(Ok(Some(info))) => info,
+		Ok(Ok(None)) => return Err(Error::AccountDoesNotExists),
+		Ok(Err(e)) => return Err(e),
+		Err(_) => {
+			log::warn!(target: LOG_TARGET, "Balance fetch timed out after {BALANCE_FETCH_TIMEOUT_SECS} seconds, continuing without update");
+			prometheus::on_balance_fetch_timeout();
+			return Ok(());
+		},
+	};
 	prometheus::set_balance(account_info.data.free as f64);
 
 	// Handle different phases
@@ -840,10 +860,33 @@ where
 	dynamic::fetch_missing_snapshots::<T>(snapshot, &storage, round).await?;
 	let (target_snapshot, voter_snapshot) = snapshot.get();
 
-	// Check if we already submitted for this round
-	if has_submitted(&utils::storage_at_head(&client).await?, round, signer.account_id(), n_pages)
-		.await?
+	// Check if we already submitted for this round with timeout to prevent hanging
+	const CHECK_EXISTING_SUBMISSION_TIMEOUT_SECS: u64 = 300; // 5 minutes
+	let already_submitted = match tokio::time::timeout(
+		std::time::Duration::from_secs(CHECK_EXISTING_SUBMISSION_TIMEOUT_SECS),
+		async {
+			let start_time = std::time::Instant::now();
+			let storage = utils::storage_at_head(&client).await?;
+			let result = has_submitted(&storage, round, signer.account_id(), n_pages).await?;
+			let duration = start_time.elapsed();
+			prometheus::observe_check_existing_submission_duration(duration.as_millis() as f64);
+			Ok::<_, Error>(result)
+		},
+	)
+	.await
 	{
+		Ok(Ok(result)) => result,
+		Ok(Err(e)) => return Err(e),
+		Err(_) => {
+			log::error!(target: LOG_TARGET, "Check existing submission timed out after {CHECK_EXISTING_SUBMISSION_TIMEOUT_SECS} seconds for round {round}");
+			prometheus::on_check_existing_submission_timeout();
+			return Err(Error::CheckExistingSubmissionTimeout {
+				timeout_secs: CHECK_EXISTING_SUBMISSION_TIMEOUT_SECS,
+			});
+		},
+	};
+
+	if already_submitted {
 		log::trace!(target: LOG_TARGET, "Already submitted for round {round}, skipping");
 		return Ok(());
 	}
@@ -940,7 +983,6 @@ where
 	}
 
 	// Handle existing submissions with timeout to prevent indefinite hanging
-	const CHECK_EXISTING_SUBMISSION_TIMEOUT_SECS: u64 = 300; // 5 minutes should be enough for checking submissions
 	let (storage_head, existing_submission) = match tokio::time::timeout(
 		std::time::Duration::from_secs(CHECK_EXISTING_SUBMISSION_TIMEOUT_SECS),
 		async {
@@ -976,8 +1018,30 @@ where
 			}
 			log::debug!(target: LOG_TARGET, "Reverting previous submission to submit better solution");
 
-			// Verify we're still in signed phase before bailing
-			if !signed_phase(&client).await? {
+			// Verify we're still in signed phase before bailing with timeout
+			const PHASE_CHECK_TIMEOUT_SECS: u64 = 60; // 1 minute
+			let still_signed = match tokio::time::timeout(
+				std::time::Duration::from_secs(PHASE_CHECK_TIMEOUT_SECS),
+				async {
+					let start_time = std::time::Instant::now();
+					let result = signed_phase(&client).await?;
+					let duration = start_time.elapsed();
+					prometheus::observe_phase_check_duration(duration.as_millis() as f64);
+					Ok::<_, Error>(result)
+				},
+			)
+			.await
+			{
+				Ok(Ok(result)) => result,
+				Ok(Err(e)) => return Err(e),
+				Err(_) => {
+					log::error!(target: LOG_TARGET, "Phase check timed out after {PHASE_CHECK_TIMEOUT_SECS} seconds for round {round}");
+					prometheus::on_phase_check_timeout();
+					return Err(Error::PhaseCheckTimeout { timeout_secs: PHASE_CHECK_TIMEOUT_SECS });
+				},
+			};
+
+			if !still_signed {
 				log::warn!(target: LOG_TARGET, "Phase changed, cannot bail existing submission");
 				return Ok(());
 			}
@@ -1011,33 +1075,78 @@ where
 
 				log::info!(target: LOG_TARGET, "Submitting {} missing pages for existing submission", missing_pages.len());
 
-				if config.chunk_size == 0 {
-					dynamic::inner_submit_pages_concurrent::<T>(
-						&client,
-						&signer,
-						missing_pages,
-						round,
-						config.min_signed_phase_blocks,
-					)
-					.await?;
-				} else {
-					dynamic::inner_submit_pages_chunked::<T>(
-						&client,
-						&signer,
-						missing_pages,
-						config.chunk_size,
-						round,
-						config.min_signed_phase_blocks,
-					)
-					.await?;
+				// Submit missing pages with timeout to prevent indefinite hanging
+				const MISSING_PAGES_TIMEOUT_SECS: u64 = 1800; // 30 minutes
+				match tokio::time::timeout(
+					std::time::Duration::from_secs(MISSING_PAGES_TIMEOUT_SECS),
+					async {
+						let start_time = std::time::Instant::now();
+						if config.chunk_size == 0 {
+							dynamic::inner_submit_pages_concurrent::<T>(
+								&client,
+								&signer,
+								missing_pages,
+								round,
+								config.min_signed_phase_blocks,
+							)
+							.await?;
+						} else {
+							dynamic::inner_submit_pages_chunked::<T>(
+								&client,
+								&signer,
+								missing_pages,
+								config.chunk_size,
+								round,
+								config.min_signed_phase_blocks,
+							)
+							.await?;
+						}
+						let duration = start_time.elapsed();
+						prometheus::observe_missing_pages_duration(duration.as_millis() as f64);
+						Ok::<_, Error>(())
+					},
+				)
+				.await
+				{
+					Ok(Ok(())) => {},
+					Ok(Err(e)) => return Err(e),
+					Err(_) => {
+						log::error!(target: LOG_TARGET, "Missing pages submission timed out after {MISSING_PAGES_TIMEOUT_SECS} seconds");
+						prometheus::on_missing_pages_timeout();
+						return Err(Error::MissingPagesTimeout {
+							timeout_secs: MISSING_PAGES_TIMEOUT_SECS,
+						});
+					},
 				}
 				return Ok(());
 			}
 
 			log::debug!(target: LOG_TARGET, "Reverting incomplete submission to submit new solution");
 
-			// Verify we're still in signed phase before bailing
-			if !signed_phase(&client).await? {
+			// Verify we're still in signed phase before bailing with timeout
+			const PHASE_CHECK_TIMEOUT_SECS: u64 = 60; // 1 minute
+			let still_signed = match tokio::time::timeout(
+				std::time::Duration::from_secs(PHASE_CHECK_TIMEOUT_SECS),
+				async {
+					let start_time = std::time::Instant::now();
+					let result = signed_phase(&client).await?;
+					let duration = start_time.elapsed();
+					prometheus::observe_phase_check_duration(duration.as_millis() as f64);
+					Ok::<_, Error>(result)
+				},
+			)
+			.await
+			{
+				Ok(Ok(result)) => result,
+				Ok(Err(e)) => return Err(e),
+				Err(_) => {
+					log::error!(target: LOG_TARGET, "Phase check timed out after {PHASE_CHECK_TIMEOUT_SECS} seconds for round {round}");
+					prometheus::on_phase_check_timeout();
+					return Err(Error::PhaseCheckTimeout { timeout_secs: PHASE_CHECK_TIMEOUT_SECS });
+				},
+			};
+
+			if !still_signed {
 				log::warn!(target: LOG_TARGET, "Phase changed, cannot bail incomplete submission");
 				return Ok(());
 			}
@@ -1066,13 +1175,40 @@ where
 		},
 	};
 
-	// Check if our score is competitive (skip this check in shady mode)
-	if !should_bypass_competitive_check(config.shady) &&
-		!score_better(&storage_head, paged_raw_solution.score, round, config.submission_strategy)
-			.await?
-	{
-		log::debug!(target: LOG_TARGET, "Our score is not competitive, skipping submission");
-		return Ok(());
+	// Check if our score is competitive (skip this check in shady mode) with timeout
+	if !should_bypass_competitive_check(config.shady) {
+		const SCORE_CHECK_TIMEOUT_SECS: u64 = 60; // 1 minute
+		let is_competitive = match tokio::time::timeout(
+			std::time::Duration::from_secs(SCORE_CHECK_TIMEOUT_SECS),
+			async {
+				let start_time = std::time::Instant::now();
+				let result = score_better(
+					&storage_head,
+					paged_raw_solution.score,
+					round,
+					config.submission_strategy,
+				)
+				.await?;
+				let duration = start_time.elapsed();
+				prometheus::observe_score_check_duration(duration.as_millis() as f64);
+				Ok::<_, Error>(result)
+			},
+		)
+		.await
+		{
+			Ok(Ok(result)) => result,
+			Ok(Err(e)) => return Err(e),
+			Err(_) => {
+				log::error!(target: LOG_TARGET, "Score check timed out after {SCORE_CHECK_TIMEOUT_SECS} seconds for round {round}");
+				prometheus::on_score_check_timeout();
+				return Err(Error::ScoreCheckTimeout { timeout_secs: SCORE_CHECK_TIMEOUT_SECS });
+			},
+		};
+
+		if !is_competitive {
+			log::debug!(target: LOG_TARGET, "Our score is not competitive, skipping submission");
+			return Ok(());
+		}
 	}
 
 	prometheus::set_score(paged_raw_solution.score);
@@ -1451,7 +1587,10 @@ fn is_critical_miner_error(error: &Error) -> bool {
 		Error::MiningTimeout { .. } |
 		Error::CheckExistingSubmissionTimeout { .. } |
 		Error::BailTimeout { .. } |
-		Error::SubmitTimeout { .. } => false,
+		Error::SubmitTimeout { .. } |
+		Error::PhaseCheckTimeout { .. } |
+		Error::ScoreCheckTimeout { .. } |
+		Error::MissingPagesTimeout { .. } => false,
 		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Runtime(_)) => false, /* e.g. Subxt(Runtime(Module(ModuleError(<MultiBlockElectionSigned::Duplicate>)))) */
 		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Transaction(_)) =>
 			false, /* e.g. Subxt(Transaction(Invalid("Transaction is invalid (eg because of a bad */

@@ -300,6 +300,15 @@ staking_miner_bail_timeouts_total 0
 # HELP staking_miner_submit_timeouts_total Total number of solution submission timeouts
 # TYPE staking_miner_submit_timeouts_total counter
 staking_miner_submit_timeouts_total 0
+# HELP staking_miner_phase_check_timeouts_total Total number of phase check timeouts
+# TYPE staking_miner_phase_check_timeouts_total counter
+staking_miner_phase_check_timeouts_total 0
+# HELP staking_miner_score_check_timeouts_total Total number of score check timeouts
+# TYPE staking_miner_score_check_timeouts_total counter
+staking_miner_score_check_timeouts_total 0
+# HELP staking_miner_missing_pages_timeouts_total Total number of missing pages submission timeouts
+# TYPE staking_miner_missing_pages_timeouts_total counter
+staking_miner_missing_pages_timeouts_total 0
 
 # Performance Duration Metrics (for successful operations)
 # HELP staking_miner_check_existing_submission_duration_ms Duration of checking existing submissions in milliseconds
@@ -308,6 +317,15 @@ staking_miner_check_existing_submission_duration_ms 125
 # HELP staking_miner_bail_duration_ms Duration of bail operations in milliseconds
 # TYPE staking_miner_bail_duration_ms gauge
 staking_miner_bail_duration_ms 2340
+# HELP staking_miner_phase_check_duration_ms Duration of phase check operations in milliseconds
+# TYPE staking_miner_phase_check_duration_ms gauge
+staking_miner_phase_check_duration_ms 85
+# HELP staking_miner_score_check_duration_ms Duration of score check operations in milliseconds
+# TYPE staking_miner_score_check_duration_ms gauge
+staking_miner_score_check_duration_ms 120
+# HELP staking_miner_missing_pages_duration_ms Duration of missing pages submission in milliseconds
+# TYPE staking_miner_missing_pages_duration_ms gauge
+staking_miner_missing_pages_duration_ms 8500
 ```
 
 ## Architecture

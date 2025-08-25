@@ -257,6 +257,34 @@ mod hidden {
 		)
 		.unwrap()
 	});
+	static BALANCE_FETCH_DURATION: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(
+			"staking_miner_balance_fetch_duration_ms",
+			"Duration of balance fetch operations in milliseconds"
+		)
+		.unwrap()
+	});
+	static PHASE_CHECK_DURATION: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(
+			"staking_miner_phase_check_duration_ms",
+			"Duration of phase check operations in milliseconds"
+		)
+		.unwrap()
+	});
+	static SCORE_CHECK_DURATION: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(
+			"staking_miner_score_check_duration_ms",
+			"Duration of score check operations in milliseconds"
+		)
+		.unwrap()
+	});
+	static MISSING_PAGES_DURATION: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(
+			"staking_miner_missing_pages_duration_ms",
+			"Duration of missing pages submission in milliseconds"
+		)
+		.unwrap()
+	});
 
 	static LAST_BLOCK_PROCESSING_TIME: Lazy<Gauge> = Lazy::new(|| {
 		register_gauge!(opts!(
@@ -298,6 +326,34 @@ mod hidden {
 		register_counter!(opts!(
 			"staking_miner_submit_timeouts_total",
 			"Total number of solution submission timeouts"
+		))
+		.unwrap()
+	});
+	static BALANCE_FETCH_TIMEOUTS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_balance_fetch_timeouts_total",
+			"Total number of balance fetch timeouts"
+		))
+		.unwrap()
+	});
+	static PHASE_CHECK_TIMEOUTS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_phase_check_timeouts_total",
+			"Total number of phase check timeouts"
+		))
+		.unwrap()
+	});
+	static SCORE_CHECK_TIMEOUTS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_score_check_timeouts_total",
+			"Total number of score check timeouts"
+		))
+		.unwrap()
+	});
+	static MISSING_PAGES_TIMEOUTS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_missing_pages_timeouts_total",
+			"Total number of missing pages submission timeouts"
 		))
 		.unwrap()
 	});
@@ -396,5 +452,29 @@ mod hidden {
 	}
 	pub fn on_submit_timeout() {
 		SUBMIT_TIMEOUTS.inc();
+	}
+	pub fn observe_balance_fetch_duration(duration_ms: f64) {
+		BALANCE_FETCH_DURATION.set(duration_ms);
+	}
+	pub fn on_balance_fetch_timeout() {
+		BALANCE_FETCH_TIMEOUTS.inc();
+	}
+	pub fn observe_phase_check_duration(duration_ms: f64) {
+		PHASE_CHECK_DURATION.set(duration_ms);
+	}
+	pub fn on_phase_check_timeout() {
+		PHASE_CHECK_TIMEOUTS.inc();
+	}
+	pub fn observe_score_check_duration(duration_ms: f64) {
+		SCORE_CHECK_DURATION.set(duration_ms);
+	}
+	pub fn on_score_check_timeout() {
+		SCORE_CHECK_TIMEOUTS.inc();
+	}
+	pub fn observe_missing_pages_duration(duration_ms: f64) {
+		MISSING_PAGES_DURATION.set(duration_ms);
+	}
+	pub fn on_missing_pages_timeout() {
+		MISSING_PAGES_TIMEOUTS.inc();
 	}
 }

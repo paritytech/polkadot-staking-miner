@@ -75,6 +75,12 @@ pub enum Error {
 	BailTimeout { timeout_secs: u64 },
 	#[error("Solution submission timed out after {timeout_secs} seconds")]
 	SubmitTimeout { timeout_secs: u64 },
+	#[error("Phase check timed out after {timeout_secs} seconds")]
+	PhaseCheckTimeout { timeout_secs: u64 },
+	#[error("Score check timed out after {timeout_secs} seconds")]
+	ScoreCheckTimeout { timeout_secs: u64 },
+	#[error("Missing pages submission timed out after {timeout_secs} seconds")]
+	MissingPagesTimeout { timeout_secs: u64 },
 }
 
 impl From<subxt_rpcs::Error> for Error {
