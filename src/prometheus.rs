@@ -243,6 +243,48 @@ mod hidden {
 		)
 		.unwrap()
 	});
+	static CHECK_EXISTING_SUBMISSION_DURATION: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(
+			"staking_miner_check_existing_submission_duration_ms",
+			"Duration of checking and handling existing submissions in milliseconds"
+		)
+		.unwrap()
+	});
+	static BAIL_DURATION: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(
+			"staking_miner_bail_duration_ms",
+			"Duration of bail operations in milliseconds"
+		)
+		.unwrap()
+	});
+	static BALANCE_FETCH_DURATION: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(
+			"staking_miner_balance_fetch_duration_ms",
+			"Duration of balance fetch operations in milliseconds"
+		)
+		.unwrap()
+	});
+	static PHASE_CHECK_DURATION: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(
+			"staking_miner_phase_check_duration_ms",
+			"Duration of phase check operations in milliseconds"
+		)
+		.unwrap()
+	});
+	static SCORE_CHECK_DURATION: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(
+			"staking_miner_score_check_duration_ms",
+			"Duration of score check operations in milliseconds"
+		)
+		.unwrap()
+	});
+	static MISSING_PAGES_DURATION: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(
+			"staking_miner_missing_pages_duration_ms",
+			"Duration of missing pages submission in milliseconds"
+		)
+		.unwrap()
+	});
 
 	static LAST_BLOCK_PROCESSING_TIME: Lazy<Gauge> = Lazy::new(|| {
 		register_gauge!(opts!(
@@ -256,6 +298,62 @@ mod hidden {
 		register_counter!(opts!(
 			"staking_miner_block_processing_stalls_total",
 			"Total number of times block processing was detected as stalled (different from subscription stalls)"
+		))
+		.unwrap()
+	});
+	static MINING_TIMEOUTS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_mining_timeouts_total",
+			"Total number of solution mining timeouts"
+		))
+		.unwrap()
+	});
+	static CHECK_EXISTING_SUBMISSION_TIMEOUTS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_check_existing_submission_timeouts_total",
+			"Total number of check existing submission timeouts"
+		))
+		.unwrap()
+	});
+	static BAIL_TIMEOUTS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_bail_timeouts_total",
+			"Total number of bail operation timeouts"
+		))
+		.unwrap()
+	});
+	static SUBMIT_TIMEOUTS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_submit_timeouts_total",
+			"Total number of solution submission timeouts"
+		))
+		.unwrap()
+	});
+	static BALANCE_FETCH_TIMEOUTS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_balance_fetch_timeouts_total",
+			"Total number of balance fetch timeouts"
+		))
+		.unwrap()
+	});
+	static PHASE_CHECK_TIMEOUTS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_phase_check_timeouts_total",
+			"Total number of phase check timeouts"
+		))
+		.unwrap()
+	});
+	static SCORE_CHECK_TIMEOUTS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_score_check_timeouts_total",
+			"Total number of score check timeouts"
+		))
+		.unwrap()
+	});
+	static MISSING_PAGES_TIMEOUTS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_missing_pages_timeouts_total",
+			"Total number of missing pages submission timeouts"
 		))
 		.unwrap()
 	});
@@ -326,6 +424,12 @@ mod hidden {
 	pub fn observe_block_details_duration(duration_ms: f64) {
 		BLOCK_DETAILS_DURATION.set(duration_ms);
 	}
+	pub fn observe_check_existing_submission_duration(duration_ms: f64) {
+		CHECK_EXISTING_SUBMISSION_DURATION.set(duration_ms);
+	}
+	pub fn observe_bail_duration(duration_ms: f64) {
+		BAIL_DURATION.set(duration_ms);
+	}
 
 	pub fn set_last_block_processing_time() {
 		use std::time::{SystemTime, UNIX_EPOCH};
@@ -336,5 +440,41 @@ mod hidden {
 
 	pub fn on_block_processing_stall() {
 		BLOCK_PROCESSING_STALLS.inc();
+	}
+	pub fn on_mining_timeout() {
+		MINING_TIMEOUTS.inc();
+	}
+	pub fn on_check_existing_submission_timeout() {
+		CHECK_EXISTING_SUBMISSION_TIMEOUTS.inc();
+	}
+	pub fn on_bail_timeout() {
+		BAIL_TIMEOUTS.inc();
+	}
+	pub fn on_submit_timeout() {
+		SUBMIT_TIMEOUTS.inc();
+	}
+	pub fn observe_balance_fetch_duration(duration_ms: f64) {
+		BALANCE_FETCH_DURATION.set(duration_ms);
+	}
+	pub fn on_balance_fetch_timeout() {
+		BALANCE_FETCH_TIMEOUTS.inc();
+	}
+	pub fn observe_phase_check_duration(duration_ms: f64) {
+		PHASE_CHECK_DURATION.set(duration_ms);
+	}
+	pub fn on_phase_check_timeout() {
+		PHASE_CHECK_TIMEOUTS.inc();
+	}
+	pub fn observe_score_check_duration(duration_ms: f64) {
+		SCORE_CHECK_DURATION.set(duration_ms);
+	}
+	pub fn on_score_check_timeout() {
+		SCORE_CHECK_TIMEOUTS.inc();
+	}
+	pub fn observe_missing_pages_duration(duration_ms: f64) {
+		MISSING_PAGES_DURATION.set(duration_ms);
+	}
+	pub fn on_missing_pages_timeout() {
+		MISSING_PAGES_TIMEOUTS.inc();
 	}
 }
