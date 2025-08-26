@@ -114,6 +114,9 @@ where
 		},
 		_ => {
 			log::trace!(target: LOG_TARGET, "Block #{block_number}, Phase {phase:?} - nothing to do");
+			// Update timestamp of successful listener's block processing
+			prometheus::set_last_block_processing_time();
+
 			return Ok(ListenerAction::Continue);
 		},
 	}
@@ -131,7 +134,7 @@ where
 	match miner_tx.try_send(message) {
 		Ok(()) => {
 			log::trace!(target: LOG_TARGET, "Sent block #{block_number} to miner");
-			// Update timestamp of successful block processing
+			// Update timestamp of successful listener's block processing
 			prometheus::set_last_block_processing_time();
 			// Don't wait for response to allow proper backpressure - listener must continue
 			// processing blocks
