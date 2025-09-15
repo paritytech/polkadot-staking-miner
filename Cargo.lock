@@ -7903,7 +7903,7 @@ dependencies = [
  "serde",
  "serde_json",
  "subxt",
- "subxt-rpcs",
+ "subxt-rpcs 0.44.0",
  "thiserror 2.0.16",
  "tokio",
  "tracing-subscriber 0.3.20",
@@ -10898,10 +10898,10 @@ dependencies = [
  "serde_json",
  "sp-crypto-hashing 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "subxt-core",
- "subxt-lightclient",
+ "subxt-lightclient 0.43.0",
  "subxt-macro",
  "subxt-metadata",
- "subxt-rpcs",
+ "subxt-rpcs 0.43.0",
  "thiserror 2.0.16",
  "tokio",
  "tokio-util",
@@ -10976,6 +10976,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "subxt-lightclient"
+version = "0.44.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64e02732a6c9ae46bc282c1a741b3d3e494021b3e87e7e92cfb3620116d92911"
+dependencies = [
+ "futures",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "smoldot-light",
+ "thiserror 2.0.16",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+]
+
+[[package]]
 name = "subxt-macro"
 version = "0.43.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11025,9 +11042,32 @@ dependencies = [
  "serde",
  "serde_json",
  "subxt-core",
- "subxt-lightclient",
+ "subxt-lightclient 0.43.0",
  "thiserror 2.0.16",
  "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "subxt-rpcs"
+version = "0.44.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab68a9c20ecedb0cb7d62d64f884e6add91bb70485783bf40aa8eac5c389c6e0"
+dependencies = [
+ "derive-where",
+ "frame-metadata",
+ "futures",
+ "hex",
+ "impl-serde",
+ "jsonrpsee 0.24.9",
+ "parity-scale-codec",
+ "primitive-types 0.13.1",
+ "serde",
+ "serde_json",
+ "subxt-lightclient 0.44.0",
+ "thiserror 2.0.16",
  "tokio-util",
  "tracing",
  "url",
