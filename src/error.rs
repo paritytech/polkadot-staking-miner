@@ -87,6 +87,8 @@ pub enum Error {
 	WrongRound { solution_round: u32, current_round: u32 },
 	#[error("Operation timed out: {0}")]
 	Timeout(#[from] TimeoutError),
+	#[error("Exceeded maximum subscription recreation attempts ({max_attempts})")]
+	SubscriptionRecreationLimitExceeded { max_attempts: u32 },
 }
 
 impl From<subxt_rpcs::Error> for Error {
