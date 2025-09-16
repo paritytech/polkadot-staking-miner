@@ -261,22 +261,22 @@ staking_miner_score_sum_stake_squared 83801161022319280000000000000000000
 # TYPE staking_miner_runtime_upgrades counter
 staking_miner_runtime_upgrades 2
 
-# Janitor (Deposit Recovery) Metrics
-# HELP staking_miner_janitor_cleanup_success_total Total number of successful janitor cleanup operations
-# TYPE staking_miner_janitor_cleanup_success_total counter
-staking_miner_janitor_cleanup_success_total 3
-# HELP staking_miner_janitor_cleanup_failures_total Total number of failed janitor cleanup operations
-# TYPE staking_miner_janitor_cleanup_failures_total counter
-staking_miner_janitor_cleanup_failures_total 0
-# HELP staking_miner_janitor_cleanup_duration_ms The time in milliseconds it takes to complete janitor cleanup
-# TYPE staking_miner_janitor_cleanup_duration_ms gauge
-staking_miner_janitor_cleanup_duration_ms 1250
-# HELP staking_miner_janitor_old_submissions_found Number of old submissions found during last janitor run
-# TYPE staking_miner_janitor_old_submissions_found gauge
-staking_miner_janitor_old_submissions_found 2
-# HELP staking_miner_janitor_old_submissions_cleared Number of old submissions successfully cleared during last janitor run
-# TYPE staking_miner_janitor_old_submissions_cleared gauge
-staking_miner_janitor_old_submissions_cleared 2
+# Clear Old Rounds (Deposit Recovery) Metrics
+# HELP staking_miner_clear_old_rounds_cleanup_success_total Total number of successful clear old rounds cleanup operations
+# TYPE staking_miner_clear_old_rounds_cleanup_success_total counter
+staking_miner_clear_old_rounds_cleanup_success_total 3
+# HELP staking_miner_clear_old_rounds_cleanup_failures_total Total number of failed clear old rounds cleanup operations
+# TYPE staking_miner_clear_old_rounds_cleanup_failures_total counter
+staking_miner_clear_old_rounds_cleanup_failures_total 0
+# HELP staking_miner_clear_old_rounds_cleanup_duration_ms The time in milliseconds it takes to complete clear old rounds cleanup
+# TYPE staking_miner_clear_old_rounds_cleanup_duration_ms gauge
+staking_miner_clear_old_rounds_cleanup_duration_ms 1250
+# HELP staking_miner_clear_old_rounds_old_submissions_found Number of old submissions found during last clear old rounds run
+# TYPE staking_miner_clear_old_rounds_old_submissions_found gauge
+staking_miner_clear_old_rounds_old_submissions_found 2
+# HELP staking_miner_clear_old_rounds_old_submissions_cleared Number of old submissions successfully cleared during last clear old rounds run
+# TYPE staking_miner_clear_old_rounds_old_submissions_cleared gauge
+staking_miner_clear_old_rounds_old_submissions_cleared 2
 
 # Subscription Health Metrics
 # HELP staking_miner_listener_subscription_stalls_total Total number of times the listener subscription was detected as stalled and recreated
@@ -339,30 +339,30 @@ The miner consists of **three independent tasks** that communicate via bounded c
 
 1. **Listener Task**: Monitors blockchain for phase changes and new (`finalized` only) blocks.
 2. **Miner Task**: Handles solution mining and submission operations
-3. **Janitor Task**: Manages automatic deposit recovery from old submissions
+3. **Clear Old Round Task**: Manages automatic deposit recovery from old submissions
 
 ### Task Communication
 
 ```
                       (finalized blocks)
 ┌──────────────────────────────────────────────────────────────────────────┐
-│   ┌─────────────┐                      ┌─────────────┐            ┌─────────────┐
-└──▶│ Listener    │                      │   Miner     │            │ Blockchain  │
-    │             │  Snapshot/Signed     │             │            │             │
-    │ ┌─────────┐ │ ────────────────────▶│ ┌─────────┐ │ (solutions)│             │
-    │ │ Stream  │ │  (mining work)       │ │ Mining  │ │───────────▶│             │
-    │ └─────────┘ │                      │ └─────────┘ │            │             │
-    │      │      │  Round++             │ ┌─────────┐ │            │             │
-    │      ▼      │ ────────────────────▶│ │ Clear   │ │            │             │
-    │ ┌─────────┐ │                      │ │ Snapshot│ │            │             │
-    │ │ Phase   │ │                      │ └─────────┘ │            │             │
-    │ │ Check   │ │  Round++             └─────────────┘            │             │
-    │ └─────────┘ │ ────────────────────▶┌─────────────┐            │             │
-    │             │  (deposit cleanup)   │  Janitor    │ (cleanup)  │             │
-    │             │                      │ ┌─────────┐ │───────────▶│             │
-    │             │                      │ │ Cleanup │ │            │             │
-    │             │                      │ └─────────┘ │            │             │
-    └─────────────┘                      └─────────────┘            └─────────────┘
+│   ┌─────────────┐                      ┌─────────────┐              ┌─────────────┐
+└──▶│ Listener    │                      │   Miner     │              │ Blockchain  │
+    │             │  Snapshot/Signed     │             │              │             │
+    │ ┌─────────┐ │ ────────────────────▶│ ┌─────────┐ │ (solutions)  │             │
+    │ │ Stream  │ │  (mining work)       │ │ Mining  │ │───────────▶  │             │
+    │ └─────────┘ │                      │ └─────────┘ │              │             │
+    │      │      │  Round++             │ ┌─────────┐ │              │             │
+    │      ▼      │ ────────────────────▶│ │ Clear   │ │              │             │
+    │ ┌─────────┐ │                      │ │ Snapshot│ │              │             │
+    │ │ Phase   │ │                      │ └─────────┘ │              │             │
+    │ │ Check   │ │  Round++             └─────────────┘              │             │
+    │ └─────────┘ │ ────────────────────▶┌───────────────┐            │             │
+    │             │  (deposit cleanup)   │ClearOldRounds │ (cleanup)  │             │
+    │             │                      │ ┌─────────┐   │───────────▶│             │
+    │             │                      │ │ Cleanup │   │            │             │
+    │             │                      │ └─────────┘   │            │             │
+    └─────────────┘                      └───────────────┘            └─────────────┘
 ```
 
 ### Key Design Principles

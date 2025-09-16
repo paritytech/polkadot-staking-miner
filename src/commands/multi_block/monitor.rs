@@ -24,10 +24,10 @@ use std::collections::HashSet;
 use subxt::backend::StreamOf;
 use tokio::sync::mpsc;
 
-/// Number of previous rounds to scan for old submissions during janitor cleanup.
+/// Number of previous rounds to scan for old submissions during clear old rounds cleanup.
 /// This provides a reasonable buffer for offline periods while avoiding inefficient
 /// scanning of potentially gazillions of historical rounds.
-const JANITOR_SCAN_ROUNDS: u32 = 5;
+const CLEAR_OLD_ROUNDS_SCAN_ROUNDS: u32 = 5;
 
 /// Timeout in seconds for detecting stalled block subscriptions.
 /// If no blocks are received within this duration, the subscription will be recreated.
@@ -78,7 +78,7 @@ async fn process_block_internal<T>(
 	block_hash: subxt::utils::H256,
 	prev_round: &mut Option<u32>,
 	miner_tx: &mpsc::Sender<MinerMessage>,
-	janitor_tx: &mpsc::Sender<JanitorMessage>,
+	clear_old_rounds_tx: &mpsc::Sender<ClearOldRoundsMessage>,
 ) -> Result<ListenerAction, Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync,
@@ -104,7 +104,8 @@ where
 		if current_round > last_round {
 			log::trace!(target: LOG_TARGET, "Listener: Processing round increment from {} to {} for block #{}", last_round, current_round, at.number);
 			let round_increment_start = std::time::Instant::now();
-			on_round_increment(last_round, current_round, &phase, miner_tx, janitor_tx).await?;
+			on_round_increment(last_round, current_round, &phase, miner_tx, clear_old_rounds_tx)
+				.await?;
 			let round_increment_duration = round_increment_start.elapsed();
 			log::trace!(target: LOG_TARGET, "Listener: Round increment processing took {}ms for block #{}", round_increment_duration.as_millis(), at.number);
 		}
@@ -167,7 +168,7 @@ async fn process_listener_iteration<T>(
 	last_block_time: &mut std::time::Instant,
 	subscription_recreation_attempts: &mut u32,
 	miner_tx: &mpsc::Sender<MinerMessage>,
-	janitor_tx: &mpsc::Sender<JanitorMessage>,
+	clear_old_rounds_tx: &mpsc::Sender<ClearOldRoundsMessage>,
 ) -> Result<ListenerAction, Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync,
@@ -251,7 +252,7 @@ where
 			block_hash,
 			prev_round,
 			miner_tx,
-			janitor_tx,
+			clear_old_rounds_tx,
 		),
 	)
 	.await
@@ -344,32 +345,36 @@ async fn get_block_state(
 	Ok((storage, phase, current_round))
 }
 
-/// Handle round increment by triggering janitor and snapshot cleanup
+/// Handle round increment by triggering clear old rounds and snapshot cleanup
 async fn on_round_increment(
 	last_round: u32,
 	current_round: u32,
 	phase: &Phase,
 	miner_tx: &mpsc::Sender<MinerMessage>,
-	janitor_tx: &mpsc::Sender<JanitorMessage>,
+	clear_old_rounds_tx: &mpsc::Sender<ClearOldRoundsMessage>,
 ) -> Result<(), Error> {
 	log::debug!(target: LOG_TARGET, "Detected round increment {last_round} -> {current_round}");
 
-	// 1. Trigger janitor cleanup
-	if let Err(e) = janitor_tx.try_send(JanitorMessage::JanitorTick { current_round }) {
+	// 1. Trigger clear old rounds cleanup
+	if let Err(e) =
+		clear_old_rounds_tx.try_send(ClearOldRoundsMessage::ClearOldRoundsTick { current_round })
+	{
 		match e {
 			mpsc::error::TrySendError::Full(_) => {
-				// this shouldn't happen. Janitor is triggered once per round.
+				// this shouldn't happen. Clearing old rounds is triggered once per round.
 				// If it's still busy after a round, it means that it has taken
 				// insanely long.
-				log::warn!(target: LOG_TARGET, "Janitor busy, skipping janitor tick for round {current_round}.");
+				log::warn!(target: LOG_TARGET, "Clear old rounds busy, skipping clear old rounds tick for round {current_round}.");
 			},
 			mpsc::error::TrySendError::Closed(_) => {
-				log::error!(target: LOG_TARGET, "Janitor channel closed unexpectedly during janitor tick");
-				return Err(Error::Other("Janitor channel closed unexpectedly".to_string()));
+				log::error!(target: LOG_TARGET, "Clear old rounds channel closed unexpectedly during clear old rounds tick");
+				return Err(Error::Other(
+					"Clear old rounds channel closed unexpectedly".to_string(),
+				));
 			},
 		}
 	} else {
-		log::trace!(target: LOG_TARGET, "Sent janitor tick for round {current_round}");
+		log::trace!(target: LOG_TARGET, "Sent clear old rounds tick for round {current_round}");
 	}
 
 	// 2. Clear snapshots
@@ -396,10 +401,10 @@ enum MinerMessage {
 	ClearSnapshots,
 }
 
-/// Message types for communication between listener and janitor
-enum JanitorMessage {
-	/// Signal to run janitor cleanup for old submissions
-	JanitorTick { current_round: u32 },
+/// Message types for communication between listener and clear old rounds task
+enum ClearOldRoundsMessage {
+	/// Signal to run clear old rounds cleanup for old submissions
+	ClearOldRoundsTick { current_round: u32 },
 }
 
 /// The monitor command splits the work into three communicating tasks:
@@ -410,7 +415,7 @@ enum JanitorMessage {
 /// - Checks if miner is busy before sending work
 /// - Never blocks on slow operations
 /// - **Any error causes entire process to exit** (RPC errors handled by reconnecting client)
-/// - Triggers janitor cleanup and snapshot clearing when round increments
+/// - Triggers clear old rounds cleanup and snapshot clearing when round increments
 ///
 /// ### Miner Task
 /// - Single-threaded processor that handles one block at a time
@@ -419,24 +424,24 @@ enum JanitorMessage {
 /// - **Critical errors cause process exit** (e.g. account doesn't exist)
 /// - **Non-critical errors are recoverable** (log and continue)
 ///
-/// ### Janitor Task
+/// ### Clear old rounds Task
 /// - Independent task that handles deposit recovery operations
 /// - Automatically scans for and cleans up old submissions from previous rounds
 /// - Reclaims deposits from discarded solutions that were not selected
 /// - Runs exactly once per round when round number increments
-/// - Scans only the last JANITOR_SCAN_ROUNDS rounds for old submissions
+/// - Scans only the last CLEAR_OLD_ROUNDS_SCAN_ROUNDS rounds for old submissions
 /// - Calls `clear_old_round_data()` to remove stale data and recover deposits
 /// - **Non-blocking**: Does not interfere with mining operations
 ///
 /// ### Communication
 /// - **Miner Channel**: Bounded channel (buffer=1) for mining work + snapshot cleanup
-/// - **Janitor Channel**: Bounded channel (buffer=1) for deposit recovery operations
+/// - **Clear Old Rounds Channel**: Bounded channel (buffer=1) for deposit recovery operations
 /// - **Dual Triggers**: Listener sends mining work (Snapshot/Signed) + cleanup signals (round++)
 /// - **Backpressure mechanism**: When miner is busy processing a block:
 ///   - Channel becomes full, listener's try_send() returns immediately
 ///   - Listener skips current block and moves to next (fresher) block
 ///   - No blocking, no buffering of stale work
-/// - **Separation of concerns**: Mining and janitor operations are completely independent
+/// - **Separation of concerns**: Mining and clear old rounds operations are completely independent
 /// - No submission locks needed since miner is single-threaded by design
 ///
 /// ## Error Handling Strategy
@@ -444,7 +449,7 @@ enum JanitorMessage {
 /// - **Miner errors**: Classified as critical or recoverable
 ///   - Critical: Account doesn't exist, invalid metadata, persistent RPC failures
 ///   - Recoverable: Already submitted, wrong phase, temporary mining issues
-/// - **Janitor errors**: Classified as critical or recoverable (same as miner)
+/// - **Clear Old Rounds errors**: Classified as critical or recoverable (same as miner)
 /// - **RPC issues**: Handled transparently by reconnecting RPC client
 ///
 /// ```text
@@ -461,12 +466,12 @@ enum JanitorMessage {
 ///     │ ┌─────────┐ │                      │ │ Snapshot│ │            │             │
 ///     │ │ Phase   │ │                      │ └─────────┘ │            │             │
 ///     │ │ Check   │ │  Round++             └─────────────┘            │             │
-///     │ └─────────┘ │ ────────────────────▶┌─────────────┐            │             │
-///     │             │  (deposit cleanup)   │  Janitor    │ (cleanup)  │             │
-///     │             │                      │ ┌─────────┐ │───────────▶│             │
-///     │             │                      │ │ Cleanup │ │            │             │
-///     │             │                      │ └─────────┘ │            │             │
-///     └─────────────┘                      └─────────────┘            └─────────────┘
+///     │ └─────────┘ │ ────────────────────▶┌───────────────┐          │             │
+///     │             │  (deposit cleanup)   │ ClearOldRounds│ (cleanup)│             │
+///     │             │                      │ ┌─────────┐   │─────────▶│             │
+///     │             │                      │ │ Cleanup │   │          │             │
+///     │             │                      │ └─────────┘   │          │             │
+///     └─────────────┘                      └───────────────┘          └─────────────┘
 /// ```
 pub async fn monitor_cmd<T>(client: Client, config: MultiBlockMonitorConfig) -> Result<(), Error>
 where
@@ -512,9 +517,9 @@ where
 	// - Eliminates the need for explicit busy-checking or submission locks
 	let (miner_tx, miner_rx) = mpsc::channel::<MinerMessage>(1);
 
-	// Create bounded channel for communication between listener and janitor
-	// Buffer size of 1 is sufficient since janitor runs once at every round change.
-	let (janitor_tx, janitor_rx) = mpsc::channel::<JanitorMessage>(1);
+	// Create bounded channel for communication between listener and clear old rounds task
+	// Buffer size of 1 is sufficient since clear old rounds runs once at every round change.
+	let (clear_old_rounds_tx, clear_old_rounds_rx) = mpsc::channel::<ClearOldRoundsMessage>(1);
 
 	// Spawn the miner task
 	let miner_handle = {
@@ -524,17 +529,19 @@ where
 		tokio::spawn(async move { miner_task::<T>(client, signer, config, miner_rx).await })
 	};
 
-	// Spawn the janitor task
-	let janitor_handle = {
+	// Spawn the clear old rounds task
+	let clear_old_rounds_handle = {
 		let client = client.clone();
 		let signer = signer.clone();
-		tokio::spawn(async move { janitor_task::<T>(client, signer, janitor_rx).await })
+		tokio::spawn(async move {
+			clear_old_rounds_task::<T>(client, signer, clear_old_rounds_rx).await
+		})
 	};
 
 	// Spawn the listener task
 	let listener_handle = {
 		let client = client.clone();
-		tokio::spawn(async move { listener_task::<T>(client, miner_tx, janitor_tx).await })
+		tokio::spawn(async move { listener_task::<T>(client, miner_tx, clear_old_rounds_tx).await })
 	};
 
 	// Wait for any task to complete (which should never happen in normal operation)
@@ -572,19 +579,19 @@ where
 				}
 			}
 		}
-		result = janitor_handle => {
+		result = clear_old_rounds_handle => {
 			match result {
 				Ok(Ok(())) => {
-					log::error!(target: LOG_TARGET, "Janitor task completed unexpectedly");
-					Err(Error::Other("Janitor task should never complete".to_string()))
+					log::error!(target: LOG_TARGET, "Clear old rounds task completed unexpectedly");
+					Err(Error::Other("Clear old rounds task should never complete".to_string()))
 				}
 				Ok(Err(e)) => {
-					log::error!(target: LOG_TARGET, "Janitor task failed: {e}");
+					log::error!(target: LOG_TARGET, "Clear old rounds task failed: {e}");
 					Err(e)
 				}
 				Err(e) => {
-					log::error!(target: LOG_TARGET, "Janitor task panicked: {e}");
-					Err(Error::Other(format!("Janitor task panicked: {e}")))
+					log::error!(target: LOG_TARGET, "Clear old rounds task panicked: {e}");
+					Err(Error::Other(format!("Clear old rounds task panicked: {e}")))
 				}
 			}
 		}
@@ -597,7 +604,7 @@ where
 /// - Subscribing to finalized block updates
 /// - Performing fast phase checks to identify
 ///   - signed/snapshot phases to inform the miner task
-///   - transition from Done/Export(0) to Off to inform the janitor task
+///   - transition from Done/Export(0) to Off to inform the clear old rounds task
 /// - Using backpressure to skip blocks when miner is busy
 /// - Managing phase transitions and snapshot cleanup
 /// - Never blocking on slow operations to avoid subscription buffering
@@ -605,7 +612,7 @@ where
 async fn listener_task<T>(
 	client: Client,
 	miner_tx: mpsc::Sender<MinerMessage>,
-	janitor_tx: mpsc::Sender<JanitorMessage>,
+	clear_old_rounds_tx: mpsc::Sender<ClearOldRoundsMessage>,
 ) -> Result<(), Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
@@ -630,7 +637,7 @@ where
 			&mut last_block_time,
 			&mut subscription_recreation_attempts,
 			&miner_tx,
-			&janitor_tx,
+			&clear_old_rounds_tx,
 		)
 		.await
 		{
@@ -733,15 +740,15 @@ where
 	Err(Error::Other("Miner task completed unexpectedly".to_string()))
 }
 
-/// Janitor task - handles deposit recovery operations independently from mining
+/// Clear old rounds task - handles deposit recovery operations independently from mining
 ///
-/// This task runs in its own thread and processes janitor cleanup requests without
+/// This task runs in its own thread and processes clear old rounds cleanup requests without
 /// blocking the miner task. It maintains separation of concerns by focusing solely
 /// on deposit recovery while the miner focuses on mining and submission operations.
-async fn janitor_task<T>(
+async fn clear_old_rounds_task<T>(
 	client: Client,
 	signer: Signer,
-	mut janitor_rx: mpsc::Receiver<JanitorMessage>,
+	mut clear_old_rounds_rx: mpsc::Receiver<ClearOldRoundsMessage>,
 ) -> Result<(), Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
@@ -751,18 +758,18 @@ where
 	T::VoterSnapshotPerBlock: Send + Sync + 'static,
 	T::MaxVotesPerVoter: Send + Sync + 'static,
 {
-	log::trace!(target: LOG_TARGET, "Janitor task started");
+	log::trace!(target: LOG_TARGET, "Clear old rounds task started");
 
 	// Track the last round we've scanned to avoid rescanning
 	let mut last_scanned_round: Option<u32> = None;
 
-	while let Some(message) = janitor_rx.recv().await {
+	while let Some(message) = clear_old_rounds_rx.recv().await {
 		match message {
-			JanitorMessage::JanitorTick { current_round } => {
-				log::trace!(target: LOG_TARGET, "Running janitor cleanup for round {current_round}");
+			ClearOldRoundsMessage::ClearOldRoundsTick { current_round } => {
+				log::trace!(target: LOG_TARGET, "Running clear old rounds cleanup for round {current_round}");
 
 				let start_time = std::time::Instant::now();
-				let result = run_janitor_cleanup::<T>(
+				let result = run_clear_old_rounds_cleanup::<T>(
 					client.clone(),
 					signer.clone(),
 					current_round,
@@ -770,24 +777,24 @@ where
 				)
 				.await;
 				let duration = start_time.elapsed().as_millis() as f64;
-				prometheus::observe_janitor_cleanup_duration(duration);
+				prometheus::observe_clear_old_rounds_cleanup_duration(duration);
 
 				match result {
 					Ok(cleaned_count) => {
-						prometheus::on_janitor_cleanup_success(cleaned_count);
+						prometheus::on_clear_old_rounds_cleanup_success(cleaned_count);
 						if cleaned_count > 0 {
-							log::info!(target: LOG_TARGET, "Janitor cleaned up {} old submissions in {}ms", cleaned_count, duration as u64);
+							log::info!(target: LOG_TARGET, "Clear old rounds cleaned up {} old submissions in {}ms", cleaned_count, duration as u64);
 						} else {
-							log::trace!(target: LOG_TARGET, "Janitor found no old submissions to clean up");
+							log::trace!(target: LOG_TARGET, "Clear old rounds found no old submissions to clean up");
 						}
 					},
 					Err(e) => {
-						prometheus::on_janitor_cleanup_failure();
+						prometheus::on_clear_old_rounds_cleanup_failure();
 						if is_critical_miner_error(&e) {
-							log::error!(target: LOG_TARGET, "Critical janitor error - process will exit: {e:?}");
+							log::error!(target: LOG_TARGET, "Critical clear old rounds error - process will exit: {e:?}");
 							return Err(e);
 						} else {
-							log::warn!(target: LOG_TARGET, "Janitor cleanup failed, continuing: {e:?}");
+							log::warn!(target: LOG_TARGET, "Clear old rounds cleanup failed, continuing: {e:?}");
 						}
 					},
 				}
@@ -795,9 +802,9 @@ where
 		}
 	}
 
-	// This should never be reached as janitor runs indefinitely
-	log::error!(target: LOG_TARGET, "Janitor task loop exited unexpectedly");
-	Err(Error::Other("Janitor task completed unexpectedly".to_string()))
+	// This should never be reached as clear old rounds runs indefinitely
+	log::error!(target: LOG_TARGET, "Clear old rounds task loop exited unexpectedly");
+	Err(Error::Other("Clear old rounds task completed unexpectedly".to_string()))
 }
 
 /// Process a single block
@@ -1451,14 +1458,14 @@ fn should_bypass_competitive_check(shady: bool) -> bool {
 	}
 }
 
-/// Run janitor cleanup to reclaim deposits from old discarded submissions
+/// Run clear old rounds cleanup to reclaim deposits from old discarded submissions
 ///
 /// This function scans the last few previous rounds looking for submissions from our account
 /// that were discarded (not selected as winners). We only check the last few rounds because:
 /// 1. The miner is expected to run 24/7, so in the happy path we only need to clean up the previous
 ///    round (if any cleanup is needed)
-/// 2. If the miner was offline for a few rounds, JANITOR_SCAN_ROUNDS rounds provides a reasonable
-///    buffer
+/// 2. If the miner was offline for a few rounds, CLEAR_OLD_ROUNDS_SCAN_ROUNDS rounds provides a
+///    reasonable buffer
 /// 3. Checking all previous rounds back to 0 would be inefficient and pointless since submissions
 ///    older than a few rounds are likely already cleaned up.
 ///
@@ -1476,7 +1483,7 @@ fn should_bypass_competitive_check(shady: bool) -> bool {
 /// * Only the original submitter can clean their own submissions
 /// * This is safe to call repeatedly - it will skip already cleaned submissions
 /// * Non-critical errors (like already cleaned submissions) are logged but don't fail the operation
-async fn run_janitor_cleanup<T>(
+async fn run_clear_old_rounds_cleanup<T>(
 	client: Client,
 	signer: Signer,
 	current_round: u32,
@@ -1499,12 +1506,12 @@ where
 		Some(last) => {
 			// Start from the round after the last scanned, but ensure we don't go beyond
 			// the scan window
-			let min_round = current_round.saturating_sub(JANITOR_SCAN_ROUNDS);
+			let min_round = current_round.saturating_sub(CLEAR_OLD_ROUNDS_SCAN_ROUNDS);
 			(*last + 1).max(min_round)
 		},
 		None => {
 			// First run - scan the full window
-			current_round.saturating_sub(JANITOR_SCAN_ROUNDS)
+			current_round.saturating_sub(CLEAR_OLD_ROUNDS_SCAN_ROUNDS)
 		},
 	};
 
@@ -1572,7 +1579,7 @@ where
 		}
 	}
 
-	prometheus::set_janitor_old_submissions_found(found_count);
+	prometheus::set_clear_old_rounds_old_submissions_found(found_count);
 
 	// Update the last scanned round to current_round - 1 (since we scanned up to but not including
 	// current_round)
@@ -1610,7 +1617,7 @@ async fn clear_old_round_data(
 	let tx_hash = xt.submit().await?;
 
 	log::debug!(target: LOG_TARGET, "Successfully submitted clear_old_round_data for round {round}, tx_hash: {tx_hash:?}");
-	log::info!(target: LOG_TARGET, "Janitor: Fire-and-forget submission for round {round} cleanup");
+	log::info!(target: LOG_TARGET, "Clearing old rounds: Fire-and-forget submission for round {round} cleanup");
 	Ok(())
 }
 
