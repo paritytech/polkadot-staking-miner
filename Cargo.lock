@@ -7919,7 +7919,7 @@ dependencies = [
  "serde",
  "serde_json",
  "subxt",
- "subxt-rpcs 0.43.0",
+ "subxt-rpcs",
  "thiserror 2.0.16",
  "tokio",
  "tracing-subscriber 0.3.20",
@@ -10925,10 +10925,10 @@ dependencies = [
  "serde_json",
  "sp-crypto-hashing 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "subxt-core 0.44.0",
- "subxt-lightclient 0.44.0",
+ "subxt-lightclient",
  "subxt-macro",
  "subxt-metadata 0.44.0",
- "subxt-rpcs 0.44.0",
+ "subxt-rpcs",
  "thiserror 2.0.16",
  "tokio",
  "tokio-util",
@@ -11017,23 +11017,6 @@ dependencies = [
 
 [[package]]
 name = "subxt-lightclient"
-version = "0.43.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9097ef356e534ce0b6a50b95233512afc394347b971a4f929c4830adc52bbc6f"
-dependencies = [
- "futures",
- "futures-util",
- "serde",
- "serde_json",
- "smoldot-light",
- "thiserror 2.0.16",
- "tokio",
- "tokio-stream",
- "tracing",
-]
-
-[[package]]
-name = "subxt-lightclient"
 version = "0.44.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64e02732a6c9ae46bc282c1a741b3d3e494021b3e87e7e92cfb3620116d92911"
@@ -11098,29 +11081,6 @@ dependencies = [
 
 [[package]]
 name = "subxt-rpcs"
-version = "0.43.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25de7727144780d780a6a7d78bbfd28414b8adbab68b05e87329c367d7705be4"
-dependencies = [
- "derive-where",
- "frame-metadata",
- "futures",
- "hex",
- "impl-serde",
- "jsonrpsee 0.24.9",
- "parity-scale-codec",
- "primitive-types 0.13.1",
- "serde",
- "serde_json",
- "subxt-lightclient 0.43.0",
- "thiserror 2.0.16",
- "tokio-util",
- "tracing",
- "url",
-]
-
-[[package]]
-name = "subxt-rpcs"
 version = "0.44.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab68a9c20ecedb0cb7d62d64f884e6add91bb70485783bf40aa8eac5c389c6e0"
@@ -11137,7 +11097,7 @@ dependencies = [
  "serde",
  "serde_json",
  "subxt-core 0.44.0",
- "subxt-lightclient 0.44.0",
+ "subxt-lightclient",
  "thiserror 2.0.16",
  "tokio",
  "tokio-util",
