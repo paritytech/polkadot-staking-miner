@@ -37,6 +37,9 @@ const BLOCK_SUBSCRIPTION_TIMEOUT_SECS: u64 = 60;
 /// If block processing takes longer than this, we'll recreate the subscription.
 const BLOCK_PROCESSING_TIMEOUT_SECS: u64 = 90;
 
+/// Maximum number of consecutive subscription recreation attempts before giving up and exiting.
+const MAX_SUBSCRIPTION_RECREATION_ATTEMPTS: u32 = 3;
+
 async fn signed_phase(client: &Client) -> Result<bool, Error> {
 	let storage = utils::storage_at_head(client).await?;
 	let current_phase = storage
@@ -162,6 +165,7 @@ async fn process_listener_iteration<T>(
 	subscription: &mut SubscriptionStream,
 	prev_round: &mut Option<u32>,
 	last_block_time: &mut std::time::Instant,
+	subscription_recreation_attempts: &mut u32,
 	miner_tx: &mpsc::Sender<MinerMessage>,
 	janitor_tx: &mpsc::Sender<JanitorMessage>,
 ) -> Result<ListenerAction, Error>
@@ -184,6 +188,9 @@ where
 			match maybe_block {
 				Some(Ok(block)) => {
 					*last_block_time = std::time::Instant::now();
+					// Reset the subscription recreation attempts counter on successful block
+					// receipt
+					*subscription_recreation_attempts = 0;
 					log::trace!(target: LOG_TARGET, "Listener: Received block #{} from subscription", block.header().number);
 					(block.header().clone(), block.hash())
 				},
@@ -206,6 +213,18 @@ where
 		Err(_) => {
 			log::warn!(target: LOG_TARGET, "No blocks received for {BLOCK_SUBSCRIPTION_TIMEOUT_SECS} seconds - subscription may be stalled, recreating subscription...");
 			crate::prometheus::on_listener_subscription_stall();
+
+			// Check if we've exceeded the maximum number of recreation attempts
+			*subscription_recreation_attempts += 1;
+			if *subscription_recreation_attempts > MAX_SUBSCRIPTION_RECREATION_ATTEMPTS {
+				log::error!(target: LOG_TARGET, "Exceeded maximum subscription recreation attempts ({MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}), exiting to allow restart");
+				return Err(Error::SubscriptionRecreationLimitExceeded {
+					max_attempts: MAX_SUBSCRIPTION_RECREATION_ATTEMPTS,
+				});
+			}
+
+			log::info!(target: LOG_TARGET, "Subscription recreation attempt {}/{MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}", *subscription_recreation_attempts);
+
 			// Recreate the subscription
 			match client.chain_api().blocks().subscribe_finalized().await {
 				Ok(new_subscription) => {
@@ -241,6 +260,18 @@ where
 		Err(_) => {
 			log::warn!(target: LOG_TARGET, "Block processing timed out after {}s for block #{} - may indicate internal hang, recreating subscription...", BLOCK_PROCESSING_TIMEOUT_SECS, at.number);
 			prometheus::on_block_processing_stall();
+
+			// Check if we've exceeded the maximum number of recreation attempts
+			*subscription_recreation_attempts += 1;
+			if *subscription_recreation_attempts > MAX_SUBSCRIPTION_RECREATION_ATTEMPTS {
+				log::error!(target: LOG_TARGET, "Exceeded maximum subscription recreation attempts ({MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}), exiting to allow restart");
+				return Err(Error::SubscriptionRecreationLimitExceeded {
+					max_attempts: MAX_SUBSCRIPTION_RECREATION_ATTEMPTS,
+				});
+			}
+
+			log::info!(target: LOG_TARGET, "Subscription recreation attempt {}/{MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}", *subscription_recreation_attempts);
+
 			match client.chain_api().blocks().subscribe_finalized().await {
 				Ok(new_subscription) => {
 					*subscription = new_subscription;
@@ -587,6 +618,7 @@ where
 	let mut subscription = client.chain_api().blocks().subscribe_finalized().await?;
 	let mut prev_round: Option<u32> = None;
 	let mut last_block_time = std::time::Instant::now();
+	let mut subscription_recreation_attempts: u32 = 0;
 
 	log::trace!(target: LOG_TARGET, "Listener task started, watching for finalized blocks");
 
@@ -596,6 +628,7 @@ where
 			&mut subscription,
 			&mut prev_round,
 			&mut last_block_time,
+			&mut subscription_recreation_attempts,
 			&miner_tx,
 			&janitor_tx,
 		)
