@@ -31,8 +31,8 @@ pin-project-lite = "0.2"
 
 # subxt
 scale-value = "0.18"
-subxt = { version = "0.43.0", features = ["reconnecting-rpc-client"] }
-subxt-rpcs = "0.43.0"
+subxt = { version = "0.44.0", features = ["reconnecting-rpc-client"] }
+subxt-rpcs = "0.44.0"
 
 
 # polkadot-sdk
