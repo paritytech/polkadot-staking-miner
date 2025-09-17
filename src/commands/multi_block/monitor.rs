@@ -115,18 +115,23 @@ where
 		Phase::Off => {
 			if let Some(last_phase) = last_phase {
 				if !matches!(&last_phase, Phase::Off) {
-					if let Err(e) = era_pruning_tx.try_send(EraPruningMessage::EnterOffPhase) {
-						log::warn!(target: LOG_TARGET, "Failed to send EnterOffPhase message to era pruning task: {e:?}");
+					// Use send() to ensure EnterOffPhase is delivered and to prevent missed phase
+					// transitions that could leave era pruning in wrong state
+					if let Err(e) = era_pruning_tx.send(EraPruningMessage::EnterOffPhase).await {
+						log::error!(target: LOG_TARGET, "Era pruning channel closed while sending EnterOffPhase: {e:?}");
+						return Err(Error::Other("Era pruning task died unexpectedly".to_string()));
 					}
 				}
 			} else {
 				// First block in Off phase
-				if let Err(e) = era_pruning_tx.try_send(EraPruningMessage::EnterOffPhase) {
-					log::warn!(target: LOG_TARGET, "Failed to send initial EnterOffPhase message to era pruning task: {e:?}");
+				// Use send() to ensure the message is delivered
+				if let Err(e) = era_pruning_tx.send(EraPruningMessage::EnterOffPhase).await {
+					log::error!(target: LOG_TARGET, "Era pruning channel closed while sending initial EnterOffPhase: {e:?}");
+					return Err(Error::Other("Era pruning task died unexpectedly".to_string()));
 				}
 			}
 
-			// Send NewBlock message for era pruning
+			// Send NewBlock message for era pruning (non-critical, we can use try_send)
 			let _ =
 				era_pruning_tx.try_send(EraPruningMessage::NewBlock { block_number: at.number });
 
@@ -139,8 +144,11 @@ where
 			if let Some(last_phase) = last_phase {
 				if matches!(&last_phase, Phase::Off) {
 					log::debug!(target: LOG_TARGET, "Phase transition: Off → {:?} - stopping era pruning", phase);
-					if let Err(e) = era_pruning_tx.try_send(EraPruningMessage::ExitOffPhase) {
-						log::warn!(target: LOG_TARGET, "Failed to send ExitOffPhase message to era pruning task: {e:?}");
+					// Use send() to ensure ExitOffPhase is delivered and to stop era pruning before
+					// mining starts
+					if let Err(e) = era_pruning_tx.send(EraPruningMessage::ExitOffPhase).await {
+						log::error!(target: LOG_TARGET, "Era pruning channel closed while sending ExitOffPhase: {e:?}");
+						return Err(Error::Other("Era pruning task died unexpectedly".to_string()));
 					}
 				}
 			}
