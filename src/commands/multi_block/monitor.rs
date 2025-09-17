@@ -799,26 +799,21 @@ where
 					min_signed_phase_blocks: config.min_signed_phase_blocks,
 					shady: config.shady,
 				};
-				let result = process_block::<T>(
+				if let Err(e) = process_block::<T>(
 					client.clone(),
 					state,
 					&mut snapshot,
 					signer.clone(),
 					process_config,
 				)
-				.await;
-
-				match result {
-					Ok(()) => {
-						log::trace!(target: LOG_TARGET, "Block processing completed successfully");
-					},
-					Err(e) =>
-						if is_critical_miner_error(&e) {
-							log::error!(target: LOG_TARGET, "Critical miner error - process will exit: {e:?}");
-							return Err(e);
-						} else {
-							log::warn!(target: LOG_TARGET, "Block processing failed, continuing: {e:?}");
-						},
+				.await
+				{
+					if is_critical_miner_error(&e) {
+						log::error!(target: LOG_TARGET, "Critical miner error - process will exit: {e:?}");
+						return Err(e);
+					} else {
+						log::warn!(target: LOG_TARGET, "Block processing failed, continuing: {e:?}");
+					}
 				}
 			},
 			MinerMessage::ClearSnapshots => {
@@ -1097,18 +1092,10 @@ where
 			dynamic::fetch_missing_snapshots_lossy::<T>(snapshot, &storage, round).await?;
 			return Ok(());
 		},
-		Phase::Signed(blocks_remaining) => {
+		Phase::Signed(blocks_remaining) =>
 			if blocks_remaining <= config.min_signed_phase_blocks {
-				log::trace!(
-					target: LOG_TARGET,
-					"Signed phase has only {} blocks remaining (need at least {}), skipping mining to avoid incomplete submission",
-					blocks_remaining,
-					config.min_signed_phase_blocks
-				);
 				return Ok(());
-			}
-			log::trace!(target: LOG_TARGET, "Signed phase with {blocks_remaining} blocks remaining - checking for mining opportunity");
-		},
+			},
 		_ => {
 			log::trace!(target: LOG_TARGET, "Phase {phase:?} - nothing to do");
 			return Ok(());
