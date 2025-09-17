@@ -90,11 +90,9 @@ where
 	T::VoterSnapshotPerBlock: Send + Sync,
 	T::MaxVotesPerVoter: Send + Sync,
 {
-	log::trace!(target: LOG_TARGET, "Listener: Getting block state for block #{}", at.number);
 	let block_state_start = std::time::Instant::now();
 	let (_storage, phase, current_round) = get_block_state(client, block_hash).await?;
 	let block_state_duration = block_state_start.elapsed();
-	log::trace!(target: LOG_TARGET, "Listener: Got block state in {}ms for block #{}, phase: {:?}, round: {}", block_state_duration.as_millis(), at.number, phase, current_round);
 	prometheus::observe_block_state_duration(block_state_duration.as_millis() as f64);
 
 	// Update prev_round before processing round increment to avoid stale round detection in case of
@@ -104,12 +102,8 @@ where
 
 	if let Some(last_round) = last_round {
 		if current_round > last_round {
-			log::trace!(target: LOG_TARGET, "Listener: Processing round increment from {} to {} for block #{}", last_round, current_round, at.number);
-			let round_increment_start = std::time::Instant::now();
 			on_round_increment(last_round, current_round, &phase, miner_tx, clear_old_rounds_tx)
 				.await?;
-			let round_increment_duration = round_increment_start.elapsed();
-			log::trace!(target: LOG_TARGET, "Listener: Round increment processing took {}ms for block #{}", round_increment_duration.as_millis(), at.number);
 		}
 	}
 
@@ -159,11 +153,9 @@ where
 		},
 	}
 
-	log::trace!(target: LOG_TARGET, "Listener: Creating BlockDetails for block #{block_number}");
 	let block_details_start = std::time::Instant::now();
 	let state = BlockDetails::new(client, at, phase, block_hash, current_round).await?;
 	let block_details_duration = block_details_start.elapsed();
-	log::trace!(target: LOG_TARGET, "Listener: BlockDetails creation took {}ms for block #{}", block_details_duration.as_millis(), block_number);
 	prometheus::observe_block_details_duration(block_details_duration.as_millis() as f64);
 
 	let message = MinerMessage::ProcessBlock { state };
@@ -214,7 +206,6 @@ where
 	T::VoterSnapshotPerBlock: Send + Sync,
 	T::MaxVotesPerVoter: Send + Sync,
 {
-	log::trace!(target: LOG_TARGET, "Listener: Waiting for next block from subscription...");
 	let (at, block_hash) = match tokio::time::timeout(
 		std::time::Duration::from_secs(BLOCK_SUBSCRIPTION_TIMEOUT_SECS),
 		subscription.next(),
@@ -228,7 +219,6 @@ where
 					// Reset the subscription recreation attempts counter on successful block
 					// receipt
 					*subscription_recreation_attempts = 0;
-					log::trace!(target: LOG_TARGET, "Listener: Received block #{} from subscription", block.header().number);
 					(block.header().clone(), block.hash())
 				},
 				Some(Err(e)) => {
@@ -279,7 +269,6 @@ where
 	};
 
 	// Now wrap the entire block processing with timeout
-	log::trace!(target: LOG_TARGET, "Listener: Starting block processing with timeout for block #{}", at.number);
 	match tokio::time::timeout(
 		std::time::Duration::from_secs(BLOCK_PROCESSING_TIMEOUT_SECS),
 		process_block_internal::<T>(
@@ -355,29 +344,23 @@ async fn get_block_state(
 	client: &Client,
 	block_hash: polkadot_sdk::sp_core::H256,
 ) -> Result<(Storage, Phase, u32), Error> {
-	log::trace!(target: LOG_TARGET, "get_block_state: Getting storage for block {block_hash:?}");
 	let storage_start = std::time::Instant::now();
 	let storage = utils::storage_at(Some(block_hash), client.chain_api()).await?;
 	let storage_duration = storage_start.elapsed();
-	log::trace!(target: LOG_TARGET, "get_block_state: Got storage in {}ms", storage_duration.as_millis());
 	prometheus::observe_storage_query_duration(storage_duration.as_millis() as f64);
 
-	log::trace!(target: LOG_TARGET, "get_block_state: Fetching current_phase");
 	let phase_start = std::time::Instant::now();
 	let phase = storage
 		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
 		.await?;
 	let phase_duration = phase_start.elapsed();
-	log::trace!(target: LOG_TARGET, "get_block_state: Got current_phase in {}ms: {:?}", phase_duration.as_millis(), phase);
 	prometheus::observe_storage_query_duration(phase_duration.as_millis() as f64);
 
-	log::trace!(target: LOG_TARGET, "get_block_state: Fetching round");
 	let round_start = std::time::Instant::now();
 	let current_round = storage
 		.fetch_or_default(&runtime::storage().multi_block_election().round())
 		.await?;
 	let round_duration = round_start.elapsed();
-	log::trace!(target: LOG_TARGET, "get_block_state: Got round in {}ms: {}", round_duration.as_millis(), current_round);
 	prometheus::observe_storage_query_duration(round_duration.as_millis() as f64);
 
 	Ok((storage, phase, current_round))
@@ -988,12 +971,12 @@ where
 	while let Some(message) = era_pruning_rx.recv().await {
 		match message {
 			EraPruningMessage::EnterOffPhase => {
-				log::debug!(target: LOG_TARGET, "Era pruning: Entering Off phase, starting pruning session");
+				log::debug!(target: LOG_TARGET, "Entering Off phase, starting pruning session");
 				pruning_active = true;
 			},
 
 			EraPruningMessage::ExitOffPhase => {
-				log::debug!(target: LOG_TARGET, "Era pruning: Exiting Off phase, stopping pruning session");
+				log::debug!(target: LOG_TARGET, "Exiting Off phase, stopping pruning session");
 				pruning_active = false;
 			},
 
@@ -1004,26 +987,25 @@ where
 
 				match get_pruneable_era_index(&client).await {
 					Ok(Some(oldest_era)) => {
-						// Found era to prune - call prune_era_step
-						log::trace!(target: LOG_TARGET, "Era pruning: Found era {} to prune in block #{}", oldest_era, block_number);
+						log::trace!(target: LOG_TARGET, "Found era {} to prune in block #{}", oldest_era, block_number);
 
 						match call_prune_era_step(&client, &signer, oldest_era).await {
 							Ok(()) => {
-								log::debug!(target: LOG_TARGET, "Era pruning: prune_era_step({}) submitted successfully", oldest_era);
+								log::debug!(target: LOG_TARGET, "prune_era_step({}) submitted successfully", oldest_era);
 								prometheus::set_era_pruning_current_era(oldest_era);
 							},
 							Err(e) => {
-								log::warn!(target: LOG_TARGET, "Era pruning: Failed to prune era {}: {e:?}", oldest_era);
+								log::warn!(target: LOG_TARGET, "Failed to prune era {}: {e:?}", oldest_era);
 								prometheus::on_era_pruning_submission_failure();
 							},
 						}
 					},
 					Ok(None) => {
-						log::trace!(target: LOG_TARGET, "Era pruning: No eras to prune in block #{}", block_number);
+						log::trace!(target: LOG_TARGET, "No eras to prune in block #{}", block_number);
 						prometheus::clear_era_pruning_current_era();
 					},
 					Err(e) => {
-						log::warn!(target: LOG_TARGET, "Era pruning: Failed to query EraPruningState in block #{}: {e:?}", block_number);
+						log::warn!(target: LOG_TARGET, "Failed to query EraPruningState in block #{}: {e:?}", block_number);
 					},
 				}
 			},
