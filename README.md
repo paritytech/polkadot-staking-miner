@@ -334,9 +334,6 @@ staking_miner_era_pruning_submissions_success_total 15
 # HELP staking_miner_era_pruning_submissions_failures_total Total number of failed prune_era_step submissions
 # TYPE staking_miner_era_pruning_submissions_failures_total counter
 staking_miner_era_pruning_submissions_failures_total 1
-# HELP staking_miner_era_pruning_current_era Current era being pruned by the era pruning task
-# TYPE staking_miner_era_pruning_current_era gauge
-staking_miner_era_pruning_current_era 1234
 
 # Subscription Health Metrics
 # HELP staking_miner_listener_subscription_stalls_total Total number of times the listener subscription was detected as stalled and recreated

@@ -992,7 +992,6 @@ where
 						match call_prune_era_step(&client, &signer, oldest_era).await {
 							Ok(()) => {
 								log::debug!(target: LOG_TARGET, "prune_era_step({}) submitted successfully", oldest_era);
-								prometheus::set_era_pruning_current_era(oldest_era);
 							},
 							Err(e) => {
 								log::warn!(target: LOG_TARGET, "Failed to prune era {}: {e:?}", oldest_era);
@@ -1002,7 +1001,6 @@ where
 					},
 					Ok(None) => {
 						log::trace!(target: LOG_TARGET, "No eras to prune in block #{}", block_number);
-						prometheus::clear_era_pruning_current_era();
 					},
 					Err(e) => {
 						log::warn!(target: LOG_TARGET, "Failed to query EraPruningState in block #{}: {e:?}", block_number);

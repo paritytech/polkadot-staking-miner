@@ -221,14 +221,6 @@ mod hidden {
 		.unwrap()
 	});
 
-	static ERA_PRUNING_CURRENT_ERA: Lazy<Gauge> = Lazy::new(|| {
-		register_gauge!(opts!(
-			"staking_miner_era_pruning_current_era",
-			"Current era being pruned by the era pruning task"
-		))
-		.unwrap()
-	});
-
 	static LISTENER_SUBSCRIPTION_STALLS: Lazy<Counter> = Lazy::new(|| {
 		register_counter!(opts!(
 			"staking_miner_listener_subscription_stalls_total",
@@ -436,14 +428,6 @@ mod hidden {
 
 	pub fn on_era_pruning_submission_failure() {
 		ERA_PRUNING_SUBMISSIONS_FAILURES.inc();
-	}
-
-	pub fn set_era_pruning_current_era(era: u32) {
-		ERA_PRUNING_CURRENT_ERA.set(era as f64);
-	}
-
-	pub fn clear_era_pruning_current_era() {
-		ERA_PRUNING_CURRENT_ERA.set(-1.0); // Use -1 to indicate no current era
 	}
 
 	pub fn on_listener_subscription_stall() {
