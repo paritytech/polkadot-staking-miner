@@ -99,6 +99,7 @@ pub async fn run(port: u16) -> Result<(), String> {
 }
 
 mod hidden {
+
 	use once_cell::sync::Lazy;
 	use polkadot_sdk::sp_npos_elections;
 	use prometheus::{Counter, Gauge, opts, register_counter, register_gauge};
@@ -201,6 +202,30 @@ mod hidden {
 			"staking_miner_clear_old_rounds_cleanup_duration_ms",
 			"The time in milliseconds it takes to complete clear old rounds cleanup"
 		)
+		.unwrap()
+	});
+
+	static ERA_PRUNING_SUBMISSIONS_SUCCESS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_era_pruning_submissions_success_total",
+			"Total number of successful prune_era_step submissions"
+		))
+		.unwrap()
+	});
+
+	static ERA_PRUNING_SUBMISSIONS_FAILURES: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_era_pruning_submissions_failures_total",
+			"Total number of failed prune_era_step submissions"
+		))
+		.unwrap()
+	});
+
+	static ERA_PRUNING_CURRENT_ERA: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(opts!(
+			"staking_miner_era_pruning_current_era",
+			"Current era being pruned by the era pruning task"
+		))
 		.unwrap()
 	});
 
@@ -403,6 +428,22 @@ mod hidden {
 
 	pub fn observe_clear_old_rounds_cleanup_duration(time: f64) {
 		CLEAR_OLD_ROUNDS_CLEANUP_DURATION.set(time);
+	}
+
+	pub fn on_era_pruning_submission_success() {
+		ERA_PRUNING_SUBMISSIONS_SUCCESS.inc();
+	}
+
+	pub fn on_era_pruning_submission_failure() {
+		ERA_PRUNING_SUBMISSIONS_FAILURES.inc();
+	}
+
+	pub fn set_era_pruning_current_era(era: u32) {
+		ERA_PRUNING_CURRENT_ERA.set(era as f64);
+	}
+
+	pub fn clear_era_pruning_current_era() {
+		ERA_PRUNING_CURRENT_ERA.set(-1.0); // Use -1 to indicate no current era
 	}
 
 	pub fn on_listener_subscription_stall() {

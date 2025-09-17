@@ -77,8 +77,10 @@ async fn process_block_internal<T>(
 	at: crate::prelude::Header,
 	block_hash: subxt::utils::H256,
 	prev_round: &mut Option<u32>,
+	prev_phase: &mut Option<Phase>,
 	miner_tx: &mpsc::Sender<MinerMessage>,
 	clear_old_rounds_tx: &mpsc::Sender<ClearOldRoundsMessage>,
+	era_pruning_tx: &mpsc::Sender<EraPruningMessage>,
 ) -> Result<ListenerAction, Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync,
@@ -110,17 +112,49 @@ where
 			log::trace!(target: LOG_TARGET, "Listener: Round increment processing took {}ms for block #{}", round_increment_duration.as_millis(), at.number);
 		}
 	}
+
+	let last_phase = prev_phase.clone();
+	*prev_phase = Some(phase.clone());
 	let block_number = at.number;
 
 	match phase {
+		Phase::Off => {
+			if let Some(last_phase) = last_phase {
+				if !matches!(&last_phase, Phase::Off) {
+					if let Err(e) = era_pruning_tx.try_send(EraPruningMessage::EnterOffPhase) {
+						log::warn!(target: LOG_TARGET, "Failed to send EnterOffPhase message to era pruning task: {e:?}");
+					}
+				}
+			} else {
+				// First block in Off phase
+				if let Err(e) = era_pruning_tx.try_send(EraPruningMessage::EnterOffPhase) {
+					log::warn!(target: LOG_TARGET, "Failed to send initial EnterOffPhase message to era pruning task: {e:?}");
+				}
+			}
+
+			// Send NewBlock message for era pruning
+			let _ =
+				era_pruning_tx.try_send(EraPruningMessage::NewBlock { block_number: at.number });
+
+			// Off phase - nothing to do for mining
+			log::trace!(target: LOG_TARGET, "Block #{block_number}, Phase Off - nothing to do");
+			prometheus::set_last_block_processing_time();
+			return Ok(ListenerAction::Continue);
+		},
 		Phase::Signed(_) | Phase::Snapshot(_) => {
-			// Relevant phases for mining - continue processing
+			if let Some(last_phase) = last_phase {
+				if matches!(&last_phase, Phase::Off) {
+					log::debug!(target: LOG_TARGET, "Phase transition: Off → {:?} - stopping era pruning", phase);
+					if let Err(e) = era_pruning_tx.try_send(EraPruningMessage::ExitOffPhase) {
+						log::warn!(target: LOG_TARGET, "Failed to send ExitOffPhase message to era pruning task: {e:?}");
+					}
+				}
+			}
+			// Continue with mining logic for Signed/Snapshot phases
 		},
 		_ => {
 			log::trace!(target: LOG_TARGET, "Block #{block_number}, Phase {phase:?} - nothing to do");
-			// Update timestamp of successful listener's block processing
 			prometheus::set_last_block_processing_time();
-
 			return Ok(ListenerAction::Continue);
 		},
 	}
@@ -165,10 +199,12 @@ async fn process_listener_iteration<T>(
 	client: &Client,
 	subscription: &mut SubscriptionStream,
 	prev_round: &mut Option<u32>,
+	prev_phase: &mut Option<Phase>,
 	last_block_time: &mut std::time::Instant,
 	subscription_recreation_attempts: &mut u32,
 	miner_tx: &mpsc::Sender<MinerMessage>,
 	clear_old_rounds_tx: &mpsc::Sender<ClearOldRoundsMessage>,
+	era_pruning_tx: &mpsc::Sender<EraPruningMessage>,
 ) -> Result<ListenerAction, Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync,
@@ -251,8 +287,10 @@ where
 			at.clone(),
 			block_hash,
 			prev_round,
+			prev_phase,
 			miner_tx,
 			clear_old_rounds_tx,
+			era_pruning_tx,
 		),
 	)
 	.await
@@ -407,7 +445,17 @@ enum ClearOldRoundsMessage {
 	ClearOldRoundsTick { current_round: u32 },
 }
 
-/// The monitor command splits the work into three communicating tasks:
+/// Message types for communication between listener and era pruning task
+enum EraPruningMessage {
+	/// Signal to start era pruning when entering Off phase
+	EnterOffPhase,
+	/// Signal to stop era pruning immediately when leaving Off phase
+	ExitOffPhase,
+	/// New block arrived during Off phase, can send one prune_era_step if needed
+	NewBlock { block_number: u32 },
+}
+
+/// The monitor command splits the work into four communicating tasks:
 ///
 /// ### Listener Task
 /// - Always follows the chain (head or finalized blocks)
@@ -433,6 +481,15 @@ enum ClearOldRoundsMessage {
 /// - Calls `clear_old_round_data()` to remove stale data and recover deposits
 /// - **Non-blocking**: Does not interfere with mining operations
 ///
+/// ### Era Pruning Task
+/// - Independent task that handles lazy era pruning operations using runtime's EraPruningState
+/// - Only runs during Off phase (cannot interfere with ongoing elections)
+/// - Rate limited to maximum one `prune_era_step()` call per block
+/// - Automatically starts when entering Off phase, stops when leaving Off phase
+/// - **Runtime-managed**: Uses EraPruningState storage map to determine which eras need pruning
+/// - **Stateless**: runtime handles era tracking
+/// - **Non-blocking**: Does not interfere with mining or deposit recovery operations
+///
 /// ### Communication
 /// - **Miner Channel**: Bounded channel (buffer=1) for mining work + snapshot cleanup
 /// - **Clear Old Rounds Channel**: Bounded channel (buffer=1) for deposit recovery operations
@@ -441,8 +498,10 @@ enum ClearOldRoundsMessage {
 ///   - Channel becomes full, listener's try_send() returns immediately
 ///   - Listener skips current block and moves to next (fresher) block
 ///   - No blocking, no buffering of stale work
-/// - **Separation of concerns**: Mining and clear old rounds operations are completely independent
+/// - **Separation of concerns**: Mining, clear old rounds, and era pruning operations are
+///   completely independent
 /// - No submission locks needed since miner is single-threaded by design
+///
 ///
 /// ## Error Handling Strategy
 /// - **Listener errors**: All critical - process exits immediately
@@ -450,28 +509,36 @@ enum ClearOldRoundsMessage {
 ///   - Critical: Account doesn't exist, invalid metadata, persistent RPC failures
 ///   - Recoverable: Already submitted, wrong phase, temporary mining issues
 /// - **Clear Old Rounds errors**: Classified as critical or recoverable (same as miner)
+/// - **Era pruning errors**: Classified as critical or recoverable (same as miner)
 /// - **RPC issues**: Handled transparently by reconnecting RPC client
 ///
 /// ```text
-/// (finalized blocks)
+/// 
+///                      (finalized blocks)
 /// ┌──────────────────────────────────────────────────────────────────────────┐
-/// │   ┌─────────────┐                      ┌─────────────┐            ┌─────────────┐
-/// └──▶│ Listener    │                      │   Miner     │            │ Blockchain  │
-///     │             │  Snapshot/Signed     │             │            │             │
-///     │ ┌─────────┐ │ ────────────────────▶│ ┌─────────┐ │ (solutions)│             │
-///     │ │ Stream  │ │  (mining work)       │ │ Mining  │ │───────────▶│             │
-///     │ └─────────┘ │                      │ └─────────┘ │            │             │
-///     │      │      │  Round++             │ ┌─────────┐ │            │             │
-///     │      ▼      │ ────────────────────▶│ │ Clear   │ │            │             │
-///     │ ┌─────────┐ │                      │ │ Snapshot│ │            │             │
-///     │ │ Phase   │ │                      │ └─────────┘ │            │             │
-///     │ │ Check   │ │  Round++             └─────────────┘            │             │
-///     │ └─────────┘ │ ────────────────────▶┌───────────────┐          │             │
-///     │             │  (deposit cleanup)   │ ClearOldRounds│ (cleanup)│             │
-///     │             │                      │ ┌─────────┐   │─────────▶│             │
-///     │             │                      │ │ Cleanup │   │          │             │
-///     │             │                      │ └─────────┘   │          │             │
-///     └─────────────┘                      └───────────────┘          └─────────────┘
+/// │  ┌─────────────┐                      ┌─────────────┐              ┌─────────────┐
+/// └─▶│ Listener    │                      │   Miner     │              │ Blockchain  │
+///    │             │  Snapshot/Signed     │             │              │             │
+///    │ ┌─────────┐ │ ────────────────────▶│ ┌─────────┐ │ (solutions)  │             │
+///    │ │ Stream  │ │  (mining work)       │ │ Mining  │ │───────────▶  │             │
+///    │ └─────────┘ │                      │ └─────────┘ │              │             │
+///    │      │      │  Round++             │ ┌─────────┐ │              │             │
+///    │      ▼      │ ────────────────────▶│ │ Clear   │ │              │             │
+///    │ ┌─────────┐ │                      │ │ Snapshot│ │              │             │
+///    │ │ Phase   │ │                      │ └─────────┘ │              │             │
+///    │ │ Check   │ │  Round++             └─────────────┘              │             │
+///    │ └─────────┘ │ ────────────────────▶┌───────────────┐            │             │
+///    │     │       │  (deposit cleanup)   │ClearOldRounds │ (cleanup)  │             │
+///    │     │       │                      │ ┌─────────┐   │───────────▶│             │
+///    │     │       │                      │ │ Cleanup │   │            │             │
+///    │     │       │                      │ └─────────┘   │            │             │
+///    │     │       │                      └───────────────┘            │             │
+///    │     │       │                                                   │             │
+///    │     │       │Entering/leaving Off ┌───────────────┐(prune_era_step)           │
+///    │     └───────────────────────────▶ │ Era pruning   │───────────▶ │             │
+///    │             │   New block in Off  └───────────────┘             │             │
+///    │             │                                                   │             │
+///    └─────────────┘                                                   └─────────────┘
 /// ```
 pub async fn monitor_cmd<T>(client: Client, config: MultiBlockMonitorConfig) -> Result<(), Error>
 where
@@ -521,6 +588,10 @@ where
 	// Buffer size of 1 is sufficient since clear old rounds runs once at every round change.
 	let (clear_old_rounds_tx, clear_old_rounds_rx) = mpsc::channel::<ClearOldRoundsMessage>(1);
 
+	// Create bounded channel for communication between listener and era pruning task
+	// Buffer size of 1 is sufficient - era pruning is non-critical cleanup, skipping blocks is fine
+	let (era_pruning_tx, era_pruning_rx) = mpsc::channel::<EraPruningMessage>(1);
+
 	// Spawn the miner task
 	let miner_handle = {
 		let client = client.clone();
@@ -538,10 +609,21 @@ where
 		})
 	};
 
+	// Spawn the era pruning task
+	let era_pruning_handle = {
+		let client = client.clone();
+		let signer = signer.clone();
+		tokio::spawn(
+			async move { lazy_era_pruning_task::<T>(client, signer, era_pruning_rx).await },
+		)
+	};
+
 	// Spawn the listener task
 	let listener_handle = {
 		let client = client.clone();
-		tokio::spawn(async move { listener_task::<T>(client, miner_tx, clear_old_rounds_tx).await })
+		tokio::spawn(async move {
+			listener_task::<T>(client, miner_tx, clear_old_rounds_tx, era_pruning_tx).await
+		})
 	};
 
 	// Wait for any task to complete (which should never happen in normal operation)
@@ -595,6 +677,22 @@ where
 				}
 			}
 		}
+		result = era_pruning_handle => {
+			match result {
+				Ok(Ok(())) => {
+					log::error!(target: LOG_TARGET, "Era pruning task completed unexpectedly");
+					Err(Error::Other("Era pruning task should never complete".to_string()))
+				}
+				Ok(Err(e)) => {
+					log::error!(target: LOG_TARGET, "Era pruning task failed: {e}");
+					Err(e)
+				}
+				Err(e) => {
+					log::error!(target: LOG_TARGET, "Era pruning task panicked: {e}");
+					Err(Error::Other(format!("Era pruning task panicked: {e}")))
+				}
+			}
+		}
 	}
 }
 
@@ -613,6 +711,7 @@ async fn listener_task<T>(
 	client: Client,
 	miner_tx: mpsc::Sender<MinerMessage>,
 	clear_old_rounds_tx: mpsc::Sender<ClearOldRoundsMessage>,
+	era_pruning_tx: mpsc::Sender<EraPruningMessage>,
 ) -> Result<(), Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
@@ -624,6 +723,7 @@ where
 {
 	let mut subscription = client.chain_api().blocks().subscribe_finalized().await?;
 	let mut prev_round: Option<u32> = None;
+	let mut prev_phase: Option<Phase> = None;
 	let mut last_block_time = std::time::Instant::now();
 	let mut subscription_recreation_attempts: u32 = 0;
 
@@ -634,10 +734,12 @@ where
 			&client,
 			&mut subscription,
 			&mut prev_round,
+			&mut prev_phase,
 			&mut last_block_time,
 			&mut subscription_recreation_attempts,
 			&miner_tx,
 			&clear_old_rounds_tx,
+			&era_pruning_tx,
 		)
 		.await
 		{
@@ -805,6 +907,132 @@ where
 	// This should never be reached as clear old rounds runs indefinitely
 	log::error!(target: LOG_TARGET, "Clear old rounds task loop exited unexpectedly");
 	Err(Error::Other("Clear old rounds task completed unexpectedly".to_string()))
+}
+
+/// Returns Some(era_index) if there is at least an eras to prune, None if map is empty
+async fn get_pruneable_era_index(client: &Client) -> Result<Option<u32>, Error> {
+	let storage = utils::storage_at_head(client).await?;
+
+	let mut iter = match storage.iter(runtime::storage().staking().era_pruning_state_iter()).await {
+		Ok(iter) => iter,
+		Err(_) => {
+			// Handle older runtimes that don't have EraPruningState storage
+			return Ok(None);
+		},
+	};
+
+	// The storage map is hash-ordered, not chronological. We will clean up all prune-able eras with
+	// one prune_era_step() call per block, the order does not really matter, that's why we just
+	// take the first era from iterator.
+	if let Some(Ok(storage_entry)) = iter.next().await {
+		// Decode era index from storage key bytes for Twox64Concat hasher
+		// Format: concat(twox64(era_index), era_index)
+		// The era_index (u32) is at the end of the key_bytes
+		if storage_entry.key_bytes.len() >= 4 {
+			let era_bytes = &storage_entry.key_bytes[storage_entry.key_bytes.len() - 4..];
+			if let Ok(era_array) = <[u8; 4]>::try_from(era_bytes) {
+				let era_index = u32::from_le_bytes(era_array);
+				return Ok(Some(era_index));
+			}
+		}
+	}
+
+	Ok(None)
+}
+
+/// Call prune_era_step for the given era
+///
+/// Returns:
+/// - Ok(()) if transaction was submitted successfully
+/// - Err(_) if there was an error submitting the transaction
+async fn call_prune_era_step(client: &Client, signer: &Signer, era: u32) -> Result<(), Error> {
+	let tx = runtime::tx().staking().prune_era_step(era);
+
+	let nonce = client.chain_api().tx().account_nonce(signer.account_id()).await?;
+	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
+	let xt = client.chain_api().tx().create_signed(&tx, &**signer, xt_cfg).await?;
+
+	// Wait for finalization to avoid to spam the same exact transaction at the next block, and get
+	// an InvalidTransaction::Stale ("Transaction is outdated") in return.
+	let tx_progress = xt.submit_and_watch().await?;
+	let tx = utils::wait_tx_in_finalized_block(tx_progress).await?;
+
+	log::trace!(target: LOG_TARGET, "Successfully submitted prune_era_step for era {era}, tx_hash: {:?}", tx.extrinsic_hash());
+
+	prometheus::on_era_pruning_submission_success();
+
+	Ok(())
+}
+
+/// Lazy era pruning task
+///
+/// This task implements era pruning using the runtime's EraPruningState storage map.
+/// It operates only during Off phases with rate limiting (one prune_era_step per block).
+async fn lazy_era_pruning_task<T>(
+	client: Client,
+	signer: Signer,
+	mut era_pruning_rx: mpsc::Receiver<EraPruningMessage>,
+) -> Result<(), Error>
+where
+	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
+	T::Solution: Send + Sync + 'static,
+	T::Pages: Send + Sync + 'static,
+	T::TargetSnapshotPerBlock: Send + Sync + 'static,
+	T::VoterSnapshotPerBlock: Send + Sync + 'static,
+	T::MaxVotesPerVoter: Send + Sync + 'static,
+{
+	log::trace!(target: LOG_TARGET, "Era pruning task started");
+
+	let mut pruning_active = false;
+
+	while let Some(message) = era_pruning_rx.recv().await {
+		match message {
+			EraPruningMessage::EnterOffPhase => {
+				log::debug!(target: LOG_TARGET, "Era pruning: Entering Off phase, starting pruning session");
+				pruning_active = true;
+			},
+
+			EraPruningMessage::ExitOffPhase => {
+				log::debug!(target: LOG_TARGET, "Era pruning: Exiting Off phase, stopping pruning session");
+				pruning_active = false;
+			},
+
+			EraPruningMessage::NewBlock { block_number } => {
+				if !pruning_active {
+					continue;
+				}
+
+				match get_pruneable_era_index(&client).await {
+					Ok(Some(oldest_era)) => {
+						// Found era to prune - call prune_era_step
+						log::trace!(target: LOG_TARGET, "Era pruning: Found era {} to prune in block #{}", oldest_era, block_number);
+
+						match call_prune_era_step(&client, &signer, oldest_era).await {
+							Ok(()) => {
+								log::debug!(target: LOG_TARGET, "Era pruning: prune_era_step({}) submitted successfully", oldest_era);
+								prometheus::set_era_pruning_current_era(oldest_era);
+							},
+							Err(e) => {
+								log::warn!(target: LOG_TARGET, "Era pruning: Failed to prune era {}: {e:?}", oldest_era);
+								prometheus::on_era_pruning_submission_failure();
+							},
+						}
+					},
+					Ok(None) => {
+						log::trace!(target: LOG_TARGET, "Era pruning: No eras to prune in block #{}", block_number);
+						prometheus::clear_era_pruning_current_era();
+					},
+					Err(e) => {
+						log::warn!(target: LOG_TARGET, "Era pruning: Failed to query EraPruningState in block #{}: {e:?}", block_number);
+					},
+				}
+			},
+		}
+	}
+
+	// This should never be reached as era pruning runs indefinitely
+	log::error!(target: LOG_TARGET, "Era pruning task loop exited unexpectedly");
+	Err(Error::Other("Era pruning task completed unexpectedly".to_string()))
 }
 
 /// Process a single block
