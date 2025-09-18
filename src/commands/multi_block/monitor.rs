@@ -484,12 +484,9 @@ enum EraPruningMessage {
 ///
 /// ### Era Pruning Task
 /// - Independent task that handles lazy era pruning operations using runtime's EraPruningState
-/// - Only runs during Off phase (cannot interfere with ongoing elections)
+///   storage map
+/// - Only runs during Off phase (to not interfere with ongoing elections)
 /// - Rate limited to maximum one `prune_era_step()` call per block
-/// - Automatically starts when entering Off phase, stops when leaving Off phase
-/// - **Runtime-managed**: Uses EraPruningState storage map to determine which eras need pruning
-/// - **Stateless**: runtime handles era tracking
-/// - **Non-blocking**: Does not interfere with mining or deposit recovery operations
 ///
 /// ### Communication
 /// - **Miner Channel**: Bounded channel (buffer=1) for mining work + snapshot cleanup
@@ -916,8 +913,9 @@ async fn get_pruneable_era_index(client: &Client) -> Result<Option<u32>, Error> 
 	// take the first era from iterator.
 	if let Some(Ok(storage_entry)) = iter.next().await {
 		// The generated metadata from `subxt-cli` incorrectly returns `()` (unit type)
-		// instead of the actual era index type for the storage key.
-		// TODO: use the properly typed `keys` field instead of manually parsing `key_bytes`.
+		// instead of the actual era index type for the storage key (see https://github.com/paritytech/subxt/issues/1669).
+		// TODO: use the properly typed `keys` field instead of manually parsing `key_bytes`. Or use
+		// the new subxt Storage APIs when available.
 
 		// Format for key_bytes: concat(twox64(era_index), era_index)
 		if storage_entry.key_bytes.len() >= 4 {

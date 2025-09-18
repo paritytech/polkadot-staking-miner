@@ -261,7 +261,7 @@ $ cargo build --release -p polkadot -p polkadot-parachain-bin --features fast-ru
 $ cd substrate/frame/staking-async/runtimes/papi-tests
 # setup the environment just the 1st time
 $ just setup
-# NOTE: choose your favorit  preset runtime (e.g. development, polkadot, kusama with different pages and number of validators and nominators).
+# NOTE: choose your favorite preset runtime (e.g. development, polkadot, kusama with different pages and number of validators and nominators).
 # It relies on [Zombienet](https://github.com/paritytech/zombienet) to spawn RC nodes and a parachain collator supporting the new staking-async machinery. The miner will run against the parachain collator. See substrate/frame/staking-async/runtimes/papi-tests for more details
 $ just run fake-dev
 ```
