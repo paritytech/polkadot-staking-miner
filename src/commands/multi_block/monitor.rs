@@ -29,6 +29,21 @@ use tokio::sync::mpsc;
 /// scanning of potentially gazillions of historical rounds.
 const CLEAR_OLD_ROUNDS_SCAN_ROUNDS: u32 = 5;
 
+/// Groups all the communication channels used by the listener task
+struct TaskChannels {
+	miner_tx: mpsc::Sender<MinerMessage>,
+	clear_old_rounds_tx: mpsc::Sender<ClearOldRoundsMessage>,
+	era_pruning_tx: mpsc::Sender<EraPruningMessage>,
+}
+
+/// Groups the mutable state tracked by the listener task
+struct ListenerState {
+	prev_round: Option<u32>,
+	prev_phase: Option<Phase>,
+	last_block_time: std::time::Instant,
+	subscription_recreation_attempts: u32,
+}
+
 /// Timeout in seconds for detecting stalled block subscriptions.
 /// If no blocks are received within this duration, the subscription will be recreated.
 const BLOCK_SUBSCRIPTION_TIMEOUT_SECS: u64 = 60;
@@ -76,11 +91,8 @@ async fn process_block_internal<T>(
 	client: &Client,
 	at: crate::prelude::Header,
 	block_hash: subxt::utils::H256,
-	prev_round: &mut Option<u32>,
-	prev_phase: &mut Option<Phase>,
-	miner_tx: &mpsc::Sender<MinerMessage>,
-	clear_old_rounds_tx: &mpsc::Sender<ClearOldRoundsMessage>,
-	era_pruning_tx: &mpsc::Sender<EraPruningMessage>,
+	state: &mut ListenerState,
+	channels: &TaskChannels,
 ) -> Result<ListenerAction, Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync,
@@ -97,18 +109,24 @@ where
 
 	// Update prev_round before processing round increment to avoid stale round detection in case of
 	// timeouts
-	let last_round = *prev_round;
-	*prev_round = Some(current_round);
+	let last_round = state.prev_round;
+	state.prev_round = Some(current_round);
 
 	if let Some(last_round) = last_round {
 		if current_round > last_round {
-			on_round_increment(last_round, current_round, &phase, miner_tx, clear_old_rounds_tx)
-				.await?;
+			on_round_increment(
+				last_round,
+				current_round,
+				&phase,
+				&channels.miner_tx,
+				&channels.clear_old_rounds_tx,
+			)
+			.await?;
 		}
 	}
 
-	let last_phase = prev_phase.clone();
-	*prev_phase = Some(phase.clone());
+	let last_phase = state.prev_phase.clone();
+	state.prev_phase = Some(phase.clone());
 	let block_number = at.number;
 
 	match phase {
@@ -117,7 +135,9 @@ where
 				if !matches!(&last_phase, Phase::Off) {
 					// Use send() to ensure EnterOffPhase is delivered and to prevent missed phase
 					// transitions that could leave era pruning in wrong state
-					if let Err(e) = era_pruning_tx.send(EraPruningMessage::EnterOffPhase).await {
+					if let Err(e) =
+						channels.era_pruning_tx.send(EraPruningMessage::EnterOffPhase).await
+					{
 						log::error!(target: LOG_TARGET, "Era pruning channel closed while sending EnterOffPhase: {e:?}");
 						return Err(Error::Other("Era pruning task died unexpectedly".to_string()));
 					}
@@ -125,15 +145,17 @@ where
 			} else {
 				// First block in Off phase
 				// Use send() to ensure the message is delivered
-				if let Err(e) = era_pruning_tx.send(EraPruningMessage::EnterOffPhase).await {
+				if let Err(e) = channels.era_pruning_tx.send(EraPruningMessage::EnterOffPhase).await
+				{
 					log::error!(target: LOG_TARGET, "Era pruning channel closed while sending initial EnterOffPhase: {e:?}");
 					return Err(Error::Other("Era pruning task died unexpectedly".to_string()));
 				}
 			}
 
 			// Send NewBlock message for era pruning (non-critical, we can use try_send)
-			let _ =
-				era_pruning_tx.try_send(EraPruningMessage::NewBlock { block_number: at.number });
+			let _ = channels
+				.era_pruning_tx
+				.try_send(EraPruningMessage::NewBlock { block_number: at.number });
 
 			// Off phase - nothing to do for mining
 			log::trace!(target: LOG_TARGET, "Block #{block_number}, Phase Off - nothing to do");
@@ -143,10 +165,12 @@ where
 		Phase::Signed(_) | Phase::Snapshot(_) => {
 			if let Some(last_phase) = last_phase {
 				if matches!(&last_phase, Phase::Off) {
-					log::debug!(target: LOG_TARGET, "Phase transition: Off → {:?} - stopping era pruning", phase);
+					log::debug!(target: LOG_TARGET, "Phase transition: Off → {phase:?} - stopping era pruning");
 					// Use send() to ensure ExitOffPhase is delivered and to stop era pruning before
 					// mining starts
-					if let Err(e) = era_pruning_tx.send(EraPruningMessage::ExitOffPhase).await {
+					if let Err(e) =
+						channels.era_pruning_tx.send(EraPruningMessage::ExitOffPhase).await
+					{
 						log::error!(target: LOG_TARGET, "Era pruning channel closed while sending ExitOffPhase: {e:?}");
 						return Err(Error::Other("Era pruning task died unexpectedly".to_string()));
 					}
@@ -169,7 +193,7 @@ where
 	let message = MinerMessage::ProcessBlock { state };
 
 	// Use try_send for backpressure - if miner is busy, skip this block
-	match miner_tx.try_send(message) {
+	match channels.miner_tx.try_send(message) {
 		Ok(()) => {
 			log::trace!(target: LOG_TARGET, "Sent block #{block_number} to miner");
 			// Update timestamp of successful listener's block processing
@@ -198,13 +222,8 @@ where
 async fn process_listener_iteration<T>(
 	client: &Client,
 	subscription: &mut SubscriptionStream,
-	prev_round: &mut Option<u32>,
-	prev_phase: &mut Option<Phase>,
-	last_block_time: &mut std::time::Instant,
-	subscription_recreation_attempts: &mut u32,
-	miner_tx: &mpsc::Sender<MinerMessage>,
-	clear_old_rounds_tx: &mpsc::Sender<ClearOldRoundsMessage>,
-	era_pruning_tx: &mpsc::Sender<EraPruningMessage>,
+	state: &mut ListenerState,
+	channels: &TaskChannels,
 ) -> Result<ListenerAction, Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync,
@@ -223,10 +242,10 @@ where
 		Ok(maybe_block) => {
 			match maybe_block {
 				Some(Ok(block)) => {
-					*last_block_time = std::time::Instant::now();
+					state.last_block_time = std::time::Instant::now();
 					// Reset the subscription recreation attempts counter on successful block
 					// receipt
-					*subscription_recreation_attempts = 0;
+					state.subscription_recreation_attempts = 0;
 					(block.header().clone(), block.hash())
 				},
 				Some(Err(e)) => {
@@ -250,21 +269,21 @@ where
 			crate::prometheus::on_listener_subscription_stall();
 
 			// Check if we've exceeded the maximum number of recreation attempts
-			*subscription_recreation_attempts += 1;
-			if *subscription_recreation_attempts > MAX_SUBSCRIPTION_RECREATION_ATTEMPTS {
+			state.subscription_recreation_attempts += 1;
+			if state.subscription_recreation_attempts > MAX_SUBSCRIPTION_RECREATION_ATTEMPTS {
 				log::error!(target: LOG_TARGET, "Exceeded maximum subscription recreation attempts ({MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}), exiting to allow restart");
 				return Err(Error::SubscriptionRecreationLimitExceeded {
 					max_attempts: MAX_SUBSCRIPTION_RECREATION_ATTEMPTS,
 				});
 			}
 
-			log::info!(target: LOG_TARGET, "Subscription recreation attempt {}/{MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}", *subscription_recreation_attempts);
+			log::info!(target: LOG_TARGET, "Subscription recreation attempt {}/{MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}", state.subscription_recreation_attempts);
 
 			// Recreate the subscription
 			match client.chain_api().blocks().subscribe_finalized().await {
 				Ok(new_subscription) => {
 					*subscription = new_subscription;
-					*last_block_time = std::time::Instant::now();
+					state.last_block_time = std::time::Instant::now();
 					log::info!(target: LOG_TARGET, "Successfully recreated finalized block subscription");
 					return Ok(ListenerAction::SubscriptionRecreated);
 				},
@@ -279,16 +298,7 @@ where
 	// Now wrap the entire block processing with timeout
 	match tokio::time::timeout(
 		std::time::Duration::from_secs(BLOCK_PROCESSING_TIMEOUT_SECS),
-		process_block_internal::<T>(
-			client,
-			at.clone(),
-			block_hash,
-			prev_round,
-			prev_phase,
-			miner_tx,
-			clear_old_rounds_tx,
-			era_pruning_tx,
-		),
+		process_block_internal::<T>(client, at.clone(), block_hash, state, channels),
 	)
 	.await
 	{
@@ -298,20 +308,20 @@ where
 			prometheus::on_block_processing_stall();
 
 			// Check if we've exceeded the maximum number of recreation attempts
-			*subscription_recreation_attempts += 1;
-			if *subscription_recreation_attempts > MAX_SUBSCRIPTION_RECREATION_ATTEMPTS {
+			state.subscription_recreation_attempts += 1;
+			if state.subscription_recreation_attempts > MAX_SUBSCRIPTION_RECREATION_ATTEMPTS {
 				log::error!(target: LOG_TARGET, "Exceeded maximum subscription recreation attempts ({MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}), exiting to allow restart");
 				return Err(Error::SubscriptionRecreationLimitExceeded {
 					max_attempts: MAX_SUBSCRIPTION_RECREATION_ATTEMPTS,
 				});
 			}
 
-			log::info!(target: LOG_TARGET, "Subscription recreation attempt {}/{MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}", *subscription_recreation_attempts);
+			log::info!(target: LOG_TARGET, "Subscription recreation attempt {}/{MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}", state.subscription_recreation_attempts);
 
 			match client.chain_api().blocks().subscribe_finalized().await {
 				Ok(new_subscription) => {
 					*subscription = new_subscription;
-					*last_block_time = std::time::Instant::now();
+					state.last_block_time = std::time::Instant::now();
 					log::info!(target: LOG_TARGET, "Successfully recreated subscription after block processing timeout");
 					Ok(ListenerAction::BlockProcessingTimeout)
 				},
@@ -713,26 +723,20 @@ where
 	T::MaxVotesPerVoter: Send + Sync + 'static,
 {
 	let mut subscription = client.chain_api().blocks().subscribe_finalized().await?;
-	let mut prev_round: Option<u32> = None;
-	let mut prev_phase: Option<Phase> = None;
-	let mut last_block_time = std::time::Instant::now();
-	let mut subscription_recreation_attempts: u32 = 0;
+	let mut state = ListenerState {
+		prev_round: None,
+		prev_phase: None,
+		last_block_time: std::time::Instant::now(),
+		subscription_recreation_attempts: 0,
+	};
+
+	let channels = TaskChannels { miner_tx, clear_old_rounds_tx, era_pruning_tx };
 
 	log::trace!(target: LOG_TARGET, "Listener task started, watching for finalized blocks");
 
 	loop {
-		match process_listener_iteration::<T>(
-			&client,
-			&mut subscription,
-			&mut prev_round,
-			&mut prev_phase,
-			&mut last_block_time,
-			&mut subscription_recreation_attempts,
-			&miner_tx,
-			&clear_old_rounds_tx,
-			&era_pruning_tx,
-		)
-		.await
+		match process_listener_iteration::<T>(&client, &mut subscription, &mut state, &channels)
+			.await
 		{
 			Ok(ListenerAction::Continue) => continue,
 			Ok(ListenerAction::SubscriptionRecreated) => {
@@ -911,9 +915,11 @@ async fn get_pruneable_era_index(client: &Client) -> Result<Option<u32>, Error> 
 	// one prune_era_step() call per block, the order does not really matter, that's why we just
 	// take the first era from iterator.
 	if let Some(Ok(storage_entry)) = iter.next().await {
-		// Decode era index from storage key bytes for Twox64Concat hasher
-		// Format: concat(twox64(era_index), era_index)
-		// The era_index (u32) is at the end of the key_bytes
+		// The generated metadata from `subxt-cli` incorrectly returns `()` (unit type)
+		// instead of the actual era index type for the storage key.
+		// TODO: use the properly typed `keys` field instead of manually parsing `key_bytes`.
+
+		// Format for key_bytes: concat(twox64(era_index), era_index)
 		if storage_entry.key_bytes.len() >= 4 {
 			let era_bytes = &storage_entry.key_bytes[storage_entry.key_bytes.len() - 4..];
 			if let Ok(era_array) = <[u8; 4]>::try_from(era_bytes) {
@@ -990,23 +996,23 @@ where
 
 				match get_pruneable_era_index(&client).await {
 					Ok(Some(oldest_era)) => {
-						log::trace!(target: LOG_TARGET, "Found era {} to prune in block #{}", oldest_era, block_number);
+						log::trace!(target: LOG_TARGET, "Found era {oldest_era} to prune in block #{block_number}");
 
 						match call_prune_era_step(&client, &signer, oldest_era).await {
 							Ok(()) => {
-								log::debug!(target: LOG_TARGET, "prune_era_step({}) submitted successfully", oldest_era);
+								log::debug!(target: LOG_TARGET, "prune_era_step({oldest_era}) submitted successfully");
 							},
 							Err(e) => {
-								log::warn!(target: LOG_TARGET, "Failed to prune era {}: {e:?}", oldest_era);
+								log::warn!(target: LOG_TARGET, "Failed to prune era {oldest_era}: {e:?}");
 								prometheus::on_era_pruning_submission_failure();
 							},
 						}
 					},
 					Ok(None) => {
-						log::trace!(target: LOG_TARGET, "No eras to prune in block #{}", block_number);
+						log::trace!(target: LOG_TARGET, "No eras to prune in block #{block_number}");
 					},
 					Err(e) => {
-						log::warn!(target: LOG_TARGET, "Failed to query EraPruningState in block #{}: {e:?}", block_number);
+						log::warn!(target: LOG_TARGET, "Failed to query EraPruningState in block #{block_number}: {e:?}");
 					},
 				}
 			},
