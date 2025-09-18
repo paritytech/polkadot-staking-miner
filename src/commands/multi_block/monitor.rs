@@ -913,11 +913,11 @@ async fn get_pruneable_era_index(client: &Client) -> Result<Option<u32>, Error> 
 	// take the first era from iterator.
 	if let Some(Ok(storage_entry)) = iter.next().await {
 		// The generated metadata from `subxt-cli` incorrectly returns `()` (unit type)
-		// instead of the actual era index type for the storage key (see https://github.com/paritytech/subxt/issues/1669).
+		// instead of the actual era index type for the storage key (see https://github.com/paritytech/subxt/issues/2091).
 		// TODO: use the properly typed `keys` field instead of manually parsing `key_bytes`. Or use
 		// the new subxt Storage APIs when available.
 
-		// Format for key_bytes: concat(twox64(era_index), era_index)
+		// Format: concat(twox64(era_index), era_index) - extract the last 4 bytes as u32
 		if storage_entry.key_bytes.len() >= 4 {
 			let era_bytes = &storage_entry.key_bytes[storage_entry.key_bytes.len() - 4..];
 			if let Ok(era_array) = <[u8; 4]>::try_from(era_bytes) {
