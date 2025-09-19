@@ -99,6 +99,7 @@ pub async fn run(port: u16) -> Result<(), String> {
 }
 
 mod hidden {
+
 	use once_cell::sync::Lazy;
 	use polkadot_sdk::sp_npos_elections;
 	use prometheus::{Counter, Gauge, opts, register_counter, register_gauge};
@@ -164,43 +165,59 @@ mod hidden {
 		.unwrap()
 	});
 
-	static JANITOR_CLEANUP_SUCCESS: Lazy<Counter> = Lazy::new(|| {
+	static CLEAR_OLD_ROUNDS_CLEANUP_SUCCESS: Lazy<Counter> = Lazy::new(|| {
 		register_counter!(opts!(
-			"staking_miner_janitor_cleanup_success_total",
-			"Total number of successful janitor cleanup operations"
+			"staking_miner_clear_old_rounds_cleanup_success_total",
+			"Total number of successful clear old rounds cleanup operations"
 		))
 		.unwrap()
 	});
 
-	static JANITOR_CLEANUP_FAILURES: Lazy<Counter> = Lazy::new(|| {
+	static CLEAR_OLD_ROUNDS_CLEANUP_FAILURES: Lazy<Counter> = Lazy::new(|| {
 		register_counter!(opts!(
-			"staking_miner_janitor_cleanup_failures_total",
-			"Total number of failed janitor cleanup operations"
+			"staking_miner_clear_old_rounds_cleanup_failures_total",
+			"Total number of failed clear old rounds cleanup operations"
 		))
 		.unwrap()
 	});
 
-	static JANITOR_OLD_SUBMISSIONS_FOUND: Lazy<Gauge> = Lazy::new(|| {
+	static CLEAR_OLD_ROUNDS_OLD_SUBMISSIONS_FOUND: Lazy<Gauge> = Lazy::new(|| {
 		register_gauge!(opts!(
-			"staking_miner_janitor_old_submissions_found",
-			"Number of old submissions found during last janitor run"
+			"staking_miner_clear_old_rounds_old_submissions_found",
+			"Number of old submissions found during last clear old rounds run"
 		))
 		.unwrap()
 	});
 
-	static JANITOR_OLD_SUBMISSIONS_CLEARED: Lazy<Gauge> = Lazy::new(|| {
+	static CLEAR_OLD_ROUNDS_OLD_SUBMISSIONS_CLEARED: Lazy<Gauge> = Lazy::new(|| {
 		register_gauge!(opts!(
-			"staking_miner_janitor_old_submissions_cleared",
-			"Number of old submissions successfully cleared during last janitor run"
+			"staking_miner_clear_old_rounds_old_submissions_cleared",
+			"Number of old submissions successfully cleared during last clear old rounds run"
 		))
 		.unwrap()
 	});
 
-	static JANITOR_CLEANUP_DURATION: Lazy<Gauge> = Lazy::new(|| {
+	static CLEAR_OLD_ROUNDS_CLEANUP_DURATION: Lazy<Gauge> = Lazy::new(|| {
 		register_gauge!(
-			"staking_miner_janitor_cleanup_duration_ms",
-			"The time in milliseconds it takes to complete janitor cleanup"
+			"staking_miner_clear_old_rounds_cleanup_duration_ms",
+			"The time in milliseconds it takes to complete clear old rounds cleanup"
 		)
+		.unwrap()
+	});
+
+	static ERA_PRUNING_SUBMISSIONS_SUCCESS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_era_pruning_submissions_success_total",
+			"Total number of successful prune_era_step submissions"
+		))
+		.unwrap()
+	});
+
+	static ERA_PRUNING_SUBMISSIONS_FAILURES: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_era_pruning_submissions_failures_total",
+			"Total number of failed prune_era_step submissions"
+		))
 		.unwrap()
 	});
 
@@ -388,21 +405,29 @@ mod hidden {
 		SUBMISSIONS_SUCCESS.inc();
 	}
 
-	pub fn on_janitor_cleanup_success(cleared_count: u32) {
-		JANITOR_CLEANUP_SUCCESS.inc();
-		JANITOR_OLD_SUBMISSIONS_CLEARED.set(cleared_count as f64);
+	pub fn on_clear_old_rounds_cleanup_success(cleared_count: u32) {
+		CLEAR_OLD_ROUNDS_CLEANUP_SUCCESS.inc();
+		CLEAR_OLD_ROUNDS_OLD_SUBMISSIONS_CLEARED.set(cleared_count as f64);
 	}
 
-	pub fn on_janitor_cleanup_failure() {
-		JANITOR_CLEANUP_FAILURES.inc();
+	pub fn on_clear_old_rounds_cleanup_failure() {
+		CLEAR_OLD_ROUNDS_CLEANUP_FAILURES.inc();
 	}
 
-	pub fn set_janitor_old_submissions_found(count: u32) {
-		JANITOR_OLD_SUBMISSIONS_FOUND.set(count as f64);
+	pub fn set_clear_old_rounds_old_submissions_found(count: u32) {
+		CLEAR_OLD_ROUNDS_OLD_SUBMISSIONS_FOUND.set(count as f64);
 	}
 
-	pub fn observe_janitor_cleanup_duration(time: f64) {
-		JANITOR_CLEANUP_DURATION.set(time);
+	pub fn observe_clear_old_rounds_cleanup_duration(time: f64) {
+		CLEAR_OLD_ROUNDS_CLEANUP_DURATION.set(time);
+	}
+
+	pub fn on_era_pruning_submission_success() {
+		ERA_PRUNING_SUBMISSIONS_SUCCESS.inc();
+	}
+
+	pub fn on_era_pruning_submission_failure() {
+		ERA_PRUNING_SUBMISSIONS_FAILURES.inc();
 	}
 
 	pub fn on_listener_subscription_stall() {

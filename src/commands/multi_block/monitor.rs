@@ -15,6 +15,7 @@ use crate::{
 	static_types::multi_block as static_types,
 	utils::{self, TimedFuture, score_passes_strategy},
 };
+use codec::Decode;
 use polkadot_sdk::{
 	pallet_election_provider_multi_block::unsigned::miner::MinerConfig,
 	sp_npos_elections::ElectionScore,
@@ -24,10 +25,25 @@ use std::collections::HashSet;
 use subxt::backend::StreamOf;
 use tokio::sync::mpsc;
 
-/// Number of previous rounds to scan for old submissions during janitor cleanup.
+/// Number of previous rounds to scan for old submissions during clear old rounds cleanup.
 /// This provides a reasonable buffer for offline periods while avoiding inefficient
 /// scanning of potentially gazillions of historical rounds.
-const JANITOR_SCAN_ROUNDS: u32 = 5;
+const CLEAR_OLD_ROUNDS_SCAN_ROUNDS: u32 = 5;
+
+/// Groups all the communication channels used by the listener task
+struct TaskChannels {
+	miner_tx: mpsc::Sender<MinerMessage>,
+	clear_old_rounds_tx: mpsc::Sender<ClearOldRoundsMessage>,
+	era_pruning_tx: mpsc::Sender<EraPruningMessage>,
+}
+
+/// Groups the mutable state tracked by the listener task
+struct ListenerState {
+	prev_round: Option<u32>,
+	prev_phase: Option<Phase>,
+	last_block_time: std::time::Instant,
+	subscription_recreation_attempts: u32,
+}
 
 /// Timeout in seconds for detecting stalled block subscriptions.
 /// If no blocks are received within this duration, the subscription will be recreated.
@@ -76,9 +92,8 @@ async fn process_block_internal<T>(
 	client: &Client,
 	at: crate::prelude::Header,
 	block_hash: subxt::utils::H256,
-	prev_round: &mut Option<u32>,
-	miner_tx: &mpsc::Sender<MinerMessage>,
-	janitor_tx: &mpsc::Sender<JanitorMessage>,
+	state: &mut ListenerState,
+	channels: &TaskChannels,
 ) -> Result<ListenerAction, Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync,
@@ -88,53 +103,98 @@ where
 	T::VoterSnapshotPerBlock: Send + Sync,
 	T::MaxVotesPerVoter: Send + Sync,
 {
-	log::trace!(target: LOG_TARGET, "Listener: Getting block state for block #{}", at.number);
 	let block_state_start = std::time::Instant::now();
 	let (_storage, phase, current_round) = get_block_state(client, block_hash).await?;
 	let block_state_duration = block_state_start.elapsed();
-	log::trace!(target: LOG_TARGET, "Listener: Got block state in {}ms for block #{}, phase: {:?}, round: {}", block_state_duration.as_millis(), at.number, phase, current_round);
 	prometheus::observe_block_state_duration(block_state_duration.as_millis() as f64);
 
 	// Update prev_round before processing round increment to avoid stale round detection in case of
 	// timeouts
-	let last_round = *prev_round;
-	*prev_round = Some(current_round);
+	let last_round = state.prev_round;
+	state.prev_round = Some(current_round);
 
 	if let Some(last_round) = last_round {
 		if current_round > last_round {
-			log::trace!(target: LOG_TARGET, "Listener: Processing round increment from {} to {} for block #{}", last_round, current_round, at.number);
-			let round_increment_start = std::time::Instant::now();
-			on_round_increment(last_round, current_round, &phase, miner_tx, janitor_tx).await?;
-			let round_increment_duration = round_increment_start.elapsed();
-			log::trace!(target: LOG_TARGET, "Listener: Round increment processing took {}ms for block #{}", round_increment_duration.as_millis(), at.number);
+			on_round_increment(
+				last_round,
+				current_round,
+				&phase,
+				&channels.miner_tx,
+				&channels.clear_old_rounds_tx,
+			)
+			.await?;
 		}
 	}
+
+	let last_phase = state.prev_phase.clone();
+	state.prev_phase = Some(phase.clone());
 	let block_number = at.number;
 
 	match phase {
+		Phase::Off => {
+			if let Some(last_phase) = last_phase {
+				if !matches!(&last_phase, Phase::Off) {
+					// Use send() to ensure EnterOffPhase is delivered and to prevent missed phase
+					// transitions that could leave era pruning in wrong state
+					if let Err(e) =
+						channels.era_pruning_tx.send(EraPruningMessage::EnterOffPhase).await
+					{
+						log::error!(target: LOG_TARGET, "Era pruning channel closed while sending EnterOffPhase: {e:?}");
+						return Err(Error::Other("Era pruning task died unexpectedly".to_string()));
+					}
+				}
+			} else {
+				// First block in Off phase
+				// Use send() to ensure the message is delivered
+				if let Err(e) = channels.era_pruning_tx.send(EraPruningMessage::EnterOffPhase).await
+				{
+					log::error!(target: LOG_TARGET, "Era pruning channel closed while sending initial EnterOffPhase: {e:?}");
+					return Err(Error::Other("Era pruning task died unexpectedly".to_string()));
+				}
+			}
+
+			// Send NewBlock message for era pruning (non-critical, we can use try_send)
+			let _ = channels
+				.era_pruning_tx
+				.try_send(EraPruningMessage::NewBlock { block_number: at.number });
+
+			// Off phase - nothing to do for mining
+			log::trace!(target: LOG_TARGET, "Block #{block_number}, Phase Off - nothing to do");
+			prometheus::set_last_block_processing_time();
+			return Ok(ListenerAction::Continue);
+		},
 		Phase::Signed(_) | Phase::Snapshot(_) => {
-			// Relevant phases for mining - continue processing
+			if let Some(last_phase) = last_phase {
+				if matches!(&last_phase, Phase::Off) {
+					log::debug!(target: LOG_TARGET, "Phase transition: Off → {phase:?} - stopping era pruning");
+					// Use send() to ensure ExitOffPhase is delivered and to stop era pruning before
+					// mining starts
+					if let Err(e) =
+						channels.era_pruning_tx.send(EraPruningMessage::ExitOffPhase).await
+					{
+						log::error!(target: LOG_TARGET, "Era pruning channel closed while sending ExitOffPhase: {e:?}");
+						return Err(Error::Other("Era pruning task died unexpectedly".to_string()));
+					}
+				}
+			}
+			// Continue with mining logic for Signed/Snapshot phases
 		},
 		_ => {
 			log::trace!(target: LOG_TARGET, "Block #{block_number}, Phase {phase:?} - nothing to do");
-			// Update timestamp of successful listener's block processing
 			prometheus::set_last_block_processing_time();
-
 			return Ok(ListenerAction::Continue);
 		},
 	}
 
-	log::trace!(target: LOG_TARGET, "Listener: Creating BlockDetails for block #{block_number}");
 	let block_details_start = std::time::Instant::now();
 	let state = BlockDetails::new(client, at, phase, block_hash, current_round).await?;
 	let block_details_duration = block_details_start.elapsed();
-	log::trace!(target: LOG_TARGET, "Listener: BlockDetails creation took {}ms for block #{}", block_details_duration.as_millis(), block_number);
 	prometheus::observe_block_details_duration(block_details_duration.as_millis() as f64);
 
 	let message = MinerMessage::ProcessBlock { state };
 
 	// Use try_send for backpressure - if miner is busy, skip this block
-	match miner_tx.try_send(message) {
+	match channels.miner_tx.try_send(message) {
 		Ok(()) => {
 			log::trace!(target: LOG_TARGET, "Sent block #{block_number} to miner");
 			// Update timestamp of successful listener's block processing
@@ -163,11 +223,8 @@ where
 async fn process_listener_iteration<T>(
 	client: &Client,
 	subscription: &mut SubscriptionStream,
-	prev_round: &mut Option<u32>,
-	last_block_time: &mut std::time::Instant,
-	subscription_recreation_attempts: &mut u32,
-	miner_tx: &mpsc::Sender<MinerMessage>,
-	janitor_tx: &mpsc::Sender<JanitorMessage>,
+	state: &mut ListenerState,
+	channels: &TaskChannels,
 ) -> Result<ListenerAction, Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync,
@@ -177,7 +234,6 @@ where
 	T::VoterSnapshotPerBlock: Send + Sync,
 	T::MaxVotesPerVoter: Send + Sync,
 {
-	log::trace!(target: LOG_TARGET, "Listener: Waiting for next block from subscription...");
 	let (at, block_hash) = match tokio::time::timeout(
 		std::time::Duration::from_secs(BLOCK_SUBSCRIPTION_TIMEOUT_SECS),
 		subscription.next(),
@@ -187,11 +243,10 @@ where
 		Ok(maybe_block) => {
 			match maybe_block {
 				Some(Ok(block)) => {
-					*last_block_time = std::time::Instant::now();
+					state.last_block_time = std::time::Instant::now();
 					// Reset the subscription recreation attempts counter on successful block
 					// receipt
-					*subscription_recreation_attempts = 0;
-					log::trace!(target: LOG_TARGET, "Listener: Received block #{} from subscription", block.header().number);
+					state.subscription_recreation_attempts = 0;
 					(block.header().clone(), block.hash())
 				},
 				Some(Err(e)) => {
@@ -215,21 +270,21 @@ where
 			crate::prometheus::on_listener_subscription_stall();
 
 			// Check if we've exceeded the maximum number of recreation attempts
-			*subscription_recreation_attempts += 1;
-			if *subscription_recreation_attempts > MAX_SUBSCRIPTION_RECREATION_ATTEMPTS {
+			state.subscription_recreation_attempts += 1;
+			if state.subscription_recreation_attempts > MAX_SUBSCRIPTION_RECREATION_ATTEMPTS {
 				log::error!(target: LOG_TARGET, "Exceeded maximum subscription recreation attempts ({MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}), exiting to allow restart");
 				return Err(Error::SubscriptionRecreationLimitExceeded {
 					max_attempts: MAX_SUBSCRIPTION_RECREATION_ATTEMPTS,
 				});
 			}
 
-			log::info!(target: LOG_TARGET, "Subscription recreation attempt {}/{MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}", *subscription_recreation_attempts);
+			log::info!(target: LOG_TARGET, "Subscription recreation attempt {}/{MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}", state.subscription_recreation_attempts);
 
 			// Recreate the subscription
 			match client.chain_api().blocks().subscribe_finalized().await {
 				Ok(new_subscription) => {
 					*subscription = new_subscription;
-					*last_block_time = std::time::Instant::now();
+					state.last_block_time = std::time::Instant::now();
 					log::info!(target: LOG_TARGET, "Successfully recreated finalized block subscription");
 					return Ok(ListenerAction::SubscriptionRecreated);
 				},
@@ -242,17 +297,9 @@ where
 	};
 
 	// Now wrap the entire block processing with timeout
-	log::trace!(target: LOG_TARGET, "Listener: Starting block processing with timeout for block #{}", at.number);
 	match tokio::time::timeout(
 		std::time::Duration::from_secs(BLOCK_PROCESSING_TIMEOUT_SECS),
-		process_block_internal::<T>(
-			client,
-			at.clone(),
-			block_hash,
-			prev_round,
-			miner_tx,
-			janitor_tx,
-		),
+		process_block_internal::<T>(client, at.clone(), block_hash, state, channels),
 	)
 	.await
 	{
@@ -262,20 +309,20 @@ where
 			prometheus::on_block_processing_stall();
 
 			// Check if we've exceeded the maximum number of recreation attempts
-			*subscription_recreation_attempts += 1;
-			if *subscription_recreation_attempts > MAX_SUBSCRIPTION_RECREATION_ATTEMPTS {
+			state.subscription_recreation_attempts += 1;
+			if state.subscription_recreation_attempts > MAX_SUBSCRIPTION_RECREATION_ATTEMPTS {
 				log::error!(target: LOG_TARGET, "Exceeded maximum subscription recreation attempts ({MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}), exiting to allow restart");
 				return Err(Error::SubscriptionRecreationLimitExceeded {
 					max_attempts: MAX_SUBSCRIPTION_RECREATION_ATTEMPTS,
 				});
 			}
 
-			log::info!(target: LOG_TARGET, "Subscription recreation attempt {}/{MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}", *subscription_recreation_attempts);
+			log::info!(target: LOG_TARGET, "Subscription recreation attempt {}/{MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}", state.subscription_recreation_attempts);
 
 			match client.chain_api().blocks().subscribe_finalized().await {
 				Ok(new_subscription) => {
 					*subscription = new_subscription;
-					*last_block_time = std::time::Instant::now();
+					state.last_block_time = std::time::Instant::now();
 					log::info!(target: LOG_TARGET, "Successfully recreated subscription after block processing timeout");
 					Ok(ListenerAction::BlockProcessingTimeout)
 				},
@@ -316,60 +363,58 @@ async fn get_block_state(
 	client: &Client,
 	block_hash: polkadot_sdk::sp_core::H256,
 ) -> Result<(Storage, Phase, u32), Error> {
-	log::trace!(target: LOG_TARGET, "get_block_state: Getting storage for block {block_hash:?}");
 	let storage_start = std::time::Instant::now();
 	let storage = utils::storage_at(Some(block_hash), client.chain_api()).await?;
 	let storage_duration = storage_start.elapsed();
-	log::trace!(target: LOG_TARGET, "get_block_state: Got storage in {}ms", storage_duration.as_millis());
 	prometheus::observe_storage_query_duration(storage_duration.as_millis() as f64);
 
-	log::trace!(target: LOG_TARGET, "get_block_state: Fetching current_phase");
 	let phase_start = std::time::Instant::now();
 	let phase = storage
 		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
 		.await?;
 	let phase_duration = phase_start.elapsed();
-	log::trace!(target: LOG_TARGET, "get_block_state: Got current_phase in {}ms: {:?}", phase_duration.as_millis(), phase);
 	prometheus::observe_storage_query_duration(phase_duration.as_millis() as f64);
 
-	log::trace!(target: LOG_TARGET, "get_block_state: Fetching round");
 	let round_start = std::time::Instant::now();
 	let current_round = storage
 		.fetch_or_default(&runtime::storage().multi_block_election().round())
 		.await?;
 	let round_duration = round_start.elapsed();
-	log::trace!(target: LOG_TARGET, "get_block_state: Got round in {}ms: {}", round_duration.as_millis(), current_round);
 	prometheus::observe_storage_query_duration(round_duration.as_millis() as f64);
 
 	Ok((storage, phase, current_round))
 }
 
-/// Handle round increment by triggering janitor and snapshot cleanup
+/// Handle round increment by triggering clear old rounds and snapshot cleanup
 async fn on_round_increment(
 	last_round: u32,
 	current_round: u32,
 	phase: &Phase,
 	miner_tx: &mpsc::Sender<MinerMessage>,
-	janitor_tx: &mpsc::Sender<JanitorMessage>,
+	clear_old_rounds_tx: &mpsc::Sender<ClearOldRoundsMessage>,
 ) -> Result<(), Error> {
 	log::debug!(target: LOG_TARGET, "Detected round increment {last_round} -> {current_round}");
 
-	// 1. Trigger janitor cleanup
-	if let Err(e) = janitor_tx.try_send(JanitorMessage::JanitorTick { current_round }) {
+	// 1. Trigger clear old rounds cleanup
+	if let Err(e) =
+		clear_old_rounds_tx.try_send(ClearOldRoundsMessage::ClearOldRoundsTick { current_round })
+	{
 		match e {
 			mpsc::error::TrySendError::Full(_) => {
-				// this shouldn't happen. Janitor is triggered once per round.
+				// this shouldn't happen. Clearing old rounds is triggered once per round.
 				// If it's still busy after a round, it means that it has taken
 				// insanely long.
-				log::warn!(target: LOG_TARGET, "Janitor busy, skipping janitor tick for round {current_round}.");
+				log::warn!(target: LOG_TARGET, "Clear old rounds busy, skipping clear old rounds tick for round {current_round}.");
 			},
 			mpsc::error::TrySendError::Closed(_) => {
-				log::error!(target: LOG_TARGET, "Janitor channel closed unexpectedly during janitor tick");
-				return Err(Error::Other("Janitor channel closed unexpectedly".to_string()));
+				log::error!(target: LOG_TARGET, "Clear old rounds channel closed unexpectedly during clear old rounds tick");
+				return Err(Error::Other(
+					"Clear old rounds channel closed unexpectedly".to_string(),
+				));
 			},
 		}
 	} else {
-		log::trace!(target: LOG_TARGET, "Sent janitor tick for round {current_round}");
+		log::trace!(target: LOG_TARGET, "Sent clear old rounds tick for round {current_round}");
 	}
 
 	// 2. Clear snapshots
@@ -396,13 +441,23 @@ enum MinerMessage {
 	ClearSnapshots,
 }
 
-/// Message types for communication between listener and janitor
-enum JanitorMessage {
-	/// Signal to run janitor cleanup for old submissions
-	JanitorTick { current_round: u32 },
+/// Message types for communication between listener and clear old rounds task
+enum ClearOldRoundsMessage {
+	/// Signal to run clear old rounds cleanup for old submissions
+	ClearOldRoundsTick { current_round: u32 },
 }
 
-/// The monitor command splits the work into three communicating tasks:
+/// Message types for communication between listener and era pruning task
+enum EraPruningMessage {
+	/// Signal to start era pruning when entering Off phase
+	EnterOffPhase,
+	/// Signal to stop era pruning immediately when leaving Off phase
+	ExitOffPhase,
+	/// New block arrived during Off phase, can send one prune_era_step if needed
+	NewBlock { block_number: u32 },
+}
+
+/// The monitor command splits the work into four communicating tasks:
 ///
 /// ### Listener Task
 /// - Always follows the chain (head or finalized blocks)
@@ -410,7 +465,7 @@ enum JanitorMessage {
 /// - Checks if miner is busy before sending work
 /// - Never blocks on slow operations
 /// - **Any error causes entire process to exit** (RPC errors handled by reconnecting client)
-/// - Triggers janitor cleanup and snapshot clearing when round increments
+/// - Triggers clear old rounds cleanup and snapshot clearing when round increments
 ///
 /// ### Miner Task
 /// - Single-threaded processor that handles one block at a time
@@ -419,54 +474,70 @@ enum JanitorMessage {
 /// - **Critical errors cause process exit** (e.g. account doesn't exist)
 /// - **Non-critical errors are recoverable** (log and continue)
 ///
-/// ### Janitor Task
+/// ### Clear old rounds Task
 /// - Independent task that handles deposit recovery operations
 /// - Automatically scans for and cleans up old submissions from previous rounds
 /// - Reclaims deposits from discarded solutions that were not selected
 /// - Runs exactly once per round when round number increments
-/// - Scans only the last JANITOR_SCAN_ROUNDS rounds for old submissions
+/// - Scans only the last CLEAR_OLD_ROUNDS_SCAN_ROUNDS rounds for old submissions
 /// - Calls `clear_old_round_data()` to remove stale data and recover deposits
 /// - **Non-blocking**: Does not interfere with mining operations
 ///
+/// ### Era Pruning Task
+/// - Independent task that handles lazy era pruning operations using runtime's EraPruningState
+///   storage map
+/// - Only runs during Off phase (to not interfere with ongoing elections)
+/// - Rate limited to maximum one `prune_era_step()` call per block
+///
 /// ### Communication
 /// - **Miner Channel**: Bounded channel (buffer=1) for mining work + snapshot cleanup
-/// - **Janitor Channel**: Bounded channel (buffer=1) for deposit recovery operations
+/// - **Clear Old Rounds Channel**: Bounded channel (buffer=1) for deposit recovery operations
 /// - **Dual Triggers**: Listener sends mining work (Snapshot/Signed) + cleanup signals (round++)
 /// - **Backpressure mechanism**: When miner is busy processing a block:
 ///   - Channel becomes full, listener's try_send() returns immediately
 ///   - Listener skips current block and moves to next (fresher) block
 ///   - No blocking, no buffering of stale work
-/// - **Separation of concerns**: Mining and janitor operations are completely independent
+/// - **Separation of concerns**: Mining, clear old rounds, and era pruning operations are
+///   completely independent
 /// - No submission locks needed since miner is single-threaded by design
+///
 ///
 /// ## Error Handling Strategy
 /// - **Listener errors**: All critical - process exits immediately
 /// - **Miner errors**: Classified as critical or recoverable
 ///   - Critical: Account doesn't exist, invalid metadata, persistent RPC failures
 ///   - Recoverable: Already submitted, wrong phase, temporary mining issues
-/// - **Janitor errors**: Classified as critical or recoverable (same as miner)
+/// - **Clear Old Rounds errors**: Classified as critical or recoverable (same as miner)
+/// - **Era pruning errors**: Classified as critical or recoverable (same as miner)
 /// - **RPC issues**: Handled transparently by reconnecting RPC client
 ///
 /// ```text
-/// (finalized blocks)
+/// 
+///                      (finalized blocks)
 /// ┌──────────────────────────────────────────────────────────────────────────┐
-/// │   ┌─────────────┐                      ┌─────────────┐            ┌─────────────┐
-/// └──▶│ Listener    │                      │   Miner     │            │ Blockchain  │
-///     │             │  Snapshot/Signed     │             │            │             │
-///     │ ┌─────────┐ │ ────────────────────▶│ ┌─────────┐ │ (solutions)│             │
-///     │ │ Stream  │ │  (mining work)       │ │ Mining  │ │───────────▶│             │
-///     │ └─────────┘ │                      │ └─────────┘ │            │             │
-///     │      │      │  Round++             │ ┌─────────┐ │            │             │
-///     │      ▼      │ ────────────────────▶│ │ Clear   │ │            │             │
-///     │ ┌─────────┐ │                      │ │ Snapshot│ │            │             │
-///     │ │ Phase   │ │                      │ └─────────┘ │            │             │
-///     │ │ Check   │ │  Round++             └─────────────┘            │             │
-///     │ └─────────┘ │ ────────────────────▶┌─────────────┐            │             │
-///     │             │  (deposit cleanup)   │  Janitor    │ (cleanup)  │             │
-///     │             │                      │ ┌─────────┐ │───────────▶│             │
-///     │             │                      │ │ Cleanup │ │            │             │
-///     │             │                      │ └─────────┘ │            │             │
-///     └─────────────┘                      └─────────────┘            └─────────────┘
+/// │  ┌─────────────┐                      ┌─────────────┐              ┌─────────────┐
+/// └─▶│ Listener    │                      │   Miner     │              │ Blockchain  │
+///    │             │  Snapshot/Signed     │             │              │             │
+///    │ ┌─────────┐ │ ────────────────────▶│ ┌─────────┐ │ (solutions)  │             │
+///    │ │ Stream  │ │  (mining work)       │ │ Mining  │ │───────────▶  │             │
+///    │ └─────────┘ │                      │ └─────────┘ │              │             │
+///    │      │      │  Round++             │ ┌─────────┐ │              │             │
+///    │      ▼      │ ────────────────────▶│ │ Clear   │ │              │             │
+///    │ ┌─────────┐ │                      │ │ Snapshot│ │              │             │
+///    │ │ Phase   │ │                      │ └─────────┘ │              │             │
+///    │ │ Check   │ │  Round++             └─────────────┘              │             │
+///    │ └─────────┘ │ ────────────────────▶┌───────────────┐            │             │
+///    │     │       │  (deposit cleanup)   │ClearOldRounds │ (cleanup)  │             │
+///    │     │       │                      │ ┌─────────┐   │───────────▶│             │
+///    │     │       │                      │ │ Cleanup │   │            │             │
+///    │     │       │                      │ └─────────┘   │            │             │
+///    │     │       │                      └───────────────┘            │             │
+///    │     │       │                                                   │             │
+///    │     │       │Entering/leaving Off ┌───────────────┐(prune_era_step)           │
+///    │     └───────────────────────────▶ │ Era pruning   │───────────▶ │             │
+///    │             │   New block in Off  └───────────────┘             │             │
+///    │             │                                                   │             │
+///    └─────────────┘                                                   └─────────────┘
 /// ```
 pub async fn monitor_cmd<T>(client: Client, config: MultiBlockMonitorConfig) -> Result<(), Error>
 where
@@ -512,9 +583,13 @@ where
 	// - Eliminates the need for explicit busy-checking or submission locks
 	let (miner_tx, miner_rx) = mpsc::channel::<MinerMessage>(1);
 
-	// Create bounded channel for communication between listener and janitor
-	// Buffer size of 1 is sufficient since janitor runs once at every round change.
-	let (janitor_tx, janitor_rx) = mpsc::channel::<JanitorMessage>(1);
+	// Create bounded channel for communication between listener and clear old rounds task
+	// Buffer size of 1 is sufficient since clear old rounds runs once at every round change.
+	let (clear_old_rounds_tx, clear_old_rounds_rx) = mpsc::channel::<ClearOldRoundsMessage>(1);
+
+	// Create bounded channel for communication between listener and era pruning task
+	// Buffer size of 1 is sufficient - era pruning is non-critical cleanup, skipping blocks is fine
+	let (era_pruning_tx, era_pruning_rx) = mpsc::channel::<EraPruningMessage>(1);
 
 	// Spawn the miner task
 	let miner_handle = {
@@ -524,17 +599,30 @@ where
 		tokio::spawn(async move { miner_task::<T>(client, signer, config, miner_rx).await })
 	};
 
-	// Spawn the janitor task
-	let janitor_handle = {
+	// Spawn the clear old rounds task
+	let clear_old_rounds_handle = {
 		let client = client.clone();
 		let signer = signer.clone();
-		tokio::spawn(async move { janitor_task::<T>(client, signer, janitor_rx).await })
+		tokio::spawn(async move {
+			clear_old_rounds_task::<T>(client, signer, clear_old_rounds_rx).await
+		})
+	};
+
+	// Spawn the era pruning task
+	let era_pruning_handle = {
+		let client = client.clone();
+		let signer = signer.clone();
+		tokio::spawn(
+			async move { lazy_era_pruning_task::<T>(client, signer, era_pruning_rx).await },
+		)
 	};
 
 	// Spawn the listener task
 	let listener_handle = {
 		let client = client.clone();
-		tokio::spawn(async move { listener_task::<T>(client, miner_tx, janitor_tx).await })
+		tokio::spawn(async move {
+			listener_task::<T>(client, miner_tx, clear_old_rounds_tx, era_pruning_tx).await
+		})
 	};
 
 	// Wait for any task to complete (which should never happen in normal operation)
@@ -572,19 +660,35 @@ where
 				}
 			}
 		}
-		result = janitor_handle => {
+		result = clear_old_rounds_handle => {
 			match result {
 				Ok(Ok(())) => {
-					log::error!(target: LOG_TARGET, "Janitor task completed unexpectedly");
-					Err(Error::Other("Janitor task should never complete".to_string()))
+					log::error!(target: LOG_TARGET, "Clear old rounds task completed unexpectedly");
+					Err(Error::Other("Clear old rounds task should never complete".to_string()))
 				}
 				Ok(Err(e)) => {
-					log::error!(target: LOG_TARGET, "Janitor task failed: {e}");
+					log::error!(target: LOG_TARGET, "Clear old rounds task failed: {e}");
 					Err(e)
 				}
 				Err(e) => {
-					log::error!(target: LOG_TARGET, "Janitor task panicked: {e}");
-					Err(Error::Other(format!("Janitor task panicked: {e}")))
+					log::error!(target: LOG_TARGET, "Clear old rounds task panicked: {e}");
+					Err(Error::Other(format!("Clear old rounds task panicked: {e}")))
+				}
+			}
+		}
+		result = era_pruning_handle => {
+			match result {
+				Ok(Ok(())) => {
+					log::error!(target: LOG_TARGET, "Era pruning task completed unexpectedly");
+					Err(Error::Other("Era pruning task should never complete".to_string()))
+				}
+				Ok(Err(e)) => {
+					log::error!(target: LOG_TARGET, "Era pruning task failed: {e}");
+					Err(e)
+				}
+				Err(e) => {
+					log::error!(target: LOG_TARGET, "Era pruning task panicked: {e}");
+					Err(Error::Other(format!("Era pruning task panicked: {e}")))
 				}
 			}
 		}
@@ -597,7 +701,7 @@ where
 /// - Subscribing to finalized block updates
 /// - Performing fast phase checks to identify
 ///   - signed/snapshot phases to inform the miner task
-///   - transition from Done/Export(0) to Off to inform the janitor task
+///   - transition from Done/Export(0) to Off to inform the clear old rounds task
 /// - Using backpressure to skip blocks when miner is busy
 /// - Managing phase transitions and snapshot cleanup
 /// - Never blocking on slow operations to avoid subscription buffering
@@ -605,7 +709,8 @@ where
 async fn listener_task<T>(
 	client: Client,
 	miner_tx: mpsc::Sender<MinerMessage>,
-	janitor_tx: mpsc::Sender<JanitorMessage>,
+	clear_old_rounds_tx: mpsc::Sender<ClearOldRoundsMessage>,
+	era_pruning_tx: mpsc::Sender<EraPruningMessage>,
 ) -> Result<(), Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
@@ -616,23 +721,20 @@ where
 	T::MaxVotesPerVoter: Send + Sync + 'static,
 {
 	let mut subscription = client.chain_api().blocks().subscribe_finalized().await?;
-	let mut prev_round: Option<u32> = None;
-	let mut last_block_time = std::time::Instant::now();
-	let mut subscription_recreation_attempts: u32 = 0;
+	let mut state = ListenerState {
+		prev_round: None,
+		prev_phase: None,
+		last_block_time: std::time::Instant::now(),
+		subscription_recreation_attempts: 0,
+	};
+
+	let channels = TaskChannels { miner_tx, clear_old_rounds_tx, era_pruning_tx };
 
 	log::trace!(target: LOG_TARGET, "Listener task started, watching for finalized blocks");
 
 	loop {
-		match process_listener_iteration::<T>(
-			&client,
-			&mut subscription,
-			&mut prev_round,
-			&mut last_block_time,
-			&mut subscription_recreation_attempts,
-			&miner_tx,
-			&janitor_tx,
-		)
-		.await
+		match process_listener_iteration::<T>(&client, &mut subscription, &mut state, &channels)
+			.await
 		{
 			Ok(ListenerAction::Continue) => continue,
 			Ok(ListenerAction::SubscriptionRecreated) => {
@@ -699,26 +801,21 @@ where
 					min_signed_phase_blocks: config.min_signed_phase_blocks,
 					shady: config.shady,
 				};
-				let result = process_block::<T>(
+				if let Err(e) = process_block::<T>(
 					client.clone(),
 					state,
 					&mut snapshot,
 					signer.clone(),
 					process_config,
 				)
-				.await;
-
-				match result {
-					Ok(()) => {
-						log::trace!(target: LOG_TARGET, "Block processing completed successfully");
-					},
-					Err(e) =>
-						if is_critical_miner_error(&e) {
-							log::error!(target: LOG_TARGET, "Critical miner error - process will exit: {e:?}");
-							return Err(e);
-						} else {
-							log::warn!(target: LOG_TARGET, "Block processing failed, continuing: {e:?}");
-						},
+				.await
+				{
+					if is_critical_miner_error(&e) {
+						log::error!(target: LOG_TARGET, "Critical miner error - process will exit: {e:?}");
+						return Err(e);
+					} else {
+						log::warn!(target: LOG_TARGET, "Block processing failed, continuing: {e:?}");
+					}
 				}
 			},
 			MinerMessage::ClearSnapshots => {
@@ -733,15 +830,15 @@ where
 	Err(Error::Other("Miner task completed unexpectedly".to_string()))
 }
 
-/// Janitor task - handles deposit recovery operations independently from mining
+/// Clear old rounds task - handles deposit recovery operations independently from mining
 ///
-/// This task runs in its own thread and processes janitor cleanup requests without
+/// This task runs in its own thread and processes clear old rounds cleanup requests without
 /// blocking the miner task. It maintains separation of concerns by focusing solely
 /// on deposit recovery while the miner focuses on mining and submission operations.
-async fn janitor_task<T>(
+async fn clear_old_rounds_task<T>(
 	client: Client,
 	signer: Signer,
-	mut janitor_rx: mpsc::Receiver<JanitorMessage>,
+	mut clear_old_rounds_rx: mpsc::Receiver<ClearOldRoundsMessage>,
 ) -> Result<(), Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
@@ -751,18 +848,18 @@ where
 	T::VoterSnapshotPerBlock: Send + Sync + 'static,
 	T::MaxVotesPerVoter: Send + Sync + 'static,
 {
-	log::trace!(target: LOG_TARGET, "Janitor task started");
+	log::trace!(target: LOG_TARGET, "Clear old rounds task started");
 
 	// Track the last round we've scanned to avoid rescanning
 	let mut last_scanned_round: Option<u32> = None;
 
-	while let Some(message) = janitor_rx.recv().await {
+	while let Some(message) = clear_old_rounds_rx.recv().await {
 		match message {
-			JanitorMessage::JanitorTick { current_round } => {
-				log::trace!(target: LOG_TARGET, "Running janitor cleanup for round {current_round}");
+			ClearOldRoundsMessage::ClearOldRoundsTick { current_round } => {
+				log::trace!(target: LOG_TARGET, "Running clear old rounds cleanup for round {current_round}");
 
 				let start_time = std::time::Instant::now();
-				let result = run_janitor_cleanup::<T>(
+				let result = run_clear_old_rounds_cleanup::<T>(
 					client.clone(),
 					signer.clone(),
 					current_round,
@@ -770,24 +867,24 @@ where
 				)
 				.await;
 				let duration = start_time.elapsed().as_millis() as f64;
-				prometheus::observe_janitor_cleanup_duration(duration);
+				prometheus::observe_clear_old_rounds_cleanup_duration(duration);
 
 				match result {
 					Ok(cleaned_count) => {
-						prometheus::on_janitor_cleanup_success(cleaned_count);
+						prometheus::on_clear_old_rounds_cleanup_success(cleaned_count);
 						if cleaned_count > 0 {
-							log::info!(target: LOG_TARGET, "Janitor cleaned up {} old submissions in {}ms", cleaned_count, duration as u64);
+							log::info!(target: LOG_TARGET, "Clear old rounds cleaned up {} old submissions in {}ms", cleaned_count, duration as u64);
 						} else {
-							log::trace!(target: LOG_TARGET, "Janitor found no old submissions to clean up");
+							log::trace!(target: LOG_TARGET, "Clear old rounds found no old submissions to clean up");
 						}
 					},
 					Err(e) => {
-						prometheus::on_janitor_cleanup_failure();
+						prometheus::on_clear_old_rounds_cleanup_failure();
 						if is_critical_miner_error(&e) {
-							log::error!(target: LOG_TARGET, "Critical janitor error - process will exit: {e:?}");
+							log::error!(target: LOG_TARGET, "Critical clear old rounds error - process will exit: {e:?}");
 							return Err(e);
 						} else {
-							log::warn!(target: LOG_TARGET, "Janitor cleanup failed, continuing: {e:?}");
+							log::warn!(target: LOG_TARGET, "Clear old rounds cleanup failed, continuing: {e:?}");
 						}
 					},
 				}
@@ -795,9 +892,134 @@ where
 		}
 	}
 
-	// This should never be reached as janitor runs indefinitely
-	log::error!(target: LOG_TARGET, "Janitor task loop exited unexpectedly");
-	Err(Error::Other("Janitor task completed unexpectedly".to_string()))
+	// This should never be reached as clear old rounds runs indefinitely
+	log::error!(target: LOG_TARGET, "Clear old rounds task loop exited unexpectedly");
+	Err(Error::Other("Clear old rounds task completed unexpectedly".to_string()))
+}
+
+/// Returns Some(era_index) if there is at least an eras to prune, None if map is empty
+async fn get_pruneable_era_index(client: &Client) -> Result<Option<u32>, Error> {
+	let storage = utils::storage_at_head(client).await?;
+
+	let mut iter = match storage.iter(runtime::storage().staking().era_pruning_state_iter()).await {
+		Ok(iter) => iter,
+		Err(_) => {
+			// Handle older runtimes that don't have EraPruningState storage
+			return Ok(None);
+		},
+	};
+
+	// The storage map is hash-ordered, not chronological. We will clean up all prune-able eras with
+	// one prune_era_step() call per block, the order does not really matter, that's why we just
+	// take the first era from iterator.
+	if let Some(Ok(storage_entry)) = iter.next().await {
+		// The generated metadata from `subxt-cli` incorrectly returns `()` (unit type)
+		// instead of the actual era index type for the storage key (see https://github.com/paritytech/subxt/issues/2091).
+		// TODO: use the properly typed `keys` field instead of manually parsing `key_bytes`. Or use
+		// the new subxt Storage APIs when available.
+
+		// Format: concat(twox64(era_index), era_index) - extract the last 4 bytes as u32
+		if storage_entry.key_bytes.len() >= 4 {
+			let era_bytes = &storage_entry.key_bytes[storage_entry.key_bytes.len() - 4..];
+			if let Ok(era_index) = u32::decode(&mut &era_bytes[..]) {
+				return Ok(Some(era_index));
+			}
+		}
+	}
+
+	Ok(None)
+}
+
+/// Call prune_era_step for the given era
+///
+/// Returns:
+/// - Ok(()) if transaction was submitted successfully
+/// - Err(_) if there was an error submitting the transaction
+async fn call_prune_era_step(client: &Client, signer: &Signer, era: u32) -> Result<(), Error> {
+	let tx = runtime::tx().staking().prune_era_step(era);
+
+	let nonce = client.chain_api().tx().account_nonce(signer.account_id()).await?;
+	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
+	let xt = client.chain_api().tx().create_signed(&tx, &**signer, xt_cfg).await?;
+
+	// Wait for finalization to avoid to spam the same exact transaction at the next block, and get
+	// an InvalidTransaction::Stale ("Transaction is outdated") in return.
+	let tx_progress = xt.submit_and_watch().await?;
+	let tx = utils::wait_tx_in_finalized_block(tx_progress).await?;
+
+	log::trace!(target: LOG_TARGET, "Successfully submitted prune_era_step for era {era}, tx_hash: {:?}", tx.extrinsic_hash());
+
+	prometheus::on_era_pruning_submission_success();
+
+	Ok(())
+}
+
+/// Lazy era pruning task
+///
+/// This task implements era pruning using the runtime's EraPruningState storage map.
+/// It operates only during Off phases with rate limiting (one prune_era_step per block).
+async fn lazy_era_pruning_task<T>(
+	client: Client,
+	signer: Signer,
+	mut era_pruning_rx: mpsc::Receiver<EraPruningMessage>,
+) -> Result<(), Error>
+where
+	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
+	T::Solution: Send + Sync + 'static,
+	T::Pages: Send + Sync + 'static,
+	T::TargetSnapshotPerBlock: Send + Sync + 'static,
+	T::VoterSnapshotPerBlock: Send + Sync + 'static,
+	T::MaxVotesPerVoter: Send + Sync + 'static,
+{
+	log::trace!(target: LOG_TARGET, "Era pruning task started");
+
+	let mut pruning_active = false;
+
+	while let Some(message) = era_pruning_rx.recv().await {
+		match message {
+			EraPruningMessage::EnterOffPhase => {
+				log::debug!(target: LOG_TARGET, "Entering Off phase, starting pruning session");
+				pruning_active = true;
+			},
+
+			EraPruningMessage::ExitOffPhase => {
+				log::debug!(target: LOG_TARGET, "Exiting Off phase, stopping pruning session");
+				pruning_active = false;
+			},
+
+			EraPruningMessage::NewBlock { block_number } => {
+				if !pruning_active {
+					continue;
+				}
+
+				match get_pruneable_era_index(&client).await {
+					Ok(Some(oldest_era)) => {
+						log::trace!(target: LOG_TARGET, "Found era {oldest_era} to prune in block #{block_number}");
+
+						match call_prune_era_step(&client, &signer, oldest_era).await {
+							Ok(()) => {
+								log::debug!(target: LOG_TARGET, "prune_era_step({oldest_era}) submitted successfully");
+							},
+							Err(e) => {
+								log::warn!(target: LOG_TARGET, "Failed to prune era {oldest_era}: {e:?}");
+								prometheus::on_era_pruning_submission_failure();
+							},
+						}
+					},
+					Ok(None) => {
+						log::trace!(target: LOG_TARGET, "No eras to prune in block #{block_number}");
+					},
+					Err(e) => {
+						log::warn!(target: LOG_TARGET, "Failed to query EraPruningState in block #{block_number}: {e:?}");
+					},
+				}
+			},
+		}
+	}
+
+	// This should never be reached as era pruning runs indefinitely
+	log::error!(target: LOG_TARGET, "Era pruning task loop exited unexpectedly");
+	Err(Error::Other("Era pruning task completed unexpectedly".to_string()))
 }
 
 /// Process a single block
@@ -874,18 +1096,10 @@ where
 			dynamic::fetch_missing_snapshots_lossy::<T>(snapshot, &storage, round).await?;
 			return Ok(());
 		},
-		Phase::Signed(blocks_remaining) => {
+		Phase::Signed(blocks_remaining) =>
 			if blocks_remaining <= config.min_signed_phase_blocks {
-				log::trace!(
-					target: LOG_TARGET,
-					"Signed phase has only {} blocks remaining (need at least {}), skipping mining to avoid incomplete submission",
-					blocks_remaining,
-					config.min_signed_phase_blocks
-				);
 				return Ok(());
-			}
-			log::trace!(target: LOG_TARGET, "Signed phase with {blocks_remaining} blocks remaining - checking for mining opportunity");
-		},
+			},
 		_ => {
 			log::trace!(target: LOG_TARGET, "Phase {phase:?} - nothing to do");
 			return Ok(());
@@ -1451,14 +1665,14 @@ fn should_bypass_competitive_check(shady: bool) -> bool {
 	}
 }
 
-/// Run janitor cleanup to reclaim deposits from old discarded submissions
+/// Run clear old rounds cleanup to reclaim deposits from old discarded submissions
 ///
 /// This function scans the last few previous rounds looking for submissions from our account
 /// that were discarded (not selected as winners). We only check the last few rounds because:
 /// 1. The miner is expected to run 24/7, so in the happy path we only need to clean up the previous
 ///    round (if any cleanup is needed)
-/// 2. If the miner was offline for a few rounds, JANITOR_SCAN_ROUNDS rounds provides a reasonable
-///    buffer
+/// 2. If the miner was offline for a few rounds, CLEAR_OLD_ROUNDS_SCAN_ROUNDS rounds provides a
+///    reasonable buffer
 /// 3. Checking all previous rounds back to 0 would be inefficient and pointless since submissions
 ///    older than a few rounds are likely already cleaned up.
 ///
@@ -1476,7 +1690,7 @@ fn should_bypass_competitive_check(shady: bool) -> bool {
 /// * Only the original submitter can clean their own submissions
 /// * This is safe to call repeatedly - it will skip already cleaned submissions
 /// * Non-critical errors (like already cleaned submissions) are logged but don't fail the operation
-async fn run_janitor_cleanup<T>(
+async fn run_clear_old_rounds_cleanup<T>(
 	client: Client,
 	signer: Signer,
 	current_round: u32,
@@ -1499,12 +1713,12 @@ where
 		Some(last) => {
 			// Start from the round after the last scanned, but ensure we don't go beyond
 			// the scan window
-			let min_round = current_round.saturating_sub(JANITOR_SCAN_ROUNDS);
+			let min_round = current_round.saturating_sub(CLEAR_OLD_ROUNDS_SCAN_ROUNDS);
 			(*last + 1).max(min_round)
 		},
 		None => {
 			// First run - scan the full window
-			current_round.saturating_sub(JANITOR_SCAN_ROUNDS)
+			current_round.saturating_sub(CLEAR_OLD_ROUNDS_SCAN_ROUNDS)
 		},
 	};
 
@@ -1572,7 +1786,7 @@ where
 		}
 	}
 
-	prometheus::set_janitor_old_submissions_found(found_count);
+	prometheus::set_clear_old_rounds_old_submissions_found(found_count);
 
 	// Update the last scanned round to current_round - 1 (since we scanned up to but not including
 	// current_round)
@@ -1610,7 +1824,7 @@ async fn clear_old_round_data(
 	let tx_hash = xt.submit().await?;
 
 	log::debug!(target: LOG_TARGET, "Successfully submitted clear_old_round_data for round {round}, tx_hash: {tx_hash:?}");
-	log::info!(target: LOG_TARGET, "Janitor: Fire-and-forget submission for round {round} cleanup");
+	log::info!(target: LOG_TARGET, "Clearing old rounds: Fire-and-forget submission for round {round} cleanup");
 	Ok(())
 }
 
