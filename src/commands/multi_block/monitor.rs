@@ -15,6 +15,7 @@ use crate::{
 	static_types::multi_block as static_types,
 	utils::{self, TimedFuture, score_passes_strategy},
 };
+use codec::Decode;
 use polkadot_sdk::{
 	pallet_election_provider_multi_block::unsigned::miner::MinerConfig,
 	sp_npos_elections::ElectionScore,
@@ -920,8 +921,7 @@ async fn get_pruneable_era_index(client: &Client) -> Result<Option<u32>, Error> 
 		// Format: concat(twox64(era_index), era_index) - extract the last 4 bytes as u32
 		if storage_entry.key_bytes.len() >= 4 {
 			let era_bytes = &storage_entry.key_bytes[storage_entry.key_bytes.len() - 4..];
-			if let Ok(era_array) = <[u8; 4]>::try_from(era_bytes) {
-				let era_index = u32::from_le_bytes(era_array);
+			if let Ok(era_index) = u32::decode(&mut &era_bytes[..]) {
 				return Ok(Some(era_index));
 			}
 		}
