@@ -5,7 +5,7 @@ use crate::{
 		types::{MultiBlockMonitorConfig, SubmissionStrategy},
 	},
 	dynamic::multi_block as dynamic,
-	error::{Error, TimeoutError::*},
+	error::{ChannelFailureError, Error, TaskFailureError, TimeoutError::*},
 	prelude::{AccountId, ExtrinsicParamsBuilder, LOG_TARGET, Storage},
 	prometheus,
 	runtime::multi_block::{
@@ -56,6 +56,9 @@ const BLOCK_PROCESSING_TIMEOUT_SECS: u64 = 90;
 
 /// Maximum number of consecutive subscription recreation attempts before giving up and exiting.
 const MAX_SUBSCRIPTION_RECREATION_ATTEMPTS: u32 = 3;
+
+/// Timeout in seconds for era pruning storage queries.
+const ERA_PRUNING_TIMEOUT_SECS: u64 = 30;
 
 async fn signed_phase(client: &Client) -> Result<bool, Error> {
 	let storage = utils::storage_at_head(client).await?;
@@ -142,7 +145,7 @@ where
 						channels.era_pruning_tx.send(EraPruningMessage::EnterOffPhase).await
 					{
 						log::error!(target: LOG_TARGET, "Era pruning channel closed while sending EnterOffPhase: {e:?}");
-						return Err(Error::Other("Era pruning task died unexpectedly".to_string()));
+						return Err(ChannelFailureError::EraPruningChannelClosed.into());
 					}
 				}
 			} else {
@@ -152,7 +155,7 @@ where
 				if let Err(e) = channels.era_pruning_tx.send(EraPruningMessage::EnterOffPhase).await
 				{
 					log::error!(target: LOG_TARGET, "Era pruning channel closed while sending initial EnterOffPhase: {e:?}");
-					return Err(Error::Other("Era pruning task died unexpectedly".to_string()));
+					return Err(ChannelFailureError::EraPruningChannelClosed.into());
 				}
 			}
 
@@ -176,7 +179,7 @@ where
 						channels.era_pruning_tx.send(EraPruningMessage::ExitOffPhase).await
 					{
 						log::error!(target: LOG_TARGET, "Era pruning channel closed while sending ExitOffPhase: {e:?}");
-						return Err(Error::Other("Era pruning task died unexpectedly".to_string()));
+						return Err(ChannelFailureError::EraPruningChannelClosed.into());
 					}
 				}
 			}
@@ -211,7 +214,7 @@ where
 		},
 		Err(mpsc::error::TrySendError::Closed(_)) => {
 			log::error!(target: LOG_TARGET, "Miner channel closed unexpectedly");
-			return Err(Error::Other("Miner channel closed unexpectedly".to_string()));
+			return Err(ChannelFailureError::MinerChannelClosed.into());
 		},
 	}
 
@@ -348,10 +351,10 @@ fn is_critical_listener_error(error: &Error) -> bool {
 		// Transaction errors are not relevant for the listener
 		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Transaction(_)) =>
 			false,
-		// Channel errors are critical - indicates miner task has died
-		Error::Other(msg) if msg.contains("channel closed") => true,
-		// Era pruning task death is critical
-		Error::Other(msg) if msg.contains("Era pruning task died unexpectedly") => true,
+		// Channel failures are critical - indicates tasks have died
+		Error::ChannelFailure(_) => true,
+		// Task failures are critical - indicates tasks have terminated
+		Error::TaskFailure(_) => true,
 		// Subscription termination is critical
 		Error::Other(msg) if msg.contains("Subscription terminated") => true,
 		// Everything else is considered recoverable for the listener
@@ -413,9 +416,7 @@ async fn on_round_increment(
 			},
 			mpsc::error::TrySendError::Closed(_) => {
 				log::error!(target: LOG_TARGET, "Clear old rounds channel closed unexpectedly during clear old rounds tick");
-				return Err(Error::Other(
-					"Clear old rounds channel closed unexpectedly".to_string(),
-				));
+				return Err(ChannelFailureError::ClearOldRoundsChannelClosed.into());
 			},
 		}
 	} else {
@@ -637,7 +638,7 @@ where
 			match result {
 				Ok(Ok(())) => {
 					log::error!(target: LOG_TARGET, "Listener task completed unexpectedly");
-					Err(Error::Other("Listener task should never complete".to_string()))
+					Err(TaskFailureError::ListenerTaskTerminated.into())
 				}
 				Ok(Err(e)) => {
 					log::error!(target: LOG_TARGET, "Listener task failed: {e}");
@@ -645,7 +646,7 @@ where
 				}
 				Err(e) => {
 					log::error!(target: LOG_TARGET, "Listener task panicked: {e}");
-					Err(Error::Other(format!("Listener task panicked: {e}")))
+					Err(TaskFailureError::ListenerTaskTerminated.into())
 				}
 			}
 		}
@@ -653,7 +654,7 @@ where
 			match result {
 				Ok(Ok(())) => {
 					log::error!(target: LOG_TARGET, "Miner task completed unexpectedly");
-					Err(Error::Other("Miner task should never complete".to_string()))
+					Err(TaskFailureError::MinerTaskTerminated.into())
 				}
 				Ok(Err(e)) => {
 					log::error!(target: LOG_TARGET, "Miner task failed: {e}");
@@ -661,7 +662,7 @@ where
 				}
 				Err(e) => {
 					log::error!(target: LOG_TARGET, "Miner task panicked: {e}");
-					Err(Error::Other(format!("Miner task panicked: {e}")))
+					Err(TaskFailureError::MinerTaskTerminated.into())
 				}
 			}
 		}
@@ -669,7 +670,7 @@ where
 			match result {
 				Ok(Ok(())) => {
 					log::error!(target: LOG_TARGET, "Clear old rounds task completed unexpectedly");
-					Err(Error::Other("Clear old rounds task should never complete".to_string()))
+					Err(TaskFailureError::ClearOldRoundsTaskTerminated.into())
 				}
 				Ok(Err(e)) => {
 					log::error!(target: LOG_TARGET, "Clear old rounds task failed: {e}");
@@ -677,7 +678,7 @@ where
 				}
 				Err(e) => {
 					log::error!(target: LOG_TARGET, "Clear old rounds task panicked: {e}");
-					Err(Error::Other(format!("Clear old rounds task panicked: {e}")))
+					Err(TaskFailureError::ClearOldRoundsTaskTerminated.into())
 				}
 			}
 		}
@@ -685,7 +686,7 @@ where
 			match result {
 				Ok(Ok(())) => {
 					log::error!(target: LOG_TARGET, "Era pruning task completed unexpectedly");
-					Err(Error::Other("Era pruning task should never complete".to_string()))
+					Err(TaskFailureError::EraPruningTaskTerminated.into())
 				}
 				Ok(Err(e)) => {
 					log::error!(target: LOG_TARGET, "Era pruning task failed: {e}");
@@ -693,7 +694,7 @@ where
 				}
 				Err(e) => {
 					log::error!(target: LOG_TARGET, "Era pruning task panicked: {e}");
-					Err(Error::Other(format!("Era pruning task panicked: {e}")))
+					Err(TaskFailureError::EraPruningTaskTerminated.into())
 				}
 			}
 		}
@@ -832,7 +833,7 @@ where
 
 	// This should never be reached as miner runs indefinitely
 	log::error!(target: LOG_TARGET, "Miner task loop exited unexpectedly");
-	Err(Error::Other("Miner task completed unexpectedly".to_string()))
+	Err(TaskFailureError::MinerTaskTerminated.into())
 }
 
 /// Clear old rounds task - handles deposit recovery operations independently from mining
@@ -899,7 +900,7 @@ where
 
 	// This should never be reached as clear old rounds runs indefinitely
 	log::error!(target: LOG_TARGET, "Clear old rounds task loop exited unexpectedly");
-	Err(Error::Other("Clear old rounds task completed unexpectedly".to_string()))
+	Err(TaskFailureError::ClearOldRoundsTaskTerminated.into())
 }
 
 /// Returns (era_count, era_index) where era_count is the total number of eras in the map
@@ -1005,8 +1006,13 @@ where
 					continue;
 				}
 
-				match get_pruneable_era_index(&client).await {
-					Ok((era_count, Some(oldest_era))) => {
+				match tokio::time::timeout(
+					std::time::Duration::from_secs(ERA_PRUNING_TIMEOUT_SECS),
+					get_pruneable_era_index(&client),
+				)
+				.await
+				{
+					Ok(Ok((era_count, Some(oldest_era)))) => {
 						log::trace!(target: LOG_TARGET, "Found era {oldest_era} to prune in block #{block_number} (map size: {era_count})");
 						prometheus::set_era_pruning_storage_map_size(era_count);
 
@@ -1020,12 +1026,16 @@ where
 							},
 						}
 					},
-					Ok((era_count, None)) => {
+					Ok(Ok((era_count, None))) => {
 						log::trace!(target: LOG_TARGET, "No eras to prune in block #{block_number} (map size: {era_count})");
 						prometheus::set_era_pruning_storage_map_size(era_count);
 					},
-					Err(e) => {
+					Ok(Err(e)) => {
 						log::warn!(target: LOG_TARGET, "Failed to query EraPruningState in block #{block_number}: {e:?}");
+					},
+					Err(_) => {
+						log::error!(target: LOG_TARGET, "Era pruning storage query timed out after {}s for block #{block_number} - continuing with next block", ERA_PRUNING_TIMEOUT_SECS);
+						prometheus::on_era_pruning_timeout();
 					},
 				}
 			},
@@ -1034,7 +1044,7 @@ where
 
 	// This should never be reached as era pruning runs indefinitely
 	log::error!(target: LOG_TARGET, "Era pruning task loop exited unexpectedly");
-	Err(Error::Other("Era pruning task completed unexpectedly".to_string()))
+	Err(TaskFailureError::EraPruningTaskTerminated.into())
 }
 
 /// Process a single block

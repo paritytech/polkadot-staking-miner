@@ -33,6 +33,33 @@ pub enum TimeoutError {
 }
 
 #[derive(thiserror::Error, Debug)]
+pub enum ChannelFailureError {
+	#[error("Miner command channel closed unexpectedly")]
+	MinerChannelClosed,
+
+	#[error("Era pruning command channel closed unexpectedly")]
+	EraPruningChannelClosed,
+
+	#[error("Clear old rounds command channel closed unexpectedly")]
+	ClearOldRoundsChannelClosed,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum TaskFailureError {
+	#[error("Listener task terminated unexpectedly")]
+	ListenerTaskTerminated,
+
+	#[error("Miner task terminated unexpectedly")]
+	MinerTaskTerminated,
+
+	#[error("Era pruning task terminated unexpectedly")]
+	EraPruningTaskTerminated,
+
+	#[error("Clear old rounds task terminated unexpectedly")]
+	ClearOldRoundsTaskTerminated,
+}
+
+#[derive(thiserror::Error, Debug)]
 pub enum Error {
 	#[error("Failed to parse log directive: `{0}´")]
 	LogParse(#[from] tracing_subscriber::filter::ParseError),
@@ -89,6 +116,10 @@ pub enum Error {
 	Timeout(#[from] TimeoutError),
 	#[error("Exceeded maximum subscription recreation attempts ({max_attempts})")]
 	SubscriptionRecreationLimitExceeded { max_attempts: u32 },
+	#[error("Channel failure: {0}")]
+	ChannelFailure(#[from] ChannelFailureError),
+	#[error("Task failure: {0}")]
+	TaskFailure(#[from] TaskFailureError),
 }
 
 impl From<subxt_rpcs::Error> for Error {

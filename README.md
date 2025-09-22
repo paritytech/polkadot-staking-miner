@@ -334,6 +334,12 @@ staking_miner_era_pruning_submissions_success_total 15
 # HELP staking_miner_era_pruning_submissions_failures_total Total number of failed prune_era_step submissions
 # TYPE staking_miner_era_pruning_submissions_failures_total counter
 staking_miner_era_pruning_submissions_failures_total 1
+# HELP staking_miner_era_pruning_storage_map_size Current size of the era pruning storage map
+# TYPE staking_miner_era_pruning_storage_map_size gauge
+staking_miner_era_pruning_storage_map_size 3
+# HELP staking_miner_era_pruning_timeouts_total Total number of era pruning storage query timeouts
+# TYPE staking_miner_era_pruning_timeouts_total counter
+staking_miner_era_pruning_timeouts_total 0
 
 # Subscription Health Metrics
 # HELP staking_miner_listener_subscription_stalls_total Total number of times the listener subscription was detected as stalled and recreated
