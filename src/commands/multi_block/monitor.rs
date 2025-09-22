@@ -16,6 +16,7 @@ use crate::{
 	utils::{self, TimedFuture, score_passes_strategy},
 };
 use codec::Decode;
+use futures::TryStreamExt;
 use polkadot_sdk::{
 	pallet_election_provider_multi_block::unsigned::miner::MinerConfig,
 	sp_npos_elections::ElectionScore,
@@ -897,37 +898,44 @@ where
 	Err(Error::Other("Clear old rounds task completed unexpectedly".to_string()))
 }
 
-/// Returns Some(era_index) if there is at least an eras to prune, None if map is empty
-async fn get_pruneable_era_index(client: &Client) -> Result<Option<u32>, Error> {
+/// Returns (era_count, era_index) where era_count is the total number of eras in the map
+/// and era_index is Some(index) if there is at least one era to prune, None if map is empty
+async fn get_pruneable_era_index(client: &Client) -> Result<(u32, Option<u32>), Error> {
 	let storage = utils::storage_at_head(client).await?;
 
-	let mut iter = match storage.iter(runtime::storage().staking().era_pruning_state_iter()).await {
+	let iter = match storage.iter(runtime::storage().staking().era_pruning_state_iter()).await {
 		Ok(iter) => iter,
 		Err(_) => {
 			// Handle older runtimes that don't have EraPruningState storage
-			return Ok(None);
+			return Ok((0, None));
 		},
 	};
 
-	// The storage map is hash-ordered, not chronological. We will clean up all prune-able eras with
-	// one prune_era_step() call per block, the order does not really matter, that's why we just
-	// take the first era from iterator.
-	if let Some(Ok(storage_entry)) = iter.next().await {
-		// The generated metadata from `subxt-cli` incorrectly returns `()` (unit type)
-		// instead of the actual era index type for the storage key (see https://github.com/paritytech/subxt/issues/2091).
-		// TODO: use the properly typed `keys` field instead of manually parsing `key_bytes`. Or use
-		// the new subxt Storage APIs when available.
+	let (era_count, first_era) = iter
+		.try_fold((0u32, None), |(mut count, mut first_era), storage_entry| async move {
+			count += 1;
 
-		// Format: concat(twox64(era_index), era_index) - extract the last 4 bytes as u32
-		if storage_entry.key_bytes.len() >= 4 {
-			let era_bytes = &storage_entry.key_bytes[storage_entry.key_bytes.len() - 4..];
-			if let Ok(era_index) = u32::decode(&mut &era_bytes[..]) {
-				return Ok(Some(era_index));
+			// If this is the first entry, extract the era index
+			if first_era.is_none() {
+				// The generated metadata from `subxt-cli` incorrectly returns `()` (unit type)
+				// instead of the actual era index type for the storage key (see https://github.com/paritytech/subxt/issues/2091).
+				// TODO: use the properly typed `keys` field instead of manually parsing
+				// `key_bytes`. Or use the new subxt Storage APIs when available.
+
+				// Format: concat(twox64(era_index), era_index) - extract the last 4 bytes as u32
+				if storage_entry.key_bytes.len() >= 4 {
+					let era_bytes = &storage_entry.key_bytes[storage_entry.key_bytes.len() - 4..];
+					if let Ok(era_index) = u32::decode(&mut &era_bytes[..]) {
+						first_era = Some(era_index);
+					}
+				}
 			}
-		}
-	}
 
-	Ok(None)
+			Ok((count, first_era))
+		})
+		.await?;
+
+	Ok((era_count, first_era))
 }
 
 /// Call prune_era_step for the given era
@@ -993,8 +1001,9 @@ where
 				}
 
 				match get_pruneable_era_index(&client).await {
-					Ok(Some(oldest_era)) => {
-						log::trace!(target: LOG_TARGET, "Found era {oldest_era} to prune in block #{block_number}");
+					Ok((era_count, Some(oldest_era))) => {
+						log::trace!(target: LOG_TARGET, "Found era {oldest_era} to prune in block #{block_number} (map size: {era_count})");
+						prometheus::set_era_pruning_storage_map_size(era_count);
 
 						match call_prune_era_step(&client, &signer, oldest_era).await {
 							Ok(()) => {
@@ -1006,8 +1015,9 @@ where
 							},
 						}
 					},
-					Ok(None) => {
-						log::trace!(target: LOG_TARGET, "No eras to prune in block #{block_number}");
+					Ok((era_count, None)) => {
+						log::trace!(target: LOG_TARGET, "No eras to prune in block #{block_number} (map size: {era_count})");
+						prometheus::set_era_pruning_storage_map_size(era_count);
 					},
 					Err(e) => {
 						log::warn!(target: LOG_TARGET, "Failed to query EraPruningState in block #{block_number}: {e:?}");

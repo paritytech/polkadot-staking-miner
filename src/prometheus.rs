@@ -221,6 +221,14 @@ mod hidden {
 		.unwrap()
 	});
 
+	static ERA_PRUNING_STORAGE_MAP_SIZE: Lazy<Gauge> = Lazy::new(|| {
+		register_gauge!(opts!(
+			"staking_miner_era_pruning_storage_map_size",
+			"Current size of the era pruning storage map"
+		))
+		.unwrap()
+	});
+
 	static LISTENER_SUBSCRIPTION_STALLS: Lazy<Counter> = Lazy::new(|| {
 		register_counter!(opts!(
 			"staking_miner_listener_subscription_stalls_total",
@@ -428,6 +436,10 @@ mod hidden {
 
 	pub fn on_era_pruning_submission_failure() {
 		ERA_PRUNING_SUBMISSIONS_FAILURES.inc();
+	}
+
+	pub fn set_era_pruning_storage_map_size(size: u32) {
+		ERA_PRUNING_STORAGE_MAP_SIZE.set(size as f64);
 	}
 
 	pub fn on_listener_subscription_stall() {
