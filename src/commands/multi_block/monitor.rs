@@ -135,6 +135,7 @@ where
 		Phase::Off => {
 			if let Some(last_phase) = last_phase {
 				if !matches!(&last_phase, Phase::Off) {
+					log::debug!(target: LOG_TARGET, "Phase transition: {last_phase:?} → Off - starting era pruning");
 					// Use send() to ensure EnterOffPhase is delivered and to prevent missed phase
 					// transitions that could leave era pruning in wrong state
 					if let Err(e) =
@@ -145,6 +146,7 @@ where
 					}
 				}
 			} else {
+				log::debug!(target: LOG_TARGET, "First block in Off phase - starting era pruning");
 				// First block in Off phase
 				// Use send() to ensure the message is delivered
 				if let Err(e) = channels.era_pruning_tx.send(EraPruningMessage::EnterOffPhase).await
@@ -348,6 +350,8 @@ fn is_critical_listener_error(error: &Error) -> bool {
 			false,
 		// Channel errors are critical - indicates miner task has died
 		Error::Other(msg) if msg.contains("channel closed") => true,
+		// Era pruning task death is critical
+		Error::Other(msg) if msg.contains("Era pruning task died unexpectedly") => true,
 		// Subscription termination is critical
 		Error::Other(msg) if msg.contains("Subscription terminated") => true,
 		// Everything else is considered recoverable for the listener
@@ -997,6 +1001,7 @@ where
 
 			EraPruningMessage::NewBlock { block_number } => {
 				if !pruning_active {
+					log::trace!(target: LOG_TARGET, "Era pruning inactive, skipping block #{block_number}");
 					continue;
 				}
 
