@@ -904,7 +904,7 @@ where
 }
 
 /// Returns (era_count, era_index) where era_count is the total number of eras in the map
-/// and era_index is Some(index) if there is at least one era to prune, None if map is empty
+/// and era_index is Some(oldest_era) if there is at least one era to prune, None if map is empty
 async fn get_pruneable_era_index(client: &Client) -> Result<(u32, Option<u32>), Error> {
 	let storage = utils::storage_at_head(client).await?;
 
@@ -916,31 +916,27 @@ async fn get_pruneable_era_index(client: &Client) -> Result<(u32, Option<u32>), 
 		},
 	};
 
-	let (era_count, first_era) = iter
-		.try_fold((0u32, None), |(mut count, mut first_era), storage_entry| async move {
-			count += 1;
+	let mut era_indices = iter
+		.try_fold(Vec::new(), |mut acc, storage_entry| async move {
+			// The generated metadata from `subxt-cli` incorrectly returns `()` (unit type)
+			// instead of the actual era index type for the storage key (see https://github.com/paritytech/subxt/issues/2091).
+			// TODO: use the properly typed `keys` field instead of manually parsing
+			// `key_bytes`. Or use the new subxt Storage APIs when available.
 
-			// If this is the first entry, extract the era index
-			if first_era.is_none() {
-				// The generated metadata from `subxt-cli` incorrectly returns `()` (unit type)
-				// instead of the actual era index type for the storage key (see https://github.com/paritytech/subxt/issues/2091).
-				// TODO: use the properly typed `keys` field instead of manually parsing
-				// `key_bytes`. Or use the new subxt Storage APIs when available.
-
-				// Format: concat(twox64(era_index), era_index) - extract the last 4 bytes as u32
-				if storage_entry.key_bytes.len() >= 4 {
-					let era_bytes = &storage_entry.key_bytes[storage_entry.key_bytes.len() - 4..];
-					if let Ok(era_index) = u32::decode(&mut &era_bytes[..]) {
-						first_era = Some(era_index);
-					}
+			// Format: concat(twox64(era_index), era_index) - extract the last 4 bytes as u32
+			if storage_entry.key_bytes.len() >= 4 {
+				let era_bytes = &storage_entry.key_bytes[storage_entry.key_bytes.len() - 4..];
+				if let Ok(era_index) = u32::decode(&mut &era_bytes[..]) {
+					acc.push(era_index);
 				}
 			}
-
-			Ok((count, first_era))
+			Ok(acc)
 		})
 		.await?;
 
-	Ok((era_count, first_era))
+	era_indices.sort_unstable();
+
+	Ok((era_indices.len() as u32, era_indices.first().copied()))
 }
 
 /// Call prune_era_step for the given era
