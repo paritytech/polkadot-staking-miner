@@ -35,13 +35,13 @@ pub enum TimeoutError {
 #[derive(thiserror::Error, Debug)]
 pub enum ChannelFailureError {
 	#[error("Miner command channel closed unexpectedly")]
-	MinerChannelClosed,
+	Miner,
 
 	#[error("Era pruning command channel closed unexpectedly")]
-	EraPruningChannelClosed,
+	EraPruning,
 
 	#[error("Clear old rounds command channel closed unexpectedly")]
-	ClearOldRoundsChannelClosed,
+	ClearOldRounds,
 }
 
 #[derive(thiserror::Error, Debug)]

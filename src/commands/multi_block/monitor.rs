@@ -145,7 +145,7 @@ where
 						channels.era_pruning_tx.send(EraPruningMessage::EnterOffPhase).await
 					{
 						log::error!(target: LOG_TARGET, "Era pruning channel closed while sending EnterOffPhase: {e:?}");
-						return Err(ChannelFailureError::EraPruningChannelClosed.into());
+						return Err(ChannelFailureError::EraPruning.into());
 					}
 				}
 			} else {
@@ -155,7 +155,7 @@ where
 				if let Err(e) = channels.era_pruning_tx.send(EraPruningMessage::EnterOffPhase).await
 				{
 					log::error!(target: LOG_TARGET, "Era pruning channel closed while sending initial EnterOffPhase: {e:?}");
-					return Err(ChannelFailureError::EraPruningChannelClosed.into());
+					return Err(ChannelFailureError::EraPruning.into());
 				}
 			}
 
@@ -179,7 +179,7 @@ where
 						channels.era_pruning_tx.send(EraPruningMessage::ExitOffPhase).await
 					{
 						log::error!(target: LOG_TARGET, "Era pruning channel closed while sending ExitOffPhase: {e:?}");
-						return Err(ChannelFailureError::EraPruningChannelClosed.into());
+						return Err(ChannelFailureError::EraPruning.into());
 					}
 				}
 			}
@@ -214,7 +214,7 @@ where
 		},
 		Err(mpsc::error::TrySendError::Closed(_)) => {
 			log::error!(target: LOG_TARGET, "Miner channel closed unexpectedly");
-			return Err(ChannelFailureError::MinerChannelClosed.into());
+			return Err(ChannelFailureError::Miner.into());
 		},
 	}
 
@@ -416,7 +416,7 @@ async fn on_round_increment(
 			},
 			mpsc::error::TrySendError::Closed(_) => {
 				log::error!(target: LOG_TARGET, "Clear old rounds channel closed unexpectedly during clear old rounds tick");
-				return Err(ChannelFailureError::ClearOldRoundsChannelClosed.into());
+				return Err(ChannelFailureError::ClearOldRounds.into());
 			},
 		}
 	} else {
