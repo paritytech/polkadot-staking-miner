@@ -638,7 +638,7 @@ where
 			match result {
 				Ok(Ok(())) => {
 					log::error!(target: LOG_TARGET, "Listener task completed unexpectedly");
-					Err(TaskFailureError::ListenerTaskTerminated.into())
+					Err(TaskFailureError::Listener.into())
 				}
 				Ok(Err(e)) => {
 					log::error!(target: LOG_TARGET, "Listener task failed: {e}");
@@ -646,7 +646,7 @@ where
 				}
 				Err(e) => {
 					log::error!(target: LOG_TARGET, "Listener task panicked: {e}");
-					Err(TaskFailureError::ListenerTaskTerminated.into())
+					Err(TaskFailureError::Listener.into())
 				}
 			}
 		}
@@ -654,7 +654,7 @@ where
 			match result {
 				Ok(Ok(())) => {
 					log::error!(target: LOG_TARGET, "Miner task completed unexpectedly");
-					Err(TaskFailureError::MinerTaskTerminated.into())
+					Err(TaskFailureError::Miner.into())
 				}
 				Ok(Err(e)) => {
 					log::error!(target: LOG_TARGET, "Miner task failed: {e}");
@@ -662,7 +662,7 @@ where
 				}
 				Err(e) => {
 					log::error!(target: LOG_TARGET, "Miner task panicked: {e}");
-					Err(TaskFailureError::MinerTaskTerminated.into())
+					Err(TaskFailureError::Miner.into())
 				}
 			}
 		}
@@ -670,7 +670,7 @@ where
 			match result {
 				Ok(Ok(())) => {
 					log::error!(target: LOG_TARGET, "Clear old rounds task completed unexpectedly");
-					Err(TaskFailureError::ClearOldRoundsTaskTerminated.into())
+					Err(TaskFailureError::ClearOldRounds.into())
 				}
 				Ok(Err(e)) => {
 					log::error!(target: LOG_TARGET, "Clear old rounds task failed: {e}");
@@ -678,7 +678,7 @@ where
 				}
 				Err(e) => {
 					log::error!(target: LOG_TARGET, "Clear old rounds task panicked: {e}");
-					Err(TaskFailureError::ClearOldRoundsTaskTerminated.into())
+					Err(TaskFailureError::ClearOldRounds.into())
 				}
 			}
 		}
@@ -686,7 +686,7 @@ where
 			match result {
 				Ok(Ok(())) => {
 					log::error!(target: LOG_TARGET, "Era pruning task completed unexpectedly");
-					Err(TaskFailureError::EraPruningTaskTerminated.into())
+					Err(TaskFailureError::EraPruning.into())
 				}
 				Ok(Err(e)) => {
 					log::error!(target: LOG_TARGET, "Era pruning task failed: {e}");
@@ -694,7 +694,7 @@ where
 				}
 				Err(e) => {
 					log::error!(target: LOG_TARGET, "Era pruning task panicked: {e}");
-					Err(TaskFailureError::EraPruningTaskTerminated.into())
+					Err(TaskFailureError::EraPruning.into())
 				}
 			}
 		}
@@ -833,7 +833,7 @@ where
 
 	// This should never be reached as miner runs indefinitely
 	log::error!(target: LOG_TARGET, "Miner task loop exited unexpectedly");
-	Err(TaskFailureError::MinerTaskTerminated.into())
+	Err(TaskFailureError::Miner.into())
 }
 
 /// Clear old rounds task - handles deposit recovery operations independently from mining
@@ -900,7 +900,7 @@ where
 
 	// This should never be reached as clear old rounds runs indefinitely
 	log::error!(target: LOG_TARGET, "Clear old rounds task loop exited unexpectedly");
-	Err(TaskFailureError::ClearOldRoundsTaskTerminated.into())
+	Err(TaskFailureError::ClearOldRounds.into())
 }
 
 /// Returns (era_count, era_index) where era_count is the total number of eras in the map
@@ -1034,7 +1034,7 @@ where
 						log::warn!(target: LOG_TARGET, "Failed to query EraPruningState in block #{block_number}: {e:?}");
 					},
 					Err(_) => {
-						log::error!(target: LOG_TARGET, "Era pruning storage query timed out after {}s for block #{block_number} - continuing with next block", ERA_PRUNING_TIMEOUT_SECS);
+						log::error!(target: LOG_TARGET, "Era pruning storage query timed out after {ERA_PRUNING_TIMEOUT_SECS}s for block #{block_number} - continuing with next block");
 						prometheus::on_era_pruning_timeout();
 					},
 				}
@@ -1044,7 +1044,7 @@ where
 
 	// This should never be reached as era pruning runs indefinitely
 	log::error!(target: LOG_TARGET, "Era pruning task loop exited unexpectedly");
-	Err(TaskFailureError::EraPruningTaskTerminated.into())
+	Err(TaskFailureError::EraPruning.into())
 }
 
 /// Process a single block

@@ -47,16 +47,16 @@ pub enum ChannelFailureError {
 #[derive(thiserror::Error, Debug)]
 pub enum TaskFailureError {
 	#[error("Listener task terminated unexpectedly")]
-	ListenerTaskTerminated,
+	Listener,
 
 	#[error("Miner task terminated unexpectedly")]
-	MinerTaskTerminated,
+	Miner,
 
 	#[error("Era pruning task terminated unexpectedly")]
-	EraPruningTaskTerminated,
+	EraPruning,
 
 	#[error("Clear old rounds task terminated unexpectedly")]
-	ClearOldRoundsTaskTerminated,
+	ClearOldRounds,
 }
 
 #[derive(thiserror::Error, Debug)]
