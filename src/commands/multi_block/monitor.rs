@@ -5,7 +5,7 @@ use crate::{
 		types::{MultiBlockMonitorConfig, SubmissionStrategy},
 	},
 	dynamic::multi_block as dynamic,
-	error::{Error, TimeoutError::*},
+	error::{ChannelFailureError, Error, TaskFailureError, TimeoutError::*},
 	prelude::{AccountId, ExtrinsicParamsBuilder, LOG_TARGET, Storage},
 	prometheus,
 	runtime::multi_block::{
@@ -16,6 +16,7 @@ use crate::{
 	utils::{self, TimedFuture, score_passes_strategy},
 };
 use codec::Decode;
+use futures::TryStreamExt;
 use polkadot_sdk::{
 	pallet_election_provider_multi_block::unsigned::miner::MinerConfig,
 	sp_npos_elections::ElectionScore,
@@ -55,6 +56,9 @@ const BLOCK_PROCESSING_TIMEOUT_SECS: u64 = 90;
 
 /// Maximum number of consecutive subscription recreation attempts before giving up and exiting.
 const MAX_SUBSCRIPTION_RECREATION_ATTEMPTS: u32 = 3;
+
+/// Timeout in seconds for era pruning storage queries.
+const ERA_PRUNING_TIMEOUT_SECS: u64 = 30;
 
 async fn signed_phase(client: &Client) -> Result<bool, Error> {
 	let storage = utils::storage_at_head(client).await?;
@@ -134,22 +138,24 @@ where
 		Phase::Off => {
 			if let Some(last_phase) = last_phase {
 				if !matches!(&last_phase, Phase::Off) {
+					log::debug!(target: LOG_TARGET, "Phase transition: {last_phase:?} → Off - starting era pruning");
 					// Use send() to ensure EnterOffPhase is delivered and to prevent missed phase
 					// transitions that could leave era pruning in wrong state
 					if let Err(e) =
 						channels.era_pruning_tx.send(EraPruningMessage::EnterOffPhase).await
 					{
 						log::error!(target: LOG_TARGET, "Era pruning channel closed while sending EnterOffPhase: {e:?}");
-						return Err(Error::Other("Era pruning task died unexpectedly".to_string()));
+						return Err(ChannelFailureError::EraPruning.into());
 					}
 				}
 			} else {
+				log::debug!(target: LOG_TARGET, "First block in Off phase - starting era pruning");
 				// First block in Off phase
 				// Use send() to ensure the message is delivered
 				if let Err(e) = channels.era_pruning_tx.send(EraPruningMessage::EnterOffPhase).await
 				{
 					log::error!(target: LOG_TARGET, "Era pruning channel closed while sending initial EnterOffPhase: {e:?}");
-					return Err(Error::Other("Era pruning task died unexpectedly".to_string()));
+					return Err(ChannelFailureError::EraPruning.into());
 				}
 			}
 
@@ -173,7 +179,7 @@ where
 						channels.era_pruning_tx.send(EraPruningMessage::ExitOffPhase).await
 					{
 						log::error!(target: LOG_TARGET, "Era pruning channel closed while sending ExitOffPhase: {e:?}");
-						return Err(Error::Other("Era pruning task died unexpectedly".to_string()));
+						return Err(ChannelFailureError::EraPruning.into());
 					}
 				}
 			}
@@ -208,7 +214,7 @@ where
 		},
 		Err(mpsc::error::TrySendError::Closed(_)) => {
 			log::error!(target: LOG_TARGET, "Miner channel closed unexpectedly");
-			return Err(Error::Other("Miner channel closed unexpectedly".to_string()));
+			return Err(ChannelFailureError::Miner.into());
 		},
 	}
 
@@ -345,8 +351,10 @@ fn is_critical_listener_error(error: &Error) -> bool {
 		// Transaction errors are not relevant for the listener
 		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Transaction(_)) =>
 			false,
-		// Channel errors are critical - indicates miner task has died
-		Error::Other(msg) if msg.contains("channel closed") => true,
+		// Channel failures are critical - indicates tasks have died
+		Error::ChannelFailure(_) => true,
+		// Task failures are critical - indicates tasks have terminated
+		Error::TaskFailure(_) => true,
 		// Subscription termination is critical
 		Error::Other(msg) if msg.contains("Subscription terminated") => true,
 		// Everything else is considered recoverable for the listener
@@ -408,9 +416,7 @@ async fn on_round_increment(
 			},
 			mpsc::error::TrySendError::Closed(_) => {
 				log::error!(target: LOG_TARGET, "Clear old rounds channel closed unexpectedly during clear old rounds tick");
-				return Err(Error::Other(
-					"Clear old rounds channel closed unexpectedly".to_string(),
-				));
+				return Err(ChannelFailureError::ClearOldRounds.into());
 			},
 		}
 	} else {
@@ -632,7 +638,7 @@ where
 			match result {
 				Ok(Ok(())) => {
 					log::error!(target: LOG_TARGET, "Listener task completed unexpectedly");
-					Err(Error::Other("Listener task should never complete".to_string()))
+					Err(TaskFailureError::Listener.into())
 				}
 				Ok(Err(e)) => {
 					log::error!(target: LOG_TARGET, "Listener task failed: {e}");
@@ -640,7 +646,7 @@ where
 				}
 				Err(e) => {
 					log::error!(target: LOG_TARGET, "Listener task panicked: {e}");
-					Err(Error::Other(format!("Listener task panicked: {e}")))
+					Err(TaskFailureError::Listener.into())
 				}
 			}
 		}
@@ -648,7 +654,7 @@ where
 			match result {
 				Ok(Ok(())) => {
 					log::error!(target: LOG_TARGET, "Miner task completed unexpectedly");
-					Err(Error::Other("Miner task should never complete".to_string()))
+					Err(TaskFailureError::Miner.into())
 				}
 				Ok(Err(e)) => {
 					log::error!(target: LOG_TARGET, "Miner task failed: {e}");
@@ -656,7 +662,7 @@ where
 				}
 				Err(e) => {
 					log::error!(target: LOG_TARGET, "Miner task panicked: {e}");
-					Err(Error::Other(format!("Miner task panicked: {e}")))
+					Err(TaskFailureError::Miner.into())
 				}
 			}
 		}
@@ -664,7 +670,7 @@ where
 			match result {
 				Ok(Ok(())) => {
 					log::error!(target: LOG_TARGET, "Clear old rounds task completed unexpectedly");
-					Err(Error::Other("Clear old rounds task should never complete".to_string()))
+					Err(TaskFailureError::ClearOldRounds.into())
 				}
 				Ok(Err(e)) => {
 					log::error!(target: LOG_TARGET, "Clear old rounds task failed: {e}");
@@ -672,7 +678,7 @@ where
 				}
 				Err(e) => {
 					log::error!(target: LOG_TARGET, "Clear old rounds task panicked: {e}");
-					Err(Error::Other(format!("Clear old rounds task panicked: {e}")))
+					Err(TaskFailureError::ClearOldRounds.into())
 				}
 			}
 		}
@@ -680,7 +686,7 @@ where
 			match result {
 				Ok(Ok(())) => {
 					log::error!(target: LOG_TARGET, "Era pruning task completed unexpectedly");
-					Err(Error::Other("Era pruning task should never complete".to_string()))
+					Err(TaskFailureError::EraPruning.into())
 				}
 				Ok(Err(e)) => {
 					log::error!(target: LOG_TARGET, "Era pruning task failed: {e}");
@@ -688,7 +694,7 @@ where
 				}
 				Err(e) => {
 					log::error!(target: LOG_TARGET, "Era pruning task panicked: {e}");
-					Err(Error::Other(format!("Era pruning task panicked: {e}")))
+					Err(TaskFailureError::EraPruning.into())
 				}
 			}
 		}
@@ -827,7 +833,7 @@ where
 
 	// This should never be reached as miner runs indefinitely
 	log::error!(target: LOG_TARGET, "Miner task loop exited unexpectedly");
-	Err(Error::Other("Miner task completed unexpectedly".to_string()))
+	Err(TaskFailureError::Miner.into())
 }
 
 /// Clear old rounds task - handles deposit recovery operations independently from mining
@@ -894,40 +900,43 @@ where
 
 	// This should never be reached as clear old rounds runs indefinitely
 	log::error!(target: LOG_TARGET, "Clear old rounds task loop exited unexpectedly");
-	Err(Error::Other("Clear old rounds task completed unexpectedly".to_string()))
+	Err(TaskFailureError::ClearOldRounds.into())
 }
 
-/// Returns Some(era_index) if there is at least an eras to prune, None if map is empty
-async fn get_pruneable_era_index(client: &Client) -> Result<Option<u32>, Error> {
+/// Returns (era_count, era_index) where era_count is the total number of eras in the map
+/// and era_index is Some(oldest_era) if there is at least one era to prune, None if map is empty
+async fn get_pruneable_era_index(client: &Client) -> Result<(u32, Option<u32>), Error> {
 	let storage = utils::storage_at_head(client).await?;
 
-	let mut iter = match storage.iter(runtime::storage().staking().era_pruning_state_iter()).await {
+	let iter = match storage.iter(runtime::storage().staking().era_pruning_state_iter()).await {
 		Ok(iter) => iter,
 		Err(_) => {
 			// Handle older runtimes that don't have EraPruningState storage
-			return Ok(None);
+			return Ok((0, None));
 		},
 	};
 
-	// The storage map is hash-ordered, not chronological. We will clean up all prune-able eras with
-	// one prune_era_step() call per block, the order does not really matter, that's why we just
-	// take the first era from iterator.
-	if let Some(Ok(storage_entry)) = iter.next().await {
-		// The generated metadata from `subxt-cli` incorrectly returns `()` (unit type)
-		// instead of the actual era index type for the storage key (see https://github.com/paritytech/subxt/issues/2091).
-		// TODO: use the properly typed `keys` field instead of manually parsing `key_bytes`. Or use
-		// the new subxt Storage APIs when available.
+	let mut era_indices = iter
+		.try_fold(Vec::new(), |mut acc, storage_entry| async move {
+			// The generated metadata from `subxt-cli` incorrectly returns `()` (unit type)
+			// instead of the actual era index type for the storage key (see https://github.com/paritytech/subxt/issues/2091).
+			// TODO: use the properly typed `keys` field instead of manually parsing
+			// `key_bytes`. Or use the new subxt Storage APIs when available.
 
-		// Format: concat(twox64(era_index), era_index) - extract the last 4 bytes as u32
-		if storage_entry.key_bytes.len() >= 4 {
-			let era_bytes = &storage_entry.key_bytes[storage_entry.key_bytes.len() - 4..];
-			if let Ok(era_index) = u32::decode(&mut &era_bytes[..]) {
-				return Ok(Some(era_index));
+			// Format: concat(twox64(era_index), era_index) - extract the last 4 bytes as u32
+			if storage_entry.key_bytes.len() >= 4 {
+				let era_bytes = &storage_entry.key_bytes[storage_entry.key_bytes.len() - 4..];
+				if let Ok(era_index) = u32::decode(&mut &era_bytes[..]) {
+					acc.push(era_index);
+				}
 			}
-		}
-	}
+			Ok(acc)
+		})
+		.await?;
 
-	Ok(None)
+	era_indices.sort_unstable();
+
+	Ok((era_indices.len() as u32, era_indices.first().copied()))
 }
 
 /// Call prune_era_step for the given era
@@ -989,12 +998,19 @@ where
 
 			EraPruningMessage::NewBlock { block_number } => {
 				if !pruning_active {
+					log::trace!(target: LOG_TARGET, "Era pruning inactive, skipping block #{block_number}");
 					continue;
 				}
 
-				match get_pruneable_era_index(&client).await {
-					Ok(Some(oldest_era)) => {
-						log::trace!(target: LOG_TARGET, "Found era {oldest_era} to prune in block #{block_number}");
+				match tokio::time::timeout(
+					std::time::Duration::from_secs(ERA_PRUNING_TIMEOUT_SECS),
+					get_pruneable_era_index(&client),
+				)
+				.await
+				{
+					Ok(Ok((era_count, Some(oldest_era)))) => {
+						log::trace!(target: LOG_TARGET, "Found era {oldest_era} to prune in block #{block_number} (map size: {era_count})");
+						prometheus::set_era_pruning_storage_map_size(era_count);
 
 						match call_prune_era_step(&client, &signer, oldest_era).await {
 							Ok(()) => {
@@ -1006,11 +1022,16 @@ where
 							},
 						}
 					},
-					Ok(None) => {
-						log::trace!(target: LOG_TARGET, "No eras to prune in block #{block_number}");
+					Ok(Ok((era_count, None))) => {
+						log::trace!(target: LOG_TARGET, "No eras to prune in block #{block_number} (map size: {era_count})");
+						prometheus::set_era_pruning_storage_map_size(era_count);
 					},
-					Err(e) => {
+					Ok(Err(e)) => {
 						log::warn!(target: LOG_TARGET, "Failed to query EraPruningState in block #{block_number}: {e:?}");
+					},
+					Err(_) => {
+						log::error!(target: LOG_TARGET, "Era pruning storage query timed out after {ERA_PRUNING_TIMEOUT_SECS}s for block #{block_number} - continuing with next block");
+						prometheus::on_era_pruning_timeout();
 					},
 				}
 			},
@@ -1019,7 +1040,7 @@ where
 
 	// This should never be reached as era pruning runs indefinitely
 	log::error!(target: LOG_TARGET, "Era pruning task loop exited unexpectedly");
-	Err(Error::Other("Era pruning task completed unexpectedly".to_string()))
+	Err(TaskFailureError::EraPruning.into())
 }
 
 /// Process a single block
