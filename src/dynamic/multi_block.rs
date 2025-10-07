@@ -381,26 +381,42 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 		}
 	};
 
-	// 2. Wait for the `register_score tx` to be included in a block.
+	// 2. Wait for the score registration to be in a block (not finalized)
 	//
-	// NOTE: It's slow to iterate over the events to check if the score was registered
-	// but it's performed for registering the score only once.
-	let tx = utils::wait_tx_in_finalized_block(tx_status).await?;
+	// This is faster than waiting for finalization while ensuring the score is on-chain
+	// before submitting pages (pages will be rejected if score is not registered).
+	let mut tx_status = tx_status;
+	let tx = loop {
+		match tx_status.next().await {
+			Some(Ok(subxt::tx::TxStatus::InBestBlock(tx))) => break tx,
+			Some(Ok(subxt::tx::TxStatus::InFinalizedBlock(tx))) => break tx,
+			Some(Ok(subxt::tx::TxStatus::Error { message })) =>
+				return Err(Error::Subxt(Box::new(subxt::Error::Transaction(
+					subxt::error::TransactionError::Error(message),
+				)))),
+			Some(Ok(subxt::tx::TxStatus::Invalid { message })) =>
+				return Err(Error::Subxt(Box::new(subxt::Error::Transaction(
+					subxt::error::TransactionError::Invalid(message),
+				)))),
+			Some(Ok(subxt::tx::TxStatus::Dropped { message })) =>
+				return Err(Error::Subxt(Box::new(subxt::Error::Transaction(
+					subxt::error::TransactionError::Dropped(message),
+				)))),
+			Some(Ok(_)) => continue, // Validated, Broadcasted, NoLongerInBestBlock
+			Some(Err(e)) => return Err(e.into()),
+			None =>
+				return Err(Error::Other(
+					"Transaction subscription ended without final status".to_string(),
+				)),
+		}
+	};
+
 	let events = tx.wait_for_success().await?;
 	if !events.has::<runtime::multi_block_election_signed::events::Registered>()? {
 		return Err(Error::MissingTxEvent("Register score".to_string()));
 	};
 
-	log::info!(target: LOG_TARGET, "Score registered at block {:?}", tx.block_hash());
-
-	// 3. Get current phase and validate before submitting pages
-	let storage = utils::storage_at_head(client).await?;
-	let current_phase = storage
-		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
-		.await?;
-
-	validate_signed_phase_or_bail(&current_phase, client, signer, round, min_signed_phase_blocks)
-		.await?;
+	log::info!(target: LOG_TARGET, "Score registered in block {:?}", tx.block_hash());
 
 	let solutions: Vec<(u32, T::Solution)> = paged_raw_solution
 		.solution_pages
@@ -409,7 +425,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 		.map(|(page, solution)| (page as u32, solution.clone()))
 		.collect::<Vec<_>>();
 
-	// 4. Submit all solution pages using the appropriate strategy based on chunk_size
+	// 3. Submit all solution pages using the appropriate strategy based on chunk_size
 	let failed_pages = if chunk_size == 0 {
 		inner_submit_pages_concurrent::<T>(
 			client,
@@ -431,7 +447,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 		.await?
 	};
 
-	// 5. All pages were submitted successfully, we are done.
+	// 4. All pages were submitted successfully, we are done.
 	if failed_pages.is_empty() {
 		// Record successful submission
 		crate::prometheus::on_submission_success();
@@ -444,7 +460,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 		failed_pages.len()
 	);
 
-	// 6. Get current phase and validate before retrying failed pages
+	// 5. Get current phase and validate before retrying failed pages
 	let storage = utils::storage_at_head(client).await?;
 	let current_phase = storage
 		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
@@ -453,7 +469,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 	validate_signed_phase_or_bail(&current_phase, client, signer, round, min_signed_phase_blocks)
 		.await?;
 
-	// 7. Retry failed pages, one time.
+	// 6. Retry failed pages, one time.
 	let mut solutions = Vec::new();
 	for page in failed_pages {
 		let solution = std::mem::take(&mut paged_raw_solution.solution_pages[page as usize]);
