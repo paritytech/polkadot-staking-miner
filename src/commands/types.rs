@@ -79,3 +79,28 @@ pub struct MultiBlockMonitorConfig {
 	#[clap(long, default_value_t = false, hide = true)]
 	pub shady: bool,
 }
+
+/// CLI configuration for election prediction
+#[derive(Debug, Clone, clap::Parser, PartialEq)]
+#[cfg_attr(test, derive(PartialEq))]
+pub struct PredictConfig {
+	/// Desired number of validators for the prediction
+	#[clap(long)]
+	pub desired_validators: Option<u32>,
+
+	/// Path to custom nominators and validators JSON file
+	#[clap(long)]
+	pub custom_nominators_validators: Option<String>,
+
+	/// Output file for prediction results
+	#[clap(long, default_value = "election_prediction.json")]
+	pub output: String,
+
+	/// Use cached data instead of fetching from chain
+	#[clap(long)]
+	pub use_cached_data: bool,
+
+	/// Path to cached data directory
+	#[clap(long, default_value = "./cache")]
+	pub cache_dir: String,
+}
