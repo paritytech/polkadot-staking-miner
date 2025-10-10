@@ -144,3 +144,185 @@ impl ElectionPredictor {
         }) 
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    fn create_test_account_id() -> AccountId {
+        AccountId::from_str("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY").unwrap()
+    }
+
+    fn create_test_account_id_2() -> AccountId {
+        AccountId::from_str("5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty").unwrap()
+    }
+
+    fn create_test_account_id_3() -> AccountId {
+        AccountId::from_str("5DAAnrj7VHTznn2AWBemMuyBwZWs6FNFjdyVXUeYum3PTXFy").unwrap()
+    }
+
+    #[test]
+    fn test_election_predictor_creation() {
+        let account1 = create_test_account_id();
+        let account2 = create_test_account_id_2();
+        let account3 = create_test_account_id_3();
+        
+        let voters = vec![
+            (account1.clone(), 1000000u64, vec![account2.clone()]),
+            (account2.clone(), 2000000u64, vec![account3.clone()]),
+        ];
+        let candidate_stashes = vec![account2.clone(), account3.clone()];
+
+        let predictor = ElectionPredictor::new(
+            1000, // active_era
+            19,   // desired_members
+            16,   // desired_runners_up
+            voters.clone(),
+            candidate_stashes.clone(),
+        );
+
+        assert_eq!(predictor.active_era, 1000);
+        assert_eq!(predictor.desired_members, 19);
+        assert_eq!(predictor.desired_runners_up, 16);
+        assert_eq!(predictor.voters, voters);
+        assert_eq!(predictor.candidate_stashes, candidate_stashes);
+    }
+
+    #[test]
+    fn test_election_predictor_no_candidates() {
+        let account1 = create_test_account_id();
+        let voters = vec![(account1.clone(), 1000000u64, vec![account1.clone()])];
+        let candidate_stashes = vec![]; // Empty candidates
+
+        let predictor = ElectionPredictor::new(1000, 19, 16, voters, candidate_stashes);
+        let result = predictor.predict_election();
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            PredictionError::NoCandidates => {
+                // Expected error
+            }
+            _ => panic!("Expected NoCandidates error"),
+        }
+    }
+
+    #[test]
+    fn test_election_predictor_no_voters() {
+        let account1 = create_test_account_id();
+        let voters = vec![]; // Empty voters
+        let candidate_stashes = vec![account1.clone()];
+
+        let predictor = ElectionPredictor::new(1000, 19, 16, voters, candidate_stashes);
+        let result = predictor.predict_election();
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            PredictionError::NoVoters => {
+                // Expected error
+            }
+            _ => panic!("Expected NoVoters error"),
+        }
+    }
+
+    #[test]
+    fn test_election_predictor_success() {
+        let account1 = create_test_account_id();
+        let account2 = create_test_account_id_2();
+        let account3 = create_test_account_id_3();
+        
+        let voters = vec![
+            (account1.clone(), 1000000u64, vec![account2.clone()]),
+            (account2.clone(), 2000000u64, vec![account3.clone()]),
+        ];
+        let candidate_stashes = vec![account2.clone(), account3.clone()];
+
+        let predictor = ElectionPredictor::new(1000, 2, 1, voters, candidate_stashes);
+        let result = predictor.predict_election();
+
+        assert!(result.is_ok());
+        let prediction = result.unwrap();
+        
+        assert_eq!(prediction.active_era, 1000);
+        assert_eq!(prediction.total_voters, 2);
+        assert_eq!(prediction.total_candidates, 2);
+        assert!(!prediction.members.is_empty());
+    }
+
+    #[test]
+    fn test_election_predictor_with_analysis() {
+        let account1 = create_test_account_id();
+        let account2 = create_test_account_id_2();
+        let account3 = create_test_account_id_3();
+        
+        let voters = vec![
+            (account1.clone(), 1000000u64, vec![account2.clone()]),
+            (account2.clone(), 2000000u64, vec![account3.clone()]),
+        ];
+        let candidate_stashes = vec![account2.clone(), account3.clone()];
+
+        let predictor = ElectionPredictor::new(1000, 2, 1, voters, candidate_stashes);
+        let result = predictor.predict_with_analysis();
+
+        assert!(result.is_ok());
+        let detailed_result = result.unwrap();
+        
+        assert_eq!(detailed_result.total_voters, 2);
+        assert_eq!(detailed_result.total_candidates, 2);
+        assert_eq!(detailed_result.total_stake, 3000000u128); // 1000000 + 2000000
+        assert!(!detailed_result.stake_distribution.is_empty());
+        assert!(!detailed_result.validator_support.is_empty());
+    }
+
+    #[test]
+    fn test_stake_distribution_calculation() {
+        let account1 = create_test_account_id();
+        let account2 = create_test_account_id_2();
+        
+        let voters = vec![
+            (account1.clone(), 1000000u64, vec![account2.clone()]),
+            (account2.clone(), 2000000u64, vec![account1.clone()]),
+        ];
+        let candidate_stashes = vec![account1.clone(), account2.clone()];
+
+        let predictor = ElectionPredictor::new(1000, 2, 1, voters, candidate_stashes);
+        let result = predictor.predict_with_analysis();
+
+        assert!(result.is_ok());
+        let detailed_result = result.unwrap();
+        
+        // Check that stake distribution is calculated correctly
+        assert_eq!(detailed_result.stake_distribution.len(), 2);
+        
+        // Check that percentages add up to approximately 100%
+        let total_percentage: f64 = detailed_result.stake_distribution.iter()
+            .map(|(_, _, percentage)| percentage)
+            .sum();
+        assert!((total_percentage - 100.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_validator_support_calculation() {
+        let account1 = create_test_account_id();
+        let account2 = create_test_account_id_2();
+        
+        let voters = vec![
+            (account1.clone(), 1000000u64, vec![account2.clone()]),
+            (account2.clone(), 2000000u64, vec![account1.clone()]),
+        ];
+        let candidate_stashes = vec![account1.clone(), account2.clone()];
+
+        let predictor = ElectionPredictor::new(1000, 2, 1, voters, candidate_stashes);
+        let result = predictor.predict_with_analysis();
+
+        assert!(result.is_ok());
+        let detailed_result = result.unwrap();
+        
+        // Check that validator support is calculated
+        assert!(!detailed_result.validator_support.is_empty());
+        
+        // Check that both validators have support
+        assert!(detailed_result.validator_support.contains_key(&account1.to_string()));
+        assert!(detailed_result.validator_support.contains_key(&account2.to_string()));
+    }
+} 

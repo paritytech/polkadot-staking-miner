@@ -206,3 +206,298 @@ pub fn save_prediction_results(
     
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{str::FromStr, collections::HashMap};
+    use tempfile::TempDir;
+    use crate::types::{PredictedElectionResult, DetailedPredictionResult};
+
+    fn create_test_account_id() -> AccountId {
+        AccountId::from_str("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY").unwrap()
+    }
+
+    fn create_test_election_data() -> ElectionData {
+        let account1 = create_test_account_id();
+        ElectionData {
+            active_era: 1000,
+            desired_validators: 19,
+            desired_runners_up: 16,
+            candidates: vec![(account1.clone(), 1000000u128)],
+            nominators: vec![(account1.clone(), 500000u64, vec![account1.clone()])],
+        }
+    }
+
+    #[test]
+    fn test_predict_cli_config_defaults() {
+        let config = PredictCliConfig {
+            chain_uri: "wss://test.example.com".to_string(),
+            desired_validators: None,
+            custom_nominators_validators: None,
+            output: "test_output.json".to_string(),
+            use_cached_data: false,
+            cache_dir: "./test_cache".to_string(),
+        };
+
+        assert_eq!(config.chain_uri, "wss://test.example.com");
+        assert_eq!(config.desired_validators, None);
+        assert_eq!(config.custom_nominators_validators, None);
+        assert_eq!(config.output, "test_output.json");
+        assert_eq!(config.use_cached_data, false);
+        assert_eq!(config.cache_dir, "./test_cache");
+    }
+
+    #[test]
+    fn test_get_desired_validators_with_override() {
+        let config = PredictCliConfig {
+            chain_uri: "wss://test.example.com".to_string(),
+            desired_validators: Some(100),
+            custom_nominators_validators: None,
+            output: "test_output.json".to_string(),
+            use_cached_data: false,
+            cache_dir: "./test_cache".to_string(),
+        };
+
+        let result = config.get_desired_validators(19);
+        assert_eq!(result, 100);
+    }
+
+    #[test]
+    fn test_get_desired_validators_without_override() {
+        let config = PredictCliConfig {
+            chain_uri: "wss://test.example.com".to_string(),
+            desired_validators: None,
+            custom_nominators_validators: None,
+            output: "test_output.json".to_string(),
+            use_cached_data: false,
+            cache_dir: "./test_cache".to_string(),
+        };
+
+        let result = config.get_desired_validators(19);
+        assert_eq!(result, 19);
+    }
+
+    #[test]
+    fn test_convert_to_new_format() {
+        let account1 = create_test_account_id();
+        let election_data = create_test_election_data();
+        
+        let prediction = PredictedElectionResult {
+            members: vec![(account1.clone(), 1000000u128)],
+            runners_up: vec![],
+            score: sp_npos_elections::ElectionScore {
+                minimal_stake: 100000,
+                sum_stake: 1000000,
+                sum_stake_squared: 1000000000000,
+            },
+            total_voters: 1,
+            total_candidates: 1,
+            active_era: 1000,
+        };
+
+        let detailed_result = DetailedPredictionResult {
+            prediction,
+            total_stake: 1000000u128,
+            total_voters: 1,
+            total_candidates: 1,
+            stake_distribution: vec![(account1.clone(), 1000000u64, 100.0)],
+            validator_support: {
+                let mut map = HashMap::new();
+                map.insert(account1.to_string(), 1000000u128);
+                map
+            },
+        };
+
+        let result = convert_to_new_format(&detailed_result, 19, &election_data);
+        assert!(result.is_ok());
+        
+        let output = result.unwrap();
+        assert_eq!(output.metadata.desired_validators, 19);
+        assert_eq!(output.results.active_validators.len(), 1);
+        assert_eq!(output.results.statistics.total_staked, 1000000u128);
+    }
+
+    #[test]
+    fn test_calculate_self_stake_found() {
+        let account1 = create_test_account_id();
+        let election_data = ElectionData {
+            active_era: 1000,
+            desired_validators: 19,
+            desired_runners_up: 16,
+            candidates: vec![(account1.clone(), 1000000u128)],
+            nominators: vec![],
+        };
+
+        let self_stake = calculate_self_stake(&account1, &election_data);
+        assert_eq!(self_stake, 1000000u128);
+    }
+
+    #[test]
+    fn test_calculate_self_stake_not_found() {
+        let account1 = create_test_account_id();
+        let account2 = AccountId::from_str("5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty").unwrap();
+        
+        let election_data = ElectionData {
+            active_era: 1000,
+            desired_validators: 19,
+            desired_runners_up: 16,
+            candidates: vec![(account1, 1000000u128)],
+            nominators: vec![],
+        };
+
+        let self_stake = calculate_self_stake(&account2, &election_data);
+        assert_eq!(self_stake, 0u128);
+    }
+
+    #[test]
+    fn test_count_nominators_for_validator() {
+        let account1 = create_test_account_id();
+        let account2 = AccountId::from_str("5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty").unwrap();
+        let account3 = AccountId::from_str("5DAAnrj7VHTznn2AWBemMuyBwZWs6FNFjdyVXUeYum3PTXFy").unwrap();
+        
+        let election_data = ElectionData {
+            active_era: 1000,
+            desired_validators: 19,
+            desired_runners_up: 16,
+            candidates: vec![],
+            nominators: vec![
+                (account1.clone(), 1000000u64, vec![account2.clone()]),
+                (account2.clone(), 2000000u64, vec![account2.clone(), account3.clone()]),
+                (account3.clone(), 3000000u64, vec![account3.clone()]),
+            ],
+        };
+
+        let count = count_nominators_for_validator(&account2, &election_data);
+        assert_eq!(count, 2); // account1 and account2 nominate account2
+
+        let count = count_nominators_for_validator(&account3, &election_data);
+        assert_eq!(count, 2); // account2 and account3 nominate account3
+
+        let count = count_nominators_for_validator(&account1, &election_data);
+        assert_eq!(count, 0); // no one nominates account1
+    }
+
+    #[test]
+    fn test_save_prediction_results() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_path = temp_dir.path().join("test_output.json");
+        
+        let account1 = create_test_account_id();
+        let election_data = create_test_election_data();
+        
+        let prediction = PredictedElectionResult {
+            members: vec![(account1.clone(), 1000000u128)],
+            runners_up: vec![],
+            score: sp_npos_elections::ElectionScore {
+                minimal_stake: 100000,
+                sum_stake: 1000000,
+                sum_stake_squared: 1000000000000,
+            },
+            total_voters: 1,
+            total_candidates: 1,
+            active_era: 1000,
+        };
+
+        let detailed_result = DetailedPredictionResult {
+            prediction,
+            total_stake: 1000000u128,
+            total_voters: 1,
+            total_candidates: 1,
+            stake_distribution: vec![(account1.clone(), 1000000u64, 100.0)],
+            validator_support: {
+                let mut map = HashMap::new();
+                map.insert(account1.to_string(), 1000000u128);
+                map
+            },
+        };
+
+        let result = save_prediction_results(&detailed_result, 19, &election_data, output_path.to_str().unwrap());
+        assert!(result.is_ok());
+
+        // Verify file was created and contains expected content
+        assert!(output_path.exists());
+        let content = std::fs::read_to_string(&output_path).unwrap();
+        assert!(content.contains("1000000"));
+        assert!(content.contains("19"));
+    }
+
+    #[test]
+    fn test_save_prediction_results_invalid_path() {
+        let account1 = create_test_account_id();
+        let election_data = create_test_election_data();
+        
+        let prediction = PredictedElectionResult {
+            members: vec![(account1.clone(), 1000000u128)],
+            runners_up: vec![],
+            score: sp_npos_elections::ElectionScore {
+                minimal_stake: 100000,
+                sum_stake: 1000000,
+                sum_stake_squared: 1000000000000,
+            },
+            total_voters: 1,
+            total_candidates: 1,
+            active_era: 1000,
+        };
+
+        let detailed_result = DetailedPredictionResult {
+            prediction,
+            total_stake: 1000000u128,
+            total_voters: 1,
+            total_candidates: 1,
+            stake_distribution: vec![(account1.clone(), 1000000u64, 100.0)],
+            validator_support: {
+                let mut map = HashMap::new();
+                map.insert(account1.to_string(), 1000000u128);
+                map
+            }
+        };
+
+        // Try to save to an invalid path (directory that doesn't exist)
+        let result = save_prediction_results(&detailed_result, 19, &election_data, "/invalid/path/that/does/not/exist.json");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_prediction_output_serialization() {
+        let account1 = create_test_account_id();
+        
+        let validator_info = ValidatorInfo {
+            account: account1.to_string(),
+            total_stake: 1000000u128,
+            self_stake: 100000u128
+        };
+
+        let statistics = PredictionStatistics {
+            minimum_stake: 100000u128,
+            average_stake: 500000u128,
+            total_staked: 10000000u128,
+        };
+
+        let results = PredictionResults {
+            active_validators: vec![validator_info.clone()],
+            statistics: statistics.clone(),
+        };
+
+        let metadata = PredictionMetadata {
+            timestamp: "2025-01-01T00:00:00Z".to_string(),
+            desired_validators: 19,
+        };
+
+        let output = PredictionOutput {
+            metadata: metadata.clone(),
+            results: results.clone(),
+        };
+
+        // Test serialization
+        let json = serde_json::to_string(&output).unwrap();
+        assert!(json.contains("2025-01-01T00:00:00Z"));
+        assert!(json.contains("19"));
+        assert!(json.contains("1000000"));
+
+        // Test deserialization
+        let deserialized: PredictionOutput = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.metadata.desired_validators, output.metadata.desired_validators);
+        assert_eq!(deserialized.results.active_validators.len(), output.results.active_validators.len());
+    }
+}
