@@ -56,19 +56,19 @@ cargo build --release
 ### Polkadot Mainnet
 
 ```bash
- ./target/release/polkadot-staking-miner  --uri wss://rpc.polkadot.io  predict  --desired-validators 19
+ ./target/release/polkadot-staking-miner --uri wss://rpc.polkadot.io predict --desired-validators 19
 ```
 
 ### Assset-hub
 
 ```bash
- ./target/release/polkadot-staking-miner --uri wss://westend-asset-hub-rpc.polkadot.io   predict --desired-validators 19
+ ./target/release/polkadot-staking-miner --uri wss://westend-asset-hub-rpc.polkadot.io predict --desired-validators 19
 ```
 
 ### Kusama
 
 ```bash
- ./target/release/polkadot-staking-miner --uri wss://kusama.api.onfinality.io/public-ws  predict --desired-validators 19
+ ./target/release/polkadot-staking-miner --uri wss://kusama.api.onfinality.io/public-ws predict --desired-validators 19
 ```
 
 ### Using Cached Data

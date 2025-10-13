@@ -81,7 +81,7 @@ pub struct MultiBlockMonitorConfig {
 }
 
 /// CLI configuration for election prediction
-#[derive(Debug, Clone, clap::Parser, PartialEq)]
+#[derive(Debug, Clone, clap::Parser)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct PredictConfig {
 	/// Desired number of validators for the prediction

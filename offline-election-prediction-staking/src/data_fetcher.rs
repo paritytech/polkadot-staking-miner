@@ -21,6 +21,8 @@ use crate::types::{
 pub struct DataFetcher {
     client: OnlineClient<PolkadotConfig>,
     cache_dir: String,
+    current_era: Option<EraIndex>,
+    round: Option<u32>,
 }
 
 impl DataFetcher {
@@ -41,11 +43,17 @@ impl DataFetcher {
         Ok(Self { 
             client,
             cache_dir: cache_dir.to_string(),
+            current_era: None,
+            round: None,
         })
     }
 
     /// Fetch current era information
-    pub async fn fetch_current_era(&self) -> Result<EraIndex> {
+    pub async fn fetch_current_era(&mut self) -> Result<EraIndex> {
+        if self.current_era.is_some() {
+            return Ok(self.current_era.unwrap());
+        }
+
         println!("Fetching current era information...");
 
         // Query the Staking pallet's ActiveEra storage
@@ -72,6 +80,7 @@ impl DataFetcher {
                     .context("Failed to decode era index")?;
 
                 println!("Current active era: {}", era_index);
+                self.current_era = Some(era_index);
                 Ok(era_index)
             }
             None => {
@@ -285,61 +294,6 @@ impl DataFetcher {
         Ok(stakes)
     }
 
-    /// Fetch all elected candidates after the election from the chain for checking the accuracy of the offline prediction
-    // pub async fn fetch_active_validators(&self) -> Result<Vec<AccountId>> {
-    //     println!("Fetching active validator candidates...");
-
-    //     // Query the Session pallet's Validators storage (current validators)
-    //     // Session::Validators returns a Vec<AccountId32> directly, not a map
-    //     let validators_query = subxt::dynamic::storage("Session", "Validators", vec![]);
-
-    //     let validators = self
-    //         .client
-    //         .storage()
-    //         .at_latest()
-    //         .await?
-    //         .fetch(&validators_query)
-    //         .await?;
-
-    //     let account_ids = match validators {
-    //         Some(validators_data) => {
-    //             println!("Active validators data found, decoding...");
-    //             // Parse the validators list - Session::Validators is a Vec<AccountId32>
-    //             let validators_list: Vec<AccountId> =
-    //                 parity_scale_codec::Decode::decode(&mut &validators_data.encoded()[..])
-    //                     .context("Failed to decode active validators list")?;
-
-    //             validators_list
-    //         }
-    //         None => {
-    //             eprintln!("No active validators data found");
-    //             vec![]
-    //         }
-    //     };
-
-    //     println!("Found {} active validators", account_ids.len());
-
-    //     // Convert to SS58 for JSON output
-    //     let addrs: Vec<String> = account_ids.iter().map(|acc| acc.to_string()).collect();
-
-    //     // Use buffered writer for better I/O performance
-    //     let active_validators_path = Path::new(&self.cache_dir).join("active_validators.json");
-    //     let file = File::create(&active_validators_path)
-    //         .context("Failed to create active_validators.json")?;
-    //     let mut writer = BufWriter::new(file);
-    //     let json = serde_json::to_string_pretty(&addrs)
-    //         .context("Failed to serialize active validators to JSON")?;
-    //     writer
-    //         .write_all(json.as_bytes())
-    //         .context("Failed to write active validators to file")?;
-    //     writer.flush().context("Failed to flush writer")?;
-    //     println!("Wrote active validators to {}", active_validators_path.display());
-
-    //     println!("Total active validators: {}", addrs.len());
-
-    //     Ok(account_ids)
-    // }
-
     /// Fetch all nominators/voters along with their nominations and stakes from the chain
     pub async fn fetch_nominators(&self) -> Result<Vec<NominatorData>> {
         let curr_time = std::time::SystemTime::now();
@@ -449,8 +403,37 @@ impl DataFetcher {
         Ok(())
     }
 
+    pub async fn fetch_current_round(&mut self) -> Result<u32> {
+        if self.round.is_some() {
+            return Ok(self.round.unwrap());
+        }
+
+        let current_round_query = subxt::dynamic::storage("MultiBlockElection", "Round", vec![]);
+
+        let current_round_result = self.client.storage().at_latest().await?.fetch(&current_round_query).await;
+
+        let current_round = match current_round_result {
+            Ok(Some(round_data)) => {
+                let round: u32 = parity_scale_codec::Decode::decode(&mut &round_data.encoded()[..])
+                    .context("Failed to decode current round")?;
+                round
+            }
+            Ok(None) => {
+                println!("No current round found in multi-block election pallet");
+                return Ok(0);
+            }
+            Err(e) => {
+                println!("Multi-block election pallet not available: {}", e);
+                return Err(anyhow!("Multi-block election pallet not available: {}", e));
+            }
+        };
+
+        self.round = Some(current_round);
+        Ok(current_round)
+    }
+
     /// Fetch election data (tries snapshot first, fallback to Staking pallet if not available)
-    pub async fn fetch_election_data_with_snapshot(&self) -> Result<ElectionData> {
+    pub async fn fetch_election_data_with_snapshot(&mut self) -> Result<ElectionData> {
         println!("Attempting to fetch snapshot data...");
         
         match self.try_fetch_snapshot_data().await {
@@ -470,23 +453,18 @@ impl DataFetcher {
     }
 
     /// Try to fetch snapshot data from multi-block election pallet
-    pub async fn try_fetch_snapshot_data(&self) -> Result<SnapshotResult> {
+    pub async fn try_fetch_snapshot_data(&mut self) -> Result<SnapshotResult> {
         println!("Checking for multi-block election snapshot data...");
         
-        // Try to fetch current round from multi-block election pallet
-        let current_round_query = subxt::dynamic::storage("MultiBlockElection", "Round", vec![]);
-        let current_round_result = self.client.storage().at_latest().await?.fetch(&current_round_query).await;
-        
-        let current_round = match current_round_result {
-            Ok(Some(round_data)) => {
-                let round: u32 = parity_scale_codec::Decode::decode(&mut &round_data.encoded()[..])
-                    .context("Failed to decode current round")?;
-                println!("Found current round: {}", round);
-                round
-            }
-            Ok(None) => {
+        let current_round = match self.fetch_current_round().await {
+            Ok(round) if round == 0 => {
                 println!("No current round found in multi-block election pallet");
                 return Ok(SnapshotResult::NotAvailable);
+            }
+            Ok(round) => {
+                println!("Found current round: {}", round);
+                self.round = Some(round);
+                round
             }
             Err(e) => {
                 println!("Multi-block election pallet not available: {}", e);
@@ -541,36 +519,40 @@ impl DataFetcher {
     }
 
     /// Fetch target snapshot (validators) from multi-block election pallet
-    async fn fetch_target_snapshot(&self, round: u32) -> Result<Vec<AccountId>> {
+    async fn fetch_target_snapshot(&mut self, round: u32) -> Result<Vec<AccountId>> {
         println!("Fetching target snapshot for round {}", round);
+
+        let mut targets = vec![];
         
-        // Try to fetch target snapshot - this is a simplified approach
-        // In a real implementation, you'd need to handle pagination
-        let target_snapshot_query = subxt::dynamic::storage("MultiBlockElection", "TargetSnapshot", vec![
-            Value::u128(0), // page 0
-            Value::u128(round as u128)
-        ]);
-        
-        let target_snapshot_result = self.client.storage().at_latest().await?.fetch(&target_snapshot_query).await;
-        
-        match target_snapshot_result {
-            Ok(Some(snapshot_data)) => {
-                // Decode the snapshot data - this is a simplified approach
-                // The actual structure would depend on the multi-block election implementation
-                let snapshot: Vec<AccountId> = parity_scale_codec::Decode::decode(&mut &snapshot_data.encoded()[..])
-                    .context("Failed to decode target snapshot")?;
-                println!("Fetched {} targets from snapshot", snapshot.len());
-                Ok(snapshot)
-            }
-            Ok(None) => {
-                println!("No target snapshot found for round {}", round);
-                Ok(vec![])
-            }
-            Err(e) => {
-                println!("Error fetching target snapshot: {}", e);
-                Ok(vec![])
+        // Try to fetch target snapshot page by page
+        for page in 1..32 {
+            println!("Fetching target snapshot page {}", page);
+            let target_snapshot_query = subxt::dynamic::storage("MultiBlockElection", "PagedTargetSnapshot", vec![
+                Value::u128(round as u128),
+                Value::u128(page as u128)
+            ]);
+            
+            let target_snapshot_result = self.client.storage().at_latest().await?.fetch(&target_snapshot_query).await;
+            
+            match target_snapshot_result {
+                Ok(Some(snapshot_data)) => {
+                    // Decode the snapshot data
+                    let snapshot: Vec<AccountId> = parity_scale_codec::Decode::decode(&mut &snapshot_data.encoded()[..])
+                        .context("Failed to decode target snapshot")?;
+                    println!("Fetched {} targets from snapshot", snapshot.len());
+                    targets.extend(snapshot);
+                }
+                Ok(None) => {
+                    println!("No targets found in page {}", page);
+                }
+                Err(e) => {
+                    println!("Error fetching target snapshot page {}: {}", page, e);
+                    return Err(anyhow!("Error fetching target snapshot page {}: {}", page, e));
+                }
             }
         }
+
+        Ok(targets)
     }
 
     /// Fetch voter snapshots (nominators) from multi-block election pallet
@@ -580,11 +562,11 @@ impl DataFetcher {
         let mut all_voters = Vec::new();
         
         // Try to fetch voter snapshots with pagination
-        // This is a simplified approach - in reality you'd need to handle multiple pages
-        for page in 0..10 { // Try up to 10 pages
-            let voter_snapshot_query = subxt::dynamic::storage("MultiBlockElection", "VoterSnapshot", vec![
-                Value::u128(page),
-                Value::u128(round as u128)
+        for page in 0..32 {
+            println!("Fetching voter snapshot page {}", page);
+            let voter_snapshot_query = subxt::dynamic::storage("MultiBlockElection", "PagedVoterSnapshot", vec![
+                Value::u128(round as u128),
+                Value::u128(page as u128)
             ]);
             
             let voter_snapshot_result = self.client.storage().at_latest().await?.fetch(&voter_snapshot_query).await;
@@ -616,7 +598,7 @@ impl DataFetcher {
     }
 
     /// Convert snapshot data to ElectionData format
-    async fn convert_snapshot_to_election_data(&self, snapshot_data: SnapshotData) -> Result<ElectionData> {
+    async fn convert_snapshot_to_election_data(&mut self, snapshot_data: SnapshotData) -> Result<ElectionData> {
         println!("Converting snapshot data to election data format...");
         
         // Convert target snapshot to candidates (with dummy stakes for now)
@@ -651,13 +633,13 @@ impl DataFetcher {
     }
 
     /// Fetch all required data for election prediction (tries snapshot first, fallback to Staking pallet)
-    pub async fn fetch_election_data(&self) -> Result<ElectionData> {
+    pub async fn fetch_election_data(&mut self) -> Result<ElectionData> {
         // Use the snapshot-enabled method by default
         self.fetch_election_data_with_snapshot().await
     }
 
     /// Fetch all required data for election prediction using only Staking pallet (legacy method)
-    pub async fn fetch_election_data_staking_only(&self) -> Result<ElectionData> {
+    pub async fn fetch_election_data_staking_only(&mut self) -> Result<ElectionData> {
         println!("Fetching all election data from Chain using Staking pallet...");
 
         let (desired_validators, desired_runners_up) = self.fetch_staking_params().await?;
@@ -681,7 +663,33 @@ impl DataFetcher {
         })
     }
 
-    pub async fn read_election_data_from_files(&self) -> Result<ElectionData> {
+    /// List available election data files
+    pub fn list_election_data_files(&self) -> Result<Vec<String>> {
+        let cache_path = Path::new(&self.cache_dir);
+        let mut files = Vec::new();
+        
+        if let Ok(entries) = std::fs::read_dir(cache_path) {
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    let path = entry.path();
+                    if path.is_file() {
+                        if let Some(filename) = path.file_name() {
+                            if let Some(name) = filename.to_str() {
+                                if name.starts_with("election_data_round_") && name.ends_with(".json") {
+                                    files.push(name.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        files.sort();
+        Ok(files)
+    }
+
+    pub async fn read_election_data_from_files(&mut self) -> Result<ElectionData> {
         // Read candidates.json
         let candidates_path = Path::new(&self.cache_dir).join("candidates.json");
         let mut candidates_file = File::open(&candidates_path)

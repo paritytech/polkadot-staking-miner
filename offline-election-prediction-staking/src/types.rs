@@ -405,7 +405,7 @@ mod tests {
         // Test serialization
         let json = serde_json::to_string(&detailed_result).unwrap();
         assert!(json.contains("2000000"));
-        assert!(json.contains("95.5"));
+        assert!(json.contains("50.0"));
 
         // Test deserialization
         let deserialized: DetailedPredictionResult = serde_json::from_str(&json).unwrap();

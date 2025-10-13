@@ -1,11 +1,11 @@
 use sp_arithmetic::Perbill;
 use sp_npos_elections::{ElectionScore, seq_phragmen};
-use std::{collections::{HashMap, HashSet}};
+use std::{collections::{HashMap}};
 
 use crate::types::{
     AccountId, Balance, EraIndex, NominatorData, 
     PredictedElectionResult, DetailedPredictionResult, PredictionError,
-    ValidatorSupport, StakeDistribution, ValidatorStake
+    ValidatorSupport, StakeDistribution
 };
 
 /// Main election prediction engine

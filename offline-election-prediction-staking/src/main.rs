@@ -33,10 +33,10 @@ async fn run_prediction(config: offline_election::PredictCliConfig) -> Result<()
     // println!("Configuration: {:?}", config);
 
     // Create data fetcher
-    let fetcher = config.create_data_fetcher().await?;
+    let mut fetcher = config.create_data_fetcher().await?;
 
     // Fetch or load election data based on CLI options
-    let election_data = config.load_election_data(&fetcher).await?;
+    let election_data = config.load_election_data(&mut fetcher).await?;
     
     // Clone election_data to avoid borrow issues
     let election_data_clone = election_data.clone();

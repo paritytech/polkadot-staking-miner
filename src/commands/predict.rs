@@ -19,14 +19,14 @@ pub async fn predict_cmd(client: Client, config: PredictConfig) -> Result<(), Er
 	log::info!(target: LOG_TARGET, "Starting election prediction tool...");
 
 	// Create data fetcher using the client's URI
-	let fetcher = DataFetcher::new(&client.uri(), &config.cache_dir).await
+	let mut fetcher = DataFetcher::new(&client.uri(), &config.cache_dir).await
 		.map_err(|e| Error::Other(format!("Failed to create data fetcher: {}", e)))?;
 
 	// Load election data based on CLI options
 	let election_data = if config.use_cached_data {
-		load_cached_data(&fetcher).await?
+		load_cached_data(&mut fetcher).await?
 	} else {
-		fetch_election_data(&fetcher, config.desired_validators).await?
+		fetch_election_data(&mut fetcher, config.desired_validators).await?
 	};
 	
 	// Clone election_data to avoid borrow issues
@@ -79,13 +79,13 @@ pub async fn predict_cmd(client: Client, config: PredictConfig) -> Result<(), Er
 }
 
 /// Load election data from cached files
-async fn load_cached_data(fetcher: &DataFetcher) -> Result<ElectionData, Error> {
+async fn load_cached_data(fetcher: &mut DataFetcher) -> Result<ElectionData, Error> {
 	fetcher.read_election_data_from_files().await
 		.map_err(|e| Error::Other(format!("Failed to load cached data: {}", e)))
 }
 
 /// Fetch election data from the chain
-async fn fetch_election_data(fetcher: &DataFetcher, desired_validators: Option<u32>) -> Result<ElectionData, Error> {
+async fn fetch_election_data(fetcher: &mut DataFetcher, desired_validators: Option<u32>) -> Result<ElectionData, Error> {
 	let mut election_data = fetcher.fetch_election_data().await
 		.map_err(|e| Error::Other(format!("Failed to fetch election data: {}", e)))?;
 	

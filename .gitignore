@@ -19,3 +19,5 @@ Cargo.lock
 # output files from cmds
 encoded.call
 solution.supports.bin
+election_prediction.json
+cache/

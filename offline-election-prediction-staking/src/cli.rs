@@ -62,7 +62,7 @@ pub struct PredictCliConfig {
 
 impl PredictCliConfig {
     /// Load election data based on CLI configuration
-    pub async fn load_election_data(&self, fetcher: &DataFetcher) -> Result<ElectionData> {
+    pub async fn load_election_data(&self, fetcher: &mut DataFetcher) -> Result<ElectionData> {
         if self.use_cached_data {
             println!("Using cached data from: {}", self.cache_dir);
             fetcher.read_election_data_from_files().await
@@ -88,7 +88,7 @@ impl PredictCliConfig {
 
 /// Load custom election data from a JSON file
 async fn load_custom_election_data(
-    fetcher: &DataFetcher,
+    fetcher: &mut DataFetcher,
     custom_file: &str,
 ) -> Result<ElectionData> {
     // For now, fall back to reading from files
