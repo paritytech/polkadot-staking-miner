@@ -85,6 +85,8 @@ pub enum Command {
 	Monitor(commands::types::MultiBlockMonitorConfig),
 	/// Check if the staking-miner metadata is compatible to a remote node.
 	Info,
+	/// Dry run commands for testing and simulation.
+	DryRun(commands::types::DryRunConfig),
 }
 
 #[tokio::main]
@@ -145,6 +147,21 @@ async fn main() -> Result<(), Error> {
 			macros::for_multi_block_runtime!(chain, {
 				commands::multi_block::monitor_cmd::<MinerConfig>(client, cfg).boxed()
 			})
+		},
+		Command::DryRun(cfg) => {
+			use commands::types::DryRunSubcommand;
+			match cfg.subcommand {
+				DryRunSubcommand::AtBlockWithSnapshot { block_hash } => {
+					macros::for_multi_block_runtime!(chain, {
+						commands::dry_run::at_block_with_snapshot::<MinerConfig>(client, block_hash).boxed()
+					})
+				},
+				DryRunSubcommand::WithCurrentSnapshot => {
+					macros::for_multi_block_runtime!(chain, {
+						commands::dry_run::with_current_snapshot::<MinerConfig>(client).boxed()
+					})
+				},
+			}
 		},
 	};
 
