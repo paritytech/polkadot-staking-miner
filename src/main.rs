@@ -153,7 +153,7 @@ async fn main() -> Result<(), Error> {
 			match cfg.subcommand {
 				DryRunSubcommand::AtBlockWithSnapshot { block_hash } => {
 					macros::for_multi_block_runtime!(chain, {
-						commands::dry_run::at_block_with_snapshot::<MinerConfig>(client, block_hash).boxed()
+						commands::dry_run::at_block_with_snapshot::<MinerConfig>(client, uri.clone(), block_hash).boxed()
 					})
 				},
 				DryRunSubcommand::WithCurrentSnapshot => {
