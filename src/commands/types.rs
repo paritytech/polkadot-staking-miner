@@ -13,8 +13,8 @@ pub enum SubmissionStrategy {
 	IfLeading,
 	/// Submit if we are no worse than `Perbill` worse than the best.
 	ClaimNoWorseThan(Perbill),
-	/// Submit if we are leading, or if the solution that's leading is more that the given `Perbill`
-	/// better than us. This helps detect obviously fake solutions and still combat them.
+	/// Submit if we are leading, or if the solution that's leading is more that the given
+	/// `Perbill` better than us. This helps detect obviously fake solutions and still combat them.
 	ClaimBetterThan(Perbill),
 }
 
@@ -78,4 +78,32 @@ pub struct MultiBlockMonitorConfig {
 	/// This creates invalid submissions to test the system's response to spam attacks.
 	#[clap(long, default_value_t = false, hide = true)]
 	pub shady: bool,
+}
+
+/// Configuration for dry run commands.
+#[derive(Debug, Clone, clap::Parser)]
+#[cfg_attr(test, derive(PartialEq))]
+pub struct DryRunConfig {
+	#[clap(subcommand)]
+	pub subcommand: DryRunSubcommand,
+}
+
+/// Dry run subcommands.
+#[derive(Debug, Clone, clap::Parser)]
+#[cfg_attr(test, derive(PartialEq))]
+pub enum DryRunSubcommand {
+	/// Run a dry run at a specific block with a snapshot.
+	///
+	/// Useful to re-run previous elections. The input block hash needs to be a block in which
+	/// election snapshot exists.
+	AtBlockWithSnapshot {
+		/// The block hash to read the snapshot from.
+		#[clap(long)]
+		block_hash: String,
+	},
+	/// Run a dry run with the current snapshot.
+	///
+	/// This will force-create the snapshot, based on best-effort logic, and then run the dry-run
+	/// using that snapshot.
+	WithCurrentSnapshot,
 }
