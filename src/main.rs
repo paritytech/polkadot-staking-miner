@@ -319,6 +319,7 @@ mod tests {
 					chunk_size: 0,               // Default
 					min_signed_phase_blocks: 10, // Default
 					shady: false,                // Default
+					balancing_iterations: 10,    // Default
 				}),
 			}
 		);
@@ -346,6 +347,7 @@ mod tests {
 				chunk_size: 0,               // Default
 				min_signed_phase_blocks: 10, // Default
 				shady: false,                // Default
+				balancing_iterations: 10,    // Default
 			})
 		);
 	}
@@ -373,6 +375,7 @@ mod tests {
 				chunk_size: 4,               // Explicitly set
 				min_signed_phase_blocks: 10, // Default
 				shady: false,                // Default
+				balancing_iterations: 10,    // Default
 			})
 		);
 	}
@@ -400,6 +403,7 @@ mod tests {
 				chunk_size: 0,              // Default
 				min_signed_phase_blocks: 5, // Explicitly set
 				shady: false,               // Default
+				balancing_iterations: 10,   // Default
 			})
 		);
 	}
@@ -426,6 +430,7 @@ mod tests {
 				chunk_size: 0,               // Default
 				min_signed_phase_blocks: 10, // Default
 				shady: true,                 // Explicitly set
+				balancing_iterations: 10,    // Default
 			})
 		);
 	}
