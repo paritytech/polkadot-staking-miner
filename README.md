@@ -152,11 +152,13 @@ polkadot-staking-miner --uri ws://127.0.0.1:9946 monitor --seed-or-path //Alice
 
 Here are some notable options you can use with the command:
 
-| Option                               | Description                                                                         | Default Value   |
-| :----------------------------------- | :---------------------------------------------------------------------------------- | :-------------- |
-| `--chunk-size <number>`              | Controls how many solution pages are submitted concurrently.                        | 0 (all at once) |
-| `--do-reduce`                        | Enables solution reduction to make submissions more efficient.                      | Off             |
-| `--min-signed-phase-blocks <number>` | Minimum number of blocks required in the signed phase before submitting a solution. | 10              |
+| Option                               | Description                                                                                                                      | Default Value   |
+| :----------------------------------- | :------------------------------------------------------------------------------------------------------------------------------- | :-------------- |
+| `--chunk-size <number>`              | Controls how many solution pages are submitted concurrently.                                                                     | 0 (all at once) |
+| `--do-reduce`                        | Enables solution reduction to make submissions more efficient.                                                                   | Off             |
+| `--min-signed-phase-blocks <number>` | Minimum number of blocks required in the signed phase before submitting a solution.                                              | 10              |
+| `--balancing-iterations <number>`    | Number of balancing iterations for the sequential phragmen algorithm. Higher values may produce better balanced solutions at the | 10              |
+|                                      | cost of more computation time.                                                                                                   |                 |
 
 Refer to `--help` for the full list of options.
 
