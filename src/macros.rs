@@ -33,6 +33,43 @@ macro_rules! impl_u32_parameter_type {
 	};
 }
 
+/// Macro to create a BalancingConfig parameter type for the sequential phragmen solver
+///
+/// Internally, it uses an AtomicUsize to store the iterations value.
+/// The tolerance is hardcoded to 0 for now.
+///
+/// Example:
+/// impl_balancing_config_parameter_type(module_name, Type);
+macro_rules! impl_balancing_config_parameter_type {
+	($mod:ident, $name:ident) => {
+		mod $mod {
+			use std::sync::atomic::{AtomicUsize, Ordering};
+			static ITERATIONS: AtomicUsize = AtomicUsize::new(10);
+			pub struct $name;
+
+			impl $name {
+				pub fn set(iterations: usize) {
+					ITERATIONS.store(iterations, Ordering::SeqCst);
+				}
+			}
+
+			impl
+				polkadot_sdk::frame_support::traits::Get<
+					Option<polkadot_sdk::sp_npos_elections::BalancingConfig>,
+				> for $name
+			{
+				fn get() -> Option<polkadot_sdk::sp_npos_elections::BalancingConfig> {
+					Some(polkadot_sdk::sp_npos_elections::BalancingConfig {
+						iterations: ITERATIONS.load(Ordering::SeqCst),
+						tolerance: 0,
+					})
+				}
+			}
+		}
+		pub use $mod::$name;
+	};
+}
+
 // A helper to configure to correct MinerConfig depending on chain.
 #[allow(unused_macros)]
 macro_rules! for_multi_block_runtime {
@@ -68,4 +105,6 @@ macro_rules! for_multi_block_runtime {
 }
 
 #[allow(unused)]
-pub(crate) use {for_multi_block_runtime, impl_u32_parameter_type};
+pub(crate) use {
+	for_multi_block_runtime, impl_balancing_config_parameter_type, impl_u32_parameter_type,
+};

@@ -1,5 +1,5 @@
 use crate::{
-	macros::impl_u32_parameter_type,
+	macros::{impl_balancing_config_parameter_type, impl_u32_parameter_type},
 	prelude::{AccountId, Accuracy, Hash},
 };
 use polkadot_sdk::{
@@ -14,6 +14,7 @@ impl_u32_parameter_type!(voter_snapshot_per_block, VoterSnapshotPerBlock);
 impl_u32_parameter_type!(max_winners_per_page, MaxWinnersPerPage);
 impl_u32_parameter_type!(max_backers_per_winner, MaxBackersPerWinner);
 impl_u32_parameter_type!(max_length, MaxLength);
+impl_balancing_config_parameter_type!(balancing, BalancingIterations);
 
 pub mod node {
 	use super::*;
@@ -36,8 +37,7 @@ pub mod node {
 	impl multi_block::unsigned::miner::MinerConfig for MinerConfig {
 		type AccountId = AccountId;
 		type Solution = NposSolution16;
-		// TODO: make it configurable via CLI https://github.com/paritytech/polkadot-staking-miner/issues/989
-		type Solver = SequentialPhragmen<AccountId, Accuracy>;
+		type Solver = SequentialPhragmen<AccountId, Accuracy, BalancingIterations>;
 		type Pages = Pages;
 		type MaxVotesPerVoter = ConstU32<16>;
 		type MaxWinnersPerPage = MaxWinnersPerPage;
@@ -72,8 +72,7 @@ pub mod polkadot {
 	impl multi_block::unsigned::miner::MinerConfig for MinerConfig {
 		type AccountId = AccountId;
 		type Solution = NposSolution16;
-		// TODO: make it configurable via CLI https://github.com/paritytech/polkadot-staking-miner/issues/989
-		type Solver = SequentialPhragmen<AccountId, Accuracy>;
+		type Solver = SequentialPhragmen<AccountId, Accuracy, BalancingIterations>;
 		type Pages = Pages;
 		type MaxVotesPerVoter = ConstU32<16>;
 		type MaxWinnersPerPage = MaxWinnersPerPage;
@@ -108,8 +107,7 @@ pub mod kusama {
 	impl multi_block::unsigned::miner::MinerConfig for MinerConfig {
 		type AccountId = AccountId;
 		type Solution = NposSolution24;
-		// TODO: make it configurable via CLI https://github.com/paritytech/polkadot-staking-miner/issues/989
-		type Solver = SequentialPhragmen<AccountId, Accuracy>;
+		type Solver = SequentialPhragmen<AccountId, Accuracy, BalancingIterations>;
 		type Pages = Pages;
 		type MaxVotesPerVoter = ConstU32<24>;
 		type MaxWinnersPerPage = MaxWinnersPerPage;
@@ -144,8 +142,7 @@ pub mod westend {
 	impl multi_block::unsigned::miner::MinerConfig for MinerConfig {
 		type AccountId = AccountId;
 		type Solution = NposSolution16;
-		// TODO: make it configurable via CLI https://github.com/paritytech/polkadot-staking-miner/issues/989
-		type Solver = SequentialPhragmen<AccountId, Accuracy>;
+		type Solver = SequentialPhragmen<AccountId, Accuracy, BalancingIterations>;
 		type Pages = Pages;
 		type MaxVotesPerVoter = ConstU32<16>;
 		type MaxWinnersPerPage = MaxWinnersPerPage;
@@ -181,8 +178,7 @@ pub mod staking_async {
 	impl multi_block::unsigned::miner::MinerConfig for MinerConfig {
 		type AccountId = AccountId;
 		type Solution = NposSolution16;
-		// TODO: make it configurable via CLI https://github.com/paritytech/polkadot-staking-miner/issues/989
-		type Solver = SequentialPhragmen<AccountId, Accuracy>;
+		type Solver = SequentialPhragmen<AccountId, Accuracy, BalancingIterations>;
 		type Pages = Pages;
 		type MaxVotesPerVoter = ConstU32<16>;
 		type MaxWinnersPerPage = MaxWinnersPerPage;

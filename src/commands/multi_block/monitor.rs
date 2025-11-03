@@ -554,6 +554,8 @@ where
 	T::VoterSnapshotPerBlock: Send + Sync + 'static,
 	T::MaxVotesPerVoter: Send + Sync + 'static,
 {
+	crate::dynamic::set_balancing_iterations(config.balancing_iterations);
+
 	let signer = Signer::new(&config.seed_or_path)?;
 
 	// Emit the account info at the start.
