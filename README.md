@@ -229,6 +229,172 @@ $ subxt metadata  > artifacts/multi_block.scale
 $ subxt codegen --file artifacts/multi_block.scale | rustfmt > code.rs
 ```
 
+## Predict
+
+The `predict` command allows you to predict validator election outcomes for Substrate-based chains
+without running a full node. It fetches the necessary staking data from the chain and runs the same
+Phragmén algorithm that the chain uses to determine validator sets.
+
+### Basic Usage
+
+```bash
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict
+```
+
+### Command Options
+
+| Option                          | Description                                                                         | Default Value   |
+| :------------------------------ | :---------------------------------------------------------------------------------- | :-------------- |
+| `--desired-validators <number>` | Desired number of validators for the prediction                                     | Fetched from chain |
+| `--custom-file <path>`          | Path to custom election data JSON file (see format below)                          | None            |
+| `--output-dir <path>`           | Output directory for prediction results                                             | `results`       |
+
+### Examples
+
+#### Basic Prediction
+
+```bash
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict
+```
+
+#### With Desired Validators
+
+```bash
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --desired-validators 50
+```
+
+#### Using Custom Election Data File
+
+```bash
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --custom-file custom.json --desired-validators 20 --output-dir outputs
+```
+
+#### Different Chains
+
+**Polkadot Mainnet:**
+```bash
+cargo run -- --uri wss://rpc.polkadot.io predict
+```
+
+**Kusama:**
+```bash
+cargo run -- --uri wss://kusama.api.onfinality.io/public-ws predict
+```
+
+### Custom Election Data File Format
+
+When using `--custom-file`, the file should have the following JSON structure:
+
+```json
+{
+  "metadata": {
+    "ss58Prefix": 42
+  },
+  "candidates": [
+    {
+      "account": "5CFPcUJgYgWryPaV1aYjSbTpbTLu42V32Ytw1L9rfoMAsfGh",
+      "stake": 27549105879206511
+    }
+  ],
+  "nominators": [
+    {
+      "account": "5EnBXFfRFgutykCTHsaMYygakTy6jjLQRvBxqXfc85GSnPk1",
+      "stake": 3217591643365,
+      "targets": [
+        "5C556QTtg1bJ43GDSgeowa3Ark6aeSHGTac1b2rKSXtgmSmW",
+        "5Ft3J6iqSQPWX2S9jERXcMpevt8JDUPWjec5uGierfVGXisE"
+      ]
+    }
+  ]
+}
+```
+
+**Note:** Custom file paths can be nested (e.g., `data/elections/custom.json`). The tool will
+automatically resolve relative paths from the current working directory.
+
+### Output Files
+
+The tool generates the following JSON files in the specified output directory:
+
+1. **`validators_prediction.json`**: Contains elected validators with their stake information
+2. **`nominators_prediction.json`**: Contains nominator allocations and validator support
+
+#### Validators Prediction Format
+
+```json
+{
+  "metadata": {
+    "timestamp": "1762863160",
+    "desired_validators": 50,
+    "round": 469,
+    "block_number": 13196110,
+    "solution_score": null,
+    "data_source": "custom_file"
+  },
+  "results": [
+    {
+      "account": "5ENXqYmc5m6VLMm5i1mun832xAv2Qm9t3M4PWAFvvyCJLNoR",
+      "total_stake": "165143.380563409994 WND",
+      "self_stake": "74060.125441473510 WND"
+    }
+  ]
+}
+```
+
+#### Nominators Prediction Format
+
+```json
+{
+  "metadata": {
+    "timestamp": "1762863160",
+    "desired_validators": 50,
+    "round": 469,
+    "block_number": 13196110,
+    "solution_score": null,
+    "data_source": "custom_file"
+  },
+  "nominators": [
+    {
+      "address": "5EnBXFfRFgutykCTHsaMYygakTy6jjLQRvBxqXfc85GSnPk1",
+      "stake": "3.217591643365 WND",
+      "active_validators": [
+        {
+          "validator": "5C556QTtg1bJ43GDSgeowa3Ark6aeSHGTac1b2rKSXtgmSmW",
+          "allocated_stake": "0.438622588332 WND"
+        }
+      ],
+      "inactive_validators": [],
+      "waiting_validators": []
+    }
+  ]
+}
+```
+
+### How It Works
+
+1. **Data Source**: The tool first tries to fetch data from the chain's snapshot (if available),
+   then falls back to the staking pallet. If `--custom-file` is provided, it uses that data instead.
+
+2. **Election Algorithm**: Runs the same Phragmén algorithm (`seq_phragmen`) used by Substrate chains
+   to determine:
+   - Which validators would be elected
+   - Stake distribution among validators
+   - Nominator allocations to validators
+
+3. **Output Generation**: Creates detailed JSON files with predictions, including validator and
+   nominator perspectives.
+
+### Supported Chains
+
+The predict command works with any Substrate-based chain that implements the Staking pallet,
+including:
+
+- **Polkadot**: Main parachain network
+- **Kusama**: Canary network
+- **Westend**: Test network
+- **Asset Hub**: Polkadot's asset parachain
+- **Other Parachains**: Any Substrate-based parachain
+
 ## Runtime upgrades
 
 Runtime upgrades are handled by the polkadot-staking-miner by upgrading storage constants and that

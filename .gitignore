@@ -21,3 +21,6 @@ encoded.call
 solution.supports.bin
 election_prediction.json
 cache/
+results*/
+test*.rs
+custom.json

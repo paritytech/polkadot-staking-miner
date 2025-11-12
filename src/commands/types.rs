@@ -1,4 +1,8 @@
-use polkadot_sdk::sp_runtime::Perbill;
+use polkadot_sdk::{
+	sp_npos_elections::ElectionScore,
+	sp_runtime::Perbill,
+};
+use serde::{Deserialize, Serialize};
 
 /// Submission strategy to use.
 #[derive(Debug, Copy, Clone)]
@@ -90,17 +94,108 @@ pub struct PredictConfig {
 
 	/// Path to custom nominators and validators JSON file
 	#[clap(long)]
-	pub custom_nominators_validators: Option<String>,
+	pub custom_file: Option<String>,
 
-	/// Output file for prediction results
-	#[clap(long, default_value = "election_prediction.json")]
-	pub output: String,
+	/// Output directory for prediction results
+	#[clap(long, default_value = "results")]
+	pub output_dir: String,
+}
 
-	/// Use cached data instead of fetching from chain
-	#[clap(long)]
-	pub use_cached_data: bool,
+/// Result of election prediction
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PredictionResult {
+	pub desired_targets: u32,
+	pub round: u32,
+	pub block_number: u32,
+	pub solution_score: Option<ElectionScore>,
+	pub solution_pages: usize,
+	pub data_source: String, // "snapshot" or "staking"
+}
 
-	/// Path to cached data directory
-	#[clap(long, default_value = "./cache")]
-	pub cache_dir: String,
+/// Validator prediction output
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidatorsPrediction {
+	pub metadata: PredictionMetadata,
+	pub results: Vec<ValidatorInfo>,
+}
+
+/// Prediction metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PredictionMetadata {
+	pub timestamp: String,
+	pub desired_validators: u32,
+	pub round: u32,
+	pub block_number: u32,
+	pub solution_score: Option<ElectionScore>,
+	pub data_source: String,
+}
+
+/// Validator information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidatorInfo {
+	pub account: String,
+	pub total_stake: String, // Token amount as string
+	pub self_stake: String,  // Token amount as string
+}
+
+/// Nominator prediction output
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NominatorsPrediction {
+	pub metadata: PredictionMetadata,
+	pub nominators: Vec<NominatorPrediction>,
+}
+
+/// Nominator prediction
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NominatorPrediction {
+	pub address: String,
+	pub stake: String, // Token amount as string
+	pub active_validators: Vec<ValidatorStakeAllocation>,
+	pub inactive_validators: Vec<String>,
+	pub waiting_validators: Vec<String>,
+}
+
+/// Validator stake allocation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidatorStakeAllocation {
+	pub validator: String,
+	pub allocated_stake: String, // Token amount as string
+}
+
+// ============================================================================
+// Custom File Format Types
+// ============================================================================
+
+/// Custom file format for election data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomElectionFile {
+	pub metadata: CustomFileMetadata,
+	pub candidates: Vec<CustomCandidate>,
+	pub nominators: Vec<CustomNominator>,
+}
+
+/// Metadata in custom file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomFileMetadata {
+	#[serde(rename = "ss58Prefix")]
+	pub ss58_prefix: u16,
+	// Allow other fields to be present but ignore them
+	#[serde(flatten)]
+	#[serde(skip_serializing_if = "std::collections::HashMap::is_empty")]
+	pub other: std::collections::HashMap<String, serde_json::Value>,
+}
+
+/// Candidate in custom file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomCandidate {
+	pub account: String,
+	pub stake: u128,
+}
+
+/// Nominator in custom file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomNominator {
+	pub account: String,
+	pub stake: u64,
+	pub targets: Vec<String>,
 }
