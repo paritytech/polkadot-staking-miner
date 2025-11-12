@@ -103,18 +103,33 @@ pub async fn predict_cmd(client: Client, config: PredictConfig) -> Result<(), Er
 		&token_symbol,
 	);
 
-	// Mine Solution for submitting to the chain
+	let do_reduce = true;
 
-	let _mine_solution_input = convert_staking_to_mine_solution_input::<MinerConfig>(candidates.clone(), nominators.clone())?;
-	let _paged_raw_solution = mine_solution::<MinerConfig>(_mine_solution_input.0, _mine_solution_input.1, n_pages, round, desired_targets, block_number, false).await?;
+	// Mine Solution for submitting to the chain
+	// only `mine_solution` if we have enough candidates
+	let solution_score = if candidates.len() >= desired_targets as usize {
+		let _mine_solution_input = convert_staking_to_mine_solution_input::<MinerConfig>(candidates.clone(), nominators.clone())?;
+		let paged_raw_solution = mine_solution::<MinerConfig>(_mine_solution_input.0, _mine_solution_input.1, n_pages, round, desired_targets, block_number, false).await?;
+		Some(paged_raw_solution.score)
+	}else {
+		log::info!(
+			target: LOG_TARGET,
+			"Skipping mine_solution: only {} candidates available but {} desired, setting score to None",
+			candidates.len(),
+			desired_targets
+		);
+		None
+	};
 
 	// Update metadata with actual values
 	validators_prediction.metadata.block_number = block_number;
 	validators_prediction.metadata.data_source = data_source.clone();
 	validators_prediction.metadata.round = round;
+	validators_prediction.metadata.solution_score = solution_score;
 	nominators_prediction.metadata.block_number = block_number;
 	nominators_prediction.metadata.data_source = data_source.clone();
 	nominators_prediction.metadata.round = round;
+	nominators_prediction.metadata.solution_score = solution_score;
 
 	// Determine output file paths
 	// Create output directory if it doesn't exist

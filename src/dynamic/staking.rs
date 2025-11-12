@@ -263,7 +263,7 @@ pub(crate) async fn fetch_nominators(
 		/// Era when nominations were submitted
 		pub _submitted_in: u32,
 		/// Whether the nominator is suppressed
-		pub _suppressed: bool,
+		pub suppressed: bool,
 	}
 
 	// Build an iterator over Staking::Nominators at latest block
@@ -287,7 +287,12 @@ pub(crate) async fn fetch_nominators(
 		// Decode the nominations into a typed struct.
 		let nominations: Nominations = Decode::decode(&mut &kv.value.encoded()[..])?;
 
-		nominators.push((stash.clone(), nominations.targets));
+		// only consider active nominators
+		if !nominations.suppressed {
+			nominators.push((stash.clone(), nominations.targets));
+		}else {
+			log::info!(target: LOG_TARGET, "Skipping suppressed nominator: {stash}");
+		}
 
 		count += 1;
 		if count % 1000 == 0 {
