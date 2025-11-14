@@ -10,7 +10,7 @@ use crate::{
 		utils::{decode_error, storage_addr, to_scale_value, tx},
 	},
 	error::Error,
-	prelude::{AccountId, ChainClient, Config, ExtrinsicParamsBuilder, Hash, LOG_TARGET, Storage},
+	prelude::{AccountId, ChainClient, Config, ExtrinsicParamsBuilder, Hash, MULTI_BLOCK_LOG_TARGET as LOG_TARGET, Storage},
 	runtime::multi_block::{
 		self as runtime, runtime_types::pallet_election_provider_multi_block::types::Phase,
 	},
@@ -22,8 +22,7 @@ use futures::{StreamExt, stream::FuturesUnordered};
 use polkadot_sdk::{
 	frame_support::BoundedVec,
 	pallet_election_provider_multi_block::{
-		types::PagedRawSolution,
-		unsigned::miner::{BaseMiner as Miner, MineInput, MinerConfig},
+		types::PagedRawSolution, unsigned::miner::{BaseMiner as Miner, MineInput, MinerConfig}
 	},
 	sp_npos_elections::ElectionScore,
 };
@@ -229,6 +228,57 @@ where
 	})
 	.await
 	.map_err(|e| Error::Other(format!("{e:?}")))?
+}
+
+pub(crate) async fn try_fetch_snapshot<T>(
+	n_pages: u32,
+	round: u32,
+	desired_targets: u32,
+	storage: &Storage,
+) -> Result<(TargetSnapshotPageOf<T>, BoundedVec<VoterSnapshotPageOf<T>, T::Pages>), Error>
+where
+	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
+	T::Solution: Send,
+	T::Pages: Send,
+	T::TargetSnapshotPerBlock: Send,
+	T::VoterSnapshotPerBlock: Send,
+	T::MaxVotesPerVoter: Send,
+{
+	// Validate n_pages
+	if n_pages <= 0 {
+		return Err(Error::Other("n_pages must be > 0".into()));
+	}
+
+	// Fetch the (single) target snapshot. Use the last page index like other helpers in this module.
+	let target_snapshot: TargetSnapshotPageOf<T> =
+		target_snapshot::<T>(n_pages - 1, round, storage).await?;
+
+	log::info!(target: LOG_TARGET, "Fetched {} targets from snapshot", target_snapshot.len());
+
+	// Fetch all voter snapshot pages
+	let mut voter_snapshot_paged: Vec<VoterSnapshotPageOf<T>> = Vec::with_capacity(n_pages as usize);
+	for page in 0..n_pages {
+		let voter_page = paged_voter_snapshot::<T>(page, round, storage).await?;
+		log::info!(target: LOG_TARGET, "Fetched {page}/{n_pages} pages from snapshot");
+		voter_snapshot_paged.push(voter_page);
+	}
+
+	log::trace!(
+		target: LOG_TARGET,
+		"Mine_and_submit: election target snap size: {:?}, voter snap size: {:?}",
+		target_snapshot.len(),
+		voter_snapshot_paged.len()
+	);
+
+	let voter_pages: BoundedVec<VoterSnapshotPageOf<T>, T::Pages> =
+		BoundedVec::truncate_from(voter_snapshot_paged);
+
+	log::trace!(
+		target: LOG_TARGET,
+		"MineInput: desired_targets={desired_targets},pages={n_pages},target_snapshot_len={},voters_pages_len={},round={round}",
+		target_snapshot.len(), voter_pages.len()
+	);
+	Ok((target_snapshot, voter_pages))
 }
 
 /// Fetches the target snapshot and all voter snapshots which are missing

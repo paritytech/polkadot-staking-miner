@@ -10,6 +10,8 @@ use subxt::backend::{
 pub struct Client {
 	/// Access to chain APIs such as storage, events etc.
 	chain_api: ChainClient,
+	/// The URI used to connect to the chain
+	uri: String,
 }
 
 impl Client {
@@ -34,11 +36,16 @@ impl Client {
 
 		log::info!(target: LOG_TARGET, "Connected to {uri} with ChainHead backend");
 
-		Ok(Self { chain_api })
+		Ok(Self { chain_api, uri: uri.to_string() })
 	}
 
 	/// Get a reference to the chain API.
 	pub fn chain_api(&self) -> &ChainClient {
 		&self.chain_api
+	}
+
+	/// Get the URI used to connect to the chain.
+	pub fn uri(&self) -> &str {
+		&self.uri
 	}
 }
