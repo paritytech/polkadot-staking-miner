@@ -109,7 +109,7 @@ pub async fn predict_cmd(client: Client, config: PredictConfig) -> Result<(), Er
 	// only `mine_solution` if we have enough candidates
 	let solution_score = if candidates.len() > desired_targets as usize {
 		let _mine_solution_input = convert_staking_to_mine_solution_input::<MinerConfig>(candidates.clone(), nominators.clone())?;
-		let paged_raw_solution = mine_solution::<MinerConfig>(_mine_solution_input.0, _mine_solution_input.1, n_pages, round, desired_targets, block_number, false).await?;
+		let paged_raw_solution = mine_solution::<MinerConfig>(_mine_solution_input.0, _mine_solution_input.1, n_pages, round, desired_targets, block_number, do_reduce).await?;
 		Some(paged_raw_solution.score)
 	}else {
 		log::info!(

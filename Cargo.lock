@@ -8025,6 +8025,7 @@ dependencies = [
  "scale-value",
  "serde",
  "serde_json",
+ "ss58-registry",
  "subxt",
  "subxt-rpcs",
  "tempfile",

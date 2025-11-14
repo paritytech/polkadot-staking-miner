@@ -21,6 +21,7 @@ use crate::{
 	prelude::{AccountId, ChainClient, Config, Hash, LOG_TARGET, Storage},
 };
 use polkadot_sdk::sp_core::crypto::{Ss58AddressFormat, Ss58Codec};
+use ss58_registry::Ss58AddressFormat as RegistryFormat;
 use serde::Deserialize;
 use subxt_rpcs::rpc_params;
 use anyhow::Context;
@@ -214,9 +215,32 @@ pub async fn get_chain_properties(client: &Client) -> Result<(u8, String), Error
 }
 
 /// Encode an AccountId to SS58 string with chain-specific prefix
+/// Uses ss58-registry to validate the prefix against known networks
 pub fn encode_account_id(account: &AccountId, ss58_prefix: u16) -> String {
-	// AccountId is already AccountId32, just encode it with the custom prefix
-	// Clone to avoid move
+	// Use ss58-registry to validate and get network information
+	let is_known = RegistryFormat::all()
+		.iter()
+		.any(|entry| {
+			let entry_format: RegistryFormat = (*entry).into();
+			entry_format.prefix() == ss58_prefix
+		});
+	
+	if is_known {
+		log::trace!(
+			target: LOG_TARGET,
+			"Encoding with SS58 prefix {} (validated in registry)",
+			ss58_prefix
+		);
+	} else {
+		log::trace!(
+			target: LOG_TARGET,
+			"Encoding with SS58 prefix {} (custom format, not in registry)",
+			ss58_prefix
+		);
+	}
+	
+	// Encode using the standard SS58 encoding with the provided prefix
+	// The registry validation above ensures we're aware if it's a known network
 	account
 		.clone()
 		.to_ss58check_with_version(Ss58AddressFormat::custom(ss58_prefix))

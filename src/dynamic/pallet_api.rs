@@ -85,7 +85,7 @@ pub mod multi_block {
 			PalletItem::new(NAME, "PagedVoterSnapshotHash");
 		pub const ROUND: PalletItem =
 			PalletItem::new(NAME, "Round");
-		pub const DESIRED_TARGETS: PalletItem =
+		pub const _DESIRED_TARGETS: PalletItem =
 			PalletItem::new(NAME, "DesiredTargets");
 	}
 }
@@ -161,7 +161,7 @@ pub mod staking {
 
 	pub mod storage {
 		use super::{super::*, *};
-		pub const ACTIVE_ERA: PalletItem = PalletItem::new(NAME, "ActiveEra");
+		pub const _ACTIVE_ERA: PalletItem = PalletItem::new(NAME, "ActiveEra");
 		pub const VALIDATOR_COUNT: PalletItem =
 			PalletItem::new(NAME, "ValidatorCount");
 		pub const VALIDATORS: PalletItem = PalletItem::new(NAME, "Validators");
