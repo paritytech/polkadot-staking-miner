@@ -48,7 +48,7 @@ polkadot-sdk = { git = "https://github.com/paritytech/polkadot-sdk", features = 
 
 # prometheus
 prometheus = "0.14"
-hyper = { version = "1.7.0", features = ["server", "http1", "http2"] }
+hyper = { version = "1.8.1", features = ["server", "http1", "http2"] }
 hyper-util = { version = "0.1.17", features = [
   "server-auto",
   "server-graceful",
