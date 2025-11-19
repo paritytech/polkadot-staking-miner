@@ -89,77 +89,68 @@ pub struct MultiBlockMonitorConfig {
 #[cfg_attr(test, derive(PartialEq))]
 pub struct PredictConfig {
 	/// Desired number of validators for the prediction
-	#[clap(long)]
-	pub desired_validators: Option<u32>,
+    /// (If omitted, the value is fetched from the chain)
+    #[clap(long)]
+    pub desired_validators: Option<u32>,
 
-	/// Path to custom nominators and validators JSON file
-	#[clap(long)]
-	pub custom_file: Option<String>,
+    /// Path to custom election data JSON file
+    #[clap(long)]
+    pub custom_file: Option<String>,
 
-	/// Output directory for prediction results
-	#[clap(long, default_value = "results")]
-	pub output_dir: String,
-}
-
-/// Result of election prediction
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PredictionResult {
-	pub desired_targets: u32,
-	pub round: u32,
-	pub block_number: u32,
-	pub solution_score: Option<ElectionScore>,
-	pub solution_pages: usize,
-	pub data_source: String, // "snapshot" or "staking"
+    /// Output directory for prediction results
+	/// Defaults to "results/"
+    #[clap(long, default_value = "results")]
+    pub output_dir: String,
 }
 
 /// Validator prediction output
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ValidatorsPrediction {
-	pub metadata: PredictionMetadata,
-	pub results: Vec<ValidatorInfo>,
+pub(crate) struct ValidatorsPrediction {
+	pub(crate) metadata: PredictionMetadata,
+	pub(crate) results: Vec<ValidatorInfo>,
 }
 
 /// Prediction metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PredictionMetadata {
-	pub timestamp: String,
-	pub desired_validators: u32,
-	pub round: u32,
-	pub block_number: u32,
-	pub solution_score: Option<ElectionScore>,
-	pub data_source: String,
+pub(crate) struct PredictionMetadata {
+	pub(crate) timestamp: String,
+	pub(crate) desired_validators: u32,
+	pub(crate) round: u32,
+	pub(crate) block_number: u32,
+	pub(crate) solution_score: Option<ElectionScore>,
+	pub(crate) data_source: String,
 }
 
 /// Validator information
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ValidatorInfo {
-	pub account: String,
-	pub total_stake: String, // Token amount as string
-	pub self_stake: String,  // Token amount as string
+pub(crate) struct ValidatorInfo {
+	pub(crate) account: String,
+	pub(crate) total_stake: String, // Token amount as string
+	pub(crate) self_stake: String,  // Token amount as string
 }
 
 /// Nominator prediction output
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NominatorsPrediction {
-	pub metadata: PredictionMetadata,
-	pub nominators: Vec<NominatorPrediction>,
+pub(crate) struct NominatorsPrediction {
+	pub(crate) metadata: PredictionMetadata,
+	pub(crate) nominators: Vec<NominatorPrediction>,
 }
 
 /// Nominator prediction
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NominatorPrediction {
-	pub address: String,
-	pub stake: String, // Token amount as string
-	pub active_validators: Vec<ValidatorStakeAllocation>,
-	pub inactive_validators: Vec<String>,
-	pub waiting_validators: Vec<String>,
+pub(crate) struct NominatorPrediction {
+	pub(crate) address: String,
+	pub(crate) stake: String, // Token amount as string
+	pub(crate) active_validators: Vec<ValidatorStakeAllocation>,
+	pub(crate) inactive_validators: Vec<String>,
+	pub(crate) waiting_validators: Vec<String>,
 }
 
 /// Validator stake allocation
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ValidatorStakeAllocation {
-	pub validator: String,
-	pub allocated_stake: String, // Token amount as string
+pub(crate) struct ValidatorStakeAllocation {
+	pub(crate) validator: String,
+	pub(crate) allocated_stake: String, // Token amount as string
 }
 
 // ============================================================================
