@@ -51,13 +51,21 @@ docker build -t polkadot-staking-miner .
 ### Pull the image from Docker Hub
 
 
-sudo docker pull antiers/polkadot-staking-miner:latest
+sudo docker pull paritytech/staking-miner-v2:latest
 
 ### for custom validators
 
-sudo docker run --rm -v "$(pwd):/workspace" ant/polkadot-staking-miner:latest   --uri wss://westend-asset-hub-rpc.polkadot.io   predict --custom-file custom.json --desired-validators 1
+sudo docker run --rm -v "$(pwd):/workspace" paritytech/staking-miner-v2:latest   --uri wss://westend-asset-hub-rpc.polkadot.io   predict --custom-file custom.json --desired-validators 1
 
 
 ### for basic prediction
 
-sudo docker run --rm -v "$(pwd):/workspace" antiers/polkadot-staking-miner:latest   --uri wss://westend-asset-hub-rpc.polkadot.io   predict
+sudo docker run --rm -v "$(pwd):/workspace" paritytech/staking-miner-v2:latest   --uri wss://westend-asset-hub-rpc.polkadot.io   predict
+
+### monitor command
+
+sudo docker run --rm -v "$(pwd):/workspace" paritytech/staking-miner-v2:latest   --uri wss://westend-asset-hub-rpc.polkadot.io  monitor --seed-or-path //Alice
+
+### info commanda
+
+sudo docker run --rm -v "$(pwd):/workspace" paritytech/staking-miner-v2:latest   --uri wss://westend-asset-hub-rpc.polkadot.io   info
