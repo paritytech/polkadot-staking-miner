@@ -1,4 +1,8 @@
-use polkadot_sdk::sp_runtime::Perbill;
+use polkadot_sdk::{
+	sp_npos_elections::ElectionScore,
+	sp_runtime::Perbill,
+};
+use serde::{Deserialize, Serialize};
 
 /// Submission strategy to use.
 #[derive(Debug, Copy, Clone)]
@@ -83,4 +87,111 @@ pub struct MultiBlockMonitorConfig {
 	/// Higher values may produce better balanced solutions at the cost of more computation time.
 	#[clap(long, default_value_t = 10)]
 	pub balancing_iterations: usize,
+}
+
+/// CLI configuration for election prediction
+#[derive(Debug, Clone, clap::Parser)]
+#[cfg_attr(test, derive(PartialEq))]
+pub struct PredictConfig {
+	/// Desired number of validators for the prediction
+    /// (If omitted, the value is fetched from the chain)
+    #[clap(long)]
+    pub desired_validators: Option<u32>,
+
+    /// Path to custom election data JSON file
+    #[clap(long)]
+    pub custom_file: Option<String>,
+
+    /// Output directory for prediction results
+	/// Defaults to "results/"
+    #[clap(long, default_value = "results")]
+    pub output_dir: String,
+}
+
+/// Validator prediction output
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ValidatorsPrediction {
+	pub(crate) metadata: PredictionMetadata,
+	pub(crate) results: Vec<ValidatorInfo>,
+}
+
+/// Prediction metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct PredictionMetadata {
+	pub(crate) timestamp: String,
+	pub(crate) desired_validators: u32,
+	pub(crate) round: u32,
+	pub(crate) block_number: u32,
+	pub(crate) solution_score: Option<ElectionScore>,
+	pub(crate) data_source: String,
+}
+
+/// Validator information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ValidatorInfo {
+	pub(crate) account: String,
+	pub(crate) total_stake: String, // Token amount as string
+	pub(crate) self_stake: String,  // Token amount as string
+}
+
+/// Nominator prediction output
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct NominatorsPrediction {
+	pub(crate) metadata: PredictionMetadata,
+	pub(crate) nominators: Vec<NominatorPrediction>,
+}
+
+/// Nominator prediction
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct NominatorPrediction {
+	pub(crate) address: String,
+	pub(crate) stake: String, // Token amount as string
+	pub(crate) active_validators: Vec<ValidatorStakeAllocation>,
+	pub(crate) inactive_validators: Vec<String>,
+	pub(crate) waiting_validators: Vec<String>,
+}
+
+/// Validator stake allocation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ValidatorStakeAllocation {
+	pub(crate) validator: String,
+	pub(crate) allocated_stake: String, // Token amount as string
+}
+
+// ============================================================================
+// Custom File Format Types
+// ============================================================================
+
+/// Custom file format for election data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomElectionFile {
+	pub metadata: CustomFileMetadata,
+	pub candidates: Vec<CustomCandidate>,
+	pub nominators: Vec<CustomNominator>,
+}
+
+/// Metadata in custom file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomFileMetadata {
+	#[serde(rename = "ss58Prefix")]
+	pub ss58_prefix: u16,
+	// Allow other fields to be present but ignore them
+	#[serde(flatten)]
+	#[serde(skip_serializing_if = "std::collections::HashMap::is_empty")]
+	pub other: std::collections::HashMap<String, serde_json::Value>,
+}
+
+/// Candidate in custom file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomCandidate {
+	pub account: String,
+	pub stake: u128,
+}
+
+/// Nominator in custom file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomNominator {
+	pub account: String,
+	pub stake: u64,
+	pub targets: Vec<String>,
 }

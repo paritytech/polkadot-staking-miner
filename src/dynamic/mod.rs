@@ -12,6 +12,7 @@ use crate::{error::Error, prelude::ChainClient, static_types};
 pub mod multi_block;
 pub mod pallet_api;
 pub mod utils;
+pub mod staking;
 
 use static_types::multi_block::{
 	BalancingIterations, MaxBackersPerWinner, MaxLength, MaxWinnersPerPage, Pages,
