@@ -37,7 +37,7 @@ jobs:
     container: ${{ needs.set-image.outputs.IMAGE }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Check formatting
         run: |
@@ -51,7 +51,7 @@ jobs:
     container: ${{ needs.set-image.outputs.IMAGE }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Cache Rust dependencies
         uses: swatinem/rust-cache@v2
@@ -70,7 +70,7 @@ jobs:
     container: ${{ needs.set-image.outputs.IMAGE }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Cache Rust dependencies
         uses: swatinem/rust-cache@v2
@@ -92,7 +92,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Cache Rust dependencies
         uses: swatinem/rust-cache@v2
@@ -111,7 +111,7 @@ jobs:
     container: ${{ needs.set-image.outputs.IMAGE }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Cache Rust dependencies
         uses: swatinem/rust-cache@v2
@@ -130,7 +130,7 @@ jobs:
     container: ${{ needs.set-image.outputs.IMAGE }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Cache Rust dependencies
         uses: swatinem/rust-cache@v2
@@ -160,7 +160,7 @@ jobs:
     needs: [check-fmt, check-clippy, check-docs, check-code, test, build]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Download artifacts
         uses: actions/download-artifact@v6.0.0
@@ -194,7 +194,7 @@ jobs:
     needs: [check-fmt, check-clippy, check-docs, check-code, test, build]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Download artifacts
         uses: actions/download-artifact@v6.0.0
