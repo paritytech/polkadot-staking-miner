@@ -82,6 +82,11 @@ pub struct MultiBlockMonitorConfig {
 	/// This creates invalid submissions to test the system's response to spam attacks.
 	#[clap(long, default_value_t = false, hide = true)]
 	pub shady: bool,
+
+	/// Number of balancing iterations for the sequential phragmen algorithm.
+	/// Higher values may produce better balanced solutions at the cost of more computation time.
+	#[clap(long, default_value_t = 10)]
+	pub balancing_iterations: usize,
 }
 
 /// CLI configuration for election prediction

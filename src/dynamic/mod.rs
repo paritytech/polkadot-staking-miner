@@ -14,13 +14,14 @@ pub mod pallet_api;
 pub mod utils;
 pub mod staking;
 
+use static_types::multi_block::{
+	BalancingIterations, MaxBackersPerWinner, MaxLength, MaxWinnersPerPage, Pages,
+	TargetSnapshotPerBlock, VoterSnapshotPerBlock,
+};
+
 /// Read the constants from the metadata and updates the static types.
 pub fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
 	use polkadot_sdk::sp_runtime::Percent;
-	use static_types::multi_block::{
-		MaxBackersPerWinner, MaxLength, MaxWinnersPerPage, Pages, TargetSnapshotPerBlock,
-		VoterSnapshotPerBlock,
-	};
 
 	let pages: u32 = pallet_api::multi_block::constants::PAGES.fetch(api)?;
 	Pages::set(pages);
@@ -43,4 +44,9 @@ pub fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
 	);
 
 	Ok(())
+}
+
+/// Set the balancing iterations from CLI config.
+pub fn set_balancing_iterations(iterations: usize) {
+	BalancingIterations::set(iterations);
 }
