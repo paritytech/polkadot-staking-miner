@@ -9,7 +9,7 @@ use tempfile::TempDir;
 #[test]
 fn predict_help_works() {
 	let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!(env!("CARGO_PKG_NAME")));
-	cmd.args(&["predict", "--help"]);
+	cmd.args(["predict", "--help"]);
 	cmd.assert().success();
 }
 
@@ -18,7 +18,7 @@ fn predict_help_works() {
 fn predict_cli_args_parsing() {
 	// Test with desired validators
 	let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!(env!("CARGO_PKG_NAME")));
-	cmd.args(&["predict", "--desired-validators", "19"]);
+	cmd.args(["predict", "--desired-validators", "19"]);
 	// This will fail because we need a valid URI, but we're just testing argument parsing
 	// In a real scenario, you'd need a running node or mock
 }
@@ -29,26 +29,26 @@ fn predict_config_parsing() {
 	use clap::Parser;
 
 	// Test default values
-	let config = PredictConfig::try_parse_from(&["predict"]).unwrap();
+	let config = PredictConfig::try_parse_from(["predict"]).unwrap();
 	assert_eq!(config.desired_validators, None);
 	assert_eq!(config.custom_file, None);
 	assert_eq!(config.output_dir, "results");
 
 	// Test with desired validators
-	let config = PredictConfig::try_parse_from(&["predict", "--desired-validators", "50"]).unwrap();
+	let config = PredictConfig::try_parse_from(["predict", "--desired-validators", "50"]).unwrap();
 	assert_eq!(config.desired_validators, Some(50));
 
 	// Test with custom file
 	let config =
-		PredictConfig::try_parse_from(&["predict", "--custom-file", "custom.json"]).unwrap();
+		PredictConfig::try_parse_from(["predict", "--custom-file", "custom.json"]).unwrap();
 	assert_eq!(config.custom_file, Some("custom.json".to_string()));
 
 	// Test with output directory
-	let config = PredictConfig::try_parse_from(&["predict", "--output-dir", "outputs"]).unwrap();
+	let config = PredictConfig::try_parse_from(["predict", "--output-dir", "outputs"]).unwrap();
 	assert_eq!(config.output_dir, "outputs");
 
 	// Test with all options
-	let config = PredictConfig::try_parse_from(&[
+	let config = PredictConfig::try_parse_from([
 		"predict",
 		"--desired-validators",
 		"50",
