@@ -149,7 +149,9 @@ async fn main() -> Result<(), Error> {
 			})
 		},
 		Command::Predict(cfg) => {
-			commands::predict::predict_cmd(client, cfg).boxed()
+			macros::for_multi_block_runtime!(chain, {
+				commands::predict::predict_cmd::<MinerConfig>(client, cfg).boxed()
+			})
 		},
 	};
 

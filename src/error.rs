@@ -120,6 +120,8 @@ pub enum Error {
 	ChannelFailure(#[from] ChannelFailureError),
 	#[error("Task failure: {0}")]
 	TaskFailure(#[from] TaskFailureError),
+	#[error("JSON serialization error: `{0}`")]
+	SerdeJson(#[from] serde_json::Error),
 }
 
 impl From<subxt_rpcs::Error> for Error {

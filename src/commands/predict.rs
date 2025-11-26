@@ -1,148 +1,139 @@
 //! Predict command implementation for election prediction
+use polkadot_sdk::pallet_election_provider_multi_block::unsigned::miner::MinerConfig;
 
 use crate::{
 	client::Client,
-	commands::types::{CustomElectionFile, PredictConfig},
+	commands::types::{CustomElectionFile, ElectionDataSource, PredictConfig},
 	dynamic::{
-		multi_block::{mine_solution, try_fetch_snapshot},
-		staking::{
-			build_predictions_from_phragmen, convert_staking_to_mine_solution_input, fetch_candidates, fetch_current_round, fetch_nominators, fetch_stakes_in_batches, fetch_validator_count, predict_election
+		election_data::{
+			PredictionContext, build_predictions_from_solution, convert_staking_data_to_snapshots,
+			get_election_data,
 		},
+		multi_block::mine_solution,
 		update_metadata_constants,
 	},
 	error::Error,
 	prelude::{AccountId, LOG_TARGET},
-	static_types::multi_block::{Pages, polkadot::MinerConfig},
-	utils::{get_chain_properties, get_ss58_prefix, read_data_from_json_file, write_data_to_json_file},
+	runtime::multi_block::{self as runtime},
+	static_types::multi_block::Pages,
+	utils::{get_chain_properties, read_data_from_json_file, write_data_to_json_file},
 };
 
 /// Run the election prediction with the given configuration
-pub async fn predict_cmd(client: Client, config: PredictConfig) -> Result<(), Error> {
-	log::info!(target: LOG_TARGET, "Starting election prediction tool...");
+pub async fn predict_cmd<T>(client: Client, config: PredictConfig) -> Result<(), Error>
+where
+	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
+	T::Solution: Send,
+	T::Pages: Send,
+	T::TargetSnapshotPerBlock: Send,
+	T::VoterSnapshotPerBlock: Send,
+	T::MaxVotesPerVoter: Send,
+{
+	log::info!(target: LOG_TARGET, "Running prediction command...");
 
 	// Update metadata constants
 	update_metadata_constants(client.chain_api())?;
 
 	let n_pages = Pages::get();
 
-	let round = fetch_current_round(&client)
-		.await
-		.map_err(|e| Error::Other(format!("Failed to fetch current round: {}", e)))?;
+	let storage = client.chain_api().storage().at_latest().await?;
 
-	let desired_targets = match config.desired_validators {
-		Some(targets) => targets,
-		None => fetch_validator_count(&client)
-			.await
-			.map_err(|e| Error::Other(format!("Failed to fetch validator count: {}", e)))?,
-	};
+	let current_round = storage
+		.fetch_or_default(&runtime::storage().multi_block_election().round())
+		.await?;
 
 	let block_number = client
 		.chain_api()
 		.blocks()
 		.at_latest()
 		.await
-		.map_err(|e| Error::Other(format!("Failed to fetch latest block number: {}", e)))?
+		.map_err(|e| Error::Other(format!("Failed to fetch latest block number: {e}")))?
 		.number();
 
+	let desired_targets = match config.desired_validators {
+		Some(targets) => targets,
+		None => {
+			// Fetch from chain
+			storage
+				.fetch(&runtime::storage().staking().validator_count())
+				.await
+				.map_err(|e| {
+					Error::Other(format!("Failed to fetch Desired Targets from chain: {e}"))
+				})?
+				.expect("Error in fetching desired validators from chain")
+		},
+	};
+
+	let do_reduce = true;
+
 	// Check if custom file is provided
-	let (data_source, candidates, nominators, ss58_prefix_from_file) =
-		if let Some(path) = &config.custom_file {
-			load_custom_file(path).await?
-		} else {
-			load_from_snapshot_or_chain(&client, n_pages, round, desired_targets).await?
-		};
+	let (targets, voters, data_source) = if let Some(path) = &config.custom_file {
+		let (candidates, nominators) = load_custom_file(path).await?;
+		let (target_snapshot, voter_snapshot) =
+			convert_staking_data_to_snapshots::<T>(candidates, nominators)?;
+		(target_snapshot, voter_snapshot, ElectionDataSource::CustomFile)
+	} else {
+		let (target_snapshot, voter_snapshot, source) =
+			get_election_data::<T>(&client, n_pages, current_round, storage).await?;
+		(target_snapshot, voter_snapshot, source)
+	};
+
+	// Take the minimum of targets
+	let desired_targets = std::cmp::min(desired_targets, (targets.len().saturating_sub(1)) as u32);
 
 	log::info!(
 		target: LOG_TARGET,
 		"Mining solution with desired_targets={}, candidates={}, nominators={}",
 		desired_targets,
-		candidates.len(),
-		nominators.len()
+		targets.len(),
+		voters.len()
 	);
 
-	// Get chain-specific encoding parameters
-	// Use SS58 prefix from custom file if provided, otherwise fetch from chain
-	let (ss58_prefix, token_decimals, token_symbol) = if let Some(prefix) = ss58_prefix_from_file {
-		// If we have SS58 prefix from file, still need to fetch token properties from chain
-		let (token_decimals, token_symbol) = get_chain_properties(&client).await?;
-		(prefix, token_decimals, token_symbol)
-	} else {
-		// Fetch everything from chain
-		let prefix = get_ss58_prefix(&client).await?;
-		let (token_decimals, token_symbol) = get_chain_properties(&client).await?;
-		(prefix, token_decimals, token_symbol)
-	};
+	let target_snapshot_for_mining = targets.clone();
+	let voter_pages_for_mining = voters.clone();
+	// Use actual voter page count, not the chain's max pages
+	let actual_pages = voters.len() as u32;
+	let paged_raw_solution = mine_solution::<T>(
+		target_snapshot_for_mining,
+		voter_pages_for_mining,
+		actual_pages,
+		current_round,
+		desired_targets,
+		block_number,
+		do_reduce,
+	)
+	.await?;
 
-	log::info!(
-		target: LOG_TARGET,
-		"Using SS58 prefix: {}, token decimals: {}, token symbol: {}",
+	let (ss58_prefix, token_decimals, token_symbol) = get_chain_properties(&client).await?;
+
+	let prediction_ctx = PredictionContext {
+		round: current_round,
+		desired_targets,
+		block_number,
 		ss58_prefix,
 		token_decimals,
-		token_symbol
-	);
+		token_symbol: &token_symbol,
+		data_source: data_source.clone(),
+	};
 
-	// in case of snapshot self_vote is already included in the nominators
-	// in case of staking self_vote is not included in the nominators
-	let self_vote = data_source != "snapshot";
-
-	let election_result = predict_election(
-		desired_targets,
-		&candidates,
-		&nominators,
-		self_vote,
+	let (validators_prediction, nominators_prediction) = build_predictions_from_solution::<T>(
+		&paged_raw_solution,
+		&targets,
+		&voters,
+		&prediction_ctx,
 	)?;
-
-	// Run election using seq_phragmen directly
-	let (mut validators_prediction, mut nominators_prediction) = build_predictions_from_phragmen(
-		election_result,
-		desired_targets,
-		&candidates,
-		&nominators,
-		ss58_prefix,
-		token_decimals,
-		&token_symbol,
-	);
-
-	let do_reduce = true;
-
-	// Mine Solution for submitting to the chain
-	// only `mine_solution` if we have enough candidates
-	let solution_score = if candidates.len() > desired_targets as usize {
-		let _mine_solution_input = convert_staking_to_mine_solution_input::<MinerConfig>(candidates.clone(), nominators.clone())?;
-		let paged_raw_solution = mine_solution::<MinerConfig>(_mine_solution_input.0, _mine_solution_input.1, n_pages, round, desired_targets, block_number, do_reduce).await?;
-		Some(paged_raw_solution.score)
-	}else {
-		log::info!(
-			target: LOG_TARGET,
-			"Skipping mine_solution: only {} candidates available but {} desired, setting score to None",
-			candidates.len(),
-			desired_targets
-		);
-		None
-	};
-
-	// Update metadata with actual values
-	validators_prediction.metadata.block_number = block_number;
-	validators_prediction.metadata.data_source = data_source.clone();
-	validators_prediction.metadata.round = round;
-	validators_prediction.metadata.solution_score = solution_score;
-	nominators_prediction.metadata.block_number = block_number;
-	nominators_prediction.metadata.data_source = data_source.clone();
-	nominators_prediction.metadata.round = round;
-	nominators_prediction.metadata.solution_score = solution_score;
 
 	// Determine output file paths
 	// Create output directory if it doesn't exist
 	let output_dir = std::path::Path::new(&config.output_dir);
-	std::fs::create_dir_all(output_dir)
-		.map_err(|e| Error::Other(format!("Failed to create output directory {}: {}", output_dir.display(), e)))?;
+	std::fs::create_dir_all(output_dir).map_err(|e| {
+		Error::Other(format!("Failed to create output directory {}: {}", output_dir.display(), e))
+	})?;
 
 	let validators_output = output_dir.join("validators_prediction.json");
 	let nominators_output = output_dir.join("nominators_prediction.json");
 	// Save validators prediction
-	write_data_to_json_file(&validators_prediction, validators_output.to_str().unwrap())
-		.await
-		.map_err(|e| Error::Other(format!("Failed to write validators prediction: {}", e)))?;
+	write_data_to_json_file(&validators_prediction, validators_output.to_str().unwrap()).await?;
 
 	log::info!(
 		target: LOG_TARGET,
@@ -151,9 +142,7 @@ pub async fn predict_cmd(client: Client, config: PredictConfig) -> Result<(), Er
 	);
 
 	// Save nominators prediction
-	write_data_to_json_file(&nominators_prediction, nominators_output.to_str().unwrap())
-		.await
-		.map_err(|e| Error::Other(format!("Failed to write nominators prediction: {}", e)))?;
+	write_data_to_json_file(&nominators_prediction, nominators_output.to_str().unwrap()).await?;
 
 	log::info!(
 		target: LOG_TARGET,
@@ -165,126 +154,77 @@ pub async fn predict_cmd(client: Client, config: PredictConfig) -> Result<(), Er
 }
 
 async fn load_custom_file(
-    custom_file_path: &str,
-) -> Result<(String, Vec<(AccountId, u128)>, Vec<(AccountId, u64, Vec<AccountId>)>, Option<u16>), Error> 
-{
-    use std::path::PathBuf;
+	custom_file_path: &str,
+) -> Result<(Vec<(AccountId, u128)>, Vec<(AccountId, u64, Vec<AccountId>)>), Error> {
+	use std::path::PathBuf;
 
-    // Resolve relative path → absolute
-    let path: PathBuf = {
-        let p = PathBuf::from(custom_file_path);
-        if p.is_absolute() {
-            p
-        } else {
-            std::env::current_dir()
-                .map_err(|e| Error::Other(format!("Failed to get current directory: {}", e)))?
-                .join(p)
-        }
-    };
+	// Resolve relative path → absolute
+	let path: PathBuf = {
+		let p = PathBuf::from(custom_file_path);
+		if p.is_absolute() {
+			p
+		} else {
+			std::env::current_dir()
+				.map_err(|e| Error::Other(format!("Failed to get current directory: {e}")))?
+				.join(p)
+		}
+	};
 
-    log::info!(target: LOG_TARGET, "Reading election data from custom file: {}", path.display());
+	log::info!(target: LOG_TARGET, "Reading election data from custom file: {}", path.display());
 
-    if !path.exists() {
-        return Err(Error::Other(format!("Custom file not found: {}", path.display())));
-    }
+	if !path.exists() {
+		return Err(Error::Other(format!("Custom file not found: {}", path.display())));
+	}
 
-    // Read file
-    let custom_data: CustomElectionFile = read_data_from_json_file(
-        path.to_str().ok_or_else(|| Error::Other("Invalid custom file path".into()))?,
-    )
-    .await
-    .map_err(|e| Error::Other(format!("Failed to read custom file: {}", e)))?;
+	// Read file
+	let custom_data: CustomElectionFile = read_data_from_json_file(
+		path.to_str().ok_or_else(|| Error::Other("Invalid custom file path".into()))?,
+	)
+	.await
+	.map_err(|e| Error::Other(format!("Failed to read custom file: {e}")))?;
 
-    log::info!(
-        target: LOG_TARGET,
-        "Loaded {} candidates and {} nominators from custom file",
-        custom_data.candidates.len(),
-        custom_data.nominators.len()
-    );
+	log::info!(
+		target: LOG_TARGET,
+		"Loaded {} candidates and {} nominators from custom file",
+		custom_data.candidates.len(),
+		custom_data.nominators.len()
+	);
 
-    // Convert directly using iterators (more idiomatic)
-    let candidates = custom_data
-        .candidates
-        .into_iter()
-        .map(|c| {
-            Ok((c.account.parse::<AccountId>()
-                .map_err(|e| Error::Other(format!("Invalid candidate {}: {}", c.account, e)))?,
-                c.stake))
-        })
-        .collect::<Result<Vec<_>, Error>>()?;
+	// Convert directly using iterators (more idiomatic)
+	let candidates = custom_data
+		.candidates
+		.into_iter()
+		.map(|c| {
+			Ok((
+				c.account
+					.parse::<AccountId>()
+					.map_err(|e| Error::Other(format!("Invalid candidate {}: {}", c.account, e)))?,
+				c.stake,
+			))
+		})
+		.collect::<Result<Vec<_>, Error>>()?;
 
-    let nominators = custom_data
-        .nominators
-        .into_iter()
-        .map(|n| {
-            let account = n.account.parse::<AccountId>()
-                .map_err(|e| Error::Other(format!("Invalid nominator {}: {}", n.account, e)))?;
+	let nominators = custom_data
+		.nominators
+		.into_iter()
+		.map(|n| {
+			let account = n
+				.account
+				.parse::<AccountId>()
+				.map_err(|e| Error::Other(format!("Invalid nominator {}: {}", n.account, e)))?;
 
-            let targets = n.targets.into_iter()
-                .map(|t| {
-                    t.parse::<AccountId>()
-                        .map_err(|e| Error::Other(format!("Invalid target {}: {}", t, e)))
-                })
-                .collect::<Result<Vec<_>, Error>>()?;
+			let targets = n
+				.targets
+				.into_iter()
+				.map(|t| {
+					t.parse::<AccountId>()
+						.map_err(|e| Error::Other(format!("Invalid target {t}: {e}")))
+				})
+				.collect::<Result<Vec<_>, Error>>()?;
 
-            Ok((account, n.stake, targets))
-        })
-        .collect::<Result<Vec<_>, Error>>()?;
+			Ok((account, n.stake, targets))
+		})
+		.collect::<Result<Vec<_>, Error>>()?;
 
-    Ok(("custom_file".into(), candidates, nominators, Some(custom_data.metadata.ss58_prefix)))
-}
-
-async fn load_from_snapshot_or_chain(
-    client: &Client,
-    n_pages: u32,
-    round: u32,
-    desired_targets: u32,
-) -> Result<(String, Vec<(AccountId, u128)>, Vec<(AccountId, u64, Vec<AccountId>)>, Option<u16>), Error> 
-{
-    let storage = client
-        .chain_api()
-        .storage()
-        .at_latest()
-        .await
-        .map_err(|e| Error::Other(format!("Failed to get storage client: {}", e)))?;
-
-    match try_fetch_snapshot::<MinerConfig>(n_pages, round, desired_targets, &storage).await {
-        Ok((target_snapshot, voter_pages)) => {
-            log::info!(target: LOG_TARGET, "Snapshot found, fetching stake info...");
-
-            let candidate_accounts: Vec<_> = target_snapshot.iter().cloned().collect();
-			// Fetch stakes for candidates since snapshot doesn't contain stakes for candidates
-            let stakes = fetch_stakes_in_batches(client, &candidate_accounts).await?;
-
-            let candidates = candidate_accounts
-                .iter()
-                .zip(stakes)
-                .map(|(acc, stake)| (acc.clone(), stake))
-                .collect();
-
-            let nominators = voter_pages
-                .into_iter()
-                .flat_map(|page| {
-                    page.into_iter().map(|(stash, stake, votes)| {
-                        (stash, stake, votes.into_iter().collect())
-                    })
-                })
-                .collect();
-
-            Ok(("snapshot".into(), candidates, nominators, None))
-        }
-        Err(err) => {
-            log::warn!(target: LOG_TARGET, "Snapshot failed: {}. Falling back to staking pallet", err);
-
-            let candidates = fetch_candidates(client)
-                .await
-                .map_err(|e| Error::Other(format!("Failed to fetch candidates: {}", e)))?;
-
-            let nominators = fetch_nominators(client)
-                .await
-                .map_err(|e| Error::Other(format!("Failed to fetch nominators: {}", e)))?;
-
-            Ok(("staking".into(), candidates, nominators, None))
-        }
-    }
+	Ok((candidates, nominators))
 }

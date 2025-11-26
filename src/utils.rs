@@ -20,24 +20,25 @@ use crate::{
 	error::Error,
 	prelude::{AccountId, ChainClient, Config, Hash, LOG_TARGET, Storage},
 };
-use polkadot_sdk::sp_core::crypto::{Ss58AddressFormat, Ss58Codec};
-use ss58_registry::Ss58AddressFormat as RegistryFormat;
-use serde::Deserialize;
-use subxt_rpcs::rpc_params;
-use anyhow::Context;
 use pin_project_lite::pin_project;
-use polkadot_sdk::{sp_npos_elections, sp_runtime::Perbill};
-use serde::{de::DeserializeOwned, Serialize};
+use polkadot_sdk::{
+	sp_core::crypto::{Ss58AddressFormat, Ss58Codec},
+	sp_npos_elections,
+	sp_runtime::Perbill,
+};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use ss58_registry::Ss58AddressFormat as RegistryFormat;
 use std::{
 	fs::{self, File},
 	future::Future,
-	io::{Read, Write, BufWriter},
+	io::{BufWriter, Read, Write},
 	path::Path,
 	pin::Pin,
 	task::{Context as TaskContext, Poll},
 	time::{Duration, Instant},
 };
 use subxt::tx::{TxInBlock, TxProgress};
+use subxt_rpcs::rpc_params;
 
 pin_project! {
 	pub struct Timed<Fut>
@@ -122,47 +123,40 @@ pub async fn wait_tx_in_finalized_block(
 }
 
 /// Write data to a JSON file
-pub async fn write_data_to_json_file<T>(data: &T, file_path: &str) -> anyhow::Result<()>
+pub async fn write_data_to_json_file<T>(data: &T, file_path: &str) -> Result<(), Error>
 where
 	T: Serialize,
 {
 	let path = Path::new(file_path);
-	if let Some(parent) = path.parent() {
-		if !parent.as_os_str().is_empty() {
-			fs::create_dir_all(parent).with_context(|| format!("create directory {}", parent.display()))?;
-		}
+	if let Some(parent) = path.parent() &&
+		!parent.as_os_str().is_empty()
+	{
+		fs::create_dir_all(parent)?;
 	}
 
-	let file = File::create(path).with_context(|| format!("create {}", path.display()))?;
+	let file = File::create(path)?;
 	let mut writer = BufWriter::with_capacity(1024 * 1024, file);
-	let json = serde_json::to_string_pretty(data)
-		.with_context(|| format!("serialize {}", path.display()))?;
-	writer
-		.write_all(json.as_bytes())
-		.with_context(|| format!("write {}", path.display()))?;
-	writer.flush().with_context(|| format!("flush {}", path.display()))?;
+
+	let json = serde_json::to_string_pretty(data)?;
+	writer.write_all(json.as_bytes())?;
+	writer.flush()?;
 
 	println!("Wrote JSON data to {}", path.display());
 	Ok(())
 }
 
 /// Read data from a JSON file
-pub async fn read_data_from_json_file<T>(file_path: &str) -> anyhow::Result<T>
+pub async fn read_data_from_json_file<T>(file_path: &str) -> Result<T, Error>
 where
 	T: DeserializeOwned,
 {
 	let path = Path::new(file_path);
-	println!("Reading data from file: {:?}", path);
 
-	let mut file = File::open(path)
-		.with_context(|| format!("file not found at {}", path.display()))?;
+	let mut file = File::open(path)?;
 	let mut content = String::new();
-	file
-		.read_to_string(&mut content)
-		.with_context(|| format!("failed to read {}", path.display()))?;
+	file.read_to_string(&mut content)?;
 
-	serde_json::from_str(&content)
-		.with_context(|| format!("failed to deserialize {}", path.display()))
+	Ok(serde_json::from_str(&content)?)
 }
 
 /// Chain properties from system_properties RPC call
@@ -178,7 +172,7 @@ pub async fn get_ss58_prefix(client: &Client) -> Result<u16, Error> {
 	match crate::dynamic::pallet_api::system::constants::SS58_PREFIX.fetch(client.chain_api()) {
 		Ok(ss58_prefix) => Ok(ss58_prefix),
 		Err(e) => {
-			log::warn!(target: LOG_TARGET, "Failed to fetch SS58 prefix: {}", e);
+			log::warn!(target: LOG_TARGET, "Failed to fetch SS58 prefix: {e}");
 			log::warn!(target: LOG_TARGET, "Using default SS58 prefix: 0");
 			Ok(0)
 		},
@@ -186,17 +180,17 @@ pub async fn get_ss58_prefix(client: &Client) -> Result<u16, Error> {
 }
 
 /// Get chain properties (token decimals and symbol) from system_properties RPC
-pub async fn get_chain_properties(client: &Client) -> Result<(u8, String), Error> {
+pub async fn get_chain_properties(client: &Client) -> Result<(u16, u8, String), Error> {
 	// Create a new RPC client for the call
 	let rpc_client = subxt::backend::rpc::RpcClient::from_url(client.uri())
 		.await
-		.map_err(|e| Error::Other(format!("Failed to create RPC client: {}", e)))?;
+		.map_err(|e| Error::Other(format!("Failed to create RPC client: {e}")))?;
 
 	// Call system_properties RPC method
 	let response: ChainProperties = rpc_client
 		.request("system_properties", rpc_params![])
 		.await
-		.map_err(|e| Error::Other(format!("Failed to call system_properties RPC: {}", e)))?;
+		.map_err(|e| Error::Other(format!("Failed to call system_properties RPC: {e}")))?;
 
 	// Extract token decimals (first value from array)
 	let decimals = response.token_decimals.unwrap_or(10); // Default to 10 for most Substrate chains
@@ -204,41 +198,38 @@ pub async fn get_chain_properties(client: &Client) -> Result<(u8, String), Error
 	// Extract token symbol (first value from array)
 	let symbol = response.token_symbol.unwrap_or("UNIT".to_string()); // Default symbol
 
+	// fetch the ss58 prefix of the chain
+	let ss58_prefix = get_ss58_prefix(client).await?;
+
 	log::info!(
 		target: LOG_TARGET,
-		"Fetched chain properties: token_symbol={}, token_decimals={}",
-		symbol,
-		decimals
+		"Fetched chain properties: ss_58 prefix={ss58_prefix} token_symbol={symbol}, token_decimals={decimals}"
 	);
 
-	Ok((decimals, symbol))
+	Ok((ss58_prefix, decimals, symbol))
 }
 
 /// Encode an AccountId to SS58 string with chain-specific prefix
 /// Uses ss58-registry to validate the prefix against known networks
 pub fn encode_account_id(account: &AccountId, ss58_prefix: u16) -> String {
 	// Use ss58-registry to validate and get network information
-	let is_known = RegistryFormat::all()
-		.iter()
-		.any(|entry| {
-			let entry_format: RegistryFormat = (*entry).into();
-			entry_format.prefix() == ss58_prefix
-		});
-	
+	let is_known = RegistryFormat::all().iter().any(|entry| {
+		let entry_format: RegistryFormat = (*entry).into();
+		entry_format.prefix() == ss58_prefix
+	});
+
 	if is_known {
 		log::trace!(
 			target: LOG_TARGET,
-			"Encoding with SS58 prefix {} (validated in registry)",
-			ss58_prefix
+			"Encoding with SS58 prefix {ss58_prefix} (validated in registry)"
 		);
 	} else {
 		log::trace!(
 			target: LOG_TARGET,
-			"Encoding with SS58 prefix {} (custom format, not in registry)",
-			ss58_prefix
+			"Encoding with SS58 prefix {ss58_prefix} (custom format, not in registry)"
 		);
 	}
-	
+
 	// Encode using the standard SS58 encoding with the provided prefix
 	// The registry validation above ensures we're aware if it's a known network
 	account
@@ -262,11 +253,11 @@ pub fn planck_to_token(planck: u128, decimals: u8, symbol: &str) -> String {
 		if remainder_trimmed.is_empty() {
 			whole.to_string()
 		} else {
-			format!("{}.{}", whole, remainder_trimmed)
+			format!("{whole}.{remainder_trimmed}")
 		}
 	};
 
-	format!("{} {}", amount_str, symbol)
+	format!("{amount_str} {symbol}")
 }
 
 /// Convert Plancks (u64) to tokens with symbol

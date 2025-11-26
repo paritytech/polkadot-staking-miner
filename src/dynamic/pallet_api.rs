@@ -83,10 +83,8 @@ pub mod multi_block {
 		pub const PAGED_VOTER_SNAPSHOT: PalletItem = PalletItem::new(NAME, "PagedVoterSnapshot");
 		pub const PAGED_VOTER_SNAPSHOT_HASH: PalletItem =
 			PalletItem::new(NAME, "PagedVoterSnapshotHash");
-		pub const ROUND: PalletItem =
-			PalletItem::new(NAME, "Round");
-		pub const _DESIRED_TARGETS: PalletItem =
-			PalletItem::new(NAME, "DesiredTargets");
+		pub const _ROUND: PalletItem = PalletItem::new(NAME, "Round");
+		pub const _DESIRED_TARGETS: PalletItem = PalletItem::new(NAME, "DesiredTargets");
 	}
 }
 
@@ -151,8 +149,7 @@ pub mod system {
 		use super::{super::*, *};
 		pub const BLOCK_LENGTH: PalletConstant<BlockLength> =
 			PalletConstant::new(NAME, "BlockLength");
-		pub const SS58_PREFIX: PalletConstant<u16> =
-			PalletConstant::new(NAME, "SS58Prefix");
+		pub const SS58_PREFIX: PalletConstant<u16> = PalletConstant::new(NAME, "SS58Prefix");
 	}
 }
 
@@ -162,12 +159,9 @@ pub mod staking {
 	pub mod storage {
 		use super::{super::*, *};
 		pub const _ACTIVE_ERA: PalletItem = PalletItem::new(NAME, "ActiveEra");
-		pub const VALIDATOR_COUNT: PalletItem =
-			PalletItem::new(NAME, "ValidatorCount");
+		pub const _VALIDATOR_COUNT: PalletItem = PalletItem::new(NAME, "ValidatorCount");
 		pub const VALIDATORS: PalletItem = PalletItem::new(NAME, "Validators");
-		pub const LEDGER: PalletItem =
-			PalletItem::new(NAME, "Ledger");
-		pub const NOMINATORS: PalletItem =
-			PalletItem::new(NAME, "Nominators");
+		pub const LEDGER: PalletItem = PalletItem::new(NAME, "Ledger");
+		pub const NOMINATORS: PalletItem = PalletItem::new(NAME, "Nominators");
 	}
 }

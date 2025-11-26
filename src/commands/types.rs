@@ -1,7 +1,4 @@
-use polkadot_sdk::{
-	sp_npos_elections::ElectionScore,
-	sp_runtime::Perbill,
-};
+use polkadot_sdk::{sp_npos_elections::ElectionScore, sp_runtime::Perbill};
 use serde::{Deserialize, Serialize};
 
 /// Submission strategy to use.
@@ -94,18 +91,18 @@ pub struct MultiBlockMonitorConfig {
 #[cfg_attr(test, derive(PartialEq))]
 pub struct PredictConfig {
 	/// Desired number of validators for the prediction
-    /// (If omitted, the value is fetched from the chain)
-    #[clap(long)]
-    pub desired_validators: Option<u32>,
+	/// (If omitted, the value is fetched from the chain)
+	#[clap(long)]
+	pub desired_validators: Option<u32>,
 
-    /// Path to custom election data JSON file
-    #[clap(long)]
-    pub custom_file: Option<String>,
+	/// Path to custom election data JSON file
+	#[clap(long)]
+	pub custom_file: Option<String>,
 
-    /// Output directory for prediction results
+	/// Output directory for prediction results
 	/// Defaults to "results/"
-    #[clap(long, default_value = "results")]
-    pub output_dir: String,
+	#[clap(long, default_value = "results")]
+	pub output_dir: String,
 }
 
 /// Validator prediction output
@@ -137,7 +134,6 @@ pub(crate) struct ValidatorInfo {
 /// Nominator prediction output
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct NominatorsPrediction {
-	pub(crate) metadata: PredictionMetadata,
 	pub(crate) nominators: Vec<NominatorPrediction>,
 }
 
@@ -165,20 +161,8 @@ pub(crate) struct ValidatorStakeAllocation {
 /// Custom file format for election data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomElectionFile {
-	pub metadata: CustomFileMetadata,
 	pub candidates: Vec<CustomCandidate>,
 	pub nominators: Vec<CustomNominator>,
-}
-
-/// Metadata in custom file
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CustomFileMetadata {
-	#[serde(rename = "ss58Prefix")]
-	pub ss58_prefix: u16,
-	// Allow other fields to be present but ignore them
-	#[serde(flatten)]
-	#[serde(skip_serializing_if = "std::collections::HashMap::is_empty")]
-	pub other: std::collections::HashMap<String, serde_json::Value>,
 }
 
 /// Candidate in custom file
@@ -194,4 +178,12 @@ pub struct CustomNominator {
 	pub account: String,
 	pub stake: u64,
 	pub targets: Vec<String>,
+}
+
+/// Data source for election data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ElectionDataSource {
+	Snapshot,
+	Staking,
+	CustomFile,
 }

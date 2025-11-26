@@ -271,18 +271,6 @@ cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --desired-val
 cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --custom-file custom.json --desired-validators 20 --output-dir outputs
 ```
 
-#### Different Chains
-
-**Polkadot Mainnet:**
-```bash
-cargo run -- --uri wss://rpc.polkadot.io predict
-```
-
-**Kusama:**
-```bash
-cargo run -- --uri wss://kusama.api.onfinality.io/public-ws predict
-```
-
 ### Custom Election Data File Format
 
 When using `--custom-file`, the file should have the following JSON structure:
@@ -294,8 +282,12 @@ When using `--custom-file`, the file should have the following JSON structure:
   },
   "candidates": [
     {
-      "account": "5CFPcUJgYgWryPaV1aYjSbTpbTLu42V32Ytw1L9rfoMAsfGh",
+      "account": "5C556QTtg1bJ43GDSgeowa3Ark6aeSHGTac1b2rKSXtgmSmW",
       "stake": 27549105879206511
+    },
+    {
+      "account": "5Ft3J6iqSQPWX2S9jERXcMpevt8JDUPWjec5uGierfVGXisE",
+      "stake": 11549105879206511
     }
   ],
   "nominators": [
@@ -385,17 +377,6 @@ The tool generates the following JSON files in the specified output directory:
 
 3. **Output Generation**: Creates detailed JSON files with predictions, including validator and
    nominator perspectives.
-
-### Supported Chains
-
-The predict command works with any Substrate-based chain that implements the Staking pallet,
-including:
-
-- **Polkadot**: Main parachain network
-- **Kusama**: Canary network
-- **Westend**: Test network
-- **Asset Hub**: Polkadot's asset parachain
-- **Other Parachains**: Any Substrate-based parachain
 
 ## Runtime upgrades
 

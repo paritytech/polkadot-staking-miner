@@ -117,17 +117,17 @@ where
 	let last_round = state.prev_round;
 	state.prev_round = Some(current_round);
 
-	if let Some(last_round) = last_round {
-		if current_round > last_round {
-			on_round_increment(
-				last_round,
-				current_round,
-				&phase,
-				&channels.miner_tx,
-				&channels.clear_old_rounds_tx,
-			)
-			.await?;
-		}
+	if let Some(last_round) = last_round &&
+		current_round > last_round
+	{
+		on_round_increment(
+			last_round,
+			current_round,
+			&phase,
+			&channels.miner_tx,
+			&channels.clear_old_rounds_tx,
+		)
+		.await?;
 	}
 
 	let last_phase = state.prev_phase.clone();
@@ -170,17 +170,16 @@ where
 			return Ok(ListenerAction::Continue);
 		},
 		Phase::Signed(_) | Phase::Snapshot(_) => {
-			if let Some(last_phase) = last_phase {
-				if matches!(&last_phase, Phase::Off) {
-					log::debug!(target: LOG_TARGET, "Phase transition: Off → {phase:?} - stopping era pruning");
-					// Use send() to ensure ExitOffPhase is delivered and to stop era pruning before
-					// mining starts
-					if let Err(e) =
-						channels.era_pruning_tx.send(EraPruningMessage::ExitOffPhase).await
-					{
-						log::error!(target: LOG_TARGET, "Era pruning channel closed while sending ExitOffPhase: {e:?}");
-						return Err(ChannelFailureError::EraPruning.into());
-					}
+			if let Some(last_phase) = last_phase &&
+				matches!(&last_phase, Phase::Off)
+			{
+				log::debug!(target: LOG_TARGET, "Phase transition: Off → {phase:?} - stopping era pruning");
+				// Use send() to ensure ExitOffPhase is delivered and to stop era pruning before
+				// mining starts
+				if let Err(e) = channels.era_pruning_tx.send(EraPruningMessage::ExitOffPhase).await
+				{
+					log::error!(target: LOG_TARGET, "Era pruning channel closed while sending ExitOffPhase: {e:?}");
+					return Err(ChannelFailureError::EraPruning.into());
 				}
 			}
 			// Continue with mining logic for Signed/Snapshot phases
