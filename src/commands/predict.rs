@@ -33,6 +33,7 @@ where
 
 	// Update metadata constants
 	update_metadata_constants(client.chain_api())?;
+	crate::dynamic::set_balancing_iterations(config.balancing_iterations);
 
 	let n_pages = Pages::get();
 

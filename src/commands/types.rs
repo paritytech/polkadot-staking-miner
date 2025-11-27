@@ -103,6 +103,11 @@ pub struct PredictConfig {
 	/// Defaults to "results/"
 	#[clap(long, default_value = "results")]
 	pub output_dir: String,
+
+	/// Number of balancing iterations for the sequential phragmen algorithm.
+	/// Higher values may produce better balanced solutions at the cost of more computation time.
+	#[clap(long, default_value_t = 10)]
+	pub balancing_iterations: usize,
 }
 
 /// Validator prediction output
