@@ -31,7 +31,7 @@ RUN apt-get update && \
     useradd -u 10000 -U -s /bin/sh miner
 
 # Copy the pre-built binary into the image
-COPY target/release/polkadot-staking-miner /usr/local/bin/polkadot-staking-miner
+COPY ./polkadot-staking-miner /usr/local/bin
 
 # Create writable workspace and output directories
 RUN mkdir -p /workspace/results /workspace/outputs && \
