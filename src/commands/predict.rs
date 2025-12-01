@@ -105,7 +105,7 @@ where
 	)
 	.await?;
 
-	let (ss58_prefix, token_decimals, token_symbol) = get_chain_properties(&client).await?;
+	let (ss58_prefix, token_decimals, token_symbol) = get_chain_properties(client.clone()).await?;
 
 	let prediction_ctx = PredictionContext {
 		round: current_round,

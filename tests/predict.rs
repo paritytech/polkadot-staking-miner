@@ -79,9 +79,6 @@ fn create_test_custom_file(temp_dir: &TempDir) -> std::path::PathBuf {
 	let account3 = AccountId32::from(pair3.public().0);
 
 	let custom_data = serde_json::json!({
-		"metadata": {
-			"ss58Prefix": 42
-		},
 		"candidates": [
 			{
 				"account": account1.to_string(),
@@ -140,30 +137,6 @@ fn test_invalid_custom_file_format() {
 	let result: Result<polkadot_staking_miner::commands::types::CustomElectionFile, _> =
 		serde_json::from_str(&content);
 	assert!(result.is_err());
-}
-
-/// Test custom file with missing required fields
-#[test]
-fn test_custom_file_missing_fields() {
-	let temp_dir = TempDir::new().unwrap();
-	let incomplete_file = temp_dir.path().join("incomplete.json");
-
-	// Write JSON with missing fields
-	let incomplete_data = serde_json::json!({
-		"metadata": {
-			"ss58Prefix": 42
-		}
-		// Missing candidates and nominators
-	});
-
-	fs::write(&incomplete_file, serde_json::to_string(&incomplete_data).unwrap()).unwrap();
-
-	// Try to parse - should fail or have defaults
-	let content = fs::read_to_string(&incomplete_file).unwrap();
-	let _result: Result<polkadot_staking_miner::commands::types::CustomElectionFile, _> =
-		serde_json::from_str(&content);
-	// This might succeed with empty vectors, depending on serde defaults
-	// The actual validation happens when trying to use the data
 }
 
 /// Test nested custom file path handling
@@ -264,9 +237,6 @@ fn test_custom_file_empty_candidates() {
 	let empty_file = temp_dir.path().join("empty_candidates.json");
 
 	let empty_data = serde_json::json!({
-		"metadata": {
-			"ss58Prefix": 42
-		},
 		"candidates": [],
 		"nominators": []
 	});
@@ -294,9 +264,6 @@ fn test_custom_file_large_stakes() {
 	let account = AccountId32::from(pair.public().0);
 
 	let large_data = serde_json::json!({
-		"metadata": {
-			"ss58Prefix": 42
-		},
 		"candidates": [
 			{
 				"account": account.to_string(),
@@ -341,9 +308,6 @@ fn test_custom_file_multiple_nominators() {
 	let account3 = AccountId32::from(pair3.public().0);
 
 	let data = serde_json::json!({
-		"metadata": {
-			"ss58Prefix": 42
-		},
 		"candidates": [
 			{
 				"account": account1.to_string(),

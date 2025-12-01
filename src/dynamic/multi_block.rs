@@ -18,7 +18,7 @@ use crate::{
 		self as runtime, runtime_types::pallet_election_provider_multi_block::types::Phase,
 	},
 	signer::Signer,
-	utils,
+	static_types, utils,
 };
 use codec::Decode;
 use futures::{StreamExt, stream::FuturesUnordered};
@@ -249,7 +249,7 @@ where
 	T::MaxVotesPerVoter: Send,
 {
 	// Validate n_pages
-	if n_pages == 0 {
+	if n_pages != static_types::multi_block::Pages::get() {
 		return Err(Error::Other("n_pages must be > 0".into()));
 	}
 

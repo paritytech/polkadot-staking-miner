@@ -250,6 +250,7 @@ cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict
 | `--desired-validators <number>` | Desired number of validators for the prediction                                     | Fetched from chain |
 | `--custom-file <path>`          | Path to custom election data JSON file (see format below)                          | None            |
 | `--output-dir <path>`           | Output directory for prediction results                                             | `results`       |
+| `--balancing-iterations <number>` | Number of balancing iterations for the sequential phragmen algorithm. Higher values may produce better balanced solutions at the | 10              |
 
 ### Examples
 
@@ -277,9 +278,6 @@ When using `--custom-file`, the file should have the following JSON structure:
 
 ```json
 {
-  "metadata": {
-    "ss58Prefix": 42
-  },
   "candidates": [
     {
       "account": "5C556QTtg1bJ43GDSgeowa3Ark6aeSHGTac1b2rKSXtgmSmW",

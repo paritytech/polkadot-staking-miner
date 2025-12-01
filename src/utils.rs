@@ -179,8 +179,8 @@ pub async fn get_ss58_prefix(client: &Client) -> Result<u16, Error> {
 	}
 }
 
-/// Get chain properties (token decimals and symbol) from system_properties RPC
-pub async fn get_chain_properties(client: &Client) -> Result<(u16, u8, String), Error> {
+/// Get chain properties (ss58 prefix, token decimals and symbol) from system_properties RPC
+pub async fn get_chain_properties(client: Client) -> Result<(u16, u8, String), Error> {
 	// Create a new RPC client for the call
 	let rpc_client = subxt::backend::rpc::RpcClient::from_url(client.uri())
 		.await
@@ -192,14 +192,14 @@ pub async fn get_chain_properties(client: &Client) -> Result<(u16, u8, String), 
 		.await
 		.map_err(|e| Error::Other(format!("Failed to call system_properties RPC: {e}")))?;
 
-	// Extract token decimals (first value from array)
+	// Extract token decimals
 	let decimals = response.token_decimals.unwrap_or(10); // Default to 10 for most Substrate chains
 
-	// Extract token symbol (first value from array)
+	// Extract token symbol
 	let symbol = response.token_symbol.unwrap_or("UNIT".to_string()); // Default symbol
 
 	// fetch the ss58 prefix of the chain
-	let ss58_prefix = get_ss58_prefix(client).await?;
+	let ss58_prefix = get_ss58_prefix(&client).await?;
 
 	log::info!(
 		target: LOG_TARGET,
