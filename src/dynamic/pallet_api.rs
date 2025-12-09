@@ -158,10 +158,19 @@ pub mod staking {
 
 	pub mod storage {
 		use super::{super::*, *};
-		pub const _ACTIVE_ERA: PalletItem = PalletItem::new(NAME, "ActiveEra");
-		pub const _VALIDATOR_COUNT: PalletItem = PalletItem::new(NAME, "ValidatorCount");
 		pub const VALIDATORS: PalletItem = PalletItem::new(NAME, "Validators");
 		pub const LEDGER: PalletItem = PalletItem::new(NAME, "Ledger");
 		pub const NOMINATORS: PalletItem = PalletItem::new(NAME, "Nominators");
+	}
+}
+
+pub mod voter_list {
+	pub const NAME: &str = "VoterList";
+
+	pub mod storage {
+		use super::{super::*, *};
+		pub const LIST_NODES: PalletItem = PalletItem::new(NAME, "ListNodes");
+		pub const LIST_BAGS: PalletItem = PalletItem::new(NAME, "ListBags");
+		pub const COUNTER_FOR_LIST_NODES: PalletItem = PalletItem::new(NAME, "CounterForListNodes");
 	}
 }

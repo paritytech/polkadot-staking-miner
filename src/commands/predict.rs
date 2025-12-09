@@ -3,7 +3,9 @@ use polkadot_sdk::pallet_election_provider_multi_block::unsigned::miner::MinerCo
 
 use crate::{
 	client::Client,
-	commands::types::{CustomElectionFile, ElectionDataSource, PredictConfig},
+	commands::types::{
+		CustomElectionFile, ElectionDataSource, NominatorData, PredictConfig, ValidatorData,
+	},
 	dynamic::{
 		election_data::{
 			PredictionContext, build_predictions_from_solution, convert_staking_data_to_snapshots,
@@ -84,7 +86,7 @@ where
 
 	log::info!(
 		target: LOG_TARGET,
-		"Mining solution with desired_targets={}, candidates={}, nominators={}",
+		"Mining solution with desired_targets={}, candidates={}, voter pages={}",
 		desired_targets,
 		targets.len(),
 		voters.len()
@@ -156,7 +158,7 @@ where
 
 async fn load_custom_file(
 	custom_file_path: &str,
-) -> Result<(Vec<(AccountId, u128)>, Vec<(AccountId, u64, Vec<AccountId>)>), Error> {
+) -> Result<(Vec<ValidatorData>, Vec<NominatorData>), Error> {
 	use std::path::PathBuf;
 
 	// Resolve relative path → absolute

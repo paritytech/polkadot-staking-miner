@@ -1,6 +1,8 @@
 use polkadot_sdk::{sp_npos_elections::ElectionScore, sp_runtime::Perbill};
 use serde::{Deserialize, Serialize};
 
+use crate::prelude::AccountId;
+
 /// Submission strategy to use.
 #[derive(Debug, Copy, Clone)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -158,6 +160,9 @@ pub(crate) struct ValidatorStakeAllocation {
 	pub(crate) validator: String,
 	pub(crate) allocated_stake: String, // Token amount as string
 }
+
+pub(crate) type NominatorData = (AccountId, u64, Vec<AccountId>);
+pub(crate) type ValidatorData = (AccountId, u128);
 
 // ============================================================================
 // Custom File Format Types

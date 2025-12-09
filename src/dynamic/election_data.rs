@@ -1,7 +1,7 @@
 //! Helpers for fetching and shaping election data shared by CLI commands
 
 use polkadot_sdk::{
-	frame_election_provider_support::BoundedSupports,
+	frame_election_provider_support::{BoundedSupports, Get},
 	frame_support::BoundedVec,
 	pallet_election_provider_multi_block::{
 		PagedRawSolution,
@@ -22,8 +22,9 @@ use crate::{
 	commands::{
 		multi_block::types::{TargetSnapshotPageOf, Voter, VoterSnapshotPageOf},
 		types::{
-			ElectionDataSource, NominatorPrediction, NominatorsPrediction, PredictionMetadata,
-			ValidatorInfo, ValidatorStakeAllocation, ValidatorsPrediction,
+			ElectionDataSource, NominatorData, NominatorPrediction, NominatorsPrediction,
+			PredictionMetadata, ValidatorData, ValidatorInfo, ValidatorStakeAllocation,
+			ValidatorsPrediction,
 		},
 	},
 	dynamic::staking::{fetch_candidates, fetch_nominators},
@@ -46,67 +47,82 @@ pub struct PredictionContext<'a> {
 	pub data_source: ElectionDataSource,
 }
 
-/// Merge on-chain nominators with validator self votes to ensure every candidate
-/// backs itself when generating synthetic election snapshots.
+/// Inject validator self-votes to ensure every candidate backs itself when generating
+/// synthetic election snapshots.
+///
+/// - If an account is a nominator, use their nominator data BUT ensure they vote for themselves
+/// - If an account is a validator but NOT a nominator, inject them as voting for themselves
+///
+/// We do NOT merge stakes - we respect the nominator data if it exists.
 pub(crate) fn inject_self_votes(
-	candidates: &[(AccountId, u128)],
-	nominators: Vec<(AccountId, u64, Vec<AccountId>)>,
-) -> Vec<(AccountId, u64, Vec<AccountId>)> {
-	let mut nominator_map: HashMap<AccountId, (u64, Vec<AccountId>)> =
-		HashMap::with_capacity(nominators.len());
-
-	for (account, stake, targets) in nominators {
-		nominator_map
-			.entry(account)
-			.and_modify(|(existing_stake, existing_targets)| {
-				if stake > *existing_stake {
-					*existing_stake = stake;
-				}
-				existing_targets.extend(targets.clone());
-			})
-			.or_insert((stake, targets));
-	}
-
-	let mut combined: Vec<(AccountId, u64, Vec<AccountId>)> =
-		Vec::with_capacity(nominator_map.len() + candidates.len());
-
-	let mut injected = 0usize;
-	for (account, stake) in candidates {
-		let (stake_u64, truncated) =
-			if *stake > u64::MAX as u128 { (u64::MAX, true) } else { (*stake as u64, false) };
-
-		if truncated {
-			log::warn!(
-				target: LOG_TARGET,
-				"Candidate {:?} stake {} exceeds u64::MAX; truncating to {} for snapshot conversion",
-				account,
-				stake,
+	candidates: &[ValidatorData],
+	nominators: Vec<NominatorData>,
+) -> Vec<NominatorData> {
+	// Build a map of validator accounts to their stakes for lookup
+	let validator_stakes: HashMap<AccountId, u64> = candidates
+		.iter()
+		.map(|(account, stake)| {
+			let stake_u64 = if *stake > u64::MAX as u128 {
+				log::warn!(
+					target: LOG_TARGET,
+					"Validator {:?} stake {} exceeds u64::MAX; truncating to {}",
+					account,
+					stake,
+					u64::MAX
+				);
 				u64::MAX
-			);
-		}
+			} else {
+				*stake as u64
+			};
+			(account.clone(), stake_u64)
+		})
+		.collect();
 
-		if let Some((existing_stake, mut targets)) = nominator_map.remove(account) {
-			if !targets.iter().any(|t| t == account) {
+	// Build a set of all validator accounts for fast lookup
+	let validator_accounts: HashSet<AccountId> =
+		candidates.iter().map(|(account, _)| account.clone()).collect();
+
+	let mut combined: Vec<NominatorData> = Vec::with_capacity(nominators.len() + candidates.len());
+
+	let mut self_votes_added = 0usize;
+
+	// Process all nominators, ensuring validators vote for themselves
+	for (account, stake, mut targets) in nominators {
+		// If this nominator is also a validator, ensure they vote for themselves
+		if validator_accounts.contains(&account) {
+			// Add self-target if not already present
+			if !targets.iter().any(|t| t == &account) {
 				targets.push(account.clone());
+				self_votes_added += 1;
 			}
-			let merged_stake = existing_stake.max(stake_u64);
-			combined.push((account.clone(), merged_stake, targets));
-		} else {
-			combined.push((account.clone(), stake_u64, vec![account.clone()]));
-			injected += 1;
 		}
+		combined.push((account, stake, targets));
 	}
 
-	let remaining = nominator_map.len();
-	combined.extend(
-		nominator_map
-			.into_iter()
-			.map(|(account, (stake, targets))| (account, stake, targets)),
-	);
+	// Then, for validators that are NOT nominators, inject them as self-voters
+	let mut injected = 0usize;
+	for (account, _stake) in candidates {
+		// Skip if this validator is already a nominator (we already processed them above)
+		if combined.iter().any(|(acc, _, _)| acc == account) {
+			continue;
+		}
 
+		// Get the validator stake (already converted to u64 in validator_stakes map)
+		let stake_u64 = validator_stakes
+			.get(account)
+			.copied()
+			.expect("Validator stake should exist in map");
+
+		// Add validator as a self-voter (voting only for themselves)
+		combined.push((account.clone(), stake_u64, vec![account.clone()]));
+		injected += 1;
+	}
 	log::info!(
 		target: LOG_TARGET,
-		"Prepared nominators for snapshot: {injected} injected self votes, {remaining} existing nominators appended"
+		"Ensured {} validator self-votes in nominators, injected {} new validator self-voters (total: {} voters)",
+		self_votes_added,
+		injected,
+		combined.len()
 	);
 
 	combined
@@ -118,8 +134,8 @@ pub(crate) fn inject_self_votes(
 /// dropped). The miner will use all pages when solving; the solution is then trimmed per the
 /// chain's limits.
 pub(crate) fn convert_staking_data_to_snapshots<T>(
-	candidates: Vec<(AccountId, u128)>,
-	nominators: Vec<(AccountId, u64, Vec<AccountId>)>,
+	candidates: Vec<ValidatorData>,
+	nominators: Vec<NominatorData>,
 ) -> Result<(TargetSnapshotPageOf<T>, Vec<VoterSnapshotPageOf<T>>), Error>
 where
 	T: MinerConfig<AccountId = AccountId>,
@@ -263,6 +279,24 @@ where
 	let active_set: HashSet<AccountId> =
 		winners_sorted.iter().map(|(validator, _)| validator.clone()).collect();
 
+	// Flatten voters from paged snapshot for nominator perspective.
+	let all_voters: Vec<Voter<T>> =
+		voter_snapshot_paged.iter().flat_map(|page| page.iter().cloned()).collect();
+
+	// Identify validators who only have self-votes
+	let validators_with_only_self_vote: HashSet<AccountId> = all_voters
+		.iter()
+		.filter(|(nominator, _, targets)| {
+			// validator has only self-vote if:
+			// 1. They are a validator (in active_set)
+			// 2. Their only target is themselves
+			// NOTE: Reverted to your original logic as requested, assuming you want strictly this
+			// behavior.
+			active_set.contains(nominator) || (targets.len() == 1 && targets[0] == *nominator)
+		})
+		.map(|(nominator, _, _)| nominator.clone())
+		.collect();
+
 	let mut validator_infos: Vec<ValidatorInfo> = Vec::new();
 	for (validator, support) in winners_sorted.iter() {
 		let self_stake = support
@@ -302,13 +336,15 @@ where
 
 	let validators_prediction = ValidatorsPrediction { metadata, results: validator_infos };
 
-	// Flatten voters from paged snapshot for nominator perspective.
-	let all_voters: Vec<Voter<T>> =
-		voter_snapshot_paged.iter().flat_map(|page| page.iter().cloned()).collect();
-
+	// Build nominator predictions, excluding validators who only have self-votes
 	let mut nominator_predictions: Vec<NominatorPrediction> = Vec::new();
 
 	for (nominator, stake, nominated_targets) in all_voters {
+		// Skip validators who only have self-votes
+		if validators_with_only_self_vote.contains(&nominator) {
+			continue;
+		}
+
 		let nominator_encoded = encode_account_id(&nominator, ctx.ss58_prefix);
 		let allocations = allocation_map.get(&nominator);
 
@@ -383,7 +419,9 @@ where
 				.await
 				.map_err(|e| Error::Other(format!("Failed to fetch candidates: {e}")))?;
 
-			let nominators = fetch_nominators(client)
+			let voter_limit = (T::Pages::get() * T::VoterSnapshotPerBlock::get()) as usize;
+
+			let nominators = fetch_nominators(client, voter_limit)
 				.await
 				.map_err(|e| Error::Other(format!("Failed to fetch nominators: {e}")))?;
 

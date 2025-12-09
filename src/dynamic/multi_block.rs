@@ -249,8 +249,9 @@ where
 	T::MaxVotesPerVoter: Send,
 {
 	// Validate n_pages
-	if n_pages != static_types::multi_block::Pages::get() {
-		return Err(Error::Other("n_pages must be > 0".into()));
+	let chain_pages = static_types::multi_block::Pages::get();
+	if n_pages != chain_pages {
+		return Err(Error::Other(format!("n_pages must be equal to {chain_pages}")));
 	}
 
 	// Fetch the (single) target snapshot. Use the last page index
@@ -264,7 +265,7 @@ where
 		Vec::with_capacity(n_pages as usize);
 	for page in 0..n_pages {
 		let voter_page = paged_voter_snapshot::<T>(page, round, storage).await?;
-		log::info!(target: LOG_TARGET, "Fetched {page}/{n_pages} pages from snapshot");
+		log::info!(target: LOG_TARGET, "Fetched {page}/{n_pages} pages of voter snapshot");
 		voter_snapshot_paged.push(voter_page);
 	}
 
