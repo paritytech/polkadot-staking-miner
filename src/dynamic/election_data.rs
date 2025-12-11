@@ -125,6 +125,13 @@ pub(crate) fn inject_self_votes(
 		combined.len()
 	);
 
+	combined.sort_by(|a, b| {
+		// Sort by Stake Descending (High stake first)
+		b.1.cmp(&a.1)
+			// Tie-breaker: AccountId Ascending (for deterministic stability)
+			.then_with(|| a.0.cmp(&b.0))
+	});
+
 	combined
 }
 
