@@ -112,7 +112,8 @@ pub struct PredictConfig {
 	pub balancing_iterations: usize,
 
 	/// Reduce the solution to prevent further trimming.
-	#[clap(long, default_value_t = true)]
+	/// Default false
+	#[clap(long, default_value_t = false)]
 	pub do_reduce: bool,
 
 	/// Block number at which to run the prediction.

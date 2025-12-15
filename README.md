@@ -240,36 +240,50 @@ Phragmén algorithm that the chain uses to determine validator sets.
 ### Basic Usage
 
 ```bash
-cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --do-reduce
 ```
 
 ### Command Options
 
-| Option                          | Description                                                                         | Default Value   |
-| :------------------------------ | :---------------------------------------------------------------------------------- | :-------------- |
-| `--desired-validators <number>` | Desired number of validators for the prediction                                     | Fetched from chain |
-| `--custom-file <path>`          | Path to custom election data JSON file (see format below)                          | None            |
-| `--output-dir <path>`           | Output directory for prediction results                                             | `results`       |
-| `--balancing-iterations <number>` | Number of balancing iterations for the sequential phragmen algorithm. Higher values may produce better balanced solutions at the | 10              |
+| Option                          | Description                                                                                                                   | Default Value      |
+| :------------------------------ | :---------------------------------------------------------------------------------------------------------------------------- | :----------------- |
+| `--desired-validators <number>` | Desired number of validators for the prediction                                                                               | Fetched from chain |
+| `--custom-file <path>`          | Path to custom election data JSON file (see format below)                                                                     | None               |
+| `--output-dir <path>`           | Output directory for prediction results                                                                                       | `results`          |
+| `--balancing-iterations <number>`| Number of balancing iterations for the sequential phragmen algorithm. Higher values may produce better balanced solutions at the cost of more computation time. | 10                 |
+| `--do-reduce`            | Reduce the solution to prevent further trimming.                                                                              | `false`             |
+| `--block-number <number>`       | Block number at which to run the prediction. If not specified, uses the latest block.                                         | Latest block       |
 
 ### Examples
 
 #### Basic Prediction
 
 ```bash
-cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --do-reduce
 ```
 
 #### With Desired Validators
 
 ```bash
-cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --desired-validators 50
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --desired-validators 50 --do-reduce
 ```
 
 #### Using Custom Election Data File
 
 ```bash
-cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --custom-file custom.json --desired-validators 20 --output-dir outputs
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --custom-file custom.json
+```
+
+#### Prediction at a Specific Block
+
+```bash
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --block-number 13196110 --do-reduce
+```
+
+#### Run Prediction with reduction
+
+```bash
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --do-reduce
 ```
 
 ### Custom Election Data File Format
@@ -316,18 +330,22 @@ The tool generates the following JSON files in the specified output directory:
 ```json
 {
   "metadata": {
-    "timestamp": "1762863160",
-    "desired_validators": 50,
-    "round": 469,
-    "block_number": 13196110,
-    "solution_score": null,
-    "data_source": "custom_file"
+    "timestamp": "1765799538",
+    "desired_validators": 600,
+    "round": 40,
+    "block_number": 10803423,
+    "solution_score": {
+      "minimal_stake": 11797523289886283,
+      "sum_stake": 8372189060111758480,
+      "sum_stake_squared": 117584540059969491964159919300216042
+    },
+    "data_source": "snapshot"
   },
   "results": [
     {
-      "account": "5ENXqYmc5m6VLMm5i1mun832xAv2Qm9t3M4PWAFvvyCJLNoR",
-      "total_stake": "165143.380563409994 WND",
-      "self_stake": "74060.125441473510 WND"
+      "account": "15roBmbe5NmRXb4imfmhKxSjH8k9J5xtHSrvYJKpmmCLoPqD",
+      "total_stake": "2358096.6648553217 DOT",
+      "self_stake": "0 DOT"
     }
   ]
 }
@@ -337,26 +355,23 @@ The tool generates the following JSON files in the specified output directory:
 
 ```json
 {
-  "metadata": {
-    "timestamp": "1762863160",
-    "desired_validators": 50,
-    "round": 469,
-    "block_number": 13196110,
-    "solution_score": null,
-    "data_source": "custom_file"
-  },
   "nominators": [
     {
-      "address": "5EnBXFfRFgutykCTHsaMYygakTy6jjLQRvBxqXfc85GSnPk1",
-      "stake": "3.217591643365 WND",
+      "address": "15VArSaLFf3r9MzyQjcNTexjPoRDJuVVkqUmqtuUuBcPCYrX",
+      "stake": "447.2323363908 DOT",
       "active_validators": [
         {
-          "validator": "5C556QTtg1bJ43GDSgeowa3Ark6aeSHGTac1b2rKSXtgmSmW",
-          "allocated_stake": "0.438622588332 WND"
+          "validator": "15ZvLonEseaWZNy8LDkXXj3Y8bmAjxCjwvpy4pXWSL4nGSBs",
+          "allocated_stake": "447.2323363908 DOT"
         }
       ],
-      "inactive_validators": [],
-      "waiting_validators": []
+      "inactive_validators": [
+        "1627VVB5gtHiseCV8ZdffF7P3bWrLMkU92Q6u3LsG8tGuB63"
+      ],
+      "waiting_validators": [
+        "13K6QTYBPMUFTbhZzqToKcfCiWbt4wDPHr3rUPyUessiPR61",
+        "15rb4HVycC1KLHsdaSdV1x2TJAmUkD7PhubmhL3PnGv7RiGY"
+      ]
     }
   ]
 }
