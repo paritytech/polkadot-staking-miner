@@ -38,7 +38,6 @@ use std::{
 	time::{Duration, Instant},
 };
 use subxt::tx::{TxInBlock, TxProgress};
-use subxt_rpcs::rpc_params;
 
 pin_project! {
 	pub struct Timed<Fut>
@@ -179,18 +178,57 @@ pub async fn get_ss58_prefix(client: &Client) -> Result<u16, Error> {
 	}
 }
 
+/// Get block hash from block number using RPC
+pub async fn get_block_hash(client: &Client, block_number: u32) -> Result<Hash, Error> {
+	use serde_json::{json, value::to_raw_value};
+
+	// Convert block number to JSON raw value
+	let params = to_raw_value(&json!([block_number]))
+		.map_err(|e| Error::Other(format!("Failed to serialize block number: {e}")))?;
+
+	// Make RPC request - method name must be String, params is already Box<RawValue>
+	let response = client
+		.rpc()
+		.request("chain_getBlockHash".to_string(), Some(params))
+		.await
+		.map_err(|e| {
+			Error::Other(format!("Failed to get block hash for block {block_number}: {e}"))
+		})?;
+
+	// Parse response - it can be null if block doesn't exist
+	let response_str = response.get();
+	if response_str == "null" {
+		return Err(Error::Other(format!(
+			"Block {block_number} not found (may be pruned or invalid)"
+		)));
+	}
+
+	// Deserialize the hash
+	let block_hash: Option<Hash> = serde_json::from_str(response_str)
+		.map_err(|e| Error::Other(format!("Failed to parse block hash response: {e}")))?;
+
+	block_hash.ok_or_else(|| {
+		Error::Other(format!("Block {block_number} not found (may be pruned or invalid)"))
+	})
+}
+
 /// Get chain properties (ss58 prefix, token decimals and symbol) from system_properties RPC
 pub async fn get_chain_properties(client: Client) -> Result<(u16, u8, String), Error> {
-	// Create a new RPC client for the call
-	let rpc_client = subxt::backend::rpc::RpcClient::from_url(client.uri())
-		.await
-		.map_err(|e| Error::Other(format!("Failed to create RPC client: {e}")))?;
+	use serde_json::{json, value::to_raw_value};
 
-	// Call system_properties RPC method
-	let response: ChainProperties = rpc_client
-		.request("system_properties", rpc_params![])
+	// Call system_properties RPC method using the client's RPC
+	let params = to_raw_value(&json!([]))
+		.map_err(|e| Error::Other(format!("Failed to serialize RPC params: {e}")))?;
+
+	let response_raw = client
+		.rpc()
+		.request("system_properties".to_string(), Some(params))
 		.await
 		.map_err(|e| Error::Other(format!("Failed to call system_properties RPC: {e}")))?;
+
+	// Deserialize the response
+	let response: ChainProperties = serde_json::from_str(response_raw.get())
+		.map_err(|e| Error::Other(format!("Failed to parse system_properties response: {e}")))?;
 
 	// Extract token decimals
 	let decimals = response.token_decimals.unwrap_or(10); // Default to 10 for most Substrate chains

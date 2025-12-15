@@ -1,11 +1,10 @@
 //! Shared utilities for fetching staking data
 
 use crate::{
-	client::Client,
 	commands::types::{NominatorData, ValidatorData},
 	dynamic::{pallet_api, utils::storage_addr},
 	error::Error,
-	prelude::{AccountId, STAKING_LOG_TARGET as LOG_TARGET},
+	prelude::{AccountId, STAKING_LOG_TARGET as LOG_TARGET, Storage},
 };
 use codec::{Decode, Encode};
 use scale_value::At;
@@ -13,8 +12,7 @@ use std::{collections::HashMap, time::Duration};
 use subxt::dynamic::Value;
 
 /// Fetch all candidate validators (stash AccountId) with their active stake
-pub(crate) async fn fetch_candidates(client: &Client) -> Result<Vec<ValidatorData>, Error> {
-	let storage = client.chain_api().storage().at_latest().await?;
+pub(crate) async fn fetch_candidates(storage: &Storage) -> Result<Vec<ValidatorData>, Error> {
 	log::info!(target: LOG_TARGET, "Fetching candidate validators (Staking::Validators keys)");
 
 	let validators_addr = storage_addr(pallet_api::staking::storage::VALIDATORS, vec![]);
@@ -138,11 +136,9 @@ struct VoterNode {
 /// Returns the top voters limited by voter_limit, sorted by score (stake) in descending order
 /// This implementation replicates the chain's linked list structure by walking through bags
 pub(crate) async fn fetch_voter_list(
-	client: &Client,
 	voter_limit: usize,
+	storage: &Storage,
 ) -> Result<Vec<(AccountId, u64)>, Error> {
-	let storage = client.chain_api().storage().at_latest().await?;
-
 	// Fetch all bags (ListBags)
 	log::info!(target: LOG_TARGET, "Fetching VoterList bags...");
 	let list_bags_addr = storage_addr(pallet_api::voter_list::storage::LIST_BAGS, vec![]);
@@ -319,12 +315,12 @@ pub(crate) async fn fetch_voter_list(
 /// This function first fetches voters from VoterList, then queries staking.nominators in batches
 /// Uses concurrent batch processing
 pub(crate) async fn fetch_nominators(
-	client: &Client,
 	voter_limit: usize,
+	storage: &Storage,
 ) -> Result<Vec<NominatorData>, Error> {
 	// Fetch voters from VoterList (BagsList) with their stakes
 	log::info!(target: LOG_TARGET, "Fetching voters from VoterList...");
-	let voters = fetch_voter_list(client, voter_limit).await?;
+	let voters = fetch_voter_list(voter_limit, storage).await?;
 
 	log::info!(target: LOG_TARGET, "Fetched {} voters from VoterList", voters.len());
 
@@ -347,13 +343,13 @@ pub(crate) async fn fetch_nominators(
 	// Process in batches with concurrency
 	for chunk in voters.chunks(BATCH_SIZE) {
 		let chunk = chunk.to_vec();
-		let client_clone = client.clone();
+		let storage_clone = storage.clone();
 
 		let handle = tokio::spawn(async move {
 			// Retry logic for individual batch
 			let mut last_error: Option<Error> = None;
 			for attempt in 0..=MAX_RETRIES {
-				match fetch_nominators_batch(&client_clone, &chunk).await {
+				match fetch_nominators_batch(&chunk, &storage_clone).await {
 					Ok(results) => return Ok(results),
 					Err(e) => {
 						let error_msg = format!("{e}");
@@ -432,10 +428,9 @@ struct Nominations {
 
 /// Helper to fetch a single batch of nominators
 async fn fetch_nominators_batch(
-	client: &Client,
 	voters: &[(AccountId, u64)],
+	storage: &Storage,
 ) -> Result<Vec<NominatorData>, Error> {
-	let storage = client.chain_api().storage().at_latest().await?;
 	let mut batch_results = Vec::with_capacity(voters.len());
 
 	// Prepare futures for fetching individual nominator data

@@ -110,6 +110,15 @@ pub struct PredictConfig {
 	/// Higher values may produce better balanced solutions at the cost of more computation time.
 	#[clap(long, default_value_t = 10)]
 	pub balancing_iterations: usize,
+
+	/// Reduce the solution to prevent further trimming.
+	#[clap(long, default_value_t = true)]
+	pub do_reduce: bool,
+
+	/// Block number at which to run the prediction.
+	/// If not specified, uses the latest block.
+	#[clap(long)]
+	pub block_number: Option<u32>,
 }
 
 /// Validator prediction output

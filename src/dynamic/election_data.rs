@@ -15,10 +15,7 @@ use std::{
 	time::{SystemTime, UNIX_EPOCH},
 };
 
-use subxt::storage::Storage;
-
 use crate::{
-	client::Client,
 	commands::{
 		multi_block::types::{TargetSnapshotPageOf, Voter, VoterSnapshotPageOf},
 		types::{
@@ -29,7 +26,7 @@ use crate::{
 	},
 	dynamic::staking::{fetch_candidates, fetch_nominators},
 	error::Error,
-	prelude::{AccountId, LOG_TARGET},
+	prelude::{AccountId, LOG_TARGET, Storage},
 	static_types::multi_block::VoterSnapshotPerBlock,
 	utils::{encode_account_id, planck_to_token, planck_to_token_u64},
 };
@@ -396,10 +393,9 @@ where
 
 /// Fetch snapshots from chain or synthesize them from staking storage when snapshot is unavailable.
 pub(crate) async fn get_election_data<T>(
-	client: &Client,
 	n_pages: u32,
 	round: u32,
-	storage: Storage<subxt::PolkadotConfig, subxt::OnlineClient<subxt::PolkadotConfig>>,
+	storage: Storage,
 ) -> Result<(TargetSnapshotPageOf<T>, Vec<VoterSnapshotPageOf<T>>, ElectionDataSource), Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
@@ -422,13 +418,13 @@ where
 		Err(err) => {
 			log::warn!(target: LOG_TARGET, "Fetching from Snapshot failed: {err}. Falling back to staking pallet");
 
-			let candidates = fetch_candidates(client)
+			let candidates = fetch_candidates(&storage)
 				.await
 				.map_err(|e| Error::Other(format!("Failed to fetch candidates: {e}")))?;
 
 			let voter_limit = (T::Pages::get() * T::VoterSnapshotPerBlock::get()) as usize;
 
-			let nominators = fetch_nominators(client, voter_limit)
+			let nominators = fetch_nominators(voter_limit, &storage)
 				.await
 				.map_err(|e| Error::Other(format!("Failed to fetch nominators: {e}")))?;
 
