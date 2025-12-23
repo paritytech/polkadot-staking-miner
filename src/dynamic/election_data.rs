@@ -44,94 +44,6 @@ pub struct PredictionContext<'a> {
 	pub data_source: ElectionDataSource,
 }
 
-/// Inject validator self-votes to ensure every candidate backs itself when generating
-/// synthetic election snapshots.
-///
-/// - If an account is a nominator, use their nominator data BUT ensure they vote for themselves
-/// - If an account is a validator but NOT a nominator, inject them as voting for themselves
-///
-/// We do NOT merge stakes - we respect the nominator data if it exists.
-pub(crate) fn inject_self_votes(
-	candidates: &[ValidatorData],
-	nominators: Vec<NominatorData>,
-) -> Vec<NominatorData> {
-	// Build a map of validator accounts to their stakes for lookup
-	let validator_stakes: HashMap<AccountId, u64> = candidates
-		.iter()
-		.map(|(account, stake)| {
-			let stake_u64 = if *stake > u64::MAX as u128 {
-				log::warn!(
-					target: LOG_TARGET,
-					"Validator {:?} stake {} exceeds u64::MAX; truncating to {}",
-					account,
-					stake,
-					u64::MAX
-				);
-				u64::MAX
-			} else {
-				*stake as u64
-			};
-			(account.clone(), stake_u64)
-		})
-		.collect();
-
-	// Build a set of all validator accounts for fast lookup
-	let validator_accounts: HashSet<AccountId> =
-		candidates.iter().map(|(account, _)| account.clone()).collect();
-
-	let mut combined: Vec<NominatorData> = Vec::with_capacity(nominators.len() + candidates.len());
-
-	let mut self_votes_added = 0usize;
-
-	// Process all nominators, ensuring validators vote for themselves
-	for (account, stake, mut targets) in nominators {
-		// If this nominator is also a validator, ensure they vote for themselves
-		if validator_accounts.contains(&account) {
-			// Add self-target if not already present
-			if !targets.iter().any(|t| t == &account) {
-				targets.push(account.clone());
-				self_votes_added += 1;
-			}
-		}
-		combined.push((account, stake, targets));
-	}
-
-	// Then, for validators that are NOT nominators, inject them as self-voters
-	let mut injected = 0usize;
-	for (account, _stake) in candidates {
-		// Skip if this validator is already a nominator (we already processed them above)
-		if combined.iter().any(|(acc, _, _)| acc == account) {
-			continue;
-		}
-
-		// Get the validator stake (already converted to u64 in validator_stakes map)
-		let stake_u64 = validator_stakes
-			.get(account)
-			.copied()
-			.expect("Validator stake should exist in map");
-
-		// Add validator as a self-voter (voting only for themselves)
-		combined.push((account.clone(), stake_u64, vec![account.clone()]));
-		injected += 1;
-	}
-	log::info!(
-		target: LOG_TARGET,
-		"Ensured {} validator self-votes in nominators, injected {} new validator self-voters (total: {} voters)",
-		self_votes_added,
-		injected,
-		combined.len()
-	);
-
-	combined.sort_by(|a, b| {
-		// Sort by Stake Descending (High stake first)
-		b.1.cmp(&a.1)
-			// Tie-breaker: AccountId Ascending (for deterministic stability)
-			.then_with(|| a.0.cmp(&b.0))
-	});
-
-	combined
-}
-
 /// Convert staking pallet data into the in-memory snapshot format expected by the miner.
 ///
 /// Returns a single-page target snapshot and a Vec of voter pages (not bounded, so no pages are
@@ -408,6 +320,7 @@ where
 	// try to fetch election data from the snapshot
 	// if snapshot is not available fetch from staking
 	log::info!(target: LOG_TARGET, "Trying to fetch data from snapshot");
+
 	match try_fetch_snapshot::<T>(n_pages, round, &storage).await {
 		Ok((target_snapshot, voter_pages)) => {
 			log::info!(target: LOG_TARGET, "Snapshot found");
@@ -428,11 +341,10 @@ where
 				.await
 				.map_err(|e| Error::Other(format!("Failed to fetch nominators: {e}")))?;
 
-			let nominators = inject_self_votes(&candidates, nominators);
-
-			let (target_snapshot, voter_snapshot) =
+			let (target_snapshot, mut voter_snapshot) =
 				convert_staking_data_to_snapshots::<T>(candidates, nominators)?;
-
+			// Fix the order
+			voter_snapshot.reverse();
 			Ok((target_snapshot, voter_snapshot, ElectionDataSource::Staking))
 		},
 	}

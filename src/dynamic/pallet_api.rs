@@ -171,6 +171,5 @@ pub mod voter_list {
 		use super::{super::*, *};
 		pub const LIST_NODES: PalletItem = PalletItem::new(NAME, "ListNodes");
 		pub const LIST_BAGS: PalletItem = PalletItem::new(NAME, "ListBags");
-		pub const COUNTER_FOR_LIST_NODES: PalletItem = PalletItem::new(NAME, "CounterForListNodes");
 	}
 }

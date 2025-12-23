@@ -8,7 +8,10 @@ use crate::{
 };
 use codec::{Decode, Encode};
 use scale_value::At;
-use std::{collections::HashMap, time::Duration};
+use std::{
+	collections::{HashMap, HashSet},
+	time::Duration,
+};
 use subxt::dynamic::Value;
 
 /// Fetch all candidate validators (stash AccountId) with their active stake
@@ -102,14 +105,35 @@ pub(crate) async fn fetch_candidates(storage: &Storage) -> Result<Vec<ValidatorD
 	Ok(candidates)
 }
 
+/// Helper to fetch just the validator keys (Set) for O(1) existence checks
+pub(crate) async fn fetch_validator_keys(storage: &Storage) -> Result<HashSet<AccountId>, Error> {
+	log::info!(target: LOG_TARGET, "Fetching validator keys for existence checks...");
+	let validators_addr = storage_addr(pallet_api::staking::storage::VALIDATORS, vec![]);
+	let mut iter = storage.iter(validators_addr).await?;
+	let mut keys = HashSet::new();
+
+	while let Some(next) = iter.next().await {
+		let kv = next.map_err(|e| Error::Other(format!("storage iteration error: {e}")))?;
+		let key_bytes = kv.key_bytes;
+		if key_bytes.len() >= 32 {
+			let tail = &key_bytes[key_bytes.len() - 32..];
+			if let Ok(arr) = <[u8; 32]>::try_from(tail) {
+				keys.insert(AccountId::from(arr));
+			}
+		}
+	}
+	log::info!(target: LOG_TARGET, "Loaded {} validator keys", keys.len());
+	Ok(keys)
+}
+
 /// Node data structure for VoterList (decoded from storage)  
 /// The actual on-chain structure from pallet-bags-list
-/// Note: Field order matters for SCALE codec!
 /// Structure based on substrate bags-list pallet Node definition
 #[derive(Debug, Clone, Decode)]
 struct ListNode {
-	_id: AccountId,
-	_prev: Option<AccountId>,
+	id: AccountId,
+	#[allow(dead_code)]
+	prev: Option<AccountId>,
 	next: Option<AccountId>,
 	bag_upper: u64,
 	score: u64,
@@ -129,22 +153,24 @@ struct VoterNode {
 	id: AccountId,
 	score: u64,
 	next: Option<AccountId>,
-	_bag_upper: u64,
+	#[allow(dead_code)]
+	bag_upper: u64,
 }
 
 /// Fetch and sort voters from the VoterList (BagsList)
 /// Returns the top voters limited by voter_limit, sorted by score (stake) in descending order
-/// This implementation replicates the chain's linked list structure by walking through bags
 pub(crate) async fn fetch_voter_list(
 	voter_limit: usize,
 	storage: &Storage,
 ) -> Result<Vec<(AccountId, u64)>, Error> {
-	// Fetch all bags (ListBags)
-	log::info!(target: LOG_TARGET, "Fetching VoterList bags...");
+	log::info!(target: LOG_TARGET, "Fetching From Voter List");
+
+	// Fetch all bags (ListBags) - store as HashMap with bag_upper as key
+	log::info!(target: LOG_TARGET, "Fetching ListBags...");
 	let list_bags_addr = storage_addr(pallet_api::voter_list::storage::LIST_BAGS, vec![]);
 	let mut bags_iter = storage.iter(list_bags_addr).await?;
 
-	let mut bags: HashMap<u64, AccountId> = HashMap::new();
+	let mut bags: HashMap<u64, ListBag> = HashMap::new();
 
 	while let Some(next) = bags_iter.next().await {
 		let kv = match next {
@@ -152,9 +178,9 @@ pub(crate) async fn fetch_voter_list(
 			Err(e) => return Err(Error::Other(format!("bags iteration error: {e}"))),
 		};
 
-		// Extract bag score from key (u64)
+		// Extract bag score (bag_upper) from key (u64)
 		let key_bytes = kv.key_bytes;
-		let bag_score = if key_bytes.len() >= 8 {
+		let bag_upper = if key_bytes.len() >= 8 {
 			let start = key_bytes.len().saturating_sub(8);
 			u64::from_le_bytes(key_bytes[start..].try_into().unwrap_or([0u8; 8]))
 		} else {
@@ -164,36 +190,22 @@ pub(crate) async fn fetch_voter_list(
 		// Decode the bag structure
 		let bag: ListBag = Decode::decode(&mut &kv.value.encoded()[..])?;
 
-		// Store bag head if it exists
-		if let Some(head_account) = bag.head {
-			bags.insert(bag_score, head_account);
-		}
+		// Store bag with its upper bound as key
+		bags.insert(bag_upper, bag);
 	}
 
 	log::info!(target: LOG_TARGET, "Found {} bags", bags.len());
 
-	// Get total node count
-	let counter_addr =
-		storage_addr(pallet_api::voter_list::storage::COUNTER_FOR_LIST_NODES, vec![]);
-	let total_nodes_count = if let Some(counter) = storage.fetch(&counter_addr).await? {
-		let count: u32 = Decode::decode(&mut &counter.encoded()[..])?;
-		count as usize
-	} else {
-		0
-	};
-
-	log::info!(target: LOG_TARGET, "Total nodes in VoterList: {total_nodes_count}");
-
-	// Fetch nodes in batches (paginated)
-	log::info!(target: LOG_TARGET, "Fetching Voters (Nodes) in batches...");
+	// Fetch all nodes (ListNodes) - store as HashMap with AccountId as key
+	log::info!(target: LOG_TARGET, "Fetching ListNodes...");
 
 	let mut nodes: HashMap<AccountId, VoterNode> = HashMap::new();
 	let list_nodes_addr = storage_addr(pallet_api::voter_list::storage::LIST_NODES, vec![]);
-	let mut iter = storage.iter(list_nodes_addr).await?;
+	let mut nodes_iter = storage.iter(list_nodes_addr).await?;
 
-	let mut count = 0;
+	let mut nodes_count = 0;
 
-	while let Some(next) = iter.next().await {
+	while let Some(next) = nodes_iter.next().await {
 		let kv = match next {
 			Ok(kv) => kv,
 			Err(e) => return Err(Error::Other(format!("node iteration error: {e}"))),
@@ -210,105 +222,147 @@ pub(crate) async fn fetch_voter_list(
 			.map_err(|_| Error::Other("failed to slice AccountId32 bytes".into()))?;
 		let account_id = AccountId::from(arr);
 
-		// Dedup: skip if already exists
-		if nodes.contains_key(&account_id) {
-			continue;
-		}
-
-		// Try to decode node data using the struct
+		// Decode node data using the struct
 		let list_node = match ListNode::decode(&mut &kv.value.encoded()[..]) {
 			Ok(node) => node,
 			Err(e) => {
-				// If struct decoding fails, try dynamic decoding as fallback
 				log::warn!(
 					target: LOG_TARGET,
-					"Failed to decode ListNode for {account_id:?}: {e}. Trying dynamic decoding..."
+					"Failed to decode ListNode for {account_id:?}: {e}"
 				);
-
-				if let Ok(value) = kv.value.to_value() {
-					let score = value.at("score").and_then(|v| v.as_u128()).unwrap_or(0) as u64;
-					let bag_upper =
-						value.at("bagUpper").and_then(|v| v.as_u128()).unwrap_or(0) as u64;
-
-					nodes.insert(
-						account_id.clone(),
-						VoterNode { id: account_id, score, next: None, _bag_upper: bag_upper },
-					);
-				}
 				continue;
 			},
 		};
 
+		// Store node in HashMap for O(1) lookup
 		nodes.insert(
-			account_id.clone(),
+			list_node.id.clone(),
 			VoterNode {
-				id: account_id, // Use the key's account_id to be safe/consistent
+				id: list_node.id,
 				score: list_node.score,
 				next: list_node.next,
-				_bag_upper: list_node.bag_upper,
+				bag_upper: list_node.bag_upper,
 			},
 		);
 
-		count += 1;
+		nodes_count += 1;
 
-		// Progress logging every 1000 nodes
-		if count % 1000 == 0 {
-			log::info!(
-				target: LOG_TARGET,
-				"Fetching Voters... [{} / {}]",
-				nodes.len(),
-				total_nodes_count
-			);
+		if nodes_count % 1000 == 0 {
+			log::info!(target: LOG_TARGET, "Loaded {nodes_count} nodes...");
 		}
 	}
 
-	log::info!(target: LOG_TARGET, "All voters fetched");
+	log::info!(target: LOG_TARGET, "Found {} nodes total", nodes.len());
 
-	// Stitch and walk the linked list
-	log::info!(target: LOG_TARGET, "Stitching the Linked List...");
-
-	// Sort bags from highest to lowest
+	// Sort bags from highest to lowest score (descending order)
+	log::info!(target: LOG_TARGET, "Sorting bags by score (descending)...");
 	let mut sorted_bag_keys: Vec<u64> = bags.keys().copied().collect();
-	sorted_bag_keys.sort_by(|a, b| b.cmp(a)); // Descending order
+	sorted_bag_keys.sort_by(|a, b| b.cmp(a)); // Descending order - highest stake first
 
-	let mut final_voters: Vec<(AccountId, u64)> = Vec::new();
+	log::info!(
+		target: LOG_TARGET,
+		"Bags sorted. Highest bag: {:?}, Lowest bag: {:?}",
+		sorted_bag_keys.first(),
+		sorted_bag_keys.last()
+	);
 
-	for bag_id in sorted_bag_keys {
-		if final_voters.len() >= voter_limit {
+	// Iterate through bags and follow linked lists to build voter snapshot
+	log::info!(
+		target: LOG_TARGET,
+		"Building voter snapshot (limit: {voter_limit})..."
+	);
+
+	let mut voters: Vec<(AccountId, u64)> = Vec::new();
+	let mut processed: HashMap<AccountId, bool> = HashMap::new();
+	let mut total_nodes_processed = 0;
+
+	// Iterate through each bag from highest to lowest
+	for bag_upper in sorted_bag_keys {
+		// Check if we've reached the voter limit
+		if voters.len() >= voter_limit {
+			log::info!(target: LOG_TARGET, "Reached voter limit of {voter_limit}");
 			break;
 		}
 
-		let mut current_head_id = bags.get(&bag_id).cloned();
+		// Get the bag
+		let bag = match bags.get(&bag_upper) {
+			Some(b) => b,
+			None => continue,
+		};
 
-		// Walk this bag following the linked list
-		while let Some(ref head_id) = current_head_id {
-			if final_voters.len() >= voter_limit {
+		// Skip empty bags (no head)
+		if bag.head.is_none() {
+			continue;
+		}
+
+		// Start from the head of this bag's linked list
+		let mut current_node_id = bag.head.clone();
+		let mut nodes_in_bag = 0;
+
+		// Walk through the linked list for this bag
+		while let Some(node_id) = current_node_id {
+			// Check voter limit
+			if voters.len() >= voter_limit {
 				break;
 			}
 
-			let node_data = nodes.get(head_id);
-
-			if let Some(node) = node_data {
-				final_voters.push((node.id.clone(), node.score));
-				current_head_id = node.next.clone(); // Follow the pointer
-			} else {
+			// Skip if already processed (detect cycles)
+			if processed.contains_key(&node_id) {
 				log::warn!(
 					target: LOG_TARGET,
-					"Broken Chain: Node {head_id:?} not found in map"
+					"Cycle detected: node {node_id:?} already processed in bag {bag_upper}"
 				);
 				break;
 			}
+
+			// Mark as processed
+			processed.insert(node_id.clone(), true);
+
+			// Get the node from our HashMap
+			let node = match nodes.get(&node_id) {
+				Some(n) => n,
+				None => {
+					log::warn!(
+						target: LOG_TARGET,
+						"Broken chain: Node {node_id:?} not found in bag {bag_upper}"
+					);
+					break;
+				},
+			};
+
+			// Add this voter to our snapshot
+			voters.push((node.id.clone(), node.score));
+			nodes_in_bag += 1;
+			total_nodes_processed += 1;
+
+			// Move to the next node in the linked list
+			current_node_id = node.next.clone();
+		}
+
+		if nodes_in_bag > 0 {
+			log::debug!(
+				target: LOG_TARGET,
+				"Bag {bag_upper} (upper: {bag_upper}): processed {nodes_in_bag} nodes"
+			);
 		}
 	}
 
 	log::info!(
 		target: LOG_TARGET,
-		"Using {} voters for election (limited by voter_limit: {})",
-		final_voters.len(),
+		"Voter List Fetch Completed"
+	);
+	log::info!(
+		target: LOG_TARGET,
+		"Total voters in snapshot: {} (limited by voter_limit: {})",
+		voters.len(),
 		voter_limit
 	);
+	log::info!(
+		target: LOG_TARGET,
+		"Total nodes processed: {total_nodes_processed}"
+	);
 
-	Ok(final_voters)
+	Ok(voters)
 }
 
 /// Fetch complete voter data including nomination targets
@@ -318,11 +372,15 @@ pub(crate) async fn fetch_nominators(
 	voter_limit: usize,
 	storage: &Storage,
 ) -> Result<Vec<NominatorData>, Error> {
-	// Fetch voters from VoterList (BagsList) with their stakes
+	// Fetch voters from VoterList (BagsList) with their stakes (already sorted)
 	log::info!(target: LOG_TARGET, "Fetching voters from VoterList...");
 	let voters = fetch_voter_list(voter_limit, storage).await?;
 
 	log::info!(target: LOG_TARGET, "Fetched {} voters from VoterList", voters.len());
+
+	// Fetch Validators (keys only) to perform `Validators::<T>::contains_key(&voter)` check
+	// This is critical for implicit self-votes where no Nominator entry exists.
+	let validator_keys = fetch_validator_keys(storage).await?;
 
 	// Prepare for batch fetching of nomination targets
 	const BATCH_SIZE: usize = 20;
@@ -336,8 +394,11 @@ pub(crate) async fn fetch_nominators(
 	);
 
 	let mut complete_voter_data: Vec<NominatorData> = Vec::with_capacity(total);
-	let mut batch_handles: Vec<tokio::task::JoinHandle<Result<Vec<NominatorData>, Error>>> =
-		Vec::new();
+
+	// Note: Using the return type of the batch task to Option<Vec<...>> to handle missing entries
+	type BatchResult = Vec<(AccountId, u64, Option<Vec<AccountId>>)>;
+	type BatchHandle = tokio::task::JoinHandle<Result<BatchResult, Error>>;
+	let mut batch_handles: Vec<BatchHandle> = Vec::new();
 	let mut processed_count: usize = 0;
 
 	// Process in batches with concurrency
@@ -373,15 +434,38 @@ pub(crate) async fn fetch_nominators(
 
 		batch_handles.push(handle);
 
-		// Manage concurrency
+		// Manage concurrency and process results
 		if batch_handles.len() >= MAX_CONCURRENT_BATCHES {
 			let handle = batch_handles.remove(0);
 			match handle.await {
 				Ok(Ok(results)) => {
-					processed_count += results.len();
-					complete_voter_data.extend(results);
+					// Logic: get_npos_voters implementation
+					for (account, stake, maybe_targets) in results {
+						match maybe_targets {
+							// Case 1: Nominator entry exists
+							Some(targets) => {
+								if !targets.is_empty() {
+									complete_voter_data.push((account, stake, targets));
+								}
+								// If targets is empty, we do nothing (per on-chain logic, skip)
+							},
+							// Case 2: No Nominator entry -> Check if Validator
+							None => {
+								if validator_keys.contains(&account) {
+									// Implicit self-vote
+									complete_voter_data.push((
+										account.clone(),
+										stake,
+										vec![account],
+									));
+								}
+								// Else: Defensive error / skip
+							},
+						}
+					}
+					processed_count += BATCH_SIZE.min(total - processed_count); // Approximate
 					if processed_count % 2500 == 0 {
-						log::info!(target: LOG_TARGET, "Processed {processed_count}/{total} voters...");
+						log::info!(target: LOG_TARGET, "Processed {processed_count} voters...");
 					}
 				},
 				Ok(Err(e)) => return Err(e),
@@ -395,10 +479,23 @@ pub(crate) async fn fetch_nominators(
 		let batch_results = futures::future::join_all(batch_handles).await;
 		for result in batch_results {
 			match result {
-				Ok(Ok(results)) => {
-					processed_count += results.len();
-					complete_voter_data.extend(results);
-				},
+				Ok(Ok(results)) =>
+					for (account, stake, maybe_targets) in results {
+						match maybe_targets {
+							Some(targets) =>
+								if !targets.is_empty() {
+									complete_voter_data.push((account, stake, targets));
+								},
+							None =>
+								if validator_keys.contains(&account) {
+									complete_voter_data.push((
+										account.clone(),
+										stake,
+										vec![account],
+									));
+								},
+						}
+					},
 				Ok(Err(e)) => return Err(e),
 				Err(e) => return Err(Error::Other(format!("Task join error: {e}"))),
 			}
@@ -430,7 +527,7 @@ struct Nominations {
 async fn fetch_nominators_batch(
 	voters: &[(AccountId, u64)],
 	storage: &Storage,
-) -> Result<Vec<NominatorData>, Error> {
+) -> Result<Vec<(AccountId, u64, Option<Vec<AccountId>>)>, Error> {
 	let mut batch_results = Vec::with_capacity(voters.len());
 
 	// Prepare futures for fetching individual nominator data
@@ -478,12 +575,14 @@ async fn fetch_nominators_batch(
 			// Decode the nominations
 			if let Ok(nominations) = Nominations::decode(&mut &data.encoded()[..]) {
 				// Only include active nominators (not suppressed)
-				if !nominations.suppressed { nominations.targets } else { Vec::new() }
+				if !nominations.suppressed { Some(nominations.targets) } else { Some(Vec::new()) }
 			} else {
-				Vec::new()
+				// Failed to decode, treat as empty targets
+				Some(Vec::new())
 			}
 		} else {
-			Vec::new()
+			// Nominator data NOT FOUND -> This is where we will check if it is a validator later
+			None
 		};
 		batch_results.push((account_id, stake, targets));
 	}

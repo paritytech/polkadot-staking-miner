@@ -96,10 +96,6 @@ where
 		get_election_data::<T>(n_pages, current_round, storage).await?
 	};
 
-	// Take the minimum of targets
-	let desired_targets =
-		std::cmp::min(desired_targets, (target_snapshot.len().saturating_sub(1)) as u32);
-
 	log::info!(
 		target: LOG_TARGET,
 		"Mining solution with desired_targets={}, candidates={}, voter pages={}",
