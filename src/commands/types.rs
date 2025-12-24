@@ -146,6 +146,15 @@ pub(crate) struct ValidatorInfo {
 	pub(crate) account: String,
 	pub(crate) total_stake: String, // Token amount as string
 	pub(crate) self_stake: String,  // Token amount as string
+	pub(crate) nominator_count: usize,
+	pub(crate) nominators: Vec<NominatorAllocation>,
+}
+
+/// Nominator allocation details for a validator
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct NominatorAllocation {
+	pub(crate) address: String,
+	pub(crate) allocated_stake: String, // Token amount as string
 }
 
 /// Nominator prediction output

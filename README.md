@@ -344,8 +344,19 @@ The tool generates the following JSON files in the specified output directory:
   "results": [
     {
       "account": "15roBmbe5NmRXb4imfmhKxSjH8k9J5xtHSrvYJKpmmCLoPqD",
-      "total_stake": "2358096.6648553217 DOT",
-      "self_stake": "0 DOT"
+      "total_stake": "2372626.3933261476 DOT",
+      "self_stake": "0 DOT",
+      "nominator_count": 2,
+      "nominators": [
+        {
+          "address": "121GCLDNk9ErAkCovjjuF3npDB3veo3i3myY6a5v2yNEgrZw",
+          "allocated_stake": "769476 DOT"
+        },
+        {
+          "address": "14mtWxmkUHsWqJLxMiRR8qrHTHyck712E5yjWpnxPBEh8Acb",
+          "allocated_stake": "135680 DOT"
+        },
+      ]
     }
   ]
 }

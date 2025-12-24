@@ -19,9 +19,9 @@ use crate::{
 	commands::{
 		multi_block::types::{TargetSnapshotPageOf, Voter, VoterSnapshotPageOf},
 		types::{
-			ElectionDataSource, NominatorData, NominatorPrediction, NominatorsPrediction,
-			PredictionMetadata, ValidatorData, ValidatorInfo, ValidatorStakeAllocation,
-			ValidatorsPrediction,
+			ElectionDataSource, NominatorAllocation, NominatorData, NominatorPrediction,
+			NominatorsPrediction, PredictionMetadata, ValidatorData, ValidatorInfo,
+			ValidatorStakeAllocation, ValidatorsPrediction,
 		},
 	},
 	dynamic::staking::{fetch_candidates, fetch_nominators},
@@ -222,10 +222,30 @@ where
 			.map(|(_, stake)| *stake)
 			.unwrap_or(0);
 
+		// Collect nominators backing this validator (excluding self-votes)
+		let mut validator_nominators: Vec<(AccountId, u128)> = support
+			.voters
+			.iter()
+			.filter(|(who, _)| who != validator)
+			.map(|(who, stake)| (who.clone(), *stake))
+			.collect();
+		// Sort by stake descending for consistent ordering
+		validator_nominators.sort_by(|a, b| b.1.cmp(&a.1));
+
+		let nominator_allocations = validator_nominators
+			.iter()
+			.map(|(nominator, stake)| NominatorAllocation {
+				address: encode_account_id(nominator, ctx.ss58_prefix),
+				allocated_stake: planck_to_token(*stake, ctx.token_decimals, ctx.token_symbol),
+			})
+			.collect();
+
 		validator_infos.push(ValidatorInfo {
 			account: encode_account_id(validator, ctx.ss58_prefix),
 			total_stake: planck_to_token(support.total, ctx.token_decimals, ctx.token_symbol),
 			self_stake: planck_to_token(self_stake, ctx.token_decimals, ctx.token_symbol),
+			nominator_count: validator_nominators.len(),
+			nominators: nominator_allocations,
 		});
 	}
 
