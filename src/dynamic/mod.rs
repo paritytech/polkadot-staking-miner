@@ -9,8 +9,10 @@
 
 use crate::{error::Error, prelude::ChainClient, static_types};
 
+pub mod election_data;
 pub mod multi_block;
 pub mod pallet_api;
+pub mod staking;
 pub mod utils;
 
 use static_types::multi_block::{

@@ -85,6 +85,8 @@ pub enum Command {
 	Monitor(commands::types::MultiBlockMonitorConfig),
 	/// Check if the staking-miner metadata is compatible to a remote node.
 	Info,
+	/// Run election prediction
+	Predict(commands::types::PredictConfig),
 }
 
 #[tokio::main]
@@ -144,6 +146,11 @@ async fn main() -> Result<(), Error> {
 		Command::Monitor(cfg) => {
 			macros::for_multi_block_runtime!(chain, {
 				commands::multi_block::monitor_cmd::<MinerConfig>(client, cfg).boxed()
+			})
+		},
+		Command::Predict(cfg) => {
+			macros::for_multi_block_runtime!(chain, {
+				commands::predict::predict_cmd::<MinerConfig>(client, cfg).boxed()
 			})
 		},
 	};

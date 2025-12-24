@@ -231,6 +231,177 @@ $ subxt metadata  > artifacts/multi_block.scale
 $ subxt codegen --file artifacts/multi_block.scale | rustfmt > code.rs
 ```
 
+## Predict
+
+The `predict` command allows you to predict validator election outcomes for Substrate-based chains
+without running a full node. It fetches the necessary staking data from the chain and runs the same
+Phragmén algorithm that the chain uses to determine validator sets.
+
+### Basic Usage
+
+```bash
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --do-reduce
+```
+
+### Command Options
+
+| Option                          | Description                                                                                                                   | Default Value      |
+| :------------------------------ | :---------------------------------------------------------------------------------------------------------------------------- | :----------------- |
+| `--desired-validators <number>` | Desired number of validators for the prediction                                                                               | Fetched from chain |
+| `--custom-file <path>`          | Path to custom election data JSON file (see format below)                                                                     | None               |
+| `--output-dir <path>`           | Output directory for prediction results                                                                                       | `results`          |
+| `--balancing-iterations <number>`| Number of balancing iterations for the sequential phragmen algorithm. Higher values may produce better balanced solutions at the cost of more computation time. | 10                 |
+| `--do-reduce`            | Reduce the solution to prevent further trimming.                                                                              | `false`             |
+| `--block-number <number>`       | Block number at which to run the prediction. If not specified, uses the latest block.                                         | Latest block       |
+
+### Examples
+
+#### Basic Prediction
+
+```bash
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --do-reduce
+```
+
+#### With Desired Validators
+
+```bash
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --desired-validators 50 --do-reduce
+```
+
+#### Using Custom Election Data File
+
+```bash
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --custom-file custom.json
+```
+
+#### Prediction at a Specific Block
+
+```bash
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --block-number 13196110 --do-reduce
+```
+
+#### Run Prediction with reduction
+
+```bash
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --do-reduce
+```
+
+### Custom Election Data File Format
+
+When using `--custom-file`, the file should have the following JSON structure:
+
+```json
+{
+  "candidates": [
+    {
+      "account": "5C556QTtg1bJ43GDSgeowa3Ark6aeSHGTac1b2rKSXtgmSmW",
+      "stake": 27549105879206511
+    },
+    {
+      "account": "5Ft3J6iqSQPWX2S9jERXcMpevt8JDUPWjec5uGierfVGXisE",
+      "stake": 11549105879206511
+    }
+  ],
+  "nominators": [
+    {
+      "account": "5EnBXFfRFgutykCTHsaMYygakTy6jjLQRvBxqXfc85GSnPk1",
+      "stake": 3217591643365,
+      "targets": [
+        "5C556QTtg1bJ43GDSgeowa3Ark6aeSHGTac1b2rKSXtgmSmW",
+        "5Ft3J6iqSQPWX2S9jERXcMpevt8JDUPWjec5uGierfVGXisE"
+      ]
+    }
+  ]
+}
+```
+
+**Note:** Custom file paths can be nested (e.g., `data/elections/custom.json`). The tool will
+automatically resolve relative paths from the current working directory.
+
+### Output Files
+
+The tool generates the following JSON files in the specified output directory:
+
+1. **`validators_prediction.json`**: Contains elected validators with their stake information
+2. **`nominators_prediction.json`**: Contains nominator allocations and validator support
+
+#### Validators Prediction Format
+
+```json
+{
+  "metadata": {
+    "timestamp": "1765799538",
+    "desired_validators": 600,
+    "round": 40,
+    "block_number": 10803423,
+    "solution_score": {
+      "minimal_stake": 11797523289886283,
+      "sum_stake": 8372189060111758480,
+      "sum_stake_squared": 117584540059969491964159919300216042
+    },
+    "data_source": "snapshot"
+  },
+  "results": [
+    {
+      "account": "15roBmbe5NmRXb4imfmhKxSjH8k9J5xtHSrvYJKpmmCLoPqD",
+      "total_stake": "2372626.3933261476 DOT",
+      "self_stake": "0 DOT",
+      "nominator_count": 2,
+      "nominators": [
+        {
+          "address": "121GCLDNk9ErAkCovjjuF3npDB3veo3i3myY6a5v2yNEgrZw",
+          "allocated_stake": "769476 DOT"
+        },
+        {
+          "address": "14mtWxmkUHsWqJLxMiRR8qrHTHyck712E5yjWpnxPBEh8Acb",
+          "allocated_stake": "135680 DOT"
+        },
+      ]
+    }
+  ]
+}
+```
+
+#### Nominators Prediction Format
+
+```json
+{
+  "nominators": [
+    {
+      "address": "15VArSaLFf3r9MzyQjcNTexjPoRDJuVVkqUmqtuUuBcPCYrX",
+      "stake": "447.2323363908 DOT",
+      "active_validators": [
+        {
+          "validator": "15ZvLonEseaWZNy8LDkXXj3Y8bmAjxCjwvpy4pXWSL4nGSBs",
+          "allocated_stake": "447.2323363908 DOT"
+        }
+      ],
+      "inactive_validators": [
+        "1627VVB5gtHiseCV8ZdffF7P3bWrLMkU92Q6u3LsG8tGuB63"
+      ],
+      "waiting_validators": [
+        "13K6QTYBPMUFTbhZzqToKcfCiWbt4wDPHr3rUPyUessiPR61",
+        "15rb4HVycC1KLHsdaSdV1x2TJAmUkD7PhubmhL3PnGv7RiGY"
+      ]
+    }
+  ]
+}
+```
+
+### How It Works
+
+1. **Data Source**: The tool first tries to fetch data from the chain's snapshot (if available),
+   then falls back to the staking pallet. If `--custom-file` is provided, it uses that data instead.
+
+2. **Election Algorithm**: Runs the same Phragmén algorithm (`seq_phragmen`) used by Substrate chains
+   to determine:
+   - Which validators would be elected
+   - Stake distribution among validators
+   - Nominator allocations to validators
+
+3. **Output Generation**: Creates detailed JSON files with predictions, including validator and
+   nominator perspectives.
+
 ## Runtime upgrades
 
 Runtime upgrades are handled by the polkadot-staking-miner by upgrading storage constants and that
