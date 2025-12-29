@@ -79,8 +79,9 @@ pub async fn storage_at(block: Option<Hash>, api: &ChainClient) -> Result<Storag
 }
 
 pub async fn storage_at_head(api: &Client) -> Result<Storage, Error> {
-	let hash = get_latest_finalized_head(api.chain_api()).await?;
-	storage_at(Some(hash), api.chain_api()).await
+	let chain_api = api.chain_api().await;
+	let hash = get_latest_finalized_head(&chain_api).await?;
+	storage_at(Some(hash), &chain_api).await
 }
 
 pub async fn get_latest_finalized_head(api: &ChainClient) -> Result<Hash, Error> {
