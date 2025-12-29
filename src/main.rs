@@ -58,7 +58,8 @@ use crate::{
 #[cfg_attr(test, derive(PartialEq))]
 #[clap(author, version, about)]
 pub struct Opt {
-	/// The `ws` node to connect to.
+	/// The `ws` node(s) to connect to. Multiple URIs can be comma-separated for failover.
+	/// Example: "wss://rpc1.example.com,wss://rpc2.example.com"
 	#[clap(long, short, default_value = DEFAULT_URI, env = "URI")]
 	pub uri: String,
 
@@ -104,6 +105,7 @@ async fn main() -> Result<(), Error> {
 
 	let version_bytes = client
 		.chain_api()
+		.await
 		.runtime_api()
 		.at_latest()
 		.await?
@@ -119,10 +121,13 @@ async fn main() -> Result<(), Error> {
 
 	// Start a new tokio task to perform the runtime updates in the background.
 	// if this fails then the miner will be stopped and has to be re-started.
+	// Note: The upgrade task receives a cloned ChainClient. If the main loop performs
+	// a failover to a different endpoint, this task will continue using the old connection
+	// until it fails and triggers a restart.
 	let (tx_upgrade, rx_upgrade) = oneshot::channel::<Error>();
-	tokio::spawn(runtime_upgrade_task(client.chain_api().clone(), tx_upgrade));
+	tokio::spawn(runtime_upgrade_task(client.chain_api().await.clone(), tx_upgrade));
 
-	update_metadata_constants(client.chain_api())?;
+	update_metadata_constants(&*client.chain_api().await)?;
 
 	let fut = match command {
 		Command::Info => async {
