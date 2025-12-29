@@ -391,6 +391,14 @@ mod hidden {
 		.unwrap()
 	});
 
+	static CONNECTION_TIMEOUTS: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_connection_timeouts_total",
+			"Total number of initial connection attempt timeouts"
+		))
+		.unwrap()
+	});
+
 	pub fn on_runtime_upgrade() {
 		RUNTIME_UPGRADES.inc();
 	}
@@ -525,5 +533,9 @@ mod hidden {
 
 	pub fn on_era_pruning_timeout() {
 		ERA_PRUNING_TIMEOUTS.inc();
+	}
+
+	pub fn on_connection_timeout() {
+		CONNECTION_TIMEOUTS.inc();
 	}
 }

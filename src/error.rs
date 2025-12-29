@@ -30,6 +30,10 @@ pub enum TimeoutError {
 	ScoreCheck { timeout_secs: u64 },
 	#[error("Missing pages submission timed out after {timeout_secs} seconds")]
 	MissingPages { timeout_secs: u64 },
+	#[error(
+		"Initial connection timed out after {timeout_secs} seconds (attempt {attempt}/{max_attempts})"
+	)]
+	InitialConnection { timeout_secs: u64, attempt: u32, max_attempts: u32 },
 }
 
 #[derive(thiserror::Error, Debug)]
