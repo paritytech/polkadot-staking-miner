@@ -1,6 +1,6 @@
 use crate::{
 	error::{Error, TimeoutError},
-	prelude::{ChainClient, Config, LOG_TARGET},
+	prelude::{ChainClient, LOG_TARGET},
 	prometheus,
 };
 use std::{sync::Arc, time::Duration};
@@ -74,11 +74,11 @@ impl Client {
 					.await
 					.map_err(|e| Error::Other(format!("Failed to connect: {e:?}")))?;
 
-			let backend: ChainHeadBackend<Config> =
-				ChainHeadBackendBuilder::default().build_with_background_driver(reconnecting_rpc);
+			let backend = LegacyBackend::builder().build(reconnecting_rpc.clone());
+
 			let chain_api = ChainClient::from_backend(Arc::new(backend)).await?;
 
-			Ok::<Self, Error>(Self { chain_api })
+			Ok::<Self, Error>(Self { chain_api, rpc: reconnecting_rpc })
 		};
 
 		match tokio::time::timeout(
