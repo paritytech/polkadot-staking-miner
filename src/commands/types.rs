@@ -93,16 +93,15 @@ pub struct MultiBlockMonitorConfig {
 #[cfg_attr(test, derive(PartialEq))]
 pub struct PredictConfig {
 	/// Desired number of validators for the prediction
-	/// (If omitted, the value is fetched from the chain)
+	/// [If omitted, the value is fetched from the chain]
 	#[clap(long)]
 	pub desired_validators: Option<u32>,
 
 	/// Path to custom election data JSON file
 	#[clap(long)]
-	pub custom_file: Option<String>,
+	pub custom_data: Option<String>,
 
 	/// Output directory for prediction results
-	/// Defaults to "results/"
 	#[clap(long, default_value = "results")]
 	pub output_dir: String,
 
@@ -112,12 +111,12 @@ pub struct PredictConfig {
 	pub balancing_iterations: usize,
 
 	/// Reduce the solution to prevent further trimming.
-	/// Default false
+	/// [default: false]
 	#[clap(long, default_value_t = false)]
 	pub do_reduce: bool,
 
 	/// Block number at which to run the prediction.
-	/// If not specified, uses the latest block.
+	/// [If omitted, uses the latest block]
 	#[clap(long)]
 	pub block_number: Option<u32>,
 }
@@ -184,24 +183,24 @@ pub(crate) type NominatorData = (AccountId, u64, Vec<AccountId>);
 pub(crate) type ValidatorData = (AccountId, u128);
 
 // ============================================================================
-// Custom File Format Types
+// Custom Data File Format Types
 // ============================================================================
 
 /// Custom file format for election data
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CustomElectionFile {
+pub struct CustomElectionData {
 	pub candidates: Vec<CustomCandidate>,
 	pub nominators: Vec<CustomNominator>,
 }
 
-/// Candidate in custom file
+/// Candidate in custom data file
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomCandidate {
 	pub account: String,
 	pub stake: u128,
 }
 
-/// Nominator in custom file
+/// Nominator in custom data file
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomNominator {
 	pub account: String,
@@ -214,5 +213,5 @@ pub struct CustomNominator {
 pub enum ElectionDataSource {
 	Snapshot,
 	Staking,
-	CustomFile,
+	CustomData,
 }

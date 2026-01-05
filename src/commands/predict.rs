@@ -4,7 +4,7 @@ use polkadot_sdk::pallet_election_provider_multi_block::unsigned::miner::MinerCo
 use crate::{
 	client::Client,
 	commands::types::{
-		CustomElectionFile, ElectionDataSource, NominatorData, PredictConfig, ValidatorData,
+		CustomElectionData, ElectionDataSource, NominatorData, PredictConfig, ValidatorData,
 	},
 	dynamic::{
 		election_data::{
@@ -34,8 +34,6 @@ where
 	T::VoterSnapshotPerBlock: Send,
 	T::MaxVotesPerVoter: Send,
 {
-	log::info!(target: LOG_TARGET, "Running prediction command...");
-
 	// Update metadata constants
 	update_metadata_constants(client.chain_api())?;
 	crate::dynamic::set_balancing_iterations(config.balancing_iterations);
@@ -85,13 +83,13 @@ where
 		},
 	};
 
-	// Check if custom file is provided
-	let (target_snapshot, voter_snapshot, data_source) = if let Some(path) = &config.custom_file {
-		// Load snapshots from custom file
-		let (candidates, nominators) = load_custom_file(path).await?;
+	// Check if custom data file path is provided
+	let (target_snapshot, voter_snapshot, data_source) = if let Some(path) = &config.custom_data {
+		// Load snapshots from custom data file
+		let (candidates, nominators) = load_custom_data(path).await?;
 		let (target_snapshot, voter_snapshot) =
 			convert_staking_data_to_snapshots::<T>(candidates, nominators)?;
-		(target_snapshot, voter_snapshot, ElectionDataSource::CustomFile)
+		(target_snapshot, voter_snapshot, ElectionDataSource::CustomData)
 	} else {
 		get_election_data::<T>(n_pages, current_round, storage).await?
 	};
@@ -192,14 +190,14 @@ where
 	Ok(())
 }
 
-async fn load_custom_file(
-	custom_file_path: &str,
+async fn load_custom_data(
+	custom_data_file_path: &str,
 ) -> Result<(Vec<ValidatorData>, Vec<NominatorData>), Error> {
 	use std::path::PathBuf;
 
 	// Resolve relative path → absolute
 	let path: PathBuf = {
-		let p = PathBuf::from(custom_file_path);
+		let p = PathBuf::from(custom_data_file_path);
 		if p.is_absolute() {
 			p
 		} else {
@@ -216,7 +214,7 @@ async fn load_custom_file(
 	}
 
 	// Read file
-	let custom_data: CustomElectionFile = read_data_from_json_file(
+	let custom_data: CustomElectionData = read_data_from_json_file(
 		path.to_str().ok_or_else(|| Error::Other("Invalid custom file path".into()))?,
 	)
 	.await

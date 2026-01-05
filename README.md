@@ -213,24 +213,6 @@ The miner uses the on-chain nonce for a given user to submit solutions, which ca
 collisions if multiple miners are running with the same account. This can cause transaction failures
 and potentially result in lost rewards or other issues.
 
-## Update metadata
-
-The binary itself embeds [multi-block static metadata](./artifacts/multi_block.scale) to generate a
-rust codegen at compile-time that [subxt provides](https://github.com/paritytech/subxt).
-
-To update the metadata you need to connect to a polkadot, kusama or westend compatible node.
-
-```bash
-# Install subxt-cli
-$ cargo install --locked subxt-cli
-# Download the metadata from a local node running a compatible runtime and replace the current metadata.
-# Specify --url ws://... if needed e.g. --url ws://localhost:9946)
-$ subxt metadata  > artifacts/multi_block.scale
-# Inspect the generated code.
-# See `https://github.com/paritytech/subxt/tree/master/cli` for further documentation of the `subxt-cli` tool.
-$ subxt codegen --file artifacts/multi_block.scale | rustfmt > code.rs
-```
-
 ## Predict
 
 The `predict` command allows you to predict validator election outcomes for Substrate-based chains
@@ -248,7 +230,7 @@ cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --do-reduce
 | Option                          | Description                                                                                                                   | Default Value      |
 | :------------------------------ | :---------------------------------------------------------------------------------------------------------------------------- | :----------------- |
 | `--desired-validators <number>` | Desired number of validators for the prediction                                                                               | Fetched from chain |
-| `--custom-file <path>`          | Path to custom election data JSON file (see format below)                                                                     | None               |
+| `--custom-data <path>`          | Path to custom election data JSON file (see format below)                                                                     | None               |
 | `--output-dir <path>`           | Output directory for prediction results                                                                                       | `results`          |
 | `--balancing-iterations <number>`| Number of balancing iterations for the sequential phragmen algorithm. Higher values may produce better balanced solutions at the cost of more computation time. | 10                 |
 | `--do-reduce`            | Reduce the solution to prevent further trimming.                                                                              | `false`             |
@@ -271,7 +253,7 @@ cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --desired-val
 #### Using Custom Election Data File
 
 ```bash
-cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --custom-file custom.json
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --custom-data custom.json
 ```
 
 #### Prediction at a Specific Block
@@ -285,38 +267,6 @@ cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --block-numbe
 ```bash
 cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --do-reduce
 ```
-
-### Custom Election Data File Format
-
-When using `--custom-file`, the file should have the following JSON structure:
-
-```json
-{
-  "candidates": [
-    {
-      "account": "5C556QTtg1bJ43GDSgeowa3Ark6aeSHGTac1b2rKSXtgmSmW",
-      "stake": 27549105879206511
-    },
-    {
-      "account": "5Ft3J6iqSQPWX2S9jERXcMpevt8JDUPWjec5uGierfVGXisE",
-      "stake": 11549105879206511
-    }
-  ],
-  "nominators": [
-    {
-      "account": "5EnBXFfRFgutykCTHsaMYygakTy6jjLQRvBxqXfc85GSnPk1",
-      "stake": 3217591643365,
-      "targets": [
-        "5C556QTtg1bJ43GDSgeowa3Ark6aeSHGTac1b2rKSXtgmSmW",
-        "5Ft3J6iqSQPWX2S9jERXcMpevt8JDUPWjec5uGierfVGXisE"
-      ]
-    }
-  ]
-}
-```
-
-**Note:** Custom file paths can be nested (e.g., `data/elections/custom.json`). The tool will
-automatically resolve relative paths from the current working directory.
 
 ### Output Files
 
@@ -388,10 +338,42 @@ The tool generates the following JSON files in the specified output directory:
 }
 ```
 
+### Custom Election Data File Format
+
+When using `--custom-data`, the file should have the following JSON structure:
+
+```json
+{
+  "candidates": [
+    {
+      "account": "5C556QTtg1bJ43GDSgeowa3Ark6aeSHGTac1b2rKSXtgmSmW",
+      "stake": 27549105879206511
+    },
+    {
+      "account": "5Ft3J6iqSQPWX2S9jERXcMpevt8JDUPWjec5uGierfVGXisE",
+      "stake": 11549105879206511
+    }
+  ],
+  "nominators": [
+    {
+      "account": "5EnBXFfRFgutykCTHsaMYygakTy6jjLQRvBxqXfc85GSnPk1",
+      "stake": 3217591643365,
+      "targets": [
+        "5C556QTtg1bJ43GDSgeowa3Ark6aeSHGTac1b2rKSXtgmSmW",
+        "5Ft3J6iqSQPWX2S9jERXcMpevt8JDUPWjec5uGierfVGXisE"
+      ]
+    }
+  ]
+}
+```
+
+**Note:** Custom file paths can be nested (e.g., `data/elections/custom.json`). The tool will
+automatically resolve relative paths from the current working directory.
+
 ### How It Works
 
 1. **Data Source**: The tool first tries to fetch data from the chain's snapshot (if available),
-   then falls back to the staking pallet. If `--custom-file` is provided, it uses that data instead.
+   then falls back to the staking pallet. If `--custom-data` is provided, it uses that data instead.
 
 2. **Election Algorithm**: Runs the same Phragmén algorithm (`seq_phragmen`) used by Substrate chains
    to determine:
@@ -401,6 +383,24 @@ The tool generates the following JSON files in the specified output directory:
 
 3. **Output Generation**: Creates detailed JSON files with predictions, including validator and
    nominator perspectives.
+
+## Update metadata
+
+The binary itself embeds [multi-block static metadata](./artifacts/multi_block.scale) to generate a
+rust codegen at compile-time that [subxt provides](https://github.com/paritytech/subxt).
+
+To update the metadata you need to connect to a polkadot, kusama or westend compatible node.
+
+```bash
+# Install subxt-cli
+$ cargo install --locked subxt-cli
+# Download the metadata from a local node running a compatible runtime and replace the current metadata.
+# Specify --url ws://... if needed e.g. --url ws://localhost:9946)
+$ subxt metadata  > artifacts/multi_block.scale
+# Inspect the generated code.
+# See `https://github.com/paritytech/subxt/tree/master/cli` for further documentation of the `subxt-cli` tool.
+$ subxt codegen --file artifacts/multi_block.scale | rustfmt > code.rs
+```
 
 ## Runtime upgrades
 

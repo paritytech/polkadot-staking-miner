@@ -24,7 +24,7 @@ use crate::{
 			ValidatorStakeAllocation, ValidatorsPrediction,
 		},
 	},
-	dynamic::staking::{fetch_candidates, fetch_nominators},
+	dynamic::staking::{fetch_targets, fetch_voters},
 	error::Error,
 	prelude::{AccountId, LOG_TARGET, Storage},
 	static_types::multi_block::VoterSnapshotPerBlock,
@@ -44,23 +44,21 @@ pub struct PredictionContext<'a> {
 	pub data_source: ElectionDataSource,
 }
 
-/// Convert staking pallet data into the in-memory snapshot format expected by the miner.
+/// Convert staking pallet data into the snapshot format expected by the miner.
 ///
-/// Returns a single-page target snapshot and a Vec of voter pages (not bounded, so no pages are
-/// dropped). The miner will use all pages when solving; the solution is then trimmed per the
-/// chain's limits.
+/// Returns a single-page target snapshot and a Vec of voter pages
 pub(crate) fn convert_staking_data_to_snapshots<T>(
 	candidates: Vec<ValidatorData>,
-	nominators: Vec<NominatorData>,
+	voters: Vec<NominatorData>,
 ) -> Result<(TargetSnapshotPageOf<T>, Vec<VoterSnapshotPageOf<T>>), Error>
 where
 	T: MinerConfig<AccountId = AccountId>,
 {
 	log::info!(
 		target: LOG_TARGET,
-		"Converting staking data to snapshots (candidates={}, nominators={})",
+		"Converting staking data to snapshots (candidates={}, voters={})",
 		candidates.len(),
-		nominators.len()
+		voters.len()
 	);
 
 	// Extract only accounts from candidates
@@ -68,32 +66,32 @@ where
 		candidates.into_iter().map(|(account, _)| account).collect();
 	log::info!(
 		target: LOG_TARGET,
-		"Collected {} target accounts from candidates",
+		"Fetched {} target accounts from candidates",
 		target_accounts.len()
 	);
 
 	let total_targets = target_accounts.len();
-	let all_targets: TargetSnapshotPageOf<T> = BoundedVec::truncate_from(target_accounts);
-	if all_targets.len() < total_targets {
+	let target_snapshot: TargetSnapshotPageOf<T> = BoundedVec::truncate_from(target_accounts);
+	if target_snapshot.len() < total_targets {
 		log::warn!(
 			target: LOG_TARGET,
 			"Target snapshot truncated: kept {} of {} candidates ({} dropped)",
-			all_targets.len(),
+			target_snapshot.len(),
 			total_targets,
-			total_targets - all_targets.len()
+			total_targets - target_snapshot.len()
 		);
 	}
 
 	// voters → Voter<T> conversion
 	let per_voter_page = VoterSnapshotPerBlock::get();
-	let total_nominators = nominators.len();
+	let total_voters = voters.len();
 	log::info!(
 		target: LOG_TARGET,
-		"Preparing {total_nominators} nominators for conversion"
+		"Preparing {total_voters} voters for conversion"
 	);
 
 	let mut voter_pages_vec: Vec<VoterSnapshotPageOf<T>> = Vec::new();
-	for (stash, stake, votes) in nominators {
+	for (stash, stake, votes) in voters {
 		let votes: BoundedVec<AccountId, <T as MinerConfig>::MaxVotesPerVoter> =
 			BoundedVec::truncate_from(votes);
 
@@ -121,24 +119,28 @@ where
 		}
 	}
 
+	while voter_pages_vec.len() < 32 {
+		voter_pages_vec.push(BoundedVec::default());
+	}
+
 	let n_pages = voter_pages_vec.len();
 
 	log::info!(
 		target: LOG_TARGET,
 		"Converted staking data: {} targets, {} voters across {} pages",
-		all_targets.len(),
-		total_nominators,
+		target_snapshot.len(),
+		total_voters,
 		n_pages
 	);
 
-	Ok((all_targets, voter_pages_vec))
+	Ok((target_snapshot, voter_pages_vec))
 }
 
 /// Build structured predictions from the mined solution and snapshots.
 pub(crate) fn build_predictions_from_solution<T>(
 	solution: &PagedRawSolution<T>,
 	target_snapshot: &TargetSnapshotPageOf<T>,
-	voter_snapshot_paged: &[VoterSnapshotPageOf<T>],
+	voter_snapshot: &[VoterSnapshotPageOf<T>],
 	ctx: &PredictionContext<'_>,
 ) -> Result<(ValidatorsPrediction, NominatorsPrediction), Error>
 where
@@ -146,7 +148,7 @@ where
 {
 	// Convert slice to BoundedVec for feasibility check (truncates to T::Pages if needed)
 	let voter_pages_bounded: BoundedVec<VoterSnapshotPageOf<T>, T::Pages> =
-		BoundedVec::truncate_from(voter_snapshot_paged.to_vec());
+		BoundedVec::truncate_from(voter_snapshot.to_vec());
 
 	// Reuse the on-chain feasibility logic to reconstruct supports from the paged solution.
 	let page_supports = BaseMiner::<T>::check_feasibility(
@@ -197,7 +199,7 @@ where
 
 	// Flatten voters from paged snapshot for nominator perspective.
 	let all_voters: Vec<Voter<T>> =
-		voter_snapshot_paged.iter().flat_map(|page| page.iter().cloned()).collect();
+		voter_snapshot.iter().flat_map(|page| page.iter().cloned()).collect();
 
 	// Identify validators who only have self-votes
 	let validators_with_only_self_vote: HashSet<AccountId> = all_voters
@@ -257,7 +259,7 @@ where
 	let data_source_str = match &ctx.data_source {
 		ElectionDataSource::Snapshot => "snapshot",
 		ElectionDataSource::Staking => "staking",
-		ElectionDataSource::CustomFile => "custom_file",
+		ElectionDataSource::CustomData => "custom_data",
 	}
 	.to_string();
 
@@ -351,18 +353,18 @@ where
 		Err(err) => {
 			log::warn!(target: LOG_TARGET, "Fetching from Snapshot failed: {err}. Falling back to staking pallet");
 
-			let candidates = fetch_candidates(&storage)
+			let targets = fetch_targets(&storage)
 				.await
-				.map_err(|e| Error::Other(format!("Failed to fetch candidates: {e}")))?;
+				.map_err(|e| Error::Other(format!("Failed to fetch targets: {e}")))?;
 
 			let voter_limit = (T::Pages::get() * T::VoterSnapshotPerBlock::get()) as usize;
 
-			let nominators = fetch_nominators(voter_limit, &storage)
+			let voters = fetch_voters(voter_limit, &storage)
 				.await
-				.map_err(|e| Error::Other(format!("Failed to fetch nominators: {e}")))?;
+				.map_err(|e| Error::Other(format!("Failed to fetch voters: {e}")))?;
 
 			let (target_snapshot, mut voter_snapshot) =
-				convert_staking_data_to_snapshots::<T>(candidates, nominators)?;
+				convert_staking_data_to_snapshots::<T>(targets, voters)?;
 			// Fix the order
 			voter_snapshot.reverse();
 			Ok((target_snapshot, voter_snapshot, ElectionDataSource::Staking))

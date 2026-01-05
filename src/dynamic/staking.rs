@@ -15,7 +15,7 @@ use std::{
 use subxt::dynamic::Value;
 
 /// Fetch all candidate validators (stash AccountId) with their active stake
-pub(crate) async fn fetch_candidates(storage: &Storage) -> Result<Vec<ValidatorData>, Error> {
+pub(crate) async fn fetch_targets(storage: &Storage) -> Result<Vec<ValidatorData>, Error> {
 	log::info!(target: LOG_TARGET, "Fetching candidate validators (Staking::Validators keys)");
 
 	let validators_addr = storage_addr(pallet_api::staking::storage::VALIDATORS, vec![]);
@@ -47,13 +47,13 @@ pub(crate) async fn fetch_candidates(storage: &Storage) -> Result<Vec<ValidatorD
 		count += 1;
 
 		if count % 100 == 0 {
-			log::info!(target: LOG_TARGET, "Collected {count} candidate accounts...");
+			log::info!(target: LOG_TARGET, "Fetched {count} candidate accounts...");
 		}
 	}
 
 	log::info!(
 		target: LOG_TARGET,
-		"Total candidate accounts collected: {}",
+		"Total candidate accounts fetched: {}",
 		candidate_accounts.len()
 	);
 
@@ -107,7 +107,7 @@ pub(crate) async fn fetch_candidates(storage: &Storage) -> Result<Vec<ValidatorD
 
 /// Helper to fetch just the validator keys (Set) for O(1) existence checks
 pub(crate) async fn fetch_validator_keys(storage: &Storage) -> Result<HashSet<AccountId>, Error> {
-	log::info!(target: LOG_TARGET, "Fetching validator keys for existence checks...");
+	log::info!(target: LOG_TARGET, "Fetching validator keys for existence checks");
 	let validators_addr = storage_addr(pallet_api::staking::storage::VALIDATORS, vec![]);
 	let mut iter = storage.iter(validators_addr).await?;
 	let mut keys = HashSet::new();
@@ -122,7 +122,7 @@ pub(crate) async fn fetch_validator_keys(storage: &Storage) -> Result<HashSet<Ac
 			}
 		}
 	}
-	log::info!(target: LOG_TARGET, "Loaded {} validator keys", keys.len());
+	log::info!(target: LOG_TARGET, "Fetched {} validator keys", keys.len());
 	Ok(keys)
 }
 
@@ -139,7 +139,7 @@ struct ListNode {
 	score: u64,
 }
 
-/// Bag data structure for VoterList (decoded from storage)
+/// Bag data structure for VoterList
 #[derive(Debug, Clone, Decode)]
 struct ListBag {
 	head: Option<AccountId>,
@@ -248,7 +248,7 @@ pub(crate) async fn fetch_voter_list(
 		nodes_count += 1;
 
 		if nodes_count % 1000 == 0 {
-			log::info!(target: LOG_TARGET, "Loaded {nodes_count} nodes...");
+			log::info!(target: LOG_TARGET, "Fetched {nodes_count} nodes...");
 		}
 	}
 
@@ -368,7 +368,7 @@ pub(crate) async fn fetch_voter_list(
 /// Fetch complete voter data including nomination targets
 /// This function first fetches voters from VoterList, then queries staking.nominators in batches
 /// Uses concurrent batch processing
-pub(crate) async fn fetch_nominators(
+pub(crate) async fn fetch_voters(
 	voter_limit: usize,
 	storage: &Storage,
 ) -> Result<Vec<NominatorData>, Error> {
@@ -390,7 +390,7 @@ pub(crate) async fn fetch_nominators(
 	let total = voters.len();
 	log::info!(
 		target: LOG_TARGET,
-		"Starting concurrent batch fetch of targets for {total} voters..."
+		"Fetching targets for {total} voters"
 	);
 
 	let mut complete_voter_data: Vec<NominatorData> = Vec::with_capacity(total);
@@ -410,7 +410,7 @@ pub(crate) async fn fetch_nominators(
 			// Retry logic for individual batch
 			let mut last_error: Option<Error> = None;
 			for attempt in 0..=MAX_RETRIES {
-				match fetch_nominators_batch(&chunk, &storage_clone).await {
+				match fetch_voter_batch(&chunk, &storage_clone).await {
 					Ok(results) => return Ok(results),
 					Err(e) => {
 						let error_msg = format!("{e}");
@@ -524,7 +524,7 @@ struct Nominations {
 }
 
 /// Helper to fetch a single batch of nominators
-async fn fetch_nominators_batch(
+async fn fetch_voter_batch(
 	voters: &[(AccountId, u64)],
 	storage: &Storage,
 ) -> Result<Vec<(AccountId, u64, Option<Vec<AccountId>>)>, Error> {

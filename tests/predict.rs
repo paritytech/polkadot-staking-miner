@@ -31,17 +31,17 @@ fn predict_config_parsing() {
 	// Test default values
 	let config = PredictConfig::try_parse_from(["predict"]).unwrap();
 	assert_eq!(config.desired_validators, None);
-	assert_eq!(config.custom_file, None);
+	assert_eq!(config.custom_data, None);
 	assert_eq!(config.output_dir, "results");
 
 	// Test with desired validators
 	let config = PredictConfig::try_parse_from(["predict", "--desired-validators", "50"]).unwrap();
 	assert_eq!(config.desired_validators, Some(50));
 
-	// Test with custom file
+	// Test with custom data file
 	let config =
-		PredictConfig::try_parse_from(["predict", "--custom-file", "custom.json"]).unwrap();
-	assert_eq!(config.custom_file, Some("custom.json".to_string()));
+		PredictConfig::try_parse_from(["predict", "--custom-data", "custom.json"]).unwrap();
+	assert_eq!(config.custom_data, Some("custom.json".to_string()));
 
 	// Test with output directory
 	let config = PredictConfig::try_parse_from(["predict", "--output-dir", "outputs"]).unwrap();
@@ -52,19 +52,19 @@ fn predict_config_parsing() {
 		"predict",
 		"--desired-validators",
 		"50",
-		"--custom-file",
+		"--custom-data",
 		"data/custom.json",
 		"--output-dir",
 		"test_outputs",
 	])
 	.unwrap();
 	assert_eq!(config.desired_validators, Some(50));
-	assert_eq!(config.custom_file, Some("data/custom.json".to_string()));
+	assert_eq!(config.custom_data, Some("data/custom.json".to_string()));
 	assert_eq!(config.output_dir, "test_outputs");
 }
 
 /// Create a temporary custom election data file for testing
-fn create_test_custom_file(temp_dir: &TempDir) -> std::path::PathBuf {
+fn create_test_custom_data_file(temp_dir: &TempDir) -> std::path::PathBuf {
 	use polkadot_sdk::sp_core::crypto::Pair;
 	use subxt::utils::AccountId32;
 
@@ -108,13 +108,13 @@ fn create_test_custom_file(temp_dir: &TempDir) -> std::path::PathBuf {
 
 /// Test that custom file format is correctly validated
 #[test]
-fn test_custom_file_format_validation() {
+fn test_custom_data_file_format_validation() {
 	let temp_dir = TempDir::new().unwrap();
-	let custom_file = create_test_custom_file(&temp_dir);
+	let custom_data_path = create_test_custom_data_file(&temp_dir);
 
 	// Read and parse the file
-	let content = fs::read_to_string(&custom_file).unwrap();
-	let parsed: polkadot_staking_miner::commands::types::CustomElectionFile =
+	let content = fs::read_to_string(&custom_data_path).unwrap();
+	let parsed: polkadot_staking_miner::commands::types::CustomElectionData =
 		serde_json::from_str(&content).unwrap();
 
 	// Validate structure
@@ -123,9 +123,9 @@ fn test_custom_file_format_validation() {
 	assert_eq!(parsed.nominators[0].targets.len(), 2);
 }
 
-/// Test invalid custom file format
+/// Test invalid custom data file format
 #[test]
-fn test_invalid_custom_file_format() {
+fn test_invalid_custom_data_file_format() {
 	let temp_dir = TempDir::new().unwrap();
 	let invalid_file = temp_dir.path().join("invalid.json");
 
@@ -134,29 +134,29 @@ fn test_invalid_custom_file_format() {
 
 	// Try to parse - should fail
 	let content = fs::read_to_string(&invalid_file).unwrap();
-	let result: Result<polkadot_staking_miner::commands::types::CustomElectionFile, _> =
+	let result: Result<polkadot_staking_miner::commands::types::CustomElectionData, _> =
 		serde_json::from_str(&content);
 	assert!(result.is_err());
 }
 
-/// Test nested custom file path handling
+/// Test nested custom data file path handling
 #[test]
-fn test_nested_custom_file_path() {
+fn test_nested_custom_data_file_path() {
 	let temp_dir = TempDir::new().unwrap();
 
 	// Create nested directory structure
 	let nested_dir = temp_dir.path().join("data").join("elections");
 	fs::create_dir_all(&nested_dir).unwrap();
 
-	let custom_file = nested_dir.join("custom.json");
-	let test_file = create_test_custom_file(&temp_dir);
+	let custom_data_file = nested_dir.join("custom.json");
+	let test_file = create_test_custom_data_file(&temp_dir);
 
 	// Copy to nested location
-	fs::copy(&test_file, &custom_file).unwrap();
+	fs::copy(&test_file, &custom_data_file).unwrap();
 
 	// Verify file exists at nested path
-	assert!(custom_file.exists());
-	assert!(custom_file.parent().unwrap().exists());
+	assert!(custom_data_file.exists());
+	assert!(custom_data_file.parent().unwrap().exists());
 }
 
 /// Test output directory creation
@@ -230,9 +230,9 @@ fn test_output_files_creation() {
 	assert_eq!(nominators_content["metadata"]["desired_validators"], 19);
 }
 
-/// Test custom file with empty candidates
+/// Test custom data file with empty candidates
 #[test]
-fn test_custom_file_empty_candidates() {
+fn test_custom_data_file_empty_candidates() {
 	let temp_dir = TempDir::new().unwrap();
 	let empty_file = temp_dir.path().join("empty_candidates.json");
 
@@ -244,16 +244,16 @@ fn test_custom_file_empty_candidates() {
 	fs::write(&empty_file, serde_json::to_string(&empty_data).unwrap()).unwrap();
 
 	let content = fs::read_to_string(&empty_file).unwrap();
-	let parsed: polkadot_staking_miner::commands::types::CustomElectionFile =
+	let parsed: polkadot_staking_miner::commands::types::CustomElectionData =
 		serde_json::from_str(&content).unwrap();
 
 	assert_eq!(parsed.candidates.len(), 0);
 	assert_eq!(parsed.nominators.len(), 0);
 }
 
-/// Test custom file with large stake values
+/// Test custom data file with large stake values
 #[test]
-fn test_custom_file_large_stakes() {
+fn test_custom_data_file_large_stakes() {
 	let temp_dir = TempDir::new().unwrap();
 	let large_stakes_file = temp_dir.path().join("large_stakes.json");
 
@@ -282,16 +282,16 @@ fn test_custom_file_large_stakes() {
 	fs::write(&large_stakes_file, serde_json::to_string(&large_data).unwrap()).unwrap();
 
 	let content = fs::read_to_string(&large_stakes_file).unwrap();
-	let parsed: polkadot_staking_miner::commands::types::CustomElectionFile =
+	let parsed: polkadot_staking_miner::commands::types::CustomElectionData =
 		serde_json::from_str(&content).unwrap();
 
 	assert_eq!(parsed.candidates[0].stake, u128::from(u64::MAX));
 	assert_eq!(parsed.nominators[0].stake, u64::MAX);
 }
 
-/// Test custom file with multiple nominators and targets
+/// Test custom data file with multiple nominators and targets
 #[test]
-fn test_custom_file_multiple_nominators() {
+fn test_custom_data_file_multiple_nominators() {
 	let temp_dir = TempDir::new().unwrap();
 	let multi_file = temp_dir.path().join("multi_nominators.json");
 
@@ -335,7 +335,7 @@ fn test_custom_file_multiple_nominators() {
 	fs::write(&multi_file, serde_json::to_string(&data).unwrap()).unwrap();
 
 	let content = fs::read_to_string(&multi_file).unwrap();
-	let parsed: polkadot_staking_miner::commands::types::CustomElectionFile =
+	let parsed: polkadot_staking_miner::commands::types::CustomElectionData =
 		serde_json::from_str(&content).unwrap();
 
 	assert_eq!(parsed.candidates.len(), 2);
