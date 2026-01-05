@@ -95,6 +95,13 @@ async fn main() -> Result<(), Error> {
 	let filter = EnvFilter::from_default_env().add_directive(log.parse()?);
 	tracing_subscriber::fmt().with_env_filter(filter).init();
 
+	// Start prometheus endpoint early so metrics are available during connection attempts.
+	if let Err(e) = prometheus::run(prometheus_port).await {
+		log::warn!("Failed to start prometheus endpoint: {e}");
+	}
+	// Initialize the timestamp so that if connection hangs, the stall detection alert can fire.
+	prometheus::set_last_block_processing_time();
+
 	let client = Client::new(&uri).await?;
 
 	let version_bytes = client
@@ -108,9 +115,6 @@ async fn main() -> Result<(), Error> {
 		Decode::decode(&mut &version_bytes[..])?;
 
 	let chain = opt::Chain::try_from(&runtime_version)?;
-	if let Err(e) = prometheus::run(prometheus_port).await {
-		log::warn!("Failed to start prometheus endpoint: {e}");
-	}
 	log::info!(target: LOG_TARGET, "Connected to chain: {chain}");
 
 	SHARED_CLIENT.set(client.clone()).expect("shared client only set once; qed");
