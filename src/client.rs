@@ -115,17 +115,10 @@ impl Client {
 	///
 	/// Smoldot is a light client that verifies proofs directly, providing trustless operation.
 	/// It handles network issues (disconnections, peer rotation) internally and is self-healing.
-	///
-	/// Note: Initial sync may take a few minutes as smoldot needs to sync with the relay chain
-	/// before it can validate parachain blocks.
 	pub async fn new_smoldot(network: SmoldotNetwork) -> Result<Self, Error> {
 		let (relay_spec, parachain_spec) = network.chain_specs();
 
 		log::info!(target: LOG_TARGET, "Starting smoldot light client for {network}...");
-		log::info!(
-			target: LOG_TARGET,
-			"Note: Initial sync may take a few minutes as smoldot syncs with the relay chain."
-		);
 
 		// Create relay chain connection (required internally for parachain validation)
 		let (lightclient, _relay_rpc) = LightClient::relay_chain(relay_spec).map_err(|e| {

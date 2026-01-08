@@ -146,15 +146,6 @@ polkadot-staking-miner --smoldot polkadot monitor --seed-or-path //Alice
 
 Available networks: `polkadot`, `kusama`, `westend`
 
-**Benefits of smoldot:**
-
-- **Trustless operation**: Verifies proofs directly instead of trusting an RPC node
-- **Self-healing**: Automatically handles peer disconnections and reconnections
-- **No RPC dependency**: Works without relying on any specific RPC endpoint
-
-**Note:** Initial sync may take a few minutes as smoldot needs to sync with the relay chain before
-it can validate parachain blocks. The `--uri` and `--smoldot` options are mutually exclusive.
-
 ### Info command
 
 Check remote node's metadata.
