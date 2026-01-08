@@ -124,6 +124,37 @@ You can check the help with:
 polkadot-staking-miner --help
 ```
 
+### Connection Options
+
+The staking miner supports two ways to connect to the network:
+
+#### WebSocket RPC (default)
+
+Connect to a specific RPC node using `--uri`:
+
+```bash
+polkadot-staking-miner --uri wss://asset-hub-polkadot-rpc.polkadot.io monitor --seed-or-path //Alice
+```
+
+#### Smoldot Light Client
+
+Connect using the embedded smoldot light client with `--smoldot`:
+
+```bash
+polkadot-staking-miner --smoldot polkadot monitor --seed-or-path //Alice
+```
+
+Available networks: `polkadot`, `kusama`, `westend`
+
+**Benefits of smoldot:**
+
+- **Trustless operation**: Verifies proofs directly instead of trusting an RPC node
+- **Self-healing**: Automatically handles peer disconnections and reconnections
+- **No RPC dependency**: Works without relying on any specific RPC endpoint
+
+**Note:** Initial sync may take a few minutes as smoldot needs to sync with the relay chain before
+it can validate parachain blocks. The `--uri` and `--smoldot` options are mutually exclusive.
+
 ### Info command
 
 Check remote node's metadata.

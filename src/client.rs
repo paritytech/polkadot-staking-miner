@@ -1,12 +1,16 @@
 use crate::{
 	error::{Error, TimeoutError},
+	opt::SmoldotNetwork,
 	prelude::{ChainClient, Config, LOG_TARGET},
 	prometheus,
 };
 use std::{sync::Arc, time::Duration};
-use subxt::backend::{
-	chain_head::{ChainHeadBackend, ChainHeadBackendBuilder},
-	rpc::reconnecting_rpc_client::{ExponentialBackoff, RpcClient as ReconnectingRpcClient},
+use subxt::{
+	backend::{
+		chain_head::{ChainHeadBackend, ChainHeadBackendBuilder},
+		rpc::reconnecting_rpc_client::{ExponentialBackoff, RpcClient as ReconnectingRpcClient},
+	},
+	lightclient::LightClient,
 };
 
 /// Timeout for each connection attempt in seconds.
@@ -105,6 +109,47 @@ impl Client {
 				.into())
 			},
 		}
+	}
+
+	/// Create a new client connecting via smoldot light client.
+	///
+	/// Smoldot is a light client that verifies proofs directly, providing trustless operation.
+	/// It handles network issues (disconnections, peer rotation) internally and is self-healing.
+	///
+	/// Note: Initial sync may take a few minutes as smoldot needs to sync with the relay chain
+	/// before it can validate parachain blocks.
+	pub async fn new_smoldot(network: SmoldotNetwork) -> Result<Self, Error> {
+		let (relay_spec, parachain_spec) = network.chain_specs();
+
+		log::info!(target: LOG_TARGET, "Starting smoldot light client for {network}...");
+		log::info!(
+			target: LOG_TARGET,
+			"Note: Initial sync may take a few minutes as smoldot syncs with the relay chain."
+		);
+
+		// Create relay chain connection (required internally for parachain validation)
+		let (lightclient, _relay_rpc) = LightClient::relay_chain(relay_spec).map_err(|e| {
+			Error::LightClient(format!("Failed to start relay chain light client: {e}"))
+		})?;
+
+		log::debug!(target: LOG_TARGET, "Relay chain light client started, connecting to parachain...");
+
+		// Connect to Asset Hub parachain
+		let parachain_rpc = lightclient
+			.parachain(parachain_spec)
+			.map_err(|e| Error::LightClient(format!("Failed to connect to parachain: {e}")))?;
+
+		log::debug!(target: LOG_TARGET, "Parachain connection established, creating ChainHead backend...");
+
+		// Note: The parachain_rpc internally holds a reference to the smoldot client,
+		// so we don't need to keep the LightClient instance alive separately.
+		let backend: ChainHeadBackend<Config> =
+			ChainHeadBackendBuilder::default().build_with_background_driver(parachain_rpc);
+		let chain_api = ChainClient::from_backend(Arc::new(backend)).await?;
+
+		log::info!(target: LOG_TARGET, "Connected to {network} via smoldot light client (ChainHead backend)");
+
+		Ok(Self { chain_api })
 	}
 
 	/// Get a reference to the chain API.

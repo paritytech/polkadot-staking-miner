@@ -124,6 +124,8 @@ pub enum Error {
 	ChannelFailure(#[from] ChannelFailureError),
 	#[error("Task failure: {0}")]
 	TaskFailure(#[from] TaskFailureError),
+	#[error("Light client error: {0}")]
+	LightClient(String),
 }
 
 impl From<subxt_rpcs::Error> for Error {
