@@ -141,13 +141,11 @@ impl Client {
 
 		log::debug!(target: LOG_TARGET, "Parachain connection established, creating ChainHead backend...");
 
-		// Note: The parachain_rpc internally holds a reference to the smoldot client,
-		// so we don't need to keep the LightClient instance alive separately.
 		let backend: ChainHeadBackend<Config> =
 			ChainHeadBackendBuilder::default().build_with_background_driver(parachain_rpc);
 		let chain_api = ChainClient::from_backend(Arc::new(backend)).await?;
 
-		log::info!(target: LOG_TARGET, "Connected to {network} via smoldot light client (ChainHead backend)");
+		log::info!(target: LOG_TARGET, "Connected to {network} via smoldot light client");
 
 		Ok(Self { chain_api })
 	}
