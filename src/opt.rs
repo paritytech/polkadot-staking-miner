@@ -80,8 +80,6 @@ impl TryFrom<&polkadot_sdk::sp_version::RuntimeVersion> for Chain {
 ///
 /// Each network requires both a relay chain spec (for smoldot to validate parachain blocks)
 /// and a parachain spec (the Asset Hub we connect to).
-///
-/// TODO: Add Paseo Asset Hub support
 #[derive(Debug, Copy, Clone, PartialEq, Eq, clap::ValueEnum)]
 pub enum SmoldotNetwork {
 	/// Polkadot Asset Hub
@@ -90,6 +88,8 @@ pub enum SmoldotNetwork {
 	Kusama,
 	/// Westend Asset Hub (formerly Westmint)
 	Westend,
+	/// Paseo Asset Hub (testnet)
+	Paseo,
 }
 
 impl SmoldotNetwork {
@@ -111,6 +111,10 @@ impl SmoldotNetwork {
 				include_str!("../chainspecs/westend.json"),
 				include_str!("../chainspecs/westend_asset_hub.json"),
 			),
+			Self::Paseo => (
+				include_str!("../chainspecs/paseo.json"),
+				include_str!("../chainspecs/paseo_asset_hub.json"),
+			),
 		}
 	}
 }
@@ -121,6 +125,7 @@ impl std::fmt::Display for SmoldotNetwork {
 			Self::Polkadot => write!(f, "Polkadot Asset Hub"),
 			Self::Kusama => write!(f, "Kusama Asset Hub"),
 			Self::Westend => write!(f, "Westend Asset Hub"),
+			Self::Paseo => write!(f, "Paseo Asset Hub"),
 		}
 	}
 }
