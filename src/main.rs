@@ -468,7 +468,7 @@ mod tests {
 		.unwrap();
 
 		assert!(opt.smoldot.is_some());
-		assert!(matches!(opt.smoldot, Some(opt::SmoldotNetwork::Polkadot)));
+		assert!(matches!(opt.smoldot, Some(opt::SmoldotNetwork::PolkadotAssetHub)));
 		// When --smoldot is used, --uri falls back to default
 		assert_eq!(opt.uri, DEFAULT_URI);
 	}
@@ -485,7 +485,7 @@ mod tests {
 		])
 		.unwrap();
 
-		assert!(matches!(opt.smoldot, Some(opt::SmoldotNetwork::Kusama)));
+		assert!(matches!(opt.smoldot, Some(opt::SmoldotNetwork::KusamaAssetHub)));
 	}
 
 	#[test]
@@ -500,7 +500,7 @@ mod tests {
 		])
 		.unwrap();
 
-		assert!(matches!(opt.smoldot, Some(opt::SmoldotNetwork::Westend)));
+		assert!(matches!(opt.smoldot, Some(opt::SmoldotNetwork::WestendAssetHub)));
 	}
 
 	#[test]

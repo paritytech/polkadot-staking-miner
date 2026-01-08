@@ -83,13 +83,13 @@ impl TryFrom<&polkadot_sdk::sp_version::RuntimeVersion> for Chain {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, clap::ValueEnum)]
 pub enum SmoldotNetwork {
 	/// Polkadot Asset Hub
-	Polkadot,
+	PolkadotAssetHub,
 	/// Kusama Asset Hub (formerly Statemine)
-	Kusama,
+	KusamaAssetHub,
 	/// Westend Asset Hub (formerly Westmint)
-	Westend,
+	WestendAssetHub,
 	/// Paseo Asset Hub (testnet)
-	Paseo,
+	PaseoAssetHub,
 }
 
 impl SmoldotNetwork {
@@ -99,19 +99,19 @@ impl SmoldotNetwork {
 	/// even though we only expose the parachain connection to the user.
 	pub fn chain_specs(&self) -> (&'static str, &'static str) {
 		match self {
-			Self::Polkadot => (
+			Self::PolkadotAssetHub => (
 				include_str!("../chainspecs/polkadot.json"),
 				include_str!("../chainspecs/polkadot_asset_hub.json"),
 			),
-			Self::Kusama => (
+			Self::KusamaAssetHub => (
 				include_str!("../chainspecs/kusama.json"),
 				include_str!("../chainspecs/kusama_asset_hub.json"),
 			),
-			Self::Westend => (
+			Self::WestendAssetHub => (
 				include_str!("../chainspecs/westend.json"),
 				include_str!("../chainspecs/westend_asset_hub.json"),
 			),
-			Self::Paseo => (
+			Self::PaseoAssetHub => (
 				include_str!("../chainspecs/paseo.json"),
 				include_str!("../chainspecs/paseo_asset_hub.json"),
 			),
@@ -122,10 +122,10 @@ impl SmoldotNetwork {
 impl std::fmt::Display for SmoldotNetwork {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			Self::Polkadot => write!(f, "Polkadot Asset Hub"),
-			Self::Kusama => write!(f, "Kusama Asset Hub"),
-			Self::Westend => write!(f, "Westend Asset Hub"),
-			Self::Paseo => write!(f, "Paseo Asset Hub"),
+			Self::PolkadotAssetHub => write!(f, "Polkadot Asset Hub"),
+			Self::KusamaAssetHub => write!(f, "Kusama Asset Hub"),
+			Self::WestendAssetHub => write!(f, "Westend Asset Hub"),
+			Self::PaseoAssetHub => write!(f, "Paseo Asset Hub"),
 		}
 	}
 }
