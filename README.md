@@ -144,7 +144,7 @@ Connect using the embedded smoldot light client with `--smoldot`:
 polkadot-staking-miner --smoldot polkadot monitor --seed-or-path //Alice
 ```
 
-Available networks: `polkadot`, `kusama`, `westend`, `paseo`.
+Available networks: `polkadot-asset-hub`, `kusama-asset-hub`, `westend-asset-hub`, `paseo-asset-hub`.
 
 ### Info command
 
