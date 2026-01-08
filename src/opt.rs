@@ -80,6 +80,7 @@ impl TryFrom<&polkadot_sdk::sp_version::RuntimeVersion> for Chain {
 ///
 /// Each network requires both a relay chain spec (for smoldot to validate parachain blocks)
 /// and a parachain spec (the Asset Hub we connect to).
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, clap::ValueEnum)]
 pub enum SmoldotNetwork {
 	/// Polkadot Asset Hub

@@ -458,7 +458,7 @@ mod tests {
 		let opt = Opt::try_parse_from([
 			env!("CARGO_PKG_NAME"),
 			"--smoldot",
-			"polkadot",
+			"polkadot-asset-hub",
 			"--prometheus-port",
 			"9999",
 			"monitor",
@@ -478,7 +478,7 @@ mod tests {
 		let opt = Opt::try_parse_from([
 			env!("CARGO_PKG_NAME"),
 			"--smoldot",
-			"kusama",
+			"kusama-asset-hub",
 			"monitor",
 			"--seed-or-path",
 			"//Alice",
@@ -493,7 +493,7 @@ mod tests {
 		let opt = Opt::try_parse_from([
 			env!("CARGO_PKG_NAME"),
 			"--smoldot",
-			"westend",
+			"westend-asset-hub",
 			"monitor",
 			"--seed-or-path",
 			"//Alice",
@@ -510,7 +510,7 @@ mod tests {
 			"--uri",
 			"wss://example.com",
 			"--smoldot",
-			"polkadot",
+			"polkadot-asset-hub",
 			"monitor",
 			"--seed-or-path",
 			"//Alice",
