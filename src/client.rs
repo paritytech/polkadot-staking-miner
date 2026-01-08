@@ -112,9 +112,6 @@ impl Client {
 	}
 
 	/// Create a new client connecting via smoldot light client.
-	///
-	/// Smoldot is a light client that verifies proofs directly, providing trustless operation.
-	/// It handles network issues (disconnections, peer rotation) internally and is self-healing.
 	pub async fn new_smoldot(network: SmoldotNetwork) -> Result<Self, Error> {
 		let (relay_spec, parachain_spec) = network.chain_specs();
 

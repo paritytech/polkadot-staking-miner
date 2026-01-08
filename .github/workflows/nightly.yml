@@ -21,10 +21,14 @@ jobs:
         run: echo "IMAGE=${{ env.IMAGE }}" >> $GITHUB_OUTPUT
 
   smoldot-connectivity-test:
-    name: Smoldot connectivity test (Westend Asset Hub)
+    name: Smoldot connectivity test (${{ matrix.network }})
     runs-on: parity-large
     needs: [set-image]
     container: ${{ needs.set-image.outputs.IMAGE }}
+    strategy:
+      fail-fast: false
+      matrix:
+        network: [westend, kusama, polkadot, paseo]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -40,16 +44,16 @@ jobs:
           echo "🔧 Building staking-miner..."
           cargo build --release
 
-      - name: Test smoldot connectivity to Westend Asset Hub
+      - name: Test smoldot connectivity to ${{ matrix.network }} Asset Hub
         run: |
-          echo "🔗 Testing smoldot connectivity to Westend Asset Hub..."
+          echo "🔗 Testing smoldot connectivity to ${{ matrix.network }} Asset Hub..."
           echo "Note: Initial sync may take a few minutes..."
 
           # Run the info command with smoldot to verify connectivity
           # Use timeout to prevent hanging indefinitely (10 minutes should be enough for initial sync)
-          timeout 600 ./target/release/polkadot-staking-miner --smoldot westend info
+          timeout 600 ./target/release/polkadot-staking-miner --smoldot ${{ matrix.network }} info
 
-          echo "✅ Smoldot connectivity test passed!"
+          echo "✅ Smoldot connectivity test passed for ${{ matrix.network }}!"
 
       - name: Notify smoldot test failure
         if: failure()
@@ -59,7 +63,7 @@ jobs:
           access_token: ${{ secrets.MATRIX_ACCESS_TOKEN }}
           server: m.parity.io
           message: |
-            @room Smoldot connectivity test failed https://github.com/${{ github.repository }}/commit/${{ github.sha }}/checks/${{ github.run_id }}
+            @room Smoldot connectivity test failed for ${{ matrix.network }} https://github.com/${{ github.repository }}/commit/${{ github.sha }}/checks/${{ github.run_id }}
 
   nightly-test:
     runs-on: parity-large
