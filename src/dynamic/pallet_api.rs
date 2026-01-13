@@ -83,8 +83,6 @@ pub mod multi_block {
 		pub const PAGED_VOTER_SNAPSHOT: PalletItem = PalletItem::new(NAME, "PagedVoterSnapshot");
 		pub const PAGED_VOTER_SNAPSHOT_HASH: PalletItem =
 			PalletItem::new(NAME, "PagedVoterSnapshotHash");
-		pub const _ROUND: PalletItem = PalletItem::new(NAME, "Round");
-		pub const _DESIRED_TARGETS: PalletItem = PalletItem::new(NAME, "DesiredTargets");
 	}
 }
 

@@ -89,7 +89,7 @@ impl Client {
 		{
 			Ok(result) => {
 				if result.is_ok() {
-					log::info!(target: LOG_TARGET, "Connected to {uri} with ChainHead backend");
+					log::info!(target: LOG_TARGET, "Connected to {uri} with Legacy backend");
 				}
 				result
 			},

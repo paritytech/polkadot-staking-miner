@@ -186,7 +186,7 @@ pub async fn get_block_hash(client: &Client, block_number: u32) -> Result<Hash, 
 	let params = to_raw_value(&json!([block_number]))
 		.map_err(|e| Error::Other(format!("Failed to serialize block number: {e}")))?;
 
-	// Make RPC request - method name must be String, params is already Box<RawValue>
+	// Make RPC request - params is already Box<RawValue>
 	let response = client
 		.rpc()
 		.request("chain_getBlockHash".to_string(), Some(params))
@@ -354,6 +354,56 @@ mod tests {
 		assert_eq!(
 			SubmissionStrategy::from_str("  percent-better 99   "),
 			Ok(SubmissionStrategy::ClaimBetterThan(Accuracy::from_percent(99)))
+		);
+	}
+
+	#[tokio::test]
+	async fn test_read_write_json_file() {
+		let dir = tempfile::tempdir().unwrap();
+		let file_path = dir.path().join("test.json");
+		let file_path_str = file_path.to_str().unwrap();
+
+		let data = vec![1, 2, 3];
+		write_data_to_json_file(&data, file_path_str).await.unwrap();
+
+		let read_data: Vec<i32> = read_data_from_json_file(file_path_str).await.unwrap();
+		assert_eq!(data, read_data);
+	}
+
+	#[test]
+	fn test_planck_to_token() {
+		assert_eq!(planck_to_token(100, 2, "DOT"), "1 DOT");
+		assert_eq!(planck_to_token(100, 0, "DOT"), "100 DOT");
+		assert_eq!(planck_to_token(1234, 3, "DOT"), "1.234 DOT");
+		assert_eq!(planck_to_token(1230, 3, "DOT"), "1.23 DOT");
+		assert_eq!(planck_to_token(5, 2, "DOT"), "0.05 DOT");
+		assert_eq!(planck_to_token(0, 5, "DOT"), "0 DOT");
+	}
+
+	#[test]
+	fn test_planck_to_token_u64() {
+		assert_eq!(planck_to_token_u64(100, 2, "KSM"), "1 KSM");
+		assert_eq!(planck_to_token_u64(123456789, 6, "KSM"), "123.456789 KSM");
+	}
+
+	#[test]
+	fn test_encode_account_id() {
+		// Alice's public key
+		let alice_pub_key = [
+			212, 53, 147, 199, 21, 253, 211, 28, 97, 20, 26, 189, 4, 169, 159, 214, 130, 44, 133,
+			88, 133, 76, 205, 227, 154, 86, 132, 231, 165, 109, 162, 125,
+		];
+		let account = AccountId::new(alice_pub_key);
+
+		// Polkadot prefix (0)
+		assert_eq!(
+			encode_account_id(&account, 0),
+			"15oF4uVJwmo4TdGW7VfQxNLavjCXviqxT9S1MgbjMNHr6Sp5"
+		);
+		// Generic Substrate (42)
+		assert_eq!(
+			encode_account_id(&account, 42),
+			"5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
 		);
 	}
 }

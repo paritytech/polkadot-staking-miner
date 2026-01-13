@@ -82,7 +82,6 @@ where
 		);
 	}
 
-	// voters → Voter<T> conversion
 	let per_voter_page = VoterSnapshotPerBlock::get();
 	let total_voters = voters.len();
 	log::info!(
@@ -95,6 +94,7 @@ where
 		let votes: BoundedVec<AccountId, <T as MinerConfig>::MaxVotesPerVoter> =
 			BoundedVec::truncate_from(votes);
 
+		// voters → Voter<T> conversion
 		let voter: Voter<T> = (stash, stake, votes);
 
 		// Start a new page if we have no pages yet or the last page is full
@@ -119,6 +119,7 @@ where
 		}
 	}
 
+	// pad the voter_snapshot to have atleast 32 pages for the miner to run properly
 	while voter_pages_vec.len() < 32 {
 		voter_pages_vec.push(BoundedVec::default());
 	}
