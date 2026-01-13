@@ -59,8 +59,16 @@ use crate::{
 #[clap(author, version, about)]
 pub struct Opt {
 	/// The `ws` node to connect to.
-	#[clap(long, short, default_value = DEFAULT_URI, env = "URI")]
+	/// Mutually exclusive with --smoldot.
+	#[clap(long, short, default_value = DEFAULT_URI, env = "URI", conflicts_with = "smoldot")]
 	pub uri: String,
+
+	/// Use smoldot light client to connect to the specified network's Asset Hub.
+	/// This is an alternative to using --uri for WebSocket connections.
+	/// Smoldot provides trustless operation by verifying proofs directly.
+	/// Mutually exclusive with --uri.
+	#[clap(long, value_enum, conflicts_with = "uri")]
+	pub smoldot: Option<opt::SmoldotNetwork>,
 
 	#[clap(subcommand)]
 	pub command: Command,
@@ -89,7 +97,7 @@ pub enum Command {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-	let Opt { uri, command, prometheus_port, log } = Opt::parse();
+	let Opt { uri, smoldot, command, prometheus_port, log } = Opt::parse();
 	let filter = EnvFilter::from_default_env().add_directive(log.parse()?);
 	tracing_subscriber::fmt().with_env_filter(filter).init();
 
@@ -100,7 +108,12 @@ async fn main() -> Result<(), Error> {
 	// Initialize the timestamp so that if connection hangs, the stall detection alert can fire.
 	prometheus::set_last_block_processing_time();
 
-	let client = Client::new(&uri).await?;
+	// Create client based on connection method
+	let client = if let Some(network) = smoldot {
+		Client::new_smoldot(network).await?
+	} else {
+		Client::new(&uri).await?
+	};
 
 	let version_bytes = client
 		.chain_api()
@@ -314,6 +327,7 @@ mod tests {
 			opt,
 			Opt {
 				uri: "hi".to_string(),
+				smoldot: None,
 				prometheus_port: 9999,
 				log: "info".to_string(),
 				command: Command::Monitor(MultiBlockMonitorConfig {
@@ -437,5 +451,73 @@ mod tests {
 				balancing_iterations: 10,    // Default
 			})
 		);
+	}
+
+	#[test]
+	fn cli_smoldot_works() {
+		let opt = Opt::try_parse_from([
+			env!("CARGO_PKG_NAME"),
+			"--smoldot",
+			"polkadot-asset-hub",
+			"--prometheus-port",
+			"9999",
+			"monitor",
+			"--seed-or-path",
+			"//Alice",
+		])
+		.unwrap();
+
+		assert!(opt.smoldot.is_some());
+		assert!(matches!(opt.smoldot, Some(opt::SmoldotNetwork::PolkadotAssetHub)));
+		// When --smoldot is used, --uri falls back to default
+		assert_eq!(opt.uri, DEFAULT_URI);
+	}
+
+	#[test]
+	fn cli_smoldot_kusama_works() {
+		let opt = Opt::try_parse_from([
+			env!("CARGO_PKG_NAME"),
+			"--smoldot",
+			"kusama-asset-hub",
+			"monitor",
+			"--seed-or-path",
+			"//Alice",
+		])
+		.unwrap();
+
+		assert!(matches!(opt.smoldot, Some(opt::SmoldotNetwork::KusamaAssetHub)));
+	}
+
+	#[test]
+	fn cli_smoldot_westend_works() {
+		let opt = Opt::try_parse_from([
+			env!("CARGO_PKG_NAME"),
+			"--smoldot",
+			"westend-asset-hub",
+			"monitor",
+			"--seed-or-path",
+			"//Alice",
+		])
+		.unwrap();
+
+		assert!(matches!(opt.smoldot, Some(opt::SmoldotNetwork::WestendAssetHub)));
+	}
+
+	#[test]
+	fn cli_uri_and_smoldot_conflict() {
+		let result = Opt::try_parse_from([
+			env!("CARGO_PKG_NAME"),
+			"--uri",
+			"wss://example.com",
+			"--smoldot",
+			"polkadot-asset-hub",
+			"monitor",
+			"--seed-or-path",
+			"//Alice",
+		]);
+
+		assert!(result.is_err());
+		let err = result.unwrap_err().to_string();
+		assert!(err.contains("cannot be used with"));
 	}
 }

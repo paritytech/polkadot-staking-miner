@@ -75,3 +75,58 @@ impl TryFrom<&polkadot_sdk::sp_version::RuntimeVersion> for Chain {
 		Chain::from_str(&chain)
 	}
 }
+
+/// Networks supported via smoldot light client.
+///
+/// Each network requires both a relay chain spec (for smoldot to validate parachain blocks)
+/// and a parachain spec (the Asset Hub we connect to).
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, clap::ValueEnum)]
+pub enum SmoldotNetwork {
+	/// Polkadot Asset Hub
+	PolkadotAssetHub,
+	/// Kusama Asset Hub (formerly Statemine)
+	KusamaAssetHub,
+	/// Westend Asset Hub (formerly Westmint)
+	WestendAssetHub,
+	/// Paseo Asset Hub (testnet)
+	PaseoAssetHub,
+}
+
+impl SmoldotNetwork {
+	/// Returns the chain specs as (relay_spec, parachain_spec) tuple.
+	///
+	/// Smoldot requires the relay chain spec internally to validate parachain blocks,
+	/// even though we only expose the parachain connection to the user.
+	pub fn chain_specs(&self) -> (&'static str, &'static str) {
+		match self {
+			Self::PolkadotAssetHub => (
+				include_str!("../chainspecs/polkadot.json"),
+				include_str!("../chainspecs/polkadot_asset_hub.json"),
+			),
+			Self::KusamaAssetHub => (
+				include_str!("../chainspecs/kusama.json"),
+				include_str!("../chainspecs/kusama_asset_hub.json"),
+			),
+			Self::WestendAssetHub => (
+				include_str!("../chainspecs/westend.json"),
+				include_str!("../chainspecs/westend_asset_hub.json"),
+			),
+			Self::PaseoAssetHub => (
+				include_str!("../chainspecs/paseo.json"),
+				include_str!("../chainspecs/paseo_asset_hub.json"),
+			),
+		}
+	}
+}
+
+impl std::fmt::Display for SmoldotNetwork {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Self::PolkadotAssetHub => write!(f, "Polkadot Asset Hub"),
+			Self::KusamaAssetHub => write!(f, "Kusama Asset Hub"),
+			Self::WestendAssetHub => write!(f, "Westend Asset Hub"),
+			Self::PaseoAssetHub => write!(f, "Paseo Asset Hub"),
+		}
+	}
+}
