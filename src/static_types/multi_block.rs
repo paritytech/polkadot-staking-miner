@@ -26,7 +26,7 @@ pub mod node {
 			VoterIndex = u16,
 			TargetIndex = u16,
 			Accuracy = Percent,
-			MaxVoters = ConstU32::<22500>
+			MaxVoters = ConstU32::<704> // same default as Polkadot
 		>(16)
 	);
 
@@ -61,7 +61,7 @@ pub mod polkadot {
 			VoterIndex = u32,
 			TargetIndex = u16,
 			Accuracy = PerU16,
-			MaxVoters = ConstU32::<22500>
+			MaxVoters = ConstU32::<704> // should match VoterSnapshotPerBlock
 		>(16)
 	);
 
@@ -96,7 +96,7 @@ pub mod kusama {
 			VoterIndex = u32,
 			TargetIndex = u16,
 			Accuracy = PerU16,
-			MaxVoters = ConstU32::<12500>
+			MaxVoters = ConstU32::<782> // should match VoterSnapshotPerBlock
 		>(24)
 	);
 
@@ -131,7 +131,7 @@ pub mod westend {
 			VoterIndex = u32,
 			TargetIndex = u16,
 			Accuracy = PerU16,
-			MaxVoters = ConstU32::<22500>
+			MaxVoters = ConstU32::<703> // should match VoterSnapshotPerBlock
 		>(16)
 	);
 
@@ -167,7 +167,7 @@ pub mod staking_async {
 			VoterIndex = u32,
 			TargetIndex = u16,
 			Accuracy = PerU16,
-			MaxVoters = ConstU32::<22500>
+			MaxVoters = ConstU32::<704> // same default as Polkadot
 		>(16)
 	);
 
