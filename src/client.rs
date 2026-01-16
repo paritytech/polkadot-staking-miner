@@ -1,11 +1,11 @@
 use crate::{
 	error::{Error, TimeoutError},
-	prelude::{ChainClient, Config, LOG_TARGET},
+	prelude::{ChainClient, LOG_TARGET},
 	prometheus,
 };
 use std::{sync::Arc, time::Duration};
 use subxt::backend::{
-	chain_head::{ChainHeadBackend, ChainHeadBackendBuilder},
+	legacy::LegacyBackend,
 	rpc::reconnecting_rpc_client::{ExponentialBackoff, RpcClient as ReconnectingRpcClient},
 };
 
@@ -24,6 +24,8 @@ const CONNECTION_RETRY_DELAY_SECS: u64 = 5;
 pub struct Client {
 	/// Access to chain APIs such as storage, events etc.
 	chain_api: ChainClient,
+	/// Low-level RPC client
+	rpc: ReconnectingRpcClient,
 }
 
 impl Client {
@@ -72,11 +74,11 @@ impl Client {
 					.await
 					.map_err(|e| Error::Other(format!("Failed to connect: {e:?}")))?;
 
-			let backend: ChainHeadBackend<Config> =
-				ChainHeadBackendBuilder::default().build_with_background_driver(reconnecting_rpc);
+			let backend = LegacyBackend::builder().build(reconnecting_rpc.clone());
+
 			let chain_api = ChainClient::from_backend(Arc::new(backend)).await?;
 
-			Ok::<Self, Error>(Self { chain_api })
+			Ok::<Self, Error>(Self { chain_api, rpc: reconnecting_rpc })
 		};
 
 		match tokio::time::timeout(
@@ -87,7 +89,7 @@ impl Client {
 		{
 			Ok(result) => {
 				if result.is_ok() {
-					log::info!(target: LOG_TARGET, "Connected to {uri} with ChainHead backend");
+					log::info!(target: LOG_TARGET, "Connected to {uri} with Legacy backend");
 				}
 				result
 			},
@@ -110,5 +112,10 @@ impl Client {
 	/// Get a reference to the chain API.
 	pub fn chain_api(&self) -> &ChainClient {
 		&self.chain_api
+	}
+
+	/// Get the RPC used to connect to the chain.
+	pub fn rpc(&self) -> &ReconnectingRpcClient {
+		&self.rpc
 	}
 }
