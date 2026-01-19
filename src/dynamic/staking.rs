@@ -69,10 +69,29 @@ pub(crate) async fn fetch_targets(storage: &Storage) -> Result<Vec<ValidatorData
 		stake_futures.push(async move {
 			let bytes_vec: Vec<u8> = account.encode();
 			let params: Vec<Value> = vec![Value::from_bytes(bytes_vec)];
-			let ledger_addr = storage_addr(pallet_api::staking::storage::LEDGER, params);
+			let bonded_addr = storage_addr(pallet_api::staking::storage::BONDED, params.clone());
+
+			// Deterministic Controller lookup: first check Bonded, then fallback to account (Stash)
+			let ledger_key_addr = if let Some(bonded) = storage.fetch(&bonded_addr).await? {
+				let controller_bytes = bonded.encoded();
+				if controller_bytes.len() < 32 {
+					return Err(Error::Other("Unexpected Bonded key length".into()));
+				}
+				let tail = &controller_bytes[controller_bytes.len() - 32..];
+				let arr: [u8; 32] = tail
+					.try_into()
+					.map_err(|_| Error::Other("Failed to slice Controller ID".into()))?;
+				let controller = AccountId::from(arr);
+				storage_addr(
+					pallet_api::staking::storage::LEDGER,
+					vec![Value::from_bytes(controller.encode())],
+				)
+			} else {
+				storage_addr(pallet_api::staking::storage::LEDGER, params)
+			};
 
 			let mut stake = 0u128;
-			if let Some(ledger) = storage.fetch(&ledger_addr).await? &&
+			if let Some(ledger) = storage.fetch(&ledger_key_addr).await? &&
 				let Ok(value) = ledger.to_value()
 			{
 				// Try to get 'active' first (self-stake), fallback to 'total' if 'active' not
@@ -163,6 +182,9 @@ pub(crate) async fn fetch_voter_list(
 	voter_limit: usize,
 	storage: &Storage,
 ) -> Result<Vec<(AccountId, u64)>, Error> {
+	// Increase voter limit to have a buffer for filtering ineligible voters later
+	let extended_voter_limit = voter_limit.saturating_add(100);
+
 	log::info!(target: LOG_TARGET, "Fetching From Voter List");
 
 	// Fetch all bags (ListBags) - store as HashMap with bag_upper as key
@@ -278,9 +300,9 @@ pub(crate) async fn fetch_voter_list(
 
 	// Iterate through each bag from highest to lowest
 	for bag_upper in sorted_bag_keys {
-		// Check if we've reached the voter limit
-		if voters.len() >= voter_limit {
-			log::info!(target: LOG_TARGET, "Reached voter limit of {voter_limit}");
+		// Check if we've reached the extended voter limit
+		if voters.len() >= extended_voter_limit {
+			log::info!(target: LOG_TARGET, "Reached extended voter limit of {extended_voter_limit}");
 			break;
 		}
 
@@ -301,8 +323,8 @@ pub(crate) async fn fetch_voter_list(
 
 		// Walk through the linked list for this bag
 		while let Some(node_id) = current_node_id {
-			// Check voter limit
-			if voters.len() >= voter_limit {
+			// Check extended voter limit
+			if voters.len() >= extended_voter_limit {
 				break;
 			}
 
@@ -353,9 +375,10 @@ pub(crate) async fn fetch_voter_list(
 	);
 	log::info!(
 		target: LOG_TARGET,
-		"Total voters in snapshot: {} (limited by voter_limit: {})",
+		"Total voters fetched for selection pool: {} (voter_limit: {}, extended_voter_limit: {})",
 		voters.len(),
-		voter_limit
+		voter_limit,
+		extended_voter_limit
 	);
 	log::info!(
 		target: LOG_TARGET,
@@ -442,13 +465,13 @@ pub(crate) async fn fetch_voters(
 					// Logic: get_npos_voters implementation
 					for (account, stake, maybe_targets) in results {
 						match maybe_targets {
-							// Case 1: Nominator entry exists
-							Some(targets) => {
+							// Case 1: Nominator entry exists (include only if targets exist)
+							Some(targets) =>
 								if !targets.is_empty() {
 									complete_voter_data.push((account, stake, targets));
-								}
-								// If targets is empty, we do nothing (per on-chain logic, skip)
-							},
+								} else {
+									log::debug!(target: LOG_TARGET, "Skipping nominator {account:?} - no targets");
+								},
 							// Case 2: No Nominator entry -> Check if Validator
 							None => {
 								if validator_keys.contains(&account) {
@@ -482,6 +505,7 @@ pub(crate) async fn fetch_voters(
 				Ok(Ok(results)) =>
 					for (account, stake, maybe_targets) in results {
 						match maybe_targets {
+							// Include only nominators with non-empty targets
 							Some(targets) =>
 								if !targets.is_empty() {
 									complete_voter_data.push((account, stake, targets));
@@ -500,6 +524,17 @@ pub(crate) async fn fetch_voters(
 				Err(e) => return Err(Error::Other(format!("Task join error: {e}"))),
 			}
 		}
+	}
+
+	// Truncate to exact voter_limit to match on-chain behavior
+	if complete_voter_data.len() > voter_limit {
+		log::info!(
+			target: LOG_TARGET,
+			"Truncating voters from {} to {}",
+			complete_voter_data.len(),
+			voter_limit
+		);
+		complete_voter_data.truncate(voter_limit);
 	}
 
 	log::info!(
@@ -536,33 +571,48 @@ async fn fetch_voter_batch(
 	for (account_id, stake) in voters {
 		let storage = &storage;
 		let account_id = account_id.clone();
-		let stake = *stake;
+		let score_stake = *stake;
 
 		futs.push(async move {
 			let bytes_vec: Vec<u8> = account_id.encode();
 			let params: Vec<Value> = vec![Value::from_bytes(bytes_vec)];
-			let nominators_addr = storage_addr(pallet_api::staking::storage::NOMINATORS, params);
+			let nominators_addr =
+				storage_addr(pallet_api::staking::storage::NOMINATORS, params.clone());
+			let bonded_addr = storage_addr(pallet_api::staking::storage::BONDED, params.clone());
 
-			// Retry logic for individual request
-			let mut last_error = None;
-			for attempt in 0..=3 {
-				match storage.fetch(&nominators_addr).await {
-					Ok(data) => return Result::<_, Error>::Ok((account_id, stake, data)),
-					Err(e) => {
-						let error_msg = format!("{e}");
-						if (error_msg.contains("limit reached") || error_msg.contains("RPC error")) &&
-							attempt < 3
-						{
-							last_error = Some(Error::Subxt(Box::new(e)));
-							let delay = Duration::from_secs(1) * (1 << attempt);
-							tokio::time::sleep(delay).await;
-							continue;
-						}
-						return Err(Error::Subxt(Box::new(e)));
-					},
+			// Fetch targets
+			let nominator_data = storage.fetch(&nominators_addr).await?;
+
+			// Deterministic Controller lookup for stake accuracy
+			let ledger_key_addr = if let Some(bonded) = storage.fetch(&bonded_addr).await? {
+				let controller_bytes = bonded.encoded();
+				if controller_bytes.len() < 32 {
+					return Err(Error::Other("Unexpected Bonded key length".into()));
+				}
+				let tail = &controller_bytes[controller_bytes.len() - 32..];
+				let arr: [u8; 32] = tail
+					.try_into()
+					.map_err(|_| Error::Other("Failed to slice Controller ID".into()))?;
+				let controller = AccountId::from(arr);
+				storage_addr(
+					pallet_api::staking::storage::LEDGER,
+					vec![Value::from_bytes(controller.encode())],
+				)
+			} else {
+				storage_addr(pallet_api::staking::storage::LEDGER, params)
+			};
+
+			let mut actual_stake = score_stake;
+
+			if let Some(ledger) = storage.fetch(&ledger_key_addr).await? &&
+				let Ok(value) = ledger.to_value()
+			{
+				if let Some(active) = value.at("active").and_then(|v| v.as_u128()) {
+					actual_stake = active as u64;
 				}
 			}
-			Err(last_error.unwrap_or_else(|| Error::Other("Failed after retries".into())))
+
+			Result::<_, Error>::Ok((account_id, actual_stake, nominator_data))
 		});
 	}
 

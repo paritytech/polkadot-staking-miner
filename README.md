@@ -370,7 +370,7 @@ When using `--custom-data`, the file should have the following JSON structure:
 **Note:** Custom file paths can be nested (e.g., `data/elections/custom.json`). The tool will
 automatically resolve relative paths from the current working directory.
 
-### How It Works
+### How Predict Command Works
 
 1. **Data Source**: The tool first tries to fetch data from the chain's snapshot (if available),
    then falls back to the staking pallet. If `--custom-data` is provided, it uses that data instead.

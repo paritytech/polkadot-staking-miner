@@ -159,6 +159,7 @@ pub mod staking {
 		pub const VALIDATORS: PalletItem = PalletItem::new(NAME, "Validators");
 		pub const LEDGER: PalletItem = PalletItem::new(NAME, "Ledger");
 		pub const NOMINATORS: PalletItem = PalletItem::new(NAME, "Nominators");
+		pub const BONDED: PalletItem = PalletItem::new(NAME, "Bonded");
 	}
 }
 
