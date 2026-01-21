@@ -44,10 +44,10 @@ pub struct PredictionContext<'a> {
 	pub data_source: ElectionDataSource,
 }
 
-/// Convert staking pallet data into the snapshot format expected by the miner.
+/// Convert election data into the snapshot format expected by the miner.
 ///
 /// Returns a single-page target snapshot and a Vec of voter pages
-pub(crate) fn convert_staking_data_to_snapshots<T>(
+pub(crate) fn convert_election_data_to_snapshots<T>(
 	candidates: Vec<ValidatorData>,
 	voters: Vec<NominatorData>,
 ) -> Result<(TargetSnapshotPageOf<T>, Vec<VoterSnapshotPageOf<T>>), Error>
@@ -56,7 +56,7 @@ where
 {
 	log::info!(
 		target: LOG_TARGET,
-		"Converting staking data to snapshots (candidates={}, voters={})",
+		"Converting election data to snapshots (candidates={}, voters={})",
 		candidates.len(),
 		voters.len()
 	);
@@ -103,9 +103,7 @@ where
 		} else {
 			// Try to push to the last page; if it fails (unexpectedly full), start a new page
 			match voter_pages_vec.last_mut().unwrap().try_push(voter.clone()) {
-				Ok(_) => {
-					// intentionally quiet to avoid log spam
-				},
+				Ok(_) => {},
 				Err(_) => {
 					let last_idx = voter_pages_vec.len().saturating_sub(1);
 					let last_len = voter_pages_vec.last().map(|p| p.len()).unwrap_or(0);
@@ -119,16 +117,11 @@ where
 		}
 	}
 
-	// pad the voter_snapshot to have atleast 32 pages for the miner to run properly
-	while voter_pages_vec.len() < 32 {
-		voter_pages_vec.push(BoundedVec::default());
-	}
-
 	let n_pages = voter_pages_vec.len();
 
 	log::info!(
 		target: LOG_TARGET,
-		"Converted staking data: {} targets, {} voters across {} pages",
+		"Converted election data: {} targets, {} voters across {} pages",
 		target_snapshot.len(),
 		total_voters,
 		n_pages
@@ -365,7 +358,7 @@ where
 				.map_err(|e| Error::Other(format!("Failed to fetch voters: {e}")))?;
 
 			let (target_snapshot, mut voter_snapshot) =
-				convert_staking_data_to_snapshots::<T>(targets, voters)?;
+				convert_election_data_to_snapshots::<T>(targets, voters)?;
 			// Fix the order
 			voter_snapshot.reverse();
 			Ok((target_snapshot, voter_snapshot, ElectionDataSource::Staking))

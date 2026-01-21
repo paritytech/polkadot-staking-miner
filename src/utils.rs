@@ -140,7 +140,6 @@ where
 	writer.write_all(json.as_bytes())?;
 	writer.flush()?;
 
-	println!("Wrote JSON data to {}", path.display());
 	Ok(())
 }
 

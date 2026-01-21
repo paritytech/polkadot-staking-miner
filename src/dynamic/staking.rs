@@ -46,8 +46,8 @@ pub(crate) async fn fetch_targets(storage: &Storage) -> Result<Vec<ValidatorData
 		candidate_accounts.push(account);
 		count += 1;
 
-		if count % 100 == 0 {
-			log::info!(target: LOG_TARGET, "Fetched {count} candidate accounts...");
+		if count % 500 == 0 {
+			log::debug!(target: LOG_TARGET, "Fetched {count} candidate accounts...");
 		}
 	}
 
@@ -269,7 +269,7 @@ pub(crate) async fn fetch_voter_list(
 
 		nodes_count += 1;
 
-		if nodes_count % 1000 == 0 {
+		if nodes_count % 5000 == 0 {
 			log::info!(target: LOG_TARGET, "Fetched {nodes_count} nodes...");
 		}
 	}
@@ -487,7 +487,7 @@ pub(crate) async fn fetch_voters(
 						}
 					}
 					processed_count += BATCH_SIZE.min(total - processed_count); // Approximate
-					if processed_count % 2500 == 0 {
+					if processed_count % 5000 == 0 {
 						log::info!(target: LOG_TARGET, "Processed {processed_count} voters...");
 					}
 				},

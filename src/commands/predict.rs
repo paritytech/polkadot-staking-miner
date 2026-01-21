@@ -8,7 +8,7 @@ use crate::{
 	},
 	dynamic::{
 		election_data::{
-			PredictionContext, build_predictions_from_solution, convert_staking_data_to_snapshots,
+			PredictionContext, build_predictions_from_solution, convert_election_data_to_snapshots,
 			get_election_data,
 		},
 		multi_block::mine_solution,
@@ -85,10 +85,13 @@ where
 
 	// Check if custom data file path is provided
 	let (target_snapshot, voter_snapshot, data_source) = if let Some(path) = &config.custom_data {
-		// Load snapshots from custom data file
+		// Load custom data file
 		let (candidates, nominators) = load_custom_data(path).await?;
+
+		// Convert custom data to snapshots
 		let (target_snapshot, voter_snapshot) =
-			convert_staking_data_to_snapshots::<T>(candidates, nominators)?;
+			convert_election_data_to_snapshots::<T>(candidates, nominators)?;
+
 		(target_snapshot, voter_snapshot, ElectionDataSource::CustomData)
 	} else {
 		get_election_data::<T>(n_pages, current_round, storage).await?
