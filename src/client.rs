@@ -226,9 +226,7 @@ impl Client {
 		if generation_now != generation_before {
 			log::info!(
 				target: LOG_TARGET,
-				"Reconnect skipped - another task already reconnected (generation {} -> {})",
-				generation_before,
-				generation_now
+				"Reconnect skipped - another task already reconnected (generation {generation_before} -> {generation_now})"
 			);
 			// Connection already updated by another task, drop our new connection
 			return Ok(());

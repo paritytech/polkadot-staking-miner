@@ -282,7 +282,7 @@ async fn runtime_upgrade_task(client: Client, tx: oneshot::Sender<Error>) {
 						let version = update.runtime_version().spec_version;
 						match chain_api.updater().apply_update(update) {
 							Ok(()) => {
-								if let Err(e) = dynamic::update_metadata_constants(&*chain_api) {
+								if let Err(e) = dynamic::update_metadata_constants(&chain_api) {
 									let _ = tx.send(e);
 									return;
 								}
