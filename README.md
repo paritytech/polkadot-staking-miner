@@ -116,6 +116,32 @@ The miner consists of **four independent tasks** that communicate via bounded ch
 - **Fault Isolation**: Task failures are isolated and handled appropriately
 - **Performance Optimization**: Mining operations are never delayed by cleanup tasks
 
+### RPC Endpoint Pool
+
+The miner supports multiple RPC endpoints for high availability and automatic failover:
+
+```bash
+polkadot-staking-miner --uri "wss://rpc1.example.com,wss://rpc2.example.com" monitor --seed-or-path //Alice
+```
+
+**Key Features:**
+
+- **Round-Robin Failover**: When a connection fails, the miner automatically tries the next endpoint
+  in the pool, cycling through all available endpoints
+- **Fast Failover for Pools**: When multiple endpoints are configured, connection retries are
+  reduced to 1 per endpoint (vs 3 for single endpoint) to fail fast and try alternatives
+- **Zombie Node Detection**: The miner task monitors for consecutive RPC failures (e.g., transaction
+  rejections, timeouts) and triggers failover even when block streaming appears healthy
+- **Unified Client Wrapper**: All tasks (listener, miner, runtime upgrade, etc.) share the same
+  connection pool and benefit from automatic failover
+
+**Prometheus Metrics for Monitoring:**
+
+- `staking_miner_endpoint_switches_total`: Total number of times the client switched endpoints
+- `staking_miner_miner_triggered_failovers_total`: Failovers triggered by consecutive miner failures
+- `staking_miner_listener_subscription_stalls_total`: Listener-detected stalls causing failover
+- `staking_miner_connection_timeouts_total`: Initial connection attempt timeouts
+
 ## Usage
 
 You can check the help with:
@@ -353,6 +379,17 @@ staking_miner_updater_subscription_stalls_total 0
 # HELP staking_miner_block_processing_stalls_total Total number of times block processing was detected as stalled
 # TYPE staking_miner_block_processing_stalls_total counter
 staking_miner_block_processing_stalls_total 2
+
+# RPC Endpoint Pool Metrics
+# HELP staking_miner_endpoint_switches_total Total number of times the client switched from one RPC endpoint to another
+# TYPE staking_miner_endpoint_switches_total counter
+staking_miner_endpoint_switches_total 2
+# HELP staking_miner_miner_triggered_failovers_total Total number of times the miner task triggered a failover due to consecutive RPC failures
+# TYPE staking_miner_miner_triggered_failovers_total counter
+staking_miner_miner_triggered_failovers_total 1
+# HELP staking_miner_connection_timeouts_total Total number of initial connection attempt timeouts
+# TYPE staking_miner_connection_timeouts_total counter
+staking_miner_connection_timeouts_total 0
 # HELP staking_miner_mining_timeouts_total Total number of solution mining timeouts
 # TYPE staking_miner_mining_timeouts_total counter
 staking_miner_mining_timeouts_total 0

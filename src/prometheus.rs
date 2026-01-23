@@ -245,6 +245,14 @@ mod hidden {
 		.unwrap()
 	});
 
+	static ENDPOINT_SWITCHES: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_endpoint_switches_total",
+			"Total number of times the client switched from one RPC endpoint to another"
+		))
+		.unwrap()
+	});
+
 	static STORAGE_QUERY_DURATION: Lazy<Gauge> = Lazy::new(|| {
 		register_gauge!(
 			"staking_miner_storage_query_duration_ms",
@@ -464,6 +472,10 @@ mod hidden {
 
 	pub fn on_updater_subscription_stall() {
 		UPDATER_SUBSCRIPTION_STALLS.inc();
+	}
+
+	pub fn on_endpoint_switch() {
+		ENDPOINT_SWITCHES.inc();
 	}
 
 	pub fn observe_storage_query_duration(duration_ms: f64) {

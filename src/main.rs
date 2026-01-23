@@ -51,14 +51,15 @@ use tracing_subscriber::EnvFilter;
 use crate::{
 	client::Client,
 	dynamic::update_metadata_constants,
-	prelude::{ChainClient, DEFAULT_PROMETHEUS_PORT, DEFAULT_URI, LOG_TARGET, SHARED_CLIENT},
+	prelude::{DEFAULT_PROMETHEUS_PORT, DEFAULT_URI, LOG_TARGET, SHARED_CLIENT},
 };
 
 #[derive(Debug, Clone, Parser)]
 #[cfg_attr(test, derive(PartialEq))]
 #[clap(author, version, about)]
 pub struct Opt {
-	/// The `ws` node to connect to.
+	/// The `ws` node(s) to connect to. Multiple URIs can be comma-separated for failover.
+	/// Example: "wss://rpc1.example.com,wss://rpc2.example.com"
 	#[clap(long, short, default_value = DEFAULT_URI, env = "URI")]
 	pub uri: String,
 
@@ -104,6 +105,7 @@ async fn main() -> Result<(), Error> {
 
 	let version_bytes = client
 		.chain_api()
+		.await
 		.runtime_api()
 		.at_latest()
 		.await?
@@ -118,11 +120,12 @@ async fn main() -> Result<(), Error> {
 	SHARED_CLIENT.set(client.clone()).expect("shared client only set once; qed");
 
 	// Start a new tokio task to perform the runtime updates in the background.
-	// if this fails then the miner will be stopped and has to be re-started.
+	// If this fails then the miner will be stopped and has to be re-started.
+	// The upgrade task receives the Client wrapper so it can participate in failover.
 	let (tx_upgrade, rx_upgrade) = oneshot::channel::<Error>();
-	tokio::spawn(runtime_upgrade_task(client.chain_api().clone(), tx_upgrade));
+	tokio::spawn(runtime_upgrade_task(client.clone(), tx_upgrade));
 
-	update_metadata_constants(client.chain_api())?;
+	update_metadata_constants(&*client.chain_api().await)?;
 
 	let fut = match command {
 		Command::Info => async {
@@ -203,9 +206,52 @@ async fn run_command(
 	}
 }
 
+/// Recreate the runtime updates subscription with failover support.
+async fn recreate_runtime_updates_with_failover(
+	client: &Client,
+	context: &str,
+) -> Result<subxt::client::RuntimeUpdaterStream<subxt::PolkadotConfig>, Error> {
+	let result = {
+		let chain_api = client.chain_api().await;
+		chain_api.updater().runtime_updates().await
+	};
+	match result {
+		Ok(stream) => {
+			log::info!(target: LOG_TARGET, "Successfully recreated runtime upgrade subscription {context}");
+			Ok(stream)
+		},
+		Err(e) => {
+			log::warn!(target: LOG_TARGET, "Failed to recreate subscription {context}: {e:?}, attempting failover...");
+			if let Err(failover_err) = client.reconnect().await {
+				log::error!(target: LOG_TARGET, "Runtime failover failed: {failover_err:?}");
+				return Err(e.into());
+			}
+			let retry_result = {
+				let chain_api = client.chain_api().await;
+				chain_api.updater().runtime_updates().await
+			};
+			match retry_result {
+				Ok(stream) => {
+					log::info!(target: LOG_TARGET, "Successfully recreated runtime upgrade subscription after failover {context}");
+					Ok(stream)
+				},
+				Err(e2) => {
+					log::error!(target: LOG_TARGET, "Failed to recreate subscription after failover {context}: {e2:?}");
+					Err(e2.into())
+				},
+			}
+		},
+	}
+}
+
 /// Runs until the RPC connection fails or updating the metadata failed.
-async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
-	let updater = client.updater();
+/// Uses the Client wrapper to participate in failover when RPC connection fails.
+async fn runtime_upgrade_task(client: Client, tx: oneshot::Sender<Error>) {
+	/// Maximum number of consecutive subscription recreation attempts before giving up.
+	const MAX_SUBSCRIPTION_RECREATION_ATTEMPTS: u32 = 3;
+
+	let chain_api = client.chain_api().await;
+	let updater = chain_api.updater();
 
 	let mut update_stream = match updater.runtime_updates().await {
 		Ok(u) => u,
@@ -221,17 +267,22 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 		tokio::time::interval(std::time::Duration::from_secs(HEALTH_CHECK_INTERVAL_SECS));
 	health_check_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+	let mut subscription_recreation_attempts = 0u32;
+
 	loop {
 		// Use select to handle both runtime updates and periodic health checks
 		tokio::select! {
 			maybe_update = update_stream.next() => {
 				match maybe_update {
 					Some(Ok(update)) => {
-						// Process the update
+						// Reset recreation attempts on successful update
+						subscription_recreation_attempts = 0;
+						// Process the update - get fresh chain_api in case of failover
+						let chain_api = client.chain_api().await;
 						let version = update.runtime_version().spec_version;
-						match updater.apply_update(update) {
+						match chain_api.updater().apply_update(update) {
 							Ok(()) => {
-								if let Err(e) = dynamic::update_metadata_constants(&client) {
+								if let Err(e) = dynamic::update_metadata_constants(&chain_api) {
 									let _ = tx.send(e);
 									return;
 								}
@@ -248,14 +299,48 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 							log::warn!(target: LOG_TARGET, "Runtime upgrade subscription disconnected, but will reconnect automatically");
 							continue;
 						}
-						log::error!(target: LOG_TARGET, "Runtime upgrade subscription error: {e:?}");
-						let _ = tx.send(e.into());
-						return;
+						log::warn!(target: LOG_TARGET, "Runtime upgrade subscription error: {e:?}, attempting recreation...");
+						crate::prometheus::on_updater_subscription_stall();
+
+						subscription_recreation_attempts += 1;
+						if subscription_recreation_attempts > MAX_SUBSCRIPTION_RECREATION_ATTEMPTS {
+							log::error!(target: LOG_TARGET, "Exceeded maximum subscription recreation attempts ({MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}), exiting");
+							let _ = tx.send(e.into());
+							return;
+						}
+
+						match recreate_runtime_updates_with_failover(&client, "after error").await
+						{
+							Ok(new_stream) => update_stream = new_stream,
+							Err(err) => {
+								let _ = tx.send(err);
+								return;
+							},
+						}
 					},
 					None => {
-						log::error!(target: LOG_TARGET, "Runtime upgrade subscription stream ended. Connection is dead. Shutting down.");
-						let _ = tx.send(Error::Other("Runtime upgrade subscription stream ended".into()));
-						return;
+						log::warn!(target: LOG_TARGET, "Runtime upgrade subscription stream ended, attempting recreation...");
+						crate::prometheus::on_updater_subscription_stall();
+
+						subscription_recreation_attempts += 1;
+						if subscription_recreation_attempts > MAX_SUBSCRIPTION_RECREATION_ATTEMPTS {
+							log::error!(target: LOG_TARGET, "Exceeded maximum subscription recreation attempts ({MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}), exiting");
+							let _ = tx.send(Error::Other("Runtime upgrade subscription stream ended".into()));
+							return;
+						}
+
+						match recreate_runtime_updates_with_failover(
+							&client,
+							"after stream ended",
+						)
+						.await
+						{
+							Ok(new_stream) => update_stream = new_stream,
+							Err(err) => {
+								let _ = tx.send(err);
+								return;
+							},
+						}
 					},
 				}
 			},
@@ -263,7 +348,12 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 				log::trace!(target: LOG_TARGET, "Runtime upgrade subscription: periodic RPC health check");
 
 				// Try to get the current block number as a health check
-				match client.blocks().at_latest().await {
+				// Note: We must drop the read guard before calling reconnect() to avoid deadlock
+				let health_check_result = {
+					let chain_api = client.chain_api().await;
+					chain_api.blocks().at_latest().await
+				};
+				match health_check_result {
 					Ok(_) => {
 						log::trace!(target: LOG_TARGET, "RPC health check OK");
 					},
@@ -271,15 +361,22 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 						log::warn!(target: LOG_TARGET, "RPC health check failed: {e:?} - recreating runtime upgrade subscription");
 						crate::prometheus::on_updater_subscription_stall();
 
-						// Recreate the subscription
-						match updater.runtime_updates().await {
-							Ok(new_stream) => {
-								update_stream = new_stream;
-								log::info!(target: LOG_TARGET, "Successfully recreated runtime upgrade subscription after health check failure");
-							},
-							Err(e) => {
-								log::error!(target: LOG_TARGET, "Failed to recreate runtime upgrade subscription: {e:?}");
-								let _ = tx.send(e.into());
+						subscription_recreation_attempts += 1;
+						if subscription_recreation_attempts > MAX_SUBSCRIPTION_RECREATION_ATTEMPTS {
+							log::error!(target: LOG_TARGET, "Exceeded maximum subscription recreation attempts ({MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}), exiting");
+							let _ = tx.send(e.into());
+							return;
+						}
+
+						match recreate_runtime_updates_with_failover(
+							&client,
+							"after health check failure",
+						)
+						.await
+						{
+							Ok(new_stream) => update_stream = new_stream,
+							Err(err) => {
+								let _ = tx.send(err);
 								return;
 							},
 						}
