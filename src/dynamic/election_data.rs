@@ -19,12 +19,12 @@ use crate::{
 	commands::{
 		multi_block::types::{TargetSnapshotPageOf, Voter, VoterSnapshotPageOf},
 		types::{
-			ElectionDataSource, NominatorAllocation, NominatorData, NominatorPrediction,
-			NominatorsPrediction, PredictionMetadata, ValidatorData, ValidatorInfo,
-			ValidatorStakeAllocation, ValidatorsPrediction,
+			ElectionDataSource, ElectionOverrides, NominatorAllocation, NominatorData,
+			NominatorPrediction, NominatorsPrediction, PredictionMetadata, ValidatorData,
+			ValidatorInfo, ValidatorStakeAllocation, ValidatorsPrediction,
 		},
 	},
-	dynamic::staking::{fetch_targets, fetch_voters},
+	dynamic::staking::{fetch_candidates, fetch_voters},
 	error::Error,
 	prelude::{AccountId, LOG_TARGET, Storage},
 	static_types::multi_block::VoterSnapshotPerBlock,
@@ -128,6 +128,74 @@ where
 	);
 
 	Ok((target_snapshot, voter_pages_vec))
+}
+
+/// Apply election overrides to candidates and voters.
+pub(crate) fn apply_overrides(
+	mut candidates: Vec<ValidatorData>,
+	mut voters: Vec<NominatorData>,
+	overrides: ElectionOverrides,
+) -> Result<(Vec<ValidatorData>, Vec<NominatorData>), Error> {
+	// (1) Remove specific candidates from the election
+	let candidates_exclude: HashSet<AccountId> = overrides
+		.candidates_exclude
+		.iter()
+		.map(|c| {
+			c.parse::<AccountId>()
+				.map_err(|e| Error::Other(format!("Invalid candidate exclude {c}: {e}")))
+		})
+		.collect::<Result<_, _>>()?;
+
+	candidates.retain(|(account, _)| !candidates_exclude.contains(account));
+
+	// (2) Add candidates that may not exist on-chain
+	let current_candidates: HashSet<AccountId> =
+		candidates.iter().map(|(a, _)| a.clone()).collect();
+	for c_str in overrides.candidates_include {
+		let account = c_str
+			.parse::<AccountId>()
+			.map_err(|e| Error::Other(format!("Invalid candidate include {c_str}: {e}")))?;
+		if !current_candidates.contains(&account) {
+			candidates.push((account, 0));
+		}
+	}
+
+	// (3) Remove specific voters from the election
+	let voters_exclude: HashSet<AccountId> = overrides
+		.voters_exclude
+		.iter()
+		.map(|v| {
+			v.parse::<AccountId>()
+				.map_err(|e| Error::Other(format!("Invalid voter exclude {v}: {e}")))
+		})
+		.collect::<Result<_, _>>()?;
+
+	voters.retain(|(account, _, _)| !voters_exclude.contains(account));
+
+	// (4) Add or override voters with custom stake amounts
+	let voter_map: HashMap<AccountId, usize> =
+		voters.iter().enumerate().map(|(i, (a, _, _))| (a.clone(), i)).collect();
+
+	for (v_str, stake, t_strs) in overrides.voters_include {
+		let account = v_str
+			.parse::<AccountId>()
+			.map_err(|e| Error::Other(format!("Invalid voter include {v_str}: {e}")))?;
+		let targets: Vec<AccountId> = t_strs
+			.iter()
+			.map(|t| {
+				t.parse::<AccountId>()
+					.map_err(|e| Error::Other(format!("Invalid voter target {t}: {e}")))
+			})
+			.collect::<Result<_, _>>()?;
+
+		if let Some(&index) = voter_map.get(&account) {
+			voters[index] = (account, stake, targets);
+		} else {
+			voters.push((account, stake, targets));
+		}
+	}
+
+	Ok((candidates, voters))
 }
 
 /// Build structured predictions from the mined solution and snapshots.
@@ -253,7 +321,6 @@ where
 	let data_source_str = match &ctx.data_source {
 		ElectionDataSource::Snapshot => "snapshot",
 		ElectionDataSource::Staking => "staking",
-		ElectionDataSource::CustomData => "custom_data",
 	}
 	.to_string();
 
@@ -324,7 +391,7 @@ pub(crate) async fn get_election_data<T>(
 	n_pages: u32,
 	round: u32,
 	storage: Storage,
-) -> Result<(TargetSnapshotPageOf<T>, Vec<VoterSnapshotPageOf<T>>, ElectionDataSource), Error>
+) -> Result<(Vec<ValidatorData>, Vec<NominatorData>, ElectionDataSource), Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
 	T::Solution: Send,
@@ -340,16 +407,27 @@ where
 	match try_fetch_snapshot::<T>(n_pages, round, &storage).await {
 		Ok((target_snapshot, voter_pages)) => {
 			log::info!(target: LOG_TARGET, "Snapshot found");
-			// Convert BoundedVec to Vec so callers get all pages
-			let voter_pages_vec: Vec<VoterSnapshotPageOf<T>> = voter_pages.into_iter().collect();
-			Ok((target_snapshot, voter_pages_vec, ElectionDataSource::Snapshot))
+
+			let candidates: Vec<ValidatorData> =
+				target_snapshot.into_iter().map(|a| (a, 0)).collect();
+
+			let voters: Vec<NominatorData> = voter_pages
+				.into_iter()
+				.flat_map(|page| {
+					page.into_iter().map(|(stash, stake, votes)| {
+						(stash, stake, votes.into_iter().collect::<Vec<_>>())
+					})
+				})
+				.collect();
+
+			Ok((candidates, voters, ElectionDataSource::Snapshot))
 		},
 		Err(err) => {
 			log::warn!(target: LOG_TARGET, "Fetching from Snapshot failed: {err}. Falling back to staking pallet");
 
-			let targets = fetch_targets(&storage)
+			let candidates = fetch_candidates(&storage)
 				.await
-				.map_err(|e| Error::Other(format!("Failed to fetch targets: {e}")))?;
+				.map_err(|e| Error::Other(format!("Failed to fetch candidates: {e}")))?;
 
 			let voter_limit = (T::Pages::get() * T::VoterSnapshotPerBlock::get()) as usize;
 
@@ -357,11 +435,58 @@ where
 				.await
 				.map_err(|e| Error::Other(format!("Failed to fetch voters: {e}")))?;
 
-			let (target_snapshot, mut voter_snapshot) =
-				convert_election_data_to_snapshots::<T>(targets, voters)?;
-			// Fix the order
-			voter_snapshot.reverse();
-			Ok((target_snapshot, voter_snapshot, ElectionDataSource::Staking))
+			Ok((candidates, voters, ElectionDataSource::Staking))
 		},
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::commands::types::ElectionOverrides;
+	use polkadot_sdk::sp_core::crypto::Ss58Codec;
+
+	#[test]
+	fn test_apply_overrides_logic() {
+		// Create some test accounts
+		let acc1 = AccountId::from([1u8; 32]);
+		let acc2 = AccountId::from([2u8; 32]);
+		let acc3 = AccountId::from([3u8; 32]);
+		let acc4 = AccountId::from([4u8; 32]);
+
+		let s1 = acc1.to_ss58check();
+		let s2 = acc2.to_ss58check();
+		let s3 = acc3.to_ss58check();
+		let s4 = acc4.to_ss58check();
+
+		let candidates = vec![(acc1.clone(), 1000), (acc2.clone(), 2000)];
+
+		let voters = vec![(acc3.clone(), 500, vec![acc1.clone()])];
+
+		// Override:
+		// - Remove acc1 candidate
+		// - Add acc4 candidate
+		// - Remove acc3 voter
+		// - Add acc4 voter with targets [acc2, acc4]
+		let overrides = ElectionOverrides {
+			candidates_include: vec![s4.clone()],
+			candidates_exclude: vec![s1.clone()],
+			voters_include: vec![(s4.clone(), 1500, vec![s2.clone(), s4.clone()])],
+			voters_exclude: vec![s3.clone()],
+		};
+
+		let (new_candidates, new_voters) = apply_overrides(candidates, voters, overrides).unwrap();
+
+		// Check candidates
+		assert_eq!(new_candidates.len(), 2);
+		assert!(new_candidates.iter().any(|(a, _)| a == &acc2));
+		assert!(new_candidates.iter().any(|(a, _)| a == &acc4));
+		assert!(!new_candidates.iter().any(|(a, _)| a == &acc1));
+
+		// Check voters
+		assert_eq!(new_voters.len(), 1);
+		assert_eq!(new_voters[0].0, acc4);
+		assert_eq!(new_voters[0].1, 1500);
+		assert_eq!(new_voters[0].2, vec![acc2, acc4]);
 	}
 }

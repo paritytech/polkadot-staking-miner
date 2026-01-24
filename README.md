@@ -230,7 +230,7 @@ cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --do-reduce
 | Option                          | Description                                                                                                                   | Default Value      |
 | :------------------------------ | :---------------------------------------------------------------------------------------------------------------------------- | :----------------- |
 | `--desired-validators <number>` | Desired number of validators for the prediction                                                                               | Fetched from chain |
-| `--custom-data <path>`          | Path to custom election data JSON file (see format below)                                                                     | None               |
+| `--overrides <path>`            | Path to election overrides JSON file (see format below)                                                                       | None               |
 | `--output-dir <path>`           | Output directory for prediction results                                                                                       | `results`          |
 | `--balancing-iterations <number>`| Number of balancing iterations for the sequential phragmen algorithm. Higher values may produce better balanced solutions at the cost of more computation time. | 10                 |
 | `--do-reduce`            | Reduce the solution to prevent further trimming.                                                                              | `false`             |
@@ -250,10 +250,10 @@ cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --do-reduce
 cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --desired-validators 50 --do-reduce
 ```
 
-#### Using Custom Election Data File
+#### Using Election Overrides File
 
 ```bash
-cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --custom-data custom.json
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --overrides overrides.json
 ```
 
 #### Prediction at a Specific Block
@@ -338,50 +338,42 @@ The tool generates the following JSON files in the specified output directory:
 }
 ```
 
-### Custom Election Data File Format
+### Election Overrides File Format
 
-When using `--custom-data`, the file should have the following JSON structure:
+When using `--overrides`, the file should have the following JSON structure:
 
 ```json
 {
-  "candidates": [
-    {
-      "account": "5C556QTtg1bJ43GDSgeowa3Ark6aeSHGTac1b2rKSXtgmSmW",
-      "stake": 27549105879206511
-    },
-    {
-      "account": "5Ft3J6iqSQPWX2S9jERXcMpevt8JDUPWjec5uGierfVGXisE",
-      "stake": 11549105879206511
-    }
+  "candidates_include": ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG"],
+  "candidates_exclude": [],
+  "voters_include": [
+    ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG", 1000000, ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG"]]
   ],
-  "nominators": [
-    {
-      "account": "5EnBXFfRFgutykCTHsaMYygakTy6jjLQRvBxqXfc85GSnPk1",
-      "stake": 3217591643365,
-      "targets": [
-        "5C556QTtg1bJ43GDSgeowa3Ark6aeSHGTac1b2rKSXtgmSmW",
-        "5Ft3J6iqSQPWX2S9jERXcMpevt8JDUPWjec5uGierfVGXisE"
-      ]
-    }
-  ]
+  "voters_exclude": []
 }
 ```
 
-**Note:** Custom file paths can be nested (e.g., `data/elections/custom.json`). The tool will
+**Note:** Override file paths can be nested (e.g., `data/elections/overrides.json`). The tool will
 automatically resolve relative paths from the current working directory.
 
 ### How Predict Command Works
 
 1. **Data Source**: The tool first tries to fetch data from the chain's snapshot (if available),
-   then falls back to the staking pallet. If `--custom-data` is provided, it uses that data instead.
+   then falls back to the staking pallet. 
 
-2. **Election Algorithm**: Runs the same Phragmén algorithm (`seq_phragmen`) used by Substrate chains
+2. **Overrides Application**: If `--overrides` is provided, the tool applies the specified modifications to the fetched candidates and voters:
+   - (1) Add candidates that may not exist on-chain.
+   - (2) Remove specific candidates from the election.
+   - (3) Add or override voters with custom stake amounts.
+   - (4) Remove specific voters from the election.
+
+3. **Election Algorithm**: Runs the same Phragmén algorithm (`seq_phragmen`) used by Substrate chains
    to determine:
    - Which validators would be elected
    - Stake distribution among validators
    - Nominator allocations to validators
 
-3. **Output Generation**: Creates detailed JSON files with predictions, including validator and
+4. **Output Generation**: Creates detailed JSON files with predictions, including validator and
    nominator perspectives.
 
 ## Update metadata

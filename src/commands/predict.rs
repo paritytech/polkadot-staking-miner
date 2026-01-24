@@ -3,13 +3,11 @@ use polkadot_sdk::pallet_election_provider_multi_block::unsigned::miner::MinerCo
 
 use crate::{
 	client::Client,
-	commands::types::{
-		CustomElectionData, ElectionDataSource, NominatorData, PredictConfig, ValidatorData,
-	},
+	commands::types::{ElectionDataSource, ElectionOverrides, PredictConfig},
 	dynamic::{
 		election_data::{
-			PredictionContext, build_predictions_from_solution, convert_election_data_to_snapshots,
-			get_election_data,
+			PredictionContext, apply_overrides, build_predictions_from_solution,
+			convert_election_data_to_snapshots, get_election_data,
 		},
 		multi_block::mine_solution,
 		update_metadata_constants,
@@ -83,19 +81,27 @@ where
 		},
 	};
 
-	// Check if custom data file path is provided
-	let (target_snapshot, voter_snapshot, data_source) = if let Some(path) = &config.custom_data {
-		// Load custom data file
-		let (candidates, nominators) = load_custom_data(path).await?;
+	// Fetch election data
+	let (candidates, nominators, data_source) =
+		get_election_data::<T>(n_pages, current_round, storage).await?;
 
-		// Convert custom data to snapshots
-		let (target_snapshot, voter_snapshot) =
-			convert_election_data_to_snapshots::<T>(candidates, nominators)?;
-
-		(target_snapshot, voter_snapshot, ElectionDataSource::CustomData)
+	// Apply overrides if provided
+	let (candidates, nominators) = if let Some(overrides_path) = &config.overrides {
+		log::info!(target: LOG_TARGET, "Applying overrides from {overrides_path}");
+		let overrides: ElectionOverrides = read_data_from_json_file(overrides_path).await?;
+		apply_overrides(candidates, nominators, overrides)?
 	} else {
-		get_election_data::<T>(n_pages, current_round, storage).await?
+		(candidates, nominators)
 	};
+
+	// Convert raw data to snapshots
+	let (target_snapshot, mut voter_snapshot) =
+		convert_election_data_to_snapshots::<T>(candidates, nominators)?;
+
+	// Fix the order for staking data source
+	if matches!(data_source, ElectionDataSource::Staking) {
+		voter_snapshot.reverse();
+	}
 
 	log::info!(
 		target: LOG_TARGET,
@@ -191,80 +197,4 @@ where
 	);
 
 	Ok(())
-}
-
-async fn load_custom_data(
-	custom_data_file_path: &str,
-) -> Result<(Vec<ValidatorData>, Vec<NominatorData>), Error> {
-	use std::path::PathBuf;
-
-	// Resolve relative path → absolute
-	let path: PathBuf = {
-		let p = PathBuf::from(custom_data_file_path);
-		if p.is_absolute() {
-			p
-		} else {
-			std::env::current_dir()
-				.map_err(|e| Error::Other(format!("Failed to get current directory: {e}")))?
-				.join(p)
-		}
-	};
-
-	log::info!(target: LOG_TARGET, "Reading election data from custom file: {}", path.display());
-
-	if !path.exists() {
-		return Err(Error::Other(format!("Custom file not found: {}", path.display())));
-	}
-
-	// Read file
-	let custom_data: CustomElectionData = read_data_from_json_file(
-		path.to_str().ok_or_else(|| Error::Other("Invalid custom file path".into()))?,
-	)
-	.await
-	.map_err(|e| Error::Other(format!("Failed to read custom file: {e}")))?;
-
-	log::info!(
-		target: LOG_TARGET,
-		"Loaded {} candidates and {} nominators from custom file",
-		custom_data.candidates.len(),
-		custom_data.nominators.len()
-	);
-
-	// Convert directly using iterators (more idiomatic)
-	let candidates = custom_data
-		.candidates
-		.into_iter()
-		.map(|c| {
-			Ok((
-				c.account
-					.parse::<AccountId>()
-					.map_err(|e| Error::Other(format!("Invalid candidate {}: {}", c.account, e)))?,
-				c.stake,
-			))
-		})
-		.collect::<Result<Vec<_>, Error>>()?;
-
-	let nominators = custom_data
-		.nominators
-		.into_iter()
-		.map(|n| {
-			let account = n
-				.account
-				.parse::<AccountId>()
-				.map_err(|e| Error::Other(format!("Invalid nominator {}: {}", n.account, e)))?;
-
-			let targets = n
-				.targets
-				.into_iter()
-				.map(|t| {
-					t.parse::<AccountId>()
-						.map_err(|e| Error::Other(format!("Invalid target {t}: {e}")))
-				})
-				.collect::<Result<Vec<_>, Error>>()?;
-
-			Ok((account, n.stake, targets))
-		})
-		.collect::<Result<Vec<_>, Error>>()?;
-
-	Ok((candidates, nominators))
 }

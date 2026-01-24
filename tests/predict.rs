@@ -28,135 +28,29 @@ fn predict_cli_args_parsing() {
 fn predict_config_parsing() {
 	use clap::Parser;
 
-	// Test default values
-	let config = PredictConfig::try_parse_from(["predict"]).unwrap();
-	assert_eq!(config.desired_validators, None);
-	assert_eq!(config.custom_data, None);
-	assert_eq!(config.output_dir, "results");
-
-	// Test with desired validators
-	let config = PredictConfig::try_parse_from(["predict", "--desired-validators", "50"]).unwrap();
-	assert_eq!(config.desired_validators, Some(50));
-
-	// Test with custom data file
-	let config =
-		PredictConfig::try_parse_from(["predict", "--custom-data", "custom.json"]).unwrap();
-	assert_eq!(config.custom_data, Some("custom.json".to_string()));
-
 	// Test with output directory
 	let config = PredictConfig::try_parse_from(["predict", "--output-dir", "outputs"]).unwrap();
 	assert_eq!(config.output_dir, "outputs");
+
+	// Test with overrides
+	let config =
+		PredictConfig::try_parse_from(["predict", "--overrides", "overrides.json"]).unwrap();
+	assert_eq!(config.overrides, Some("overrides.json".to_string()));
 
 	// Test with all options
 	let config = PredictConfig::try_parse_from([
 		"predict",
 		"--desired-validators",
 		"50",
-		"--custom-data",
-		"data/custom.json",
+		"--overrides",
+		"data/overrides.json",
 		"--output-dir",
 		"test_outputs",
 	])
 	.unwrap();
 	assert_eq!(config.desired_validators, Some(50));
-	assert_eq!(config.custom_data, Some("data/custom.json".to_string()));
+	assert_eq!(config.overrides, Some("data/overrides.json".to_string()));
 	assert_eq!(config.output_dir, "test_outputs");
-}
-
-/// Create a temporary custom election data file for testing
-fn create_test_custom_data_file(temp_dir: &TempDir) -> std::path::PathBuf {
-	use polkadot_sdk::sp_core::crypto::Pair;
-	use subxt::utils::AccountId32;
-
-	// Create test account IDs
-	let pair1 = polkadot_staking_miner::prelude::Pair::from_string("//Alice", None).unwrap();
-	let account1 = AccountId32::from(pair1.public().0);
-
-	let pair2 = polkadot_staking_miner::prelude::Pair::from_string("//Bob", None).unwrap();
-	let account2 = AccountId32::from(pair2.public().0);
-
-	let pair3 = polkadot_staking_miner::prelude::Pair::from_string("//Charlie", None).unwrap();
-	let account3 = AccountId32::from(pair3.public().0);
-
-	let custom_data = serde_json::json!({
-		"candidates": [
-			{
-				"account": account1.to_string(),
-				"stake": 1000000000000u64
-			},
-			{
-				"account": account2.to_string(),
-				"stake": 2000000000000u64
-			}
-		],
-		"nominators": [
-			{
-				"account": account3.to_string(),
-				"stake": 500000000000u64,
-				"targets": [
-					account1.to_string(),
-					account2.to_string()
-				]
-			}
-		]
-	});
-
-	let file_path = temp_dir.path().join("test_custom.json");
-	fs::write(&file_path, serde_json::to_string_pretty(&custom_data).unwrap()).unwrap();
-	file_path
-}
-
-/// Test that custom file format is correctly validated
-#[test]
-fn test_custom_data_file_format_validation() {
-	let temp_dir = TempDir::new().unwrap();
-	let custom_data_path = create_test_custom_data_file(&temp_dir);
-
-	// Read and parse the file
-	let content = fs::read_to_string(&custom_data_path).unwrap();
-	let parsed: polkadot_staking_miner::commands::types::CustomElectionData =
-		serde_json::from_str(&content).unwrap();
-
-	// Validate structure
-	assert_eq!(parsed.candidates.len(), 2);
-	assert_eq!(parsed.nominators.len(), 1);
-	assert_eq!(parsed.nominators[0].targets.len(), 2);
-}
-
-/// Test invalid custom data file format
-#[test]
-fn test_invalid_custom_data_file_format() {
-	let temp_dir = TempDir::new().unwrap();
-	let invalid_file = temp_dir.path().join("invalid.json");
-
-	// Write invalid JSON
-	fs::write(&invalid_file, "{ invalid json }").unwrap();
-
-	// Try to parse - should fail
-	let content = fs::read_to_string(&invalid_file).unwrap();
-	let result: Result<polkadot_staking_miner::commands::types::CustomElectionData, _> =
-		serde_json::from_str(&content);
-	assert!(result.is_err());
-}
-
-/// Test nested custom data file path handling
-#[test]
-fn test_nested_custom_data_file_path() {
-	let temp_dir = TempDir::new().unwrap();
-
-	// Create nested directory structure
-	let nested_dir = temp_dir.path().join("data").join("elections");
-	fs::create_dir_all(&nested_dir).unwrap();
-
-	let custom_data_file = nested_dir.join("custom.json");
-	let test_file = create_test_custom_data_file(&temp_dir);
-
-	// Copy to nested location
-	fs::copy(&test_file, &custom_data_file).unwrap();
-
-	// Verify file exists at nested path
-	assert!(custom_data_file.exists());
-	assert!(custom_data_file.parent().unwrap().exists());
 }
 
 /// Test output directory creation
@@ -230,116 +124,52 @@ fn test_output_files_creation() {
 	assert_eq!(nominators_content["metadata"]["desired_validators"], 19);
 }
 
-/// Test custom data file with empty candidates
-#[test]
-fn test_custom_data_file_empty_candidates() {
-	let temp_dir = TempDir::new().unwrap();
-	let empty_file = temp_dir.path().join("empty_candidates.json");
-
-	let empty_data = serde_json::json!({
-		"candidates": [],
-		"nominators": []
+/// Create a temporary overrides file for testing
+fn create_test_overrides_file(temp_dir: &TempDir) -> std::path::PathBuf {
+	let overrides_data = serde_json::json!({
+		"candidates_include": ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG"],
+		"candidates_exclude": [],
+		"voters_include": [
+			["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG", 1000000, ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG"]]
+		],
+		"voters_exclude": []
 	});
 
-	fs::write(&empty_file, serde_json::to_string(&empty_data).unwrap()).unwrap();
-
-	let content = fs::read_to_string(&empty_file).unwrap();
-	let parsed: polkadot_staking_miner::commands::types::CustomElectionData =
-		serde_json::from_str(&content).unwrap();
-
-	assert_eq!(parsed.candidates.len(), 0);
-	assert_eq!(parsed.nominators.len(), 0);
+	let file_path = temp_dir.path().join("test_overrides.json");
+	fs::write(&file_path, serde_json::to_string_pretty(&overrides_data).unwrap()).unwrap();
+	file_path
 }
 
-/// Test custom data file with large stake values
+/// Test that overrides file format is correctly validated
 #[test]
-fn test_custom_data_file_large_stakes() {
+fn test_overrides_file_format_validation() {
 	let temp_dir = TempDir::new().unwrap();
-	let large_stakes_file = temp_dir.path().join("large_stakes.json");
+	let overrides_path = create_test_overrides_file(&temp_dir);
 
-	use polkadot_sdk::sp_core::crypto::Pair;
-	use subxt::utils::AccountId32;
-
-	let pair = polkadot_staking_miner::prelude::Pair::from_string("//Alice", None).unwrap();
-	let account = AccountId32::from(pair.public().0);
-
-	let large_data = serde_json::json!({
-		"candidates": [
-			{
-				"account": account.to_string(),
-				"stake": 18446744073709551615u64  // u64::MAX
-			}
-		],
-		"nominators": [
-			{
-				"account": account.to_string(),
-				"stake": 18446744073709551615u64,
-				"targets": [account.to_string()]
-			}
-		]
-	});
-
-	fs::write(&large_stakes_file, serde_json::to_string(&large_data).unwrap()).unwrap();
-
-	let content = fs::read_to_string(&large_stakes_file).unwrap();
-	let parsed: polkadot_staking_miner::commands::types::CustomElectionData =
+	// Read and parse the file
+	let content = fs::read_to_string(&overrides_path).unwrap();
+	let parsed: polkadot_staking_miner::commands::types::ElectionOverrides =
 		serde_json::from_str(&content).unwrap();
 
-	assert_eq!(parsed.candidates[0].stake, u128::from(u64::MAX));
-	assert_eq!(parsed.nominators[0].stake, u64::MAX);
+	// Validate structure
+	assert_eq!(parsed.candidates_include.len(), 1);
+	assert_eq!(parsed.voters_include.len(), 1);
+	assert_eq!(parsed.voters_include[0].1, 1000000);
 }
 
-/// Test custom data file with multiple nominators and targets
+/// Test invalid overrides file format
 #[test]
-fn test_custom_data_file_multiple_nominators() {
+fn test_invalid_overrides_file_format() {
 	let temp_dir = TempDir::new().unwrap();
-	let multi_file = temp_dir.path().join("multi_nominators.json");
+	let invalid_file = temp_dir.path().join("invalid_overrides.json");
 
-	use polkadot_sdk::sp_core::crypto::Pair;
-	use subxt::utils::AccountId32;
+	// Write invalid JSON (missing some fields is okay due to #[serde(default)], but totally invalid
+	// JSON should fail)
+	fs::write(&invalid_file, "{ this is not json }").unwrap();
 
-	let pair1 = polkadot_staking_miner::prelude::Pair::from_string("//Alice", None).unwrap();
-	let account1 = AccountId32::from(pair1.public().0);
-
-	let pair2 = polkadot_staking_miner::prelude::Pair::from_string("//Bob", None).unwrap();
-	let account2 = AccountId32::from(pair2.public().0);
-
-	let pair3 = polkadot_staking_miner::prelude::Pair::from_string("//Charlie", None).unwrap();
-	let account3 = AccountId32::from(pair3.public().0);
-
-	let data = serde_json::json!({
-		"candidates": [
-			{
-				"account": account1.to_string(),
-				"stake": 1000000u64
-			},
-			{
-				"account": account2.to_string(),
-				"stake": 2000000u64
-			}
-		],
-		"nominators": [
-			{
-				"account": account3.to_string(),
-				"stake": 500000u64,
-				"targets": [account1.to_string(), account2.to_string()]
-			},
-			{
-				"account": account1.to_string(),
-				"stake": 300000u64,
-				"targets": [account2.to_string()]
-			}
-		]
-	});
-
-	fs::write(&multi_file, serde_json::to_string(&data).unwrap()).unwrap();
-
-	let content = fs::read_to_string(&multi_file).unwrap();
-	let parsed: polkadot_staking_miner::commands::types::CustomElectionData =
-		serde_json::from_str(&content).unwrap();
-
-	assert_eq!(parsed.candidates.len(), 2);
-	assert_eq!(parsed.nominators.len(), 2);
-	assert_eq!(parsed.nominators[0].targets.len(), 2);
-	assert_eq!(parsed.nominators[1].targets.len(), 1);
+	// Try to parse - should fail
+	let content = fs::read_to_string(&invalid_file).unwrap();
+	let result: Result<polkadot_staking_miner::commands::types::ElectionOverrides, _> =
+		serde_json::from_str(&content);
+	assert!(result.is_err());
 }

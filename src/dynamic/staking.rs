@@ -15,7 +15,7 @@ use std::{
 use subxt::dynamic::Value;
 
 /// Fetch all candidate validators (stash AccountId) with their active stake
-pub(crate) async fn fetch_targets(storage: &Storage) -> Result<Vec<ValidatorData>, Error> {
+pub(crate) async fn fetch_candidates(storage: &Storage) -> Result<Vec<ValidatorData>, Error> {
 	log::info!(target: LOG_TARGET, "Fetching candidate validators (Staking::Validators keys)");
 
 	let validators_addr = storage_addr(pallet_api::staking::storage::VALIDATORS, vec![]);
@@ -602,6 +602,7 @@ async fn fetch_voter_batch(
 				storage_addr(pallet_api::staking::storage::LEDGER, params)
 			};
 
+			// Default to VoterList score, but override with actual Ledger active stake
 			let mut actual_stake = score_stake;
 
 			if let Some(ledger) = storage.fetch(&ledger_key_addr).await? &&

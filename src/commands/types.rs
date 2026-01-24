@@ -97,10 +97,6 @@ pub struct PredictConfig {
 	#[clap(long)]
 	pub desired_validators: Option<u32>,
 
-	/// Path to custom election data JSON file
-	#[clap(long)]
-	pub custom_data: Option<String>,
-
 	/// Output directory for prediction results
 	#[clap(long, default_value = "results")]
 	pub output_dir: String,
@@ -119,6 +115,10 @@ pub struct PredictConfig {
 	/// [If omitted, uses the latest block]
 	#[clap(long)]
 	pub block_number: Option<u32>,
+
+	/// Path to election overrides JSON file
+	#[clap(long)]
+	pub overrides: Option<String>,
 }
 
 /// Validator prediction output
@@ -186,26 +186,17 @@ pub(crate) type ValidatorData = (AccountId, u128);
 // Custom Data File Format Types
 // ============================================================================
 
-/// Custom file format for election data
+/// JSON format for election overrides
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CustomElectionData {
-	pub candidates: Vec<CustomCandidate>,
-	pub nominators: Vec<CustomNominator>,
-}
-
-/// Candidate in custom data file
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CustomCandidate {
-	pub account: String,
-	pub stake: u128,
-}
-
-/// Nominator in custom data file
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CustomNominator {
-	pub account: String,
-	pub stake: u64,
-	pub targets: Vec<String>,
+pub struct ElectionOverrides {
+	#[serde(default)]
+	pub candidates_include: Vec<String>,
+	#[serde(default)]
+	pub candidates_exclude: Vec<String>,
+	#[serde(default)]
+	pub voters_include: Vec<(String, u64, Vec<String>)>,
+	#[serde(default)]
+	pub voters_exclude: Vec<String>,
 }
 
 /// Data source for election data
@@ -213,5 +204,4 @@ pub struct CustomNominator {
 pub enum ElectionDataSource {
 	Snapshot,
 	Staking,
-	CustomData,
 }
