@@ -164,7 +164,7 @@ impl Client {
 
 			let chain_api = ChainClient::from_backend(Arc::new(backend)).await?;
 
-			log::info!(target: LOG_TARGET, "Connected to {uri} with ChainHead backend");
+			log::info!(target: LOG_TARGET, "Connected to {uri} with Legacy backend");
 
 			Ok::<ChainClient, Error>(chain_api)
 		};
@@ -256,8 +256,8 @@ impl Client {
 		self.chain_api.read().await
 	}
 
-	/// Get the RPC used to connect to the chain.
-	pub fn rpc(&self) -> &ReconnectingRpcClient {
-		&self.rpc
+	/// Get the currently connected endpoint
+	pub async fn current_endpoint(&self) -> String {
+		self.endpoints[self.current_endpoint_index.load(Ordering::Relaxed)].clone()
 	}
 }

@@ -7685,7 +7685,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "989e7521a040efde50c3ab6bbadafbe15ab6dc042686926be59ac35d74607df4"
 dependencies = [
  "memchr",
- "thiserror 2.0.18",
  "ucd-trie",
 ]
 
@@ -8268,6 +8267,7 @@ dependencies = [
  "ss58-registry",
  "subxt",
  "subxt-rpcs",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tracing-subscriber 0.3.22",

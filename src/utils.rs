@@ -168,7 +168,9 @@ struct ChainProperties {
 
 /// Get the SS58 prefix from the chain
 pub async fn get_ss58_prefix(client: &Client) -> Result<u16, Error> {
-	match crate::dynamic::pallet_api::system::constants::SS58_PREFIX.fetch(client.chain_api()) {
+	match crate::dynamic::pallet_api::system::constants::SS58_PREFIX
+		.fetch(&*client.chain_api().await)
+	{
 		Ok(ss58_prefix) => Ok(ss58_prefix),
 		Err(e) => {
 			log::warn!(target: LOG_TARGET, "Failed to fetch SS58 prefix: {e}");
@@ -180,32 +182,20 @@ pub async fn get_ss58_prefix(client: &Client) -> Result<u16, Error> {
 
 /// Get block hash from block number using RPC
 pub async fn get_block_hash(client: &Client, block_number: u32) -> Result<Hash, Error> {
-	use serde_json::{json, value::to_raw_value};
+	use subxt_rpcs::{RpcClient, client::RpcParams};
 
-	// Convert block number to JSON raw value
-	let params = to_raw_value(&json!([block_number]))
+	let mut params = RpcParams::new();
+	params
+		.push(block_number)
 		.map_err(|e| Error::Other(format!("Failed to serialize block number: {e}")))?;
 
-	// Make RPC request - params is already Box<RawValue>
-	let response = client
-		.rpc()
-		.request("chain_getBlockHash".to_string(), Some(params))
-		.await
-		.map_err(|e| {
+	let endpoint = client.current_endpoint().await;
+	let rpc_client = RpcClient::from_url(endpoint).await?;
+
+	let block_hash: Option<Hash> =
+		rpc_client.request("chain_getBlockHash", params).await.map_err(|e| {
 			Error::Other(format!("Failed to get block hash for block {block_number}: {e}"))
 		})?;
-
-	// Parse response - it can be null if block doesn't exist
-	let response_str = response.get();
-	if response_str == "null" {
-		return Err(Error::Other(format!(
-			"Block {block_number} not found (may be pruned or invalid)"
-		)));
-	}
-
-	// Deserialize the hash
-	let block_hash: Option<Hash> = serde_json::from_str(response_str)
-		.map_err(|e| Error::Other(format!("Failed to parse block hash response: {e}")))?;
 
 	block_hash.ok_or_else(|| {
 		Error::Other(format!("Block {block_number} not found (may be pruned or invalid)"))
@@ -214,21 +204,15 @@ pub async fn get_block_hash(client: &Client, block_number: u32) -> Result<Hash, 
 
 /// Get chain properties (ss58 prefix, token decimals and symbol) from system_properties RPC
 pub async fn get_chain_properties(client: Client) -> Result<(u16, u8, String), Error> {
-	use serde_json::{json, value::to_raw_value};
+	use subxt_rpcs::{RpcClient, client::RpcParams};
 
-	// Call system_properties RPC method using the client's RPC
-	let params = to_raw_value(&json!([]))
-		.map_err(|e| Error::Other(format!("Failed to serialize RPC params: {e}")))?;
+	let endpoint = client.current_endpoint().await;
+	let rpc_client = RpcClient::from_url(endpoint).await?;
 
-	let response_raw = client
-		.rpc()
-		.request("system_properties".to_string(), Some(params))
+	let response: ChainProperties = rpc_client
+		.request("system_properties", RpcParams::new())
 		.await
 		.map_err(|e| Error::Other(format!("Failed to call system_properties RPC: {e}")))?;
-
-	// Deserialize the response
-	let response: ChainProperties = serde_json::from_str(response_raw.get())
-		.map_err(|e| Error::Other(format!("Failed to parse system_properties response: {e}")))?;
 
 	// Extract token decimals
 	let decimals = response.token_decimals.unwrap_or(10); // Default to 10 for most Substrate chains

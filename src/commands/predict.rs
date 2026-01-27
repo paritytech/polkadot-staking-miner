@@ -33,7 +33,7 @@ where
 	T::MaxVotesPerVoter: Send,
 {
 	// Update metadata constants
-	update_metadata_constants(client.chain_api())?;
+	update_metadata_constants(&*client.chain_api().await)?;
 	crate::dynamic::set_balancing_iterations(config.balancing_iterations);
 	crate::dynamic::set_algorithm(config.algorithm);
 
@@ -45,6 +45,7 @@ where
 	} else {
 		client
 			.chain_api()
+			.await
 			.blocks()
 			.at_latest()
 			.await
@@ -59,9 +60,9 @@ where
 		// Get block hash from block number
 		let block_hash = get_block_hash(&client, block_num).await?;
 
-		crate::utils::storage_at(Some(block_hash), client.chain_api()).await?
+		crate::utils::storage_at(Some(block_hash), &*client.chain_api().await).await?
 	} else {
-		client.chain_api().storage().at_latest().await?
+		client.chain_api().await.storage().at_latest().await?
 	};
 
 	let current_round = storage
