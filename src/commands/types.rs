@@ -50,6 +50,20 @@ impl std::str::FromStr for SubmissionStrategy {
 	}
 }
 
+/// Election algorithm to use for mining solutions.
+#[derive(
+	Debug, Copy, Clone, PartialEq, serde::Serialize, serde::Deserialize, clap::ValueEnum, Default,
+)]
+pub enum ElectionAlgorithm {
+	/// Sequential Phragmen algorithm.
+	#[default]
+	#[clap(name = "seq-phragmen")]
+	SeqPhragmen,
+	/// PhragMMS algorithm.
+	#[clap(name = "phragmms")]
+	Phragmms,
+}
+
 /// TODO: make `solver algorithm` configurable https://github.com/paritytech/polkadot-staking-miner/issues/989
 #[derive(Debug, Clone, clap::Parser)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -86,6 +100,10 @@ pub struct MultiBlockMonitorConfig {
 	/// Higher values may produce better balanced solutions at the cost of more computation time.
 	#[clap(long, default_value_t = 10)]
 	pub balancing_iterations: usize,
+
+	/// Election algorithm to use.
+	#[clap(long, value_enum, default_value_t = ElectionAlgorithm::SeqPhragmen)]
+	pub algorithm: ElectionAlgorithm,
 }
 
 /// CLI configuration for election prediction
@@ -119,6 +137,10 @@ pub struct PredictConfig {
 	/// Path to election overrides JSON file
 	#[clap(long)]
 	pub overrides: Option<String>,
+
+	/// Election algorithm to use.
+	#[clap(long, value_enum, default_value_t = ElectionAlgorithm::SeqPhragmen)]
+	pub algorithm: ElectionAlgorithm,
 }
 
 /// Validator prediction output

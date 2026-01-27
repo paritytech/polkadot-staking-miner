@@ -554,6 +554,7 @@ where
 	T::MaxVotesPerVoter: Send + Sync + 'static,
 {
 	crate::dynamic::set_balancing_iterations(config.balancing_iterations);
+	crate::dynamic::set_algorithm(config.algorithm);
 
 	let signer = Signer::new(&config.seed_or_path)?;
 

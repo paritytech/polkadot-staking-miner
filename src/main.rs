@@ -300,7 +300,7 @@ async fn runtime_upgrade_task(client: ChainClient, tx: oneshot::Sender<Error>) {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::commands::types::{MultiBlockMonitorConfig, SubmissionStrategy};
+	use crate::commands::types::{ElectionAlgorithm, MultiBlockMonitorConfig, SubmissionStrategy};
 
 	#[test]
 	fn cli_monitor_works() {
@@ -331,6 +331,7 @@ mod tests {
 					min_signed_phase_blocks: 10, // Default
 					shady: false,                // Default
 					balancing_iterations: 10,    // Default
+					algorithm: ElectionAlgorithm::SeqPhragmen,
 				}),
 			}
 		);
@@ -359,6 +360,7 @@ mod tests {
 				min_signed_phase_blocks: 10, // Default
 				shady: false,                // Default
 				balancing_iterations: 10,    // Default
+				algorithm: ElectionAlgorithm::SeqPhragmen,
 			})
 		);
 	}
@@ -387,6 +389,7 @@ mod tests {
 				min_signed_phase_blocks: 10, // Default
 				shady: false,                // Default
 				balancing_iterations: 10,    // Default
+				algorithm: ElectionAlgorithm::SeqPhragmen,
 			})
 		);
 	}
@@ -415,6 +418,7 @@ mod tests {
 				min_signed_phase_blocks: 5, // Explicitly set
 				shady: false,               // Default
 				balancing_iterations: 10,   // Default
+				algorithm: ElectionAlgorithm::SeqPhragmen,
 			})
 		);
 	}
@@ -442,6 +446,7 @@ mod tests {
 				min_signed_phase_blocks: 10, // Default
 				shady: true,                 // Explicitly set
 				balancing_iterations: 10,    // Default
+				algorithm: ElectionAlgorithm::SeqPhragmen,
 			})
 		);
 	}

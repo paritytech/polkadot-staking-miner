@@ -159,6 +159,7 @@ Here are some notable options you can use with the command:
 | `--min-signed-phase-blocks <number>` | Minimum number of blocks required in the signed phase before submitting a solution.                                              | 10              |
 | `--balancing-iterations <number>`    | Number of balancing iterations for the sequential phragmen algorithm. Higher values may produce better balanced solutions at the | 10              |
 |                                      | cost of more computation time.                                                                                                   |                 |
+| `--algorithm <algorithm>`            | Election algorithm to use for mining solutions. Supported: `seq-phragmen`, `phragmms`.                                           | `seq-phragmen`  |
 
 Refer to `--help` for the full list of options.
 
@@ -234,6 +235,7 @@ cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --do-reduce
 | `--output-dir <path>`           | Output directory for prediction results                                                                                       | `results`          |
 | `--balancing-iterations <number>`| Number of balancing iterations for the sequential phragmen algorithm. Higher values may produce better balanced solutions at the cost of more computation time. | 10                 |
 | `--do-reduce`            | Reduce the solution to prevent further trimming.                                                                              | `false`             |
+| `--algorithm <algorithm>`       | Election algorithm to use. Supported: `seq-phragmen`, `phragmms`.                                                            | `seq-phragmen`     |
 | `--block-number <number>`       | Block number at which to run the prediction. If not specified, uses the latest block.                                         | Latest block       |
 
 ### Examples
@@ -266,6 +268,12 @@ cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --block-numbe
 
 ```bash
 cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --do-reduce
+```
+
+#### Run Prediction with PhragMMS algorithm
+
+```bash
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --algorithm phragmms
 ```
 
 ### Output Files

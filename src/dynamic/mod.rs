@@ -16,7 +16,7 @@ pub mod staking;
 pub mod utils;
 
 use static_types::multi_block::{
-	BalancingIterations, MaxBackersPerWinner, MaxLength, MaxWinnersPerPage, Pages,
+	Algorithm, BalancingIterations, MaxBackersPerWinner, MaxLength, MaxWinnersPerPage, Pages,
 	TargetSnapshotPerBlock, VoterSnapshotPerBlock,
 };
 
@@ -50,4 +50,9 @@ pub fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
 /// Set the balancing iterations from CLI config.
 pub fn set_balancing_iterations(iterations: usize) {
 	BalancingIterations::set(iterations);
+}
+
+/// Set the election algorithm from CLI config.
+pub fn set_algorithm(algo: crate::commands::types::ElectionAlgorithm) {
+	Algorithm::set(algo);
 }
