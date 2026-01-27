@@ -164,7 +164,7 @@ pub(crate) async fn submit_inner(
 	// Set mortality based on SignedPhase duration for precise transaction lifetime
 	let mortality = blocks_remaining + 1;
 	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).mortal(mortality as u64).build();
-	let xt = client.chain_api().tx().create_signed(&tx, &*signer, xt_cfg).await?;
+	let xt = client.chain_api().await.tx().create_signed(&tx, &*signer, xt_cfg).await?;
 
 	xt.submit_and_watch()
 		.await
@@ -410,7 +410,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 
 	let mut i = 0;
 	let tx_status = loop {
-		let nonce = client.chain_api().tx().account_nonce(signer.account_id()).await?;
+		let nonce = client.chain_api().await.tx().account_nonce(signer.account_id()).await?;
 
 		// Register score.
 		match submit_inner(
@@ -600,7 +600,7 @@ async fn submit_pages_batch<T: MinerConfig + 'static>(
 	validate_signed_phase_or_bail(&current_phase, client, signer, round, min_signed_phase_blocks)
 		.await?;
 	let mut txs = FuturesUnordered::new();
-	let mut nonce = client.chain_api().tx().account_nonce(signer.account_id()).await?;
+	let mut nonce = client.chain_api().await.tx().account_nonce(signer.account_id()).await?;
 
 	// Collect expected pages before consuming the vector
 	let expected_pages: HashSet<u32> = pages_to_submit.iter().map(|(page, _)| *page).collect();
@@ -799,9 +799,10 @@ pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
 /// Submit a bail transaction to revert incomplete submissions
 pub(crate) async fn bail(client: &Client, signer: &Signer) -> Result<(), Error> {
 	let bail_tx = runtime::tx().multi_block_election_signed().bail();
-	let nonce = client.chain_api().tx().account_nonce(signer.account_id()).await?;
+	let chain_api = client.chain_api().await;
+	let nonce = chain_api.tx().account_nonce(signer.account_id()).await?;
 	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
-	let xt = client.chain_api().tx().create_signed(&bail_tx, &**signer, xt_cfg).await?;
+	let xt = chain_api.tx().create_signed(&bail_tx, &**signer, xt_cfg).await?;
 	let tx = xt.submit_and_watch().await?;
 	utils::wait_tx_in_finalized_block(tx).await?;
 	Ok(())

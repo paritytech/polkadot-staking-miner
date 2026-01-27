@@ -100,7 +100,7 @@ impl BlockDetails {
 		block_hash: Hash,
 		round: u32,
 	) -> Result<Self, Error> {
-		let storage = utils::storage_at(Some(block_hash), client.chain_api()).await?;
+		let storage = utils::storage_at(Some(block_hash), &*client.chain_api().await).await?;
 
 		let desired_targets = storage
 			.fetch(&runtime::storage().multi_block_election().desired_targets(round))

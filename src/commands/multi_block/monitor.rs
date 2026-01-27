@@ -87,6 +87,36 @@ type SubscriptionStream = StreamOf<
 	>,
 >;
 
+/// Recreate the finalized block subscription with failover support.
+async fn recreate_subscription_with_failover(
+	client: &Client,
+	context: &str,
+) -> Result<SubscriptionStream, Error> {
+	match client.chain_api().await.blocks().subscribe_finalized().await {
+		Ok(subscription) => {
+			log::info!(target: LOG_TARGET, "Successfully recreated subscription {context}");
+			Ok(subscription)
+		},
+		Err(e) => {
+			log::warn!(target: LOG_TARGET, "Failed to recreate subscription {context}: {e:?}, attempting failover...");
+			if let Err(failover_err) = client.reconnect().await {
+				log::error!(target: LOG_TARGET, "Runtime failover failed: {failover_err:?}");
+				return Err(e.into());
+			}
+			match client.chain_api().await.blocks().subscribe_finalized().await {
+				Ok(subscription) => {
+					log::info!(target: LOG_TARGET, "Successfully recreated subscription after failover {context}");
+					Ok(subscription)
+				},
+				Err(e2) => {
+					log::error!(target: LOG_TARGET, "Failed to subscribe after failover {context}: {e2:?}");
+					Err(e2.into())
+				},
+			}
+		},
+	}
+}
+
 /// Process the block after subscription.next() succeeds
 ///
 /// This function contains all the logic that happens AFTER we receive a block
@@ -263,10 +293,28 @@ where
 					log::error!(target: LOG_TARGET, "subscription failed: {e:?}");
 					return Err(e.into());
 				},
-				// The subscription was dropped unexpectedly
+				// The subscription was dropped unexpectedly - attempt recreation with failover
 				None => {
-					log::error!(target: LOG_TARGET, "Subscription to finalized blocks terminated unexpectedly");
-					return Err(Error::Other("Subscription terminated unexpectedly".to_string()));
+					log::warn!(target: LOG_TARGET, "Subscription to finalized blocks terminated unexpectedly, attempting recreation...");
+					crate::prometheus::on_listener_subscription_stall();
+
+					// Check if we've exceeded the maximum number of recreation attempts
+					state.subscription_recreation_attempts += 1;
+					if state.subscription_recreation_attempts > MAX_SUBSCRIPTION_RECREATION_ATTEMPTS
+					{
+						log::error!(target: LOG_TARGET, "Exceeded maximum subscription recreation attempts ({MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}), exiting to allow restart");
+						return Err(Error::SubscriptionRecreationLimitExceeded {
+							max_attempts: MAX_SUBSCRIPTION_RECREATION_ATTEMPTS,
+						});
+					}
+
+					log::info!(target: LOG_TARGET, "Subscription recreation attempt {}/{MAX_SUBSCRIPTION_RECREATION_ATTEMPTS} (after unexpected termination)", state.subscription_recreation_attempts);
+
+					*subscription =
+						recreate_subscription_with_failover(client, "after unexpected termination")
+							.await?;
+					state.last_block_time = std::time::Instant::now();
+					return Ok(ListenerAction::SubscriptionRecreated);
 				},
 			}
 		},
@@ -285,19 +333,10 @@ where
 
 			log::info!(target: LOG_TARGET, "Subscription recreation attempt {}/{MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}", state.subscription_recreation_attempts);
 
-			// Recreate the subscription
-			match client.chain_api().blocks().subscribe_finalized().await {
-				Ok(new_subscription) => {
-					*subscription = new_subscription;
-					state.last_block_time = std::time::Instant::now();
-					log::info!(target: LOG_TARGET, "Successfully recreated finalized block subscription");
-					return Ok(ListenerAction::SubscriptionRecreated);
-				},
-				Err(e) => {
-					log::error!(target: LOG_TARGET, "Failed to recreate subscription: {e:?}");
-					return Err(e.into());
-				},
-			}
+			*subscription =
+				recreate_subscription_with_failover(client, "after subscription stall").await?;
+			state.last_block_time = std::time::Instant::now();
+			return Ok(ListenerAction::SubscriptionRecreated);
 		},
 	};
 
@@ -324,18 +363,11 @@ where
 
 			log::info!(target: LOG_TARGET, "Subscription recreation attempt {}/{MAX_SUBSCRIPTION_RECREATION_ATTEMPTS}", state.subscription_recreation_attempts);
 
-			match client.chain_api().blocks().subscribe_finalized().await {
-				Ok(new_subscription) => {
-					*subscription = new_subscription;
-					state.last_block_time = std::time::Instant::now();
-					log::info!(target: LOG_TARGET, "Successfully recreated subscription after block processing timeout");
-					Ok(ListenerAction::BlockProcessingTimeout)
-				},
-				Err(e) => {
-					log::error!(target: LOG_TARGET, "Failed to recreate subscription after block processing timeout: {e:?}");
-					Err(e.into())
-				},
-			}
+			*subscription =
+				recreate_subscription_with_failover(client, "after block processing timeout")
+					.await?;
+			state.last_block_time = std::time::Instant::now();
+			Ok(ListenerAction::BlockProcessingTimeout)
 		},
 	}
 }
@@ -371,7 +403,7 @@ async fn get_block_state(
 	block_hash: polkadot_sdk::sp_core::H256,
 ) -> Result<(Storage, Phase, u32), Error> {
 	let storage_start = std::time::Instant::now();
-	let storage = utils::storage_at(Some(block_hash), client.chain_api()).await?;
+	let storage = utils::storage_at(Some(block_hash), &*client.chain_api().await).await?;
 	let storage_duration = storage_start.elapsed();
 	prometheus::observe_storage_query_duration(storage_duration.as_millis() as f64);
 
@@ -562,6 +594,7 @@ where
 	{
 		let account_info = client
 			.chain_api()
+			.await
 			.storage()
 			.at_latest()
 			.await?
@@ -728,7 +761,7 @@ where
 	T::VoterSnapshotPerBlock: Send + Sync + 'static,
 	T::MaxVotesPerVoter: Send + Sync + 'static,
 {
-	let mut subscription = client.chain_api().blocks().subscribe_finalized().await?;
+	let mut subscription = client.chain_api().await.blocks().subscribe_finalized().await?;
 	let mut state = ListenerState {
 		prev_round: None,
 		prev_phase: None,
@@ -809,7 +842,7 @@ where
 					min_signed_phase_blocks: config.min_signed_phase_blocks,
 					shady: config.shady,
 				};
-				if let Err(e) = process_block::<T>(
+				match process_block::<T>(
 					client.clone(),
 					state,
 					&mut snapshot,
@@ -818,12 +851,14 @@ where
 				)
 				.await
 				{
-					if is_critical_miner_error(&e) {
-						log::error!(target: LOG_TARGET, "Critical miner error - process will exit: {e:?}");
-						return Err(e);
-					} else {
+					Ok(()) => {},
+					Err(e) => {
+						if is_critical_miner_error(&e) {
+							log::error!(target: LOG_TARGET, "Critical miner error - process will exit: {e:?}");
+							return Err(e);
+						}
 						log::warn!(target: LOG_TARGET, "Block processing failed, continuing: {e:?}");
-					}
+					},
 				}
 			},
 			MinerMessage::ClearSnapshots => {
@@ -949,9 +984,10 @@ async fn get_pruneable_era_index(client: &Client) -> Result<(u32, Option<u32>), 
 async fn call_prune_era_step(client: &Client, signer: &Signer, era: u32) -> Result<(), Error> {
 	let tx = runtime::tx().staking().prune_era_step(era);
 
-	let nonce = client.chain_api().tx().account_nonce(signer.account_id()).await?;
+	let chain_api = client.chain_api().await;
+	let nonce = chain_api.tx().account_nonce(signer.account_id()).await?;
 	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
-	let xt = client.chain_api().tx().create_signed(&tx, &**signer, xt_cfg).await?;
+	let xt = chain_api.tx().create_signed(&tx, &**signer, xt_cfg).await?;
 
 	// Wait for finalization to avoid to spam the same exact transaction at the next block, and get
 	// an InvalidTransaction::Stale ("Transaction is outdated") in return.
@@ -1639,7 +1675,7 @@ async fn execute_shady_behavior(
 	// invalid page (to simulate an early failure in the validation)
 	let mut i = 0;
 	let tx_status = loop {
-		let nonce = client.chain_api().tx().account_nonce(signer.account_id()).await?;
+		let nonce = client.chain_api().await.tx().account_nonce(signer.account_id()).await?;
 
 		// Register score only
 		match dynamic::submit_inner(
@@ -1838,9 +1874,10 @@ async fn clear_old_round_data(
 		.multi_block_election_signed()
 		.clear_old_round_data(round, witness_pages);
 
-	let nonce = client.chain_api().tx().account_nonce(signer.account_id()).await?;
+	let chain_api = client.chain_api().await;
+	let nonce = chain_api.tx().account_nonce(signer.account_id()).await?;
 	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
-	let xt = client.chain_api().tx().create_signed(&tx, &**signer, xt_cfg).await?;
+	let xt = chain_api.tx().create_signed(&tx, &**signer, xt_cfg).await?;
 
 	// Submit without waiting for finalization to avoid blocking (fire-and-forget approach)
 	// This prevents potential resource contention with listener task's storage queries
