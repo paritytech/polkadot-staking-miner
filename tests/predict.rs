@@ -30,7 +30,7 @@ fn predict_config_parsing() {
 
 	// Test with output directory
 	let config = PredictConfig::try_parse_from(["predict", "--output-dir", "outputs"]).unwrap();
-	assert_eq!(config.output_dir, "outputs");
+	assert_eq!(config.output_dir, Some("outputs".to_string()));
 
 	// Test with overrides
 	let config =
@@ -59,7 +59,7 @@ fn predict_config_parsing() {
 	.unwrap();
 	assert_eq!(config.desired_validators, Some(50));
 	assert_eq!(config.overrides, Some("data/overrides.json".to_string()));
-	assert_eq!(config.output_dir, "test_outputs");
+	assert_eq!(config.output_dir, Some("test_outputs".to_string()));
 	assert_eq!(
 		config.algorithm,
 		polkadot_staking_miner::commands::types::ElectionAlgorithm::Phragmms

@@ -88,6 +88,8 @@ pub enum Command {
 	Info,
 	/// Run election prediction
 	Predict(commands::types::PredictConfig),
+	/// Start the REST API server
+	Server(commands::types::ServerConfig),
 }
 
 #[tokio::main]
@@ -162,6 +164,11 @@ async fn main() -> Result<(), Error> {
 		Command::Predict(cfg) => {
 			macros::for_multi_block_runtime!(chain, {
 				commands::predict::predict_cmd::<MinerConfig>(client, cfg).boxed()
+			})
+		},
+		Command::Server(cfg) => {
+			macros::for_multi_block_runtime!(chain, {
+				commands::server::server_cmd::<MinerConfig>(client, cfg).boxed()
 			})
 		},
 	};

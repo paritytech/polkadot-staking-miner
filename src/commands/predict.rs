@@ -3,7 +3,10 @@ use polkadot_sdk::pallet_election_provider_multi_block::unsigned::miner::MinerCo
 
 use crate::{
 	client::Client,
-	commands::types::{ElectionDataSource, ElectionOverrides, PredictConfig},
+	commands::types::{
+		ElectionDataSource, ElectionOverrides, NominatorsPrediction, PredictConfig,
+		ValidatorsPrediction,
+	},
 	dynamic::{
 		election_data::{
 			PredictionContext, apply_overrides, build_predictions_from_solution,
@@ -24,6 +27,53 @@ use crate::{
 
 /// Run the election prediction with the given configuration
 pub async fn predict_cmd<T>(client: Client, config: PredictConfig) -> Result<(), Error>
+where
+	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
+	T::Solution: Send,
+	T::Pages: Send,
+	T::TargetSnapshotPerBlock: Send,
+	T::VoterSnapshotPerBlock: Send,
+	T::MaxVotesPerVoter: Send,
+{
+	let output_dir_str = config.output_dir.clone().unwrap_or_else(|| "results".to_string());
+	let (validators_prediction, nominators_prediction) =
+		run_prediction::<T>(client, config).await?;
+
+	// Determine output file paths
+	// Create output directory if it doesn't exist
+	let output_dir = std::path::Path::new(&output_dir_str);
+	std::fs::create_dir_all(output_dir).map_err(|e| {
+		Error::Other(format!("Failed to create output directory {}: {}", output_dir.display(), e))
+	})?;
+
+	let validators_output = output_dir.join("validators_prediction.json");
+	let nominators_output = output_dir.join("nominators_prediction.json");
+	// Save validators prediction
+	write_data_to_json_file(&validators_prediction, &validators_output).await?;
+
+	log::info!(
+		target: LOG_TARGET,
+		"Validators prediction saved to {}",
+		validators_output.display()
+	);
+
+	// Save nominators prediction
+	write_data_to_json_file(&nominators_prediction, &nominators_output).await?;
+
+	log::info!(
+		target: LOG_TARGET,
+		"Nominators prediction saved to {}",
+		nominators_output.display()
+	);
+
+	Ok(())
+}
+
+/// Core prediction logic reusable by CLI and Server
+pub async fn run_prediction<T>(
+	client: Client,
+	config: PredictConfig,
+) -> Result<(ValidatorsPrediction, NominatorsPrediction), Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
 	T::Solution: Send,
@@ -176,32 +226,5 @@ where
 		&prediction_ctx,
 	)?;
 
-	// Determine output file paths
-	// Create output directory if it doesn't exist
-	let output_dir = std::path::Path::new(&config.output_dir);
-	std::fs::create_dir_all(output_dir).map_err(|e| {
-		Error::Other(format!("Failed to create output directory {}: {}", output_dir.display(), e))
-	})?;
-
-	let validators_output = output_dir.join("validators_prediction.json");
-	let nominators_output = output_dir.join("nominators_prediction.json");
-	// Save validators prediction
-	write_data_to_json_file(&validators_prediction, &validators_output).await?;
-
-	log::info!(
-		target: LOG_TARGET,
-		"Validators prediction saved to {}",
-		validators_output.display()
-	);
-
-	// Save nominators prediction
-	write_data_to_json_file(&nominators_prediction, &nominators_output).await?;
-
-	log::info!(
-		target: LOG_TARGET,
-		"Nominators prediction saved to {}",
-		nominators_output.display()
-	);
-
-	Ok(())
+	Ok((validators_prediction, nominators_prediction))
 }
