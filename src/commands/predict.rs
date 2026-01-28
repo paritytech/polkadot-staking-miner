@@ -105,7 +105,7 @@ where
 		voter_snapshot.reverse();
 	}
 
-	log::info!(
+	log::debug!(
 		target: LOG_TARGET,
 		"Mining solution with desired_targets={}, candidates={}, voter pages={}",
 		desired_targets,

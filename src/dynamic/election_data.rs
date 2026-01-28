@@ -54,7 +54,7 @@ pub(crate) fn convert_election_data_to_snapshots<T>(
 where
 	T: MinerConfig<AccountId = AccountId>,
 {
-	log::info!(
+	log::debug!(
 		target: LOG_TARGET,
 		"Converting election data to snapshots (candidates={}, voters={})",
 		candidates.len(),
@@ -64,7 +64,7 @@ where
 	// Extract only accounts from candidates
 	let target_accounts: Vec<AccountId> =
 		candidates.into_iter().map(|(account, _)| account).collect();
-	log::info!(
+	log::trace!(
 		target: LOG_TARGET,
 		"Fetched {} target accounts from candidates",
 		target_accounts.len()
@@ -84,7 +84,7 @@ where
 
 	let per_voter_page = VoterSnapshotPerBlock::get();
 	let total_voters = voters.len();
-	log::info!(
+	log::trace!(
 		target: LOG_TARGET,
 		"Preparing {total_voters} voters for conversion"
 	);
@@ -119,7 +119,7 @@ where
 
 	let n_pages = voter_pages_vec.len();
 
-	log::info!(
+	log::debug!(
 		target: LOG_TARGET,
 		"Converted election data: {} targets, {} voters across {} pages",
 		target_snapshot.len(),

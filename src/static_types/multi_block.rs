@@ -166,8 +166,7 @@ pub mod kusama {
 	impl multi_block::unsigned::miner::MinerConfig for MinerConfig {
 		type AccountId = AccountId;
 		type Solution = NposSolution24;
-		// Using Phragmen for Kusama due to some problems with PhragMMS
-		type Solver = SequentialPhragmen<AccountId, Accuracy, BalancingIterations>;
+		type Solver = DynamicSolver<AccountId, Accuracy, BalancingIterations>;
 		type Pages = Pages;
 		type MaxVotesPerVoter = ConstU32<24>;
 		type MaxWinnersPerPage = MaxWinnersPerPage;

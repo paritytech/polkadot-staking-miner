@@ -258,14 +258,14 @@ where
 	let target_snapshot: TargetSnapshotPageOf<T> =
 		target_snapshot::<T>(n_pages - 1, round, storage).await?;
 
-	log::info!(target: LOG_TARGET, "Fetched {} targets from snapshot", target_snapshot.len());
+	log::trace!(target: LOG_TARGET, "Fetched {} targets from snapshot", target_snapshot.len());
 
 	// Fetch all voter snapshot pages
 	let mut voter_snapshot_paged: Vec<VoterSnapshotPageOf<T>> =
 		Vec::with_capacity(n_pages as usize);
 	for page in 0..n_pages {
 		let voter_page = paged_voter_snapshot::<T>(page, round, storage).await?;
-		log::info!(target: LOG_TARGET, "Fetched {page}/{n_pages} pages of voter snapshot");
+		log::trace!(target: LOG_TARGET, "Fetched {page}/{n_pages} pages of voter snapshot");
 		voter_snapshot_paged.push(voter_page);
 	}
 

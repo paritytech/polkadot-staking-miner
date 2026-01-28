@@ -16,7 +16,7 @@ use subxt::dynamic::Value;
 
 /// Fetch all candidate validators (stash AccountId) with their active stake
 pub(crate) async fn fetch_candidates(storage: &Storage) -> Result<Vec<ValidatorData>, Error> {
-	log::info!(target: LOG_TARGET, "Fetching candidate validators (Staking::Validators keys)");
+	log::debug!(target: LOG_TARGET, "Fetching candidate validators (Staking::Validators keys)");
 
 	let validators_addr = storage_addr(pallet_api::staking::storage::VALIDATORS, vec![]);
 	let mut iter = storage.iter(validators_addr).await?;
@@ -58,7 +58,7 @@ pub(crate) async fn fetch_candidates(storage: &Storage) -> Result<Vec<ValidatorD
 	);
 
 	// Fetch self-stakes concurrently
-	log::info!(target: LOG_TARGET, "Fetching stakes for {} validators...", candidate_accounts.len());
+	log::debug!(target: LOG_TARGET, "Fetching stakes for {} validators...", candidate_accounts.len());
 
 	let mut stake_futures = Vec::with_capacity(candidate_accounts.len());
 
@@ -114,7 +114,7 @@ pub(crate) async fn fetch_candidates(storage: &Storage) -> Result<Vec<ValidatorD
 		stakes.push(result?);
 	}
 
-	log::info!(target: LOG_TARGET, "Fetched stakes for {} validators", stakes.len());
+	log::debug!(target: LOG_TARGET, "Fetched stakes for {} validators", stakes.len());
 
 	let candidates: Vec<ValidatorData> =
 		candidate_accounts.into_iter().zip(stakes.into_iter()).collect();
@@ -126,7 +126,7 @@ pub(crate) async fn fetch_candidates(storage: &Storage) -> Result<Vec<ValidatorD
 
 /// Helper to fetch just the validator keys (Set) for O(1) existence checks
 pub(crate) async fn fetch_validator_keys(storage: &Storage) -> Result<HashSet<AccountId>, Error> {
-	log::info!(target: LOG_TARGET, "Fetching validator keys for existence checks");
+	log::debug!(target: LOG_TARGET, "Fetching validator keys for existence checks");
 	let validators_addr = storage_addr(pallet_api::staking::storage::VALIDATORS, vec![]);
 	let mut iter = storage.iter(validators_addr).await?;
 	let mut keys = HashSet::new();
@@ -141,7 +141,7 @@ pub(crate) async fn fetch_validator_keys(storage: &Storage) -> Result<HashSet<Ac
 			}
 		}
 	}
-	log::info!(target: LOG_TARGET, "Fetched {} validator keys", keys.len());
+	log::debug!(target: LOG_TARGET, "Fetched {} validator keys", keys.len());
 	Ok(keys)
 }
 
@@ -188,7 +188,7 @@ pub(crate) async fn fetch_voter_list(
 	log::info!(target: LOG_TARGET, "Fetching From Voter List");
 
 	// Fetch all bags (ListBags) - store as HashMap with bag_upper as key
-	log::info!(target: LOG_TARGET, "Fetching ListBags...");
+	log::trace!(target: LOG_TARGET, "Fetching ListBags...");
 	let list_bags_addr = storage_addr(pallet_api::voter_list::storage::LIST_BAGS, vec![]);
 	let mut bags_iter = storage.iter(list_bags_addr).await?;
 
@@ -216,10 +216,10 @@ pub(crate) async fn fetch_voter_list(
 		bags.insert(bag_upper, bag);
 	}
 
-	log::info!(target: LOG_TARGET, "Found {} bags", bags.len());
+	log::trace!(target: LOG_TARGET, "Found {} bags", bags.len());
 
 	// Fetch all nodes (ListNodes) - store as HashMap with AccountId as key
-	log::info!(target: LOG_TARGET, "Fetching ListNodes...");
+	log::trace!(target: LOG_TARGET, "Fetching ListNodes...");
 
 	let mut nodes: HashMap<AccountId, VoterNode> = HashMap::new();
 	let list_nodes_addr = storage_addr(pallet_api::voter_list::storage::LIST_NODES, vec![]);
@@ -270,14 +270,14 @@ pub(crate) async fn fetch_voter_list(
 		nodes_count += 1;
 
 		if nodes_count % 5000 == 0 {
-			log::info!(target: LOG_TARGET, "Fetched {nodes_count} nodes...");
+			log::trace!(target: LOG_TARGET, "Fetched {nodes_count} nodes...");
 		}
 	}
 
-	log::info!(target: LOG_TARGET, "Found {} nodes total", nodes.len());
+	log::trace!(target: LOG_TARGET, "Found {} nodes total", nodes.len());
 
 	// Sort bags from highest to lowest score (descending order)
-	log::info!(target: LOG_TARGET, "Sorting bags by score (descending)...");
+	log::trace!(target: LOG_TARGET, "Sorting bags by score (descending)...");
 	let mut sorted_bag_keys: Vec<u64> = bags.keys().copied().collect();
 	sorted_bag_keys.sort_by(|a, b| b.cmp(a)); // Descending order - highest stake first
 
@@ -302,7 +302,7 @@ pub(crate) async fn fetch_voter_list(
 	for bag_upper in sorted_bag_keys {
 		// Check if we've reached the extended voter limit
 		if voters.len() >= extended_voter_limit {
-			log::info!(target: LOG_TARGET, "Reached extended voter limit of {extended_voter_limit}");
+			log::trace!(target: LOG_TARGET, "Reached extended voter limit of {extended_voter_limit}");
 			break;
 		}
 
@@ -396,7 +396,7 @@ pub(crate) async fn fetch_voters(
 	storage: &Storage,
 ) -> Result<Vec<NominatorData>, Error> {
 	// Fetch voters from VoterList (BagsList) with their stakes (already sorted)
-	log::info!(target: LOG_TARGET, "Fetching voters from VoterList...");
+	log::debug!(target: LOG_TARGET, "Fetching voters from VoterList...");
 	let voters = fetch_voter_list(voter_limit, storage).await?;
 
 	log::info!(target: LOG_TARGET, "Fetched {} voters from VoterList", voters.len());
@@ -488,7 +488,7 @@ pub(crate) async fn fetch_voters(
 					}
 					processed_count += BATCH_SIZE.min(total - processed_count); // Approximate
 					if processed_count % 5000 == 0 {
-						log::info!(target: LOG_TARGET, "Processed {processed_count} voters...");
+						log::trace!(target: LOG_TARGET, "Processed {processed_count} voters...");
 					}
 				},
 				Ok(Err(e)) => return Err(e),
