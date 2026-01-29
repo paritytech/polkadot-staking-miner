@@ -267,11 +267,10 @@ where
 	let validators_with_only_self_vote: HashSet<AccountId> = all_voters
 		.iter()
 		.filter(|(nominator, _, targets)| {
-			// validator has only self-vote if:
+			// validator has only self-vote if either:
 			// 1. They are a validator (in active_set)
 			// 2. Their only target is themselves
-			// NOTE: Reverted to your original logic as requested, assuming you want strictly this
-			// behavior.
+
 			active_set.contains(nominator) || (targets.len() == 1 && targets[0] == *nominator)
 		})
 		.map(|(nominator, _, _)| nominator.clone())

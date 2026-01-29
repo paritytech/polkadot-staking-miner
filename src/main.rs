@@ -103,7 +103,11 @@ async fn main() -> Result<(), Error> {
 	// Initialize the timestamp so that if connection hangs, the stall detection alert can fire.
 	prometheus::set_last_block_processing_time();
 
-	let client = Client::new(&uri).await?;
+	// Create client with appropriate backend based on command type
+	let client = match command {
+		Command::Predict(_) => Client::new_with_legacy_backend(&uri).await?,
+		_ => Client::new(&uri).await?,
+	};
 
 	let version_bytes = client
 		.chain_api()

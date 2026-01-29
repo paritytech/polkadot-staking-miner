@@ -123,11 +123,12 @@ pub async fn wait_tx_in_finalized_block(
 }
 
 /// Write data to a JSON file
-pub async fn write_data_to_json_file<T>(data: &T, file_path: &str) -> Result<(), Error>
+pub async fn write_data_to_json_file<T, P>(data: &T, file_path: &P) -> Result<(), Error>
 where
 	T: Serialize,
+	P: AsRef<Path>,
 {
-	let path = Path::new(file_path);
+	let path = file_path.as_ref();
 	if let Some(parent) = path.parent() &&
 		!parent.as_os_str().is_empty()
 	{
@@ -145,11 +146,12 @@ where
 }
 
 /// Read data from a JSON file
-pub async fn read_data_from_json_file<T>(file_path: &str) -> Result<T, Error>
+pub async fn read_data_from_json_file<T, P>(file_path: P) -> Result<T, Error>
 where
 	T: DeserializeOwned,
+	P: AsRef<Path>,
 {
-	let path = Path::new(file_path);
+	let path = file_path.as_ref();
 
 	let mut file = File::open(path)?;
 	let mut content = String::new();
@@ -345,12 +347,11 @@ mod tests {
 	async fn test_read_write_json_file() {
 		let dir = tempfile::tempdir().unwrap();
 		let file_path = dir.path().join("test.json");
-		let file_path_str = file_path.to_str().unwrap();
 
 		let data = vec![1, 2, 3];
-		write_data_to_json_file(&data, file_path_str).await.unwrap();
+		write_data_to_json_file(&data, &file_path).await.unwrap();
 
-		let read_data: Vec<i32> = read_data_from_json_file(file_path_str).await.unwrap();
+		let read_data: Vec<i32> = read_data_from_json_file(&file_path).await.unwrap();
 		assert_eq!(data, read_data);
 	}
 

@@ -185,7 +185,7 @@ pub(crate) async fn fetch_voter_list(
 	// Increase voter limit to have a buffer for filtering ineligible voters later
 	let extended_voter_limit = voter_limit.saturating_add(100);
 
-	log::info!(target: LOG_TARGET, "Fetching From Voter List");
+	log::info!(target: LOG_TARGET, "Fetching From VoterList");
 
 	// Fetch all bags (ListBags) - store as HashMap with bag_upper as key
 	log::trace!(target: LOG_TARGET, "Fetching ListBags...");
@@ -371,7 +371,7 @@ pub(crate) async fn fetch_voter_list(
 
 	log::info!(
 		target: LOG_TARGET,
-		"Voter List Fetch Completed"
+		"VoterList Fetch Completed"
 	);
 	log::info!(
 		target: LOG_TARGET,

@@ -79,7 +79,9 @@ where
 				.map_err(|e| {
 					Error::Other(format!("Failed to fetch Desired Targets from chain: {e}"))
 				})?
-				.expect("Error in fetching desired validators from chain")
+				.ok_or_else(|| {
+					Error::Other("Desired validators not found in chain storage".to_string())
+				})?
 		},
 	};
 
@@ -100,7 +102,10 @@ where
 	let (target_snapshot, mut voter_snapshot) =
 		convert_election_data_to_snapshots::<T>(candidates, nominators)?;
 
-	// Fix the order for staking data source
+	// When fetching from staking data, voters come from BagsList in descending order (highest
+	// stake first). The SDK expects page 0 (lsp) to contain lowest stake voters and page n-1
+	// (msp) to contain highest stake voters. Reversing ensures correct page assignment during
+	// pagination.
 	if matches!(data_source, ElectionDataSource::Staking) {
 		voter_snapshot.reverse();
 	}
@@ -114,7 +119,7 @@ where
 	);
 
 	// Use actual voter page count, not the chain's max pages
-	// Staking data may have added some pages
+	// Staking/Overridden data may have added some pages
 	let n_pages = n_pages.max(voter_snapshot.len() as u32);
 
 	// Mine the solution with timeout to prevent indefinite hanging
@@ -181,7 +186,7 @@ where
 	let validators_output = output_dir.join("validators_prediction.json");
 	let nominators_output = output_dir.join("nominators_prediction.json");
 	// Save validators prediction
-	write_data_to_json_file(&validators_prediction, validators_output.to_str().unwrap()).await?;
+	write_data_to_json_file(&validators_prediction, &validators_output).await?;
 
 	log::info!(
 		target: LOG_TARGET,
@@ -190,7 +195,7 @@ where
 	);
 
 	// Save nominators prediction
-	write_data_to_json_file(&nominators_prediction, nominators_output.to_str().unwrap()).await?;
+	write_data_to_json_file(&nominators_prediction, &nominators_output).await?;
 
 	log::info!(
 		target: LOG_TARGET,
