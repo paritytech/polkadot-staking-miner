@@ -33,7 +33,7 @@ pin-project-lite = "0.2"
 scale-value = "0.18"
 subxt = { version = "0.44.2", features = ["reconnecting-rpc-client"] }
 subxt-rpcs = "0.44.0"
-
+ss58-registry = "1.9"
 
 # polkadot-sdk
 polkadot-sdk = { git = "https://github.com/paritytech/polkadot-sdk", features = [
@@ -61,6 +61,7 @@ once_cell = "1.21"
 anyhow = "1"
 assert_cmd = "2.1"
 regex = "1"
+tempfile = "3.8"
 
 [features]
 integration-tests = []

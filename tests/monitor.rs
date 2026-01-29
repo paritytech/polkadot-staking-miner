@@ -1,7 +1,6 @@
 #![cfg(feature = "integration-tests")]
 //! Integration tests for the multi-block monitor (pallet-election-multi-block).
 //! See nightly.yml for instructions on how to run it compared vs a zombienet setup.
-use assert_cmd::cargo::cargo_bin;
 use polkadot_staking_miner::{
 	prelude::ChainClient,
 	runtime::multi_block::{
@@ -47,7 +46,7 @@ fn run_miner(port: u16, seed: &str, shady: bool) -> KillChildOnDrop {
 	}
 
 	let mut miner = KillChildOnDrop(
-		std::process::Command::new(cargo_bin(env!("CARGO_PKG_NAME")))
+		std::process::Command::new(assert_cmd::cargo::cargo_bin!(env!("CARGO_PKG_NAME")))
 			.stdout(Stdio::piped())
 			.stderr(Stdio::piped())
 			.args(args)

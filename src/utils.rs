@@ -18,14 +18,23 @@ use crate::{
 	client::Client,
 	commands::types::SubmissionStrategy,
 	error::Error,
-	prelude::{ChainClient, Config, Hash, Storage},
+	prelude::{AccountId, ChainClient, Config, Hash, LOG_TARGET, Storage},
 };
 use pin_project_lite::pin_project;
-use polkadot_sdk::{sp_npos_elections, sp_runtime::Perbill};
+use polkadot_sdk::{
+	sp_core::crypto::{Ss58AddressFormat, Ss58Codec},
+	sp_npos_elections,
+	sp_runtime::Perbill,
+};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use ss58_registry::Ss58AddressFormat as RegistryFormat;
 use std::{
+	fs::{self, File},
 	future::Future,
+	io::{BufWriter, Read, Write},
+	path::Path,
 	pin::Pin,
-	task::{Context, Poll},
+	task::{Context as TaskContext, Poll},
 	time::{Duration, Instant},
 };
 use subxt::tx::{TxInBlock, TxProgress};
@@ -47,7 +56,7 @@ where
 {
 	type Output = (Fut::Output, Duration);
 
-	fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+	fn poll(self: Pin<&mut Self>, cx: &mut TaskContext) -> Poll<Self::Output> {
 		let this = self.project();
 		let start = this.start.get_or_insert_with(Instant::now);
 
@@ -74,7 +83,7 @@ pub async fn storage_at(block: Option<Hash>, api: &ChainClient) -> Result<Storag
 	if let Some(block_hash) = block {
 		Ok(api.storage().at(block_hash))
 	} else {
-		api.storage().at_latest().await.map_err(Into::into)
+		Ok(api.storage().at_latest().await?)
 	}
 }
 
@@ -111,6 +120,173 @@ pub async fn wait_tx_in_finalized_block(
 	tx: TxProgress<Config, ChainClient>,
 ) -> Result<TxInBlock<Config, ChainClient>, Error> {
 	tx.wait_for_finalized().await.map_err(Into::into)
+}
+
+/// Write data to a JSON file
+pub async fn write_data_to_json_file<T, P>(data: &T, file_path: &P) -> Result<(), Error>
+where
+	T: Serialize,
+	P: AsRef<Path>,
+{
+	let path = file_path.as_ref();
+	if let Some(parent) = path.parent() &&
+		!parent.as_os_str().is_empty()
+	{
+		fs::create_dir_all(parent)?;
+	}
+
+	let file = File::create(path)?;
+	let mut writer = BufWriter::with_capacity(1024 * 1024, file);
+
+	let json = serde_json::to_string_pretty(data)?;
+	writer.write_all(json.as_bytes())?;
+	writer.flush()?;
+
+	Ok(())
+}
+
+/// Read data from a JSON file
+pub async fn read_data_from_json_file<T, P>(file_path: P) -> Result<T, Error>
+where
+	T: DeserializeOwned,
+	P: AsRef<Path>,
+{
+	let path = file_path.as_ref();
+
+	let mut file = File::open(path)?;
+	let mut content = String::new();
+	file.read_to_string(&mut content)?;
+
+	Ok(serde_json::from_str(&content)?)
+}
+
+/// Chain properties from system_properties RPC call
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChainProperties {
+	token_symbol: Option<String>,
+	token_decimals: Option<u8>,
+}
+
+/// Get the SS58 prefix from the chain
+pub async fn get_ss58_prefix(client: &Client) -> Result<u16, Error> {
+	match crate::dynamic::pallet_api::system::constants::SS58_PREFIX
+		.fetch(&*client.chain_api().await)
+	{
+		Ok(ss58_prefix) => Ok(ss58_prefix),
+		Err(e) => {
+			log::warn!(target: LOG_TARGET, "Failed to fetch SS58 prefix: {e}");
+			log::warn!(target: LOG_TARGET, "Using default SS58 prefix: 0");
+			Ok(0)
+		},
+	}
+}
+
+/// Get block hash from block number using RPC
+pub async fn get_block_hash(client: &Client, block_number: u32) -> Result<Hash, Error> {
+	use subxt_rpcs::{RpcClient, client::RpcParams};
+
+	let mut params = RpcParams::new();
+	params
+		.push(block_number)
+		.map_err(|e| Error::Other(format!("Failed to serialize block number: {e}")))?;
+
+	let endpoint = client.current_endpoint().await;
+	let rpc_client = RpcClient::from_url(endpoint).await?;
+
+	let block_hash: Option<Hash> =
+		rpc_client.request("chain_getBlockHash", params).await.map_err(|e| {
+			Error::Other(format!("Failed to get block hash for block {block_number}: {e}"))
+		})?;
+
+	block_hash.ok_or_else(|| {
+		Error::Other(format!("Block {block_number} not found (may be pruned or invalid)"))
+	})
+}
+
+/// Get chain properties (ss58 prefix, token decimals and symbol) from system_properties RPC
+pub async fn get_chain_properties(client: Client) -> Result<(u16, u8, String), Error> {
+	use subxt_rpcs::{RpcClient, client::RpcParams};
+
+	let endpoint = client.current_endpoint().await;
+	let rpc_client = RpcClient::from_url(endpoint).await?;
+
+	let response: ChainProperties = rpc_client
+		.request("system_properties", RpcParams::new())
+		.await
+		.map_err(|e| Error::Other(format!("Failed to call system_properties RPC: {e}")))?;
+
+	// Extract token decimals
+	let decimals = response.token_decimals.unwrap_or(10); // Default to 10 for most Substrate chains
+
+	// Extract token symbol
+	let symbol = response.token_symbol.unwrap_or("UNIT".to_string()); // Default symbol
+
+	// fetch the ss58 prefix of the chain
+	let ss58_prefix = get_ss58_prefix(&client).await?;
+
+	log::info!(
+		target: LOG_TARGET,
+		"Fetched chain properties: ss_58 prefix={ss58_prefix} token_symbol={symbol}, token_decimals={decimals}"
+	);
+
+	Ok((ss58_prefix, decimals, symbol))
+}
+
+/// Encode an AccountId to SS58 string with chain-specific prefix
+/// Uses ss58-registry to validate the prefix against known networks
+pub fn encode_account_id(account: &AccountId, ss58_prefix: u16) -> String {
+	// Use ss58-registry to validate and get network information
+	let is_known = RegistryFormat::all().iter().any(|entry| {
+		let entry_format: RegistryFormat = (*entry).into();
+		entry_format.prefix() == ss58_prefix
+	});
+
+	if is_known {
+		log::trace!(
+			target: LOG_TARGET,
+			"Encoding with SS58 prefix {ss58_prefix} (validated in registry)"
+		);
+	} else {
+		log::trace!(
+			target: LOG_TARGET,
+			"Encoding with SS58 prefix {ss58_prefix} (custom format, not in registry)"
+		);
+	}
+
+	// Encode using the standard SS58 encoding with the provided prefix
+	// The registry validation above ensures we're aware if it's a known network
+	account
+		.clone()
+		.to_ss58check_with_version(Ss58AddressFormat::custom(ss58_prefix))
+}
+
+/// Convert Plancks to tokens (divide by 10^decimals) and format with token symbol
+pub fn planck_to_token(planck: u128, decimals: u8, symbol: &str) -> String {
+	let divisor = 10_u128.pow(decimals as u32);
+	let whole = planck / divisor;
+	let remainder = planck % divisor;
+
+	let amount_str = if remainder == 0 {
+		whole.to_string()
+	} else {
+		// Format with proper decimal places
+		let remainder_str = format!("{:0>width$}", remainder, width = decimals as usize);
+		// Remove trailing zeros
+		let remainder_trimmed = remainder_str.trim_end_matches('0');
+		if remainder_trimmed.is_empty() {
+			whole.to_string()
+		} else {
+			format!("{whole}.{remainder_trimmed}")
+		}
+	};
+
+	format!("{amount_str} {symbol}")
+}
+
+/// Convert Plancks (u64) to tokens with symbol
+pub fn planck_to_token_u64(planck: u64, decimals: u8, symbol: &str) -> String {
+	planck_to_token(planck as u128, decimals, symbol)
 }
 
 #[cfg(test)]
@@ -164,6 +340,55 @@ mod tests {
 		assert_eq!(
 			SubmissionStrategy::from_str("  percent-better 99   "),
 			Ok(SubmissionStrategy::ClaimBetterThan(Accuracy::from_percent(99)))
+		);
+	}
+
+	#[tokio::test]
+	async fn test_read_write_json_file() {
+		let dir = tempfile::tempdir().unwrap();
+		let file_path = dir.path().join("test.json");
+
+		let data = vec![1, 2, 3];
+		write_data_to_json_file(&data, &file_path).await.unwrap();
+
+		let read_data: Vec<i32> = read_data_from_json_file(&file_path).await.unwrap();
+		assert_eq!(data, read_data);
+	}
+
+	#[test]
+	fn test_planck_to_token() {
+		assert_eq!(planck_to_token(100, 2, "DOT"), "1 DOT");
+		assert_eq!(planck_to_token(100, 0, "DOT"), "100 DOT");
+		assert_eq!(planck_to_token(1234, 3, "DOT"), "1.234 DOT");
+		assert_eq!(planck_to_token(1230, 3, "DOT"), "1.23 DOT");
+		assert_eq!(planck_to_token(5, 2, "DOT"), "0.05 DOT");
+		assert_eq!(planck_to_token(0, 5, "DOT"), "0 DOT");
+	}
+
+	#[test]
+	fn test_planck_to_token_u64() {
+		assert_eq!(planck_to_token_u64(100, 2, "KSM"), "1 KSM");
+		assert_eq!(planck_to_token_u64(123456789, 6, "KSM"), "123.456789 KSM");
+	}
+
+	#[test]
+	fn test_encode_account_id() {
+		// Alice's public key
+		let alice_pub_key = [
+			212, 53, 147, 199, 21, 253, 211, 28, 97, 20, 26, 189, 4, 169, 159, 214, 130, 44, 133,
+			88, 133, 76, 205, 227, 154, 86, 132, 231, 165, 109, 162, 125,
+		];
+		let account = AccountId::new(alice_pub_key);
+
+		// Polkadot prefix (0)
+		assert_eq!(
+			encode_account_id(&account, 0),
+			"15oF4uVJwmo4TdGW7VfQxNLavjCXviqxT9S1MgbjMNHr6Sp5"
+		);
+		// Generic Substrate (42)
+		assert_eq!(
+			encode_account_id(&account, 42),
+			"5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
 		);
 	}
 }

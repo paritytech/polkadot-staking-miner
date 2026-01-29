@@ -11,6 +11,10 @@ pub const DEFAULT_URI: &str = "ws://127.0.0.1:9944";
 pub const DEFAULT_PROMETHEUS_PORT: u16 = 9999;
 /// The logging target.
 pub const LOG_TARGET: &str = "polkadot-staking-miner";
+/// The multi-block logging target.
+pub const MULTI_BLOCK_LOG_TARGET: &str = "polkadot-staking-miner::multi-block";
+/// The staking logging target.
+pub const STAKING_LOG_TARGET: &str = "polkadot-staking-miner::staking";
 
 /// Subxt client used by the staking miner on all chains.
 pub type ChainClient = subxt::OnlineClient<subxt::PolkadotConfig>;

@@ -12,6 +12,7 @@ use std::{
 };
 use subxt::backend::{
 	chain_head::{ChainHeadBackend, ChainHeadBackendBuilder},
+	legacy::LegacyBackend,
 	rpc::reconnecting_rpc_client::{ExponentialBackoff, RpcClient as ReconnectingRpcClient},
 };
 use tokio::sync::RwLock;
@@ -52,7 +53,7 @@ pub struct Client {
 }
 
 impl Client {
-	/// Create a new client from a comma-separated list of RPC endpoints.
+	/// Create a new client from a comma-separated list of RPC endpoints using ChainHeadBackend.
 	///
 	/// The client will try each endpoint in sequence until one connects successfully.
 	/// Multiple endpoints can be specified for failover:
@@ -72,7 +73,38 @@ impl Client {
 			log::info!(target: LOG_TARGET, "RPC endpoint pool: {} endpoint(s)", endpoints.len());
 		}
 
-		let (chain_api, connected_index) = Self::connect_with_failover(&endpoints, 0).await?;
+		let (chain_api, connected_index) =
+			Self::connect_with_failover(&endpoints, 0, false).await?;
+
+		Ok(Self {
+			chain_api: Arc::new(RwLock::new(chain_api)),
+			endpoints: Arc::new(endpoints),
+			current_endpoint_index: Arc::new(AtomicUsize::new(connected_index)),
+			reconnect_generation: Arc::new(AtomicUsize::new(0)),
+		})
+	}
+
+	/// Create a new client from a comma-separated list of RPC endpoints using LegacyBackend.
+	///
+	/// The client will try each endpoint in sequence until one connects successfully.
+	/// Multiple endpoints can be specified for failover:
+	/// "wss://rpc1.example.com,wss://rpc2.example.com"
+	pub async fn new_with_legacy_backend(uris: &str) -> Result<Self, Error> {
+		let endpoints: Vec<String> = uris
+			.split(',')
+			.map(|s| s.trim().to_string())
+			.filter(|s| !s.is_empty())
+			.collect();
+
+		if endpoints.is_empty() {
+			return Err(Error::Other("No RPC endpoints provided".into()));
+		}
+
+		if endpoints.len() > 1 {
+			log::info!(target: LOG_TARGET, "RPC endpoint pool: {} endpoint(s)", endpoints.len());
+		}
+
+		let (chain_api, connected_index) = Self::connect_with_failover(&endpoints, 0, true).await?;
 
 		Ok(Self {
 			chain_api: Arc::new(RwLock::new(chain_api)),
@@ -95,6 +127,7 @@ impl Client {
 	async fn connect_with_failover(
 		endpoints: &[String],
 		start_index: usize,
+		use_legacy: bool,
 	) -> Result<(ChainClient, usize), Error> {
 		let mut last_error = None;
 		let total = endpoints.len();
@@ -112,7 +145,7 @@ impl Client {
 					"attempting to connect to {uri:?} (endpoint {endpoint_num}/{total}, attempt {attempt}/{max_attempts})"
 				);
 
-				match Self::try_connect(uri).await {
+				match Self::try_connect(uri, use_legacy).await {
 					Ok(client) => {
 						if total > 1 {
 							log::info!(
@@ -150,8 +183,8 @@ impl Client {
 	}
 
 	/// Try to connect to a single endpoint with timeout.
-	async fn try_connect(uri: &str) -> Result<ChainClient, Error> {
-		let connect_future = async {
+	async fn try_connect(uri: &str, use_legacy: bool) -> Result<ChainClient, Error> {
+		let connect_future = async move {
 			let reconnecting_rpc = ReconnectingRpcClient::builder()
 				.retry_policy(
 					ExponentialBackoff::from_millis(500).max_delay(Duration::from_secs(10)).take(3),
@@ -160,11 +193,18 @@ impl Client {
 				.await
 				.map_err(|e| Error::Other(format!("Failed to connect: {e:?}")))?;
 
-			let backend: ChainHeadBackend<Config> =
-				ChainHeadBackendBuilder::default().build_with_background_driver(reconnecting_rpc);
-			let chain_api = ChainClient::from_backend(Arc::new(backend)).await?;
-
-			log::info!(target: LOG_TARGET, "Connected to {uri} with ChainHead backend");
+			let chain_api = if use_legacy {
+				let backend = LegacyBackend::builder().build(reconnecting_rpc.clone());
+				let client = ChainClient::from_backend(Arc::new(backend)).await?;
+				log::info!(target: LOG_TARGET, "Connected to {uri} with Legacy backend");
+				client
+			} else {
+				let backend: ChainHeadBackend<Config> = ChainHeadBackendBuilder::default()
+					.build_with_background_driver(reconnecting_rpc);
+				let client = ChainClient::from_backend(Arc::new(backend)).await?;
+				log::info!(target: LOG_TARGET, "Connected to {uri} with ChainHead backend");
+				client
+			};
 
 			Ok::<ChainClient, Error>(chain_api)
 		};
@@ -216,7 +256,7 @@ impl Client {
 
 		// Establish new connection before acquiring write lock
 		let (new_client, connected_idx) =
-			Self::connect_with_failover(&self.endpoints, start_idx).await?;
+			Self::connect_with_failover(&self.endpoints, start_idx, false).await?;
 
 		// Acquire write lock and check if another task already reconnected
 		let mut guard = self.chain_api.write().await;
@@ -254,5 +294,10 @@ impl Client {
 	/// Returns a read guard that must be held while using the API.
 	pub async fn chain_api(&self) -> tokio::sync::RwLockReadGuard<'_, ChainClient> {
 		self.chain_api.read().await
+	}
+
+	/// Get the currently connected endpoint
+	pub async fn current_endpoint(&self) -> String {
+		self.endpoints[self.current_endpoint_index.load(Ordering::Relaxed)].clone()
 	}
 }
