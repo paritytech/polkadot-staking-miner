@@ -104,7 +104,38 @@ macro_rules! for_multi_block_runtime {
     };
 }
 
+/// Macro to mimic a polkadot-sdk runtime parameter type for ElectionAlgorithm
+macro_rules! impl_algorithm_parameter_type {
+	($mod:ident, $name:ident) => {
+		mod $mod {
+			use crate::commands::types::ElectionAlgorithm;
+			use std::sync::atomic::{AtomicU8, Ordering};
+			static VAL: AtomicU8 = AtomicU8::new(0); // 0 = SeqPhragmen, 1 = Phragmms
+			pub struct $name;
+
+			impl $name {
+				pub fn get() -> ElectionAlgorithm {
+					match VAL.load(Ordering::SeqCst) {
+						0 => ElectionAlgorithm::SeqPhragmen,
+						1 => ElectionAlgorithm::Phragmms,
+						_ => unreachable!(),
+					}
+				}
+				pub fn set(val: ElectionAlgorithm) {
+					let v = match val {
+						ElectionAlgorithm::SeqPhragmen => 0,
+						ElectionAlgorithm::Phragmms => 1,
+					};
+					VAL.store(v, Ordering::SeqCst);
+				}
+			}
+		}
+		pub use $mod::$name;
+	};
+}
+
 #[allow(unused)]
 pub(crate) use {
-	for_multi_block_runtime, impl_balancing_config_parameter_type, impl_u32_parameter_type,
+	for_multi_block_runtime, impl_algorithm_parameter_type, impl_balancing_config_parameter_type,
+	impl_u32_parameter_type,
 };

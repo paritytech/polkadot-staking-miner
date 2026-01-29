@@ -10,12 +10,15 @@ use crate::{
 		utils::{decode_error, storage_addr, to_scale_value, tx},
 	},
 	error::Error,
-	prelude::{AccountId, ChainClient, Config, ExtrinsicParamsBuilder, Hash, LOG_TARGET, Storage},
+	prelude::{
+		AccountId, ChainClient, Config, ExtrinsicParamsBuilder, Hash,
+		MULTI_BLOCK_LOG_TARGET as LOG_TARGET, Storage,
+	},
 	runtime::multi_block::{
 		self as runtime, runtime_types::pallet_election_provider_multi_block::types::Phase,
 	},
 	signer::Signer,
-	utils,
+	static_types, utils,
 };
 use codec::Decode;
 use futures::{StreamExt, stream::FuturesUnordered};
@@ -229,6 +232,59 @@ where
 	})
 	.await
 	.map_err(|e| Error::Other(format!("{e:?}")))?
+}
+
+/// Try to fetch the election snapshot from chain storage.
+pub(crate) async fn try_fetch_snapshot<T>(
+	n_pages: u32,
+	round: u32,
+	storage: &Storage,
+) -> Result<(TargetSnapshotPageOf<T>, BoundedVec<VoterSnapshotPageOf<T>, T::Pages>), Error>
+where
+	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
+	T::Solution: Send,
+	T::Pages: Send,
+	T::TargetSnapshotPerBlock: Send,
+	T::VoterSnapshotPerBlock: Send,
+	T::MaxVotesPerVoter: Send,
+{
+	// Validate n_pages
+	let chain_pages = static_types::multi_block::Pages::get();
+	if n_pages != chain_pages {
+		return Err(Error::Other(format!("n_pages must be equal to {chain_pages}")));
+	}
+
+	// Fetch the (single) target snapshot. Use the last page index
+	let target_snapshot: TargetSnapshotPageOf<T> =
+		target_snapshot::<T>(n_pages - 1, round, storage).await?;
+
+	log::trace!(target: LOG_TARGET, "Fetched {} targets from snapshot", target_snapshot.len());
+
+	// Fetch all voter snapshot pages
+	let mut voter_snapshot_paged: Vec<VoterSnapshotPageOf<T>> =
+		Vec::with_capacity(n_pages as usize);
+	for page in 0..n_pages {
+		let voter_page = paged_voter_snapshot::<T>(page, round, storage).await?;
+		log::trace!(target: LOG_TARGET, "Fetched {page}/{n_pages} pages of voter snapshot");
+		voter_snapshot_paged.push(voter_page);
+	}
+
+	log::trace!(
+		target: LOG_TARGET,
+		"Mine_and_submit: election target snap size: {:?}, voter snap size: {:?}",
+		target_snapshot.len(),
+		voter_snapshot_paged.len()
+	);
+
+	let voter_pages: BoundedVec<VoterSnapshotPageOf<T>, T::Pages> =
+		BoundedVec::truncate_from(voter_snapshot_paged);
+
+	log::trace!(
+		target: LOG_TARGET,
+		"Fetched: pages={n_pages}, target_snapshot_len={}, voters_pages_len={}, round={round}",
+		target_snapshot.len(), voter_pages.len()
+	);
+	Ok((target_snapshot, voter_pages))
 }
 
 /// Fetches the target snapshot and all voter snapshots which are missing

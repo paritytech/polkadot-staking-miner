@@ -86,6 +86,8 @@ pub enum Command {
 	Monitor(commands::types::MultiBlockMonitorConfig),
 	/// Check if the staking-miner metadata is compatible to a remote node.
 	Info,
+	/// Run election prediction
+	Predict(commands::types::PredictConfig),
 }
 
 #[tokio::main]
@@ -101,7 +103,11 @@ async fn main() -> Result<(), Error> {
 	// Initialize the timestamp so that if connection hangs, the stall detection alert can fire.
 	prometheus::set_last_block_processing_time();
 
-	let client = Client::new(&uri).await?;
+	// Create client with appropriate backend based on command type
+	let client = match command {
+		Command::Predict(_) => Client::new_with_legacy_backend(&uri).await?,
+		_ => Client::new(&uri).await?,
+	};
 
 	let version_bytes = client
 		.chain_api()
@@ -151,6 +157,11 @@ async fn main() -> Result<(), Error> {
 		Command::Monitor(cfg) => {
 			macros::for_multi_block_runtime!(chain, {
 				commands::multi_block::monitor_cmd::<MinerConfig>(client, cfg).boxed()
+			})
+		},
+		Command::Predict(cfg) => {
+			macros::for_multi_block_runtime!(chain, {
+				commands::predict::predict_cmd::<MinerConfig>(client, cfg).boxed()
 			})
 		},
 	};
@@ -390,7 +401,7 @@ async fn runtime_upgrade_task(client: Client, tx: oneshot::Sender<Error>) {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::commands::types::{MultiBlockMonitorConfig, SubmissionStrategy};
+	use crate::commands::types::{ElectionAlgorithm, MultiBlockMonitorConfig, SubmissionStrategy};
 
 	#[test]
 	fn cli_monitor_works() {
@@ -421,6 +432,7 @@ mod tests {
 					min_signed_phase_blocks: 10, // Default
 					shady: false,                // Default
 					balancing_iterations: 10,    // Default
+					algorithm: ElectionAlgorithm::SeqPhragmen,
 				}),
 			}
 		);
@@ -449,6 +461,7 @@ mod tests {
 				min_signed_phase_blocks: 10, // Default
 				shady: false,                // Default
 				balancing_iterations: 10,    // Default
+				algorithm: ElectionAlgorithm::SeqPhragmen,
 			})
 		);
 	}
@@ -477,6 +490,7 @@ mod tests {
 				min_signed_phase_blocks: 10, // Default
 				shady: false,                // Default
 				balancing_iterations: 10,    // Default
+				algorithm: ElectionAlgorithm::SeqPhragmen,
 			})
 		);
 	}
@@ -505,6 +519,7 @@ mod tests {
 				min_signed_phase_blocks: 5, // Explicitly set
 				shady: false,               // Default
 				balancing_iterations: 10,   // Default
+				algorithm: ElectionAlgorithm::SeqPhragmen,
 			})
 		);
 	}
@@ -532,6 +547,7 @@ mod tests {
 				min_signed_phase_blocks: 10, // Default
 				shady: true,                 // Explicitly set
 				balancing_iterations: 10,    // Default
+				algorithm: ElectionAlgorithm::SeqPhragmen,
 			})
 		);
 	}

@@ -185,6 +185,7 @@ Here are some notable options you can use with the command:
 | `--min-signed-phase-blocks <number>` | Minimum number of blocks required in the signed phase before submitting a solution.                                              | 10              |
 | `--balancing-iterations <number>`    | Number of balancing iterations for the sequential phragmen algorithm. Higher values may produce better balanced solutions at the | 10              |
 |                                      | cost of more computation time.                                                                                                   |                 |
+| `--algorithm <algorithm>`            | Election algorithm to use for mining solutions. Supported: `seq-phragmen`, `phragmms`.                                           | `seq-phragmen`  |
 
 Refer to `--help` for the full list of options.
 
@@ -238,6 +239,176 @@ docker run --rm -it \
 The miner uses the on-chain nonce for a given user to submit solutions, which can lead to nonce
 collisions if multiple miners are running with the same account. This can cause transaction failures
 and potentially result in lost rewards or other issues.
+
+## Predict
+
+The `predict` command allows you to predict validator election outcomes for Substrate-based chains
+without running a full node. It fetches the necessary staking data from the chain and runs the same
+Phragmén algorithm that the chain uses to determine validator sets.
+
+### Basic Usage
+
+```bash
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --do-reduce
+```
+
+### Command Options
+
+| Option                          | Description                                                                                                                   | Default Value      |
+| :------------------------------ | :---------------------------------------------------------------------------------------------------------------------------- | :----------------- |
+| `--desired-validators <number>` | Desired number of validators for the prediction                                                                               | Fetched from chain |
+| `--overrides <path>`            | Path to election overrides JSON file (see format below)                                                                       | None               |
+| `--output-dir <path>`           | Output directory for prediction results                                                                                       | `results`          |
+| `--balancing-iterations <number>`| Number of balancing iterations for the sequential phragmen algorithm. Higher values may produce better balanced solutions at the cost of more computation time. | 10                 |
+| `--do-reduce`            | Reduce the solution to prevent further trimming.                                                                              | `false`             |
+| `--algorithm <algorithm>`       | Election algorithm to use. Supported: `seq-phragmen`, `phragmms`.                                                            | `seq-phragmen`     |
+| `--block-number <number>`       | Block number at which to run the prediction. If not specified, uses the latest block.                                         | Latest block       |
+
+### Examples
+
+#### Basic Prediction
+
+```bash
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --do-reduce
+```
+
+#### With Desired Validators
+
+```bash
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --desired-validators 50 --do-reduce
+```
+
+#### Using Election Overrides File
+
+```bash
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --overrides overrides.json
+```
+
+#### Prediction at a Specific Block
+
+```bash
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --block-number 13196110 --do-reduce
+```
+
+#### Run Prediction with reduction
+
+```bash
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --do-reduce
+```
+
+#### Run Prediction with PhragMMS algorithm
+
+```bash
+cargo run -- --uri wss://westend-asset-hub-rpc.polkadot.io predict --algorithm phragmms
+```
+
+### Output Files
+
+The tool generates the following JSON files in the specified output directory:
+
+1. **`validators_prediction.json`**: Contains elected validators with their stake information
+2. **`nominators_prediction.json`**: Contains nominator allocations and validator support
+
+#### Validators Prediction Format
+
+```json
+{
+  "metadata": {
+    "timestamp": "1765799538",
+    "desired_validators": 600,
+    "round": 40,
+    "block_number": 10803423,
+    "solution_score": {
+      "minimal_stake": 11797523289886283,
+      "sum_stake": 8372189060111758480,
+      "sum_stake_squared": 117584540059969491964159919300216042
+    },
+    "data_source": "snapshot"
+  },
+  "results": [
+    {
+      "account": "15roBmbe5NmRXb4imfmhKxSjH8k9J5xtHSrvYJKpmmCLoPqD",
+      "total_stake": "2372626.3933261476 DOT",
+      "self_stake": "0 DOT",
+      "nominator_count": 2,
+      "nominators": [
+        {
+          "address": "121GCLDNk9ErAkCovjjuF3npDB3veo3i3myY6a5v2yNEgrZw",
+          "allocated_stake": "769476 DOT"
+        },
+        {
+          "address": "14mtWxmkUHsWqJLxMiRR8qrHTHyck712E5yjWpnxPBEh8Acb",
+          "allocated_stake": "135680 DOT"
+        },
+      ]
+    }
+  ]
+}
+```
+
+#### Nominators Prediction Format
+
+```json
+{
+  "nominators": [
+    {
+      "address": "15VArSaLFf3r9MzyQjcNTexjPoRDJuVVkqUmqtuUuBcPCYrX",
+      "stake": "447.2323363908 DOT",
+      "active_validators": [
+        {
+          "validator": "15ZvLonEseaWZNy8LDkXXj3Y8bmAjxCjwvpy4pXWSL4nGSBs",
+          "allocated_stake": "447.2323363908 DOT"
+        }
+      ],
+      "inactive_validators": [
+        "1627VVB5gtHiseCV8ZdffF7P3bWrLMkU92Q6u3LsG8tGuB63"
+      ],
+      "waiting_validators": [
+        "13K6QTYBPMUFTbhZzqToKcfCiWbt4wDPHr3rUPyUessiPR61",
+        "15rb4HVycC1KLHsdaSdV1x2TJAmUkD7PhubmhL3PnGv7RiGY"
+      ]
+    }
+  ]
+}
+```
+
+### Election Overrides File Format
+
+When using `--overrides`, the file should have the following JSON structure:
+
+```json
+{
+  "candidates_include": ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG"],
+  "candidates_exclude": [],
+  "voters_include": [
+    ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG", 1000000, ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG"]]
+  ],
+  "voters_exclude": []
+}
+```
+
+**Note:** Override file paths can be nested (e.g., `data/elections/overrides.json`). The tool will
+automatically resolve relative paths from the current working directory.
+
+### How Predict Command Works
+
+1. **Data Source**: The tool first tries to fetch data from the chain's snapshot (if available),
+   then falls back to the staking pallet. 
+
+2. **Overrides Application**: If `--overrides` is provided, the tool applies the specified modifications to the fetched candidates and voters:
+   - (1) Add candidates that may not exist on-chain.
+   - (2) Remove specific candidates from the election.
+   - (3) Add or override voters with custom stake amounts.
+   - (4) Remove specific voters from the election.
+
+3. **Election Algorithm**: Runs the same Phragmén algorithm (`seq_phragmen`) used by Substrate chains
+   to determine:
+   - Which validators would be elected
+   - Stake distribution among validators
+   - Nominator allocations to validators
+
+4. **Output Generation**: Creates detailed JSON files with predictions, including validator and
+   nominator perspectives.
 
 ## Update metadata
 
