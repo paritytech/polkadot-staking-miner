@@ -3,7 +3,7 @@ use crate::{
 	client::Client,
 	commands::{
 		predict::run_prediction,
-		types::{PredictConfig, ServerConfig},
+		types::{PredictConfig, ServerConfig, SimulateResponse, SimulateRunParameters},
 	},
 	error::Error,
 	prelude::{AccountId, LOG_TARGET},
@@ -56,13 +56,26 @@ where
 
 			log::info!(target: LOG_TARGET, "Received /simulate request with config: {predict_config:?}");
 
-			match run_prediction::<T>(client, predict_config).await {
+			match run_prediction::<T>(client, predict_config.clone()).await {
 				Ok((validators, nominators)) => {
-					let response_json = serde_json::json!({
-						"validators": validators,
-						"nominators": nominators,
-					});
-					let response_body = serde_json::to_vec(&response_json).unwrap();
+					// Build run_parameters with actual values used
+					let metadata = &validators.metadata;
+					let run_parameters = SimulateRunParameters {
+						block_number: metadata.block_number,
+						desired_validators: metadata.desired_validators,
+						balancing_iterations: predict_config.balancing_iterations,
+						do_reduce: predict_config.do_reduce,
+						algorithm: predict_config.algorithm,
+						overrides: predict_config.overrides,
+					};
+
+					let response = SimulateResponse {
+						run_parameters,
+						active_validators: validators,
+						nominators,
+					};
+
+					let response_body = serde_json::to_vec(&response).unwrap();
 
 					Ok(Response::builder()
 						.status(200)

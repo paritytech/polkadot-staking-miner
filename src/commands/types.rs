@@ -246,3 +246,27 @@ pub enum ElectionDataSource {
 	Snapshot,
 	Staking,
 }
+
+// ============================================================================
+// API Response Types
+// ============================================================================
+
+/// Run parameters used for the simulation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimulateRunParameters {
+	pub block_number: u32,
+	pub desired_validators: u32,
+	pub balancing_iterations: usize,
+	pub do_reduce: bool,
+	pub algorithm: ElectionAlgorithm,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub overrides: Option<String>,
+}
+
+/// Response for the /simulate endpoint
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimulateResponse {
+	pub run_parameters: SimulateRunParameters,
+	pub active_validators: ValidatorsPrediction,
+	pub nominators: NominatorsPrediction,
+}

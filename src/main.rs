@@ -107,7 +107,7 @@ async fn main() -> Result<(), Error> {
 
 	// Create client with appropriate backend based on command type
 	let client = match command {
-		Command::Predict(_) => Client::new_with_legacy_backend(&uri).await?,
+		Command::Predict(_) | Command::Server(_) => Client::new_with_legacy_backend(&uri).await?,
 		_ => Client::new(&uri).await?,
 	};
 
