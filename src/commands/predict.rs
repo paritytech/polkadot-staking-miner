@@ -3,15 +3,9 @@ use polkadot_sdk::pallet_election_provider_multi_block::unsigned::miner::MinerCo
 
 use crate::{
 	client::Client,
-	commands::types::{
-		ElectionDataSource, ElectionOverrides, NominatorsPrediction, PredictConfig,
-		ValidatorsPrediction,
-	},
+	commands::types::{NominatorsPrediction, PredictConfig, ValidatorsPrediction},
 	dynamic::{
-		election_data::{
-			PredictionContext, apply_overrides, build_predictions_from_solution,
-			convert_election_data_to_snapshots, get_election_data,
-		},
+		election_data::{PredictionContext, build_predictions_from_solution, fetch_snapshots},
 		multi_block::mine_solution,
 		update_metadata_constants,
 	},
@@ -19,10 +13,7 @@ use crate::{
 	prelude::{AccountId, LOG_TARGET},
 	runtime::multi_block::{self as runtime},
 	static_types::multi_block::Pages,
-	utils::{
-		TimedFuture, get_block_hash, get_chain_properties, read_data_from_json_file,
-		write_data_to_json_file,
-	},
+	utils::{TimedFuture, get_block_hash, get_chain_properties, write_data_to_json_file},
 };
 
 /// Run the election prediction with the given configuration
@@ -135,30 +126,8 @@ where
 		},
 	};
 
-	// Fetch election data
-	let (candidates, nominators, data_source) =
-		get_election_data::<T>(n_pages, current_round, storage).await?;
-
-	// Apply overrides if provided
-	let (candidates, nominators) = if let Some(overrides_path) = &config.overrides {
-		log::info!(target: LOG_TARGET, "Applying overrides from {overrides_path}");
-		let overrides: ElectionOverrides = read_data_from_json_file(overrides_path).await?;
-		apply_overrides(candidates, nominators, overrides)?
-	} else {
-		(candidates, nominators)
-	};
-
-	// Convert raw data to snapshots
-	let (target_snapshot, mut voter_snapshot) =
-		convert_election_data_to_snapshots::<T>(candidates, nominators)?;
-
-	// When fetching from staking data, voters come from BagsList in descending order (highest
-	// stake first). The SDK expects page 0 (lsp) to contain lowest stake voters and page n-1
-	// (msp) to contain highest stake voters. Reversing ensures correct page assignment during
-	// pagination.
-	if matches!(data_source, ElectionDataSource::Staking) {
-		voter_snapshot.reverse();
-	}
+	let (target_snapshot, voter_snapshot, data_source) =
+		fetch_snapshots::<T>(n_pages, current_round, &storage, config.overrides).await?;
 
 	log::debug!(
 		target: LOG_TARGET,

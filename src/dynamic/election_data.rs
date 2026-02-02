@@ -28,7 +28,7 @@ use crate::{
 	error::Error,
 	prelude::{AccountId, LOG_TARGET, Storage},
 	static_types::multi_block::VoterSnapshotPerBlock,
-	utils::{encode_account_id, planck_to_token, planck_to_token_u64},
+	utils::{encode_account_id, planck_to_token, planck_to_token_u64, read_data_from_json_file},
 };
 
 use crate::dynamic::multi_block::try_fetch_snapshot;
@@ -50,6 +50,7 @@ pub struct PredictionContext<'a> {
 pub(crate) fn convert_election_data_to_snapshots<T>(
 	candidates: Vec<ValidatorData>,
 	voters: Vec<NominatorData>,
+	data_source: ElectionDataSource,
 ) -> Result<(TargetSnapshotPageOf<T>, Vec<VoterSnapshotPageOf<T>>), Error>
 where
 	T: MinerConfig<AccountId = AccountId>,
@@ -126,6 +127,14 @@ where
 		total_voters,
 		n_pages
 	);
+
+	// When fetching from staking data, voters come from BagsList in descending order (highest
+	// stake first). The SDK expects page 0 (lsp) to contain lowest stake voters and page n-1
+	// (msp) to contain highest stake voters. Reversing ensures correct page assignment during
+	// pagination.
+	if matches!(data_source, ElectionDataSource::Staking) {
+		voter_pages_vec.reverse();
+	}
 
 	Ok((target_snapshot, voter_pages_vec))
 }
@@ -385,7 +394,8 @@ where
 	Ok((validators_prediction, nominators_prediction))
 }
 
-/// Fetch snapshots from chain or synthesize them from staking storage when snapshot is unavailable.
+/// Fetch snapshot raw data from chain or synthesize from staking storage when snapshot is
+/// unavailable.
 pub(crate) async fn get_election_data<T>(
 	n_pages: u32,
 	round: u32,
@@ -437,6 +447,41 @@ where
 			Ok((candidates, voters, ElectionDataSource::Staking))
 		},
 	}
+}
+
+/// Fetch snapshots from chain or synthesize them from staking storage when snapshot is unavailable.
+pub(crate) async fn fetch_snapshots<T>(
+	n_pages: u32,
+	current_round: u32,
+	storage: &Storage,
+	overrides: Option<String>,
+) -> Result<(TargetSnapshotPageOf<T>, Vec<VoterSnapshotPageOf<T>>, ElectionDataSource), Error>
+where
+	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
+	T::Solution: Send,
+	T::Pages: Send,
+	T::TargetSnapshotPerBlock: Send,
+	T::VoterSnapshotPerBlock: Send,
+	T::MaxVotesPerVoter: Send,
+{
+	// Fetch election data
+	let (candidates, nominators, data_source) =
+		get_election_data::<T>(n_pages, current_round, storage.clone()).await?;
+
+	// Apply overrides if provided
+	let (candidates, nominators) = if let Some(overrides_path) = &overrides {
+		log::info!(target: LOG_TARGET, "Applying overrides from {overrides_path}");
+		let overrides: ElectionOverrides = read_data_from_json_file(overrides_path).await?;
+		apply_overrides(candidates, nominators, overrides)?
+	} else {
+		(candidates, nominators)
+	};
+
+	// Convert raw data to snapshots
+	let (target_snapshot, voter_snapshot) =
+		convert_election_data_to_snapshots::<T>(candidates, nominators, data_source.clone())?;
+
+	Ok((target_snapshot, voter_snapshot, data_source))
 }
 
 #[cfg(test)]

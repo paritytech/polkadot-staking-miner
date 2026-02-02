@@ -248,7 +248,7 @@ pub enum ElectionDataSource {
 }
 
 // ============================================================================
-// API Response Types
+// Simulate Endpoint Types
 // ============================================================================
 
 /// Run parameters used for the simulation
@@ -265,8 +265,36 @@ pub struct SimulateRunParameters {
 
 /// Response for the /simulate endpoint
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SimulateResponse {
+pub struct SimulateResult {
 	pub run_parameters: SimulateRunParameters,
 	pub active_validators: ValidatorsPrediction,
 	pub nominators: NominatorsPrediction,
+}
+
+// ============================================================================
+// Snapshot Endpoint Types
+// ============================================================================
+
+/// Snapshot configuration metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SnapshotConfig {
+	pub block_number: u32,
+	pub round: u32,
+	pub data_source: String,
+}
+
+/// Nominator in snapshot (raw data)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SnapshotNominator {
+	pub account: String,
+	pub stake: String, // Value in planck
+	pub targets: Vec<String>,
+}
+
+/// Snapshot response data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SnapshotResult {
+	pub validators: Vec<String>,
+	pub nominators: Vec<SnapshotNominator>,
+	pub config: SnapshotConfig,
 }
