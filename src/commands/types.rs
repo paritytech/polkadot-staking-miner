@@ -107,6 +107,23 @@ pub struct MultiBlockMonitorConfig {
 }
 
 /// CLI configuration for election prediction
+/// Path or raw data for election overrides
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum OverridesConfig {
+	/// Path to a JSON file containing overrides
+	Path(String),
+	/// Raw overrides data
+	Data(ElectionOverrides),
+}
+
+impl std::str::FromStr for OverridesConfig {
+	type Err = std::convert::Infallible;
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		Ok(OverridesConfig::Path(s.to_string()))
+	}
+}
+
 #[derive(Debug, Clone, clap::Parser, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct PredictConfig {
@@ -138,10 +155,10 @@ pub struct PredictConfig {
 	#[serde(default)]
 	pub block_number: Option<u32>,
 
-	/// Path to election overrides JSON file
+	/// Path to election overrides JSON file (CLI) or raw JSON overrides (API)
 	#[clap(long)]
 	#[serde(default)]
-	pub overrides: Option<String>,
+	pub overrides: Option<OverridesConfig>,
 
 	/// Election algorithm to use.
 	#[clap(long, value_enum, default_value_t = ElectionAlgorithm::SeqPhragmen)]
@@ -228,7 +245,7 @@ pub(crate) type ValidatorData = (AccountId, u128);
 // ============================================================================
 
 /// JSON format for election overrides
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ElectionOverrides {
 	#[serde(default)]
 	pub candidates_include: Vec<String>,
@@ -260,14 +277,14 @@ pub struct SimulateRunParameters {
 	pub do_reduce: bool,
 	pub algorithm: ElectionAlgorithm,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	pub overrides: Option<String>,
+	pub overrides: Option<OverridesConfig>,
 }
 
 /// Response for the /simulate endpoint
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimulateResult {
 	pub run_parameters: SimulateRunParameters,
-	pub active_validators: ValidatorsPrediction,
+	pub validators: ValidatorsPrediction,
 	pub nominators: NominatorsPrediction,
 }
 

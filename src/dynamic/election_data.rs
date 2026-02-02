@@ -20,8 +20,8 @@ use crate::{
 		multi_block::types::{TargetSnapshotPageOf, Voter, VoterSnapshotPageOf},
 		types::{
 			ElectionDataSource, ElectionOverrides, NominatorAllocation, NominatorData,
-			NominatorPrediction, NominatorsPrediction, PredictionMetadata, ValidatorData,
-			ValidatorInfo, ValidatorStakeAllocation, ValidatorsPrediction,
+			NominatorPrediction, NominatorsPrediction, OverridesConfig, PredictionMetadata,
+			ValidatorData, ValidatorInfo, ValidatorStakeAllocation, ValidatorsPrediction,
 		},
 	},
 	dynamic::staking::{fetch_candidates, fetch_voters},
@@ -454,7 +454,7 @@ pub(crate) async fn fetch_snapshots<T>(
 	n_pages: u32,
 	current_round: u32,
 	storage: &Storage,
-	overrides: Option<String>,
+	overrides: Option<OverridesConfig>,
 ) -> Result<(TargetSnapshotPageOf<T>, Vec<VoterSnapshotPageOf<T>>, ElectionDataSource), Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
@@ -469,10 +469,18 @@ where
 		get_election_data::<T>(n_pages, current_round, storage.clone()).await?;
 
 	// Apply overrides if provided
-	let (candidates, nominators) = if let Some(overrides_path) = &overrides {
-		log::info!(target: LOG_TARGET, "Applying overrides from {overrides_path}");
-		let overrides: ElectionOverrides = read_data_from_json_file(overrides_path).await?;
-		apply_overrides(candidates, nominators, overrides)?
+	let (candidates, nominators) = if let Some(overrides_config) = overrides {
+		let overrides_to_apply = match overrides_config {
+			OverridesConfig::Path(path) => {
+				log::info!(target: LOG_TARGET, "Applying overrides from {path}");
+				read_data_from_json_file(&path).await?
+			},
+			OverridesConfig::Data(data) => {
+				log::info!(target: LOG_TARGET, "Applying overrides");
+				data
+			},
+		};
+		apply_overrides(candidates, nominators, overrides_to_apply)?
 	} else {
 		(candidates, nominators)
 	};

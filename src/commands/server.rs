@@ -131,7 +131,7 @@ where
 					let result = serde_json::json!({
 						"result": SimulateResult {
 							run_parameters,
-							active_validators: validators,
+							validators,
 							nominators,
 						}
 					});
