@@ -262,3 +262,23 @@ fn parse_query_param(query: &str, param_name: &str) -> Option<String> {
 		}
 	})
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_parse_query_param() {
+		let query = "block=123&other=abc";
+		assert_eq!(parse_query_param(query, "block"), Some("123".to_string()));
+		assert_eq!(parse_query_param(query, "other"), Some("abc".to_string()));
+		assert_eq!(parse_query_param(query, "nonexistent"), None);
+
+		let empty_query = "";
+		assert_eq!(parse_query_param(empty_query, "block"), None);
+
+		let malformed = "block&other=abc";
+		assert_eq!(parse_query_param(malformed, "block"), None);
+		assert_eq!(parse_query_param(malformed, "other"), Some("abc".to_string()));
+	}
+}

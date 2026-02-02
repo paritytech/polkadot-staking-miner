@@ -1,7 +1,7 @@
 //! Tests for the predict command
 
 use assert_cmd::Command;
-use polkadot_staking_miner::commands::types::PredictConfig;
+use polkadot_staking_miner::commands::types::{OverridesConfig, PredictConfig};
 use std::fs;
 use tempfile::TempDir;
 
@@ -35,7 +35,7 @@ fn predict_config_parsing() {
 	// Test with overrides
 	let config =
 		PredictConfig::try_parse_from(["predict", "--overrides", "overrides.json"]).unwrap();
-	assert_eq!(config.overrides, Some("overrides.json".to_string()));
+	assert_eq!(config.overrides, Some(OverridesConfig::Path("overrides.json".to_string())));
 
 	// Test with algorithm
 	let config = PredictConfig::try_parse_from(["predict", "--algorithm", "phragmms"]).unwrap();
@@ -58,7 +58,7 @@ fn predict_config_parsing() {
 	])
 	.unwrap();
 	assert_eq!(config.desired_validators, Some(50));
-	assert_eq!(config.overrides, Some("data/overrides.json".to_string()));
+	assert_eq!(config.overrides, Some(OverridesConfig::Path("data/overrides.json".to_string())));
 	assert_eq!(config.output_dir, Some("test_outputs".to_string()));
 	assert_eq!(
 		config.algorithm,
