@@ -10,7 +10,7 @@ use crate::{
 	},
 	dynamic::election_data::fetch_snapshots,
 	error::Error,
-	prelude::{AccountId, LOG_TARGET},
+	prelude::{AccountId, SERVER_LOG_TARGET as LOG_TARGET},
 	runtime::multi_block::{self as runtime},
 	static_types::multi_block::Pages,
 	utils::{encode_account_id, get_block_hash, get_ss58_prefix},
@@ -90,22 +90,12 @@ where
 
 			let body_bytes = match req.collect().await {
 				Ok(collected) => collected.to_bytes(),
-				Err(e) => {
-					return Ok(Response::builder()
-						.status(400)
-						.body(Body::from(format!("Failed to read body: {e}")))
-						.unwrap());
-				},
+				Err(e) => return error_response(400, format!("Failed to read body: {e}")),
 			};
 
 			let mut predict_config: PredictConfig = match serde_json::from_slice(&body_bytes) {
 				Ok(config) => config,
-				Err(e) => {
-					return Ok(Response::builder()
-						.status(400)
-						.body(Body::from(format!("Invalid JSON: {e}")))
-						.unwrap());
-				},
+				Err(e) => return error_response(400, format!("Invalid JSON: {e}")),
 			};
 
 			// Override block number if provided via query param
@@ -128,28 +118,17 @@ where
 						overrides: predict_config.overrides,
 					};
 
-					let result = serde_json::json!({
+					json_response(&serde_json::json!({
 						"result": SimulateResult {
 							run_parameters,
 							validators,
 							nominators,
 						}
-					});
-
-					let response_body = serde_json::to_vec(&result).unwrap();
-
-					Ok(Response::builder()
-						.status(200)
-						.header(CONTENT_TYPE, "application/json")
-						.body(Body::from(response_body))
-						.unwrap())
+					}))
 				},
 				Err(e) => {
 					log::error!(target: LOG_TARGET, "Prediction failed: {e:?}");
-					Ok(Response::builder()
-						.status(500)
-						.body(Body::from(format!("Prediction failed: {e:?}")))
-						.unwrap())
+					error_response(500, format!("Prediction failed: {e:?}"))
 				},
 			}
 		},
@@ -160,29 +139,60 @@ where
 				parse_query_param(query, "block").and_then(|s| s.parse::<u32>().ok());
 
 			match fetch_snapshot_data::<T>(client, query_block_number).await {
-				Ok(snapshot_data) => {
-					let result = serde_json::json!({
-						"result": snapshot_data
-					});
-					let response_body = serde_json::to_vec(&result).unwrap();
-					Ok(Response::builder()
-						.status(200)
-						.header(CONTENT_TYPE, "application/json")
-						.body(Body::from(response_body))
-						.unwrap())
-				},
+				Ok(snapshot_data) => json_response(&serde_json::json!({ "result": snapshot_data })),
 				Err(e) => {
 					log::error!(target: LOG_TARGET, "Snapshot fetch failed: {e:?}");
-					Ok(Response::builder()
-						.status(500)
-						.body(Body::from(format!("Snapshot fetch failed: {e:?}")))
-						.unwrap())
+					error_response(500, format!("Snapshot fetch failed: {e:?}"))
 				},
 			}
 		},
 
-		_ => Ok(Response::builder().status(404).body(Body::from("Not Found")).unwrap()),
+		_ => error_response(404, "Not Found".to_string()),
 	}
+}
+
+/// Create a JSON response safely
+fn json_response(result: &serde_json::Value) -> Result<Response<Body>, hyper::Error> {
+	match serde_json::to_vec(result) {
+		Ok(body) => Ok(Response::builder()
+			.status(200)
+			.header(CONTENT_TYPE, "application/json")
+			.body(Body::from(body))
+			.unwrap_or_else(|e| {
+				log::error!(target: LOG_TARGET, "Failed to build JSON response: {e}");
+				Response::builder()
+					.status(500)
+					.header(CONTENT_TYPE, "application/json")
+					.body(Body::from("{\"error\": \"Internal Server Error\"}"))
+					.unwrap()
+			})),
+		Err(e) => {
+			log::error!(target: LOG_TARGET, "Failed to serialize JSON: {e}");
+			error_response(500, format!("Serialization error: {e}"))
+		},
+	}
+}
+
+/// Create an error response safely
+fn error_response(status: u16, message: String) -> Result<Response<Body>, hyper::Error> {
+	let body = serde_json::json!({ "error": message });
+	let body_bytes = serde_json::to_vec(&body).unwrap_or_else(|_| {
+		// Fallback for extreme cases where serialization fails
+		b"{\"error\": \"Internal Server Error\"}".to_vec()
+	});
+
+	Ok(Response::builder()
+		.status(status)
+		.header(CONTENT_TYPE, "application/json")
+		.body(Body::from(body_bytes))
+		.unwrap_or_else(|e| {
+			log::error!(target: LOG_TARGET, "Failed to build error response: {e}");
+			Response::builder()
+				.status(500)
+				.header(CONTENT_TYPE, "application/json")
+				.body(Body::from("{\"error\": \"Internal Server Error\"}"))
+				.unwrap()
+		}))
 }
 
 async fn fetch_snapshot_data<T>(
