@@ -88,6 +88,8 @@ pub enum Command {
 	Info,
 	/// Run election prediction
 	Predict(commands::types::PredictConfig),
+	/// Start the REST API server
+	Server(commands::types::ServerConfig),
 }
 
 #[tokio::main]
@@ -105,7 +107,7 @@ async fn main() -> Result<(), Error> {
 
 	// Create client with appropriate backend based on command type
 	let client = match command {
-		Command::Predict(_) => Client::new_with_legacy_backend(&uri).await?,
+		Command::Predict(_) | Command::Server(_) => Client::new_with_legacy_backend(&uri).await?,
 		_ => Client::new(&uri).await?,
 	};
 
@@ -162,6 +164,11 @@ async fn main() -> Result<(), Error> {
 		Command::Predict(cfg) => {
 			macros::for_multi_block_runtime!(chain, {
 				commands::predict::predict_cmd::<MinerConfig>(client, cfg).boxed()
+			})
+		},
+		Command::Server(cfg) => {
+			macros::for_multi_block_runtime!(chain, {
+				commands::server::server_cmd::<MinerConfig>(client, cfg).boxed()
 			})
 		},
 	};
