@@ -2,4 +2,5 @@
 
 pub mod multi_block;
 pub mod predict;
+pub mod server;
 pub mod types;

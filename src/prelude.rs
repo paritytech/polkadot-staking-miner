@@ -15,6 +15,8 @@ pub const LOG_TARGET: &str = "polkadot-staking-miner";
 pub const MULTI_BLOCK_LOG_TARGET: &str = "polkadot-staking-miner::multi-block";
 /// The staking logging target.
 pub const STAKING_LOG_TARGET: &str = "polkadot-staking-miner::staking";
+/// The server logging target.
+pub const SERVER_LOG_TARGET: &str = "polkadot-staking-miner::server";
 
 /// Subxt client used by the staking miner on all chains.
 pub type ChainClient = subxt::OnlineClient<subxt::PolkadotConfig>;

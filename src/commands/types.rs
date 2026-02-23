@@ -106,8 +106,25 @@ pub struct MultiBlockMonitorConfig {
 	pub algorithm: ElectionAlgorithm,
 }
 
+/// Path or raw data for election overrides
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum OverridesConfig {
+	/// Path to a JSON file containing overrides
+	Path(String),
+	/// Raw overrides data
+	Data(ElectionOverrides),
+}
+
+impl std::str::FromStr for OverridesConfig {
+	type Err = std::convert::Infallible;
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		Ok(OverridesConfig::Path(s.to_string()))
+	}
+}
+
 /// CLI configuration for election prediction
-#[derive(Debug, Clone, clap::Parser)]
+#[derive(Debug, Clone, clap::Parser, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct PredictConfig {
 	/// Desired number of validators for the prediction
@@ -117,88 +134,111 @@ pub struct PredictConfig {
 
 	/// Output directory for prediction results
 	#[clap(long, default_value = "results")]
-	pub output_dir: String,
+	#[serde(skip)]
+	pub output_dir: Option<String>,
 
 	/// Number of balancing iterations for the sequential phragmen algorithm.
 	/// Higher values may produce better balanced solutions at the cost of more computation time.
 	#[clap(long, default_value_t = 10)]
+	#[serde(default = "default_balancing_iterations")]
 	pub balancing_iterations: usize,
 
 	/// Reduce the solution to prevent further trimming.
 	/// [default: false]
 	#[clap(long, default_value_t = false)]
+	#[serde(default)]
 	pub do_reduce: bool,
 
 	/// Block number at which to run the prediction.
 	/// [If omitted, uses the latest block]
 	#[clap(long)]
+	#[serde(default)]
 	pub block_number: Option<u32>,
 
-	/// Path to election overrides JSON file
+	/// Path to election overrides JSON file (CLI) or raw JSON overrides (API)
 	#[clap(long)]
-	pub overrides: Option<String>,
+	#[serde(default)]
+	pub overrides: Option<OverridesConfig>,
 
 	/// Election algorithm to use.
 	#[clap(long, value_enum, default_value_t = ElectionAlgorithm::SeqPhragmen)]
+	#[serde(default)]
 	pub algorithm: ElectionAlgorithm,
+}
+
+fn default_balancing_iterations() -> usize {
+	10
+}
+
+/// CLI configuration for the server command
+#[derive(Debug, Clone, clap::Parser)]
+#[cfg_attr(test, derive(PartialEq))]
+pub struct ServerConfig {
+	/// The port to listen on for REST API requests.
+	#[clap(long, short, env = "PORT", default_value_t = 8080)]
+	pub port: u16,
+
+	/// The address to listen on for REST API requests.
+	#[clap(long, short, default_value = "127.0.0.1")]
+	pub listen: String,
 }
 
 /// Validator prediction output
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ValidatorsPrediction {
-	pub(crate) metadata: PredictionMetadata,
-	pub(crate) results: Vec<ValidatorInfo>,
+pub struct ValidatorsPrediction {
+	pub metadata: PredictionMetadata,
+	pub results: Vec<ValidatorInfo>,
 }
 
 /// Prediction metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct PredictionMetadata {
-	pub(crate) timestamp: String,
-	pub(crate) desired_validators: u32,
-	pub(crate) round: u32,
-	pub(crate) block_number: u32,
-	pub(crate) solution_score: Option<ElectionScore>,
-	pub(crate) data_source: String,
+pub struct PredictionMetadata {
+	pub timestamp: String,
+	pub desired_validators: u32,
+	pub round: u32,
+	pub block_number: u32,
+	pub solution_score: Option<ElectionScore>,
+	pub data_source: String,
 }
 
 /// Validator information
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ValidatorInfo {
-	pub(crate) account: String,
-	pub(crate) total_stake: String, // Token amount as string
-	pub(crate) self_stake: String,  // Token amount as string
-	pub(crate) nominator_count: usize,
-	pub(crate) nominators: Vec<NominatorAllocation>,
+pub struct ValidatorInfo {
+	pub account: String,
+	pub total_stake: String, // Token amount as string
+	pub self_stake: String,  // Token amount as string
+	pub nominator_count: usize,
+	pub nominators: Vec<NominatorAllocation>,
 }
 
 /// Nominator allocation details for a validator
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct NominatorAllocation {
-	pub(crate) address: String,
-	pub(crate) allocated_stake: String, // Token amount as string
+pub struct NominatorAllocation {
+	pub address: String,
+	pub allocated_stake: String, // Token amount as string
 }
 
 /// Nominator prediction output
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct NominatorsPrediction {
-	pub(crate) nominators: Vec<NominatorPrediction>,
+pub struct NominatorsPrediction {
+	pub nominators: Vec<NominatorPrediction>,
 }
 
 /// Nominator prediction
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct NominatorPrediction {
-	pub(crate) address: String,
-	pub(crate) stake: String, // Token amount as string
-	pub(crate) active_validators: Vec<ValidatorStakeAllocation>,
-	pub(crate) inactive_validators: Vec<String>,
-	pub(crate) waiting_validators: Vec<String>,
+pub struct NominatorPrediction {
+	pub address: String,
+	pub stake: String, // Token amount as string
+	pub active_validators: Vec<ValidatorStakeAllocation>,
+	pub inactive_validators: Vec<String>,
+	pub waiting_validators: Vec<String>,
 }
 
 /// Validator stake allocation
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ValidatorStakeAllocation {
-	pub(crate) validator: String,
-	pub(crate) allocated_stake: String, // Token amount as string
+pub struct ValidatorStakeAllocation {
+	pub validator: String,
+	pub allocated_stake: String, // Token amount as string
 }
 
 pub(crate) type NominatorData = (AccountId, u64, Vec<AccountId>);
@@ -209,7 +249,7 @@ pub(crate) type ValidatorData = (AccountId, u128);
 // ============================================================================
 
 /// JSON format for election overrides
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ElectionOverrides {
 	#[serde(default)]
 	pub candidates_include: Vec<String>,
@@ -226,4 +266,56 @@ pub struct ElectionOverrides {
 pub enum ElectionDataSource {
 	Snapshot,
 	Staking,
+}
+
+// ============================================================================
+// Simulate Endpoint Types
+// ============================================================================
+
+/// Run parameters used for the simulation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimulateRunParameters {
+	pub block_number: u32,
+	pub desired_validators: u32,
+	pub balancing_iterations: usize,
+	pub do_reduce: bool,
+	pub algorithm: ElectionAlgorithm,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub overrides: Option<OverridesConfig>,
+}
+
+/// Response for the /simulate endpoint
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimulateResult {
+	pub run_parameters: SimulateRunParameters,
+	pub validators: ValidatorsPrediction,
+	pub nominators: NominatorsPrediction,
+}
+
+// ============================================================================
+// Snapshot Endpoint Types
+// ============================================================================
+
+/// Snapshot configuration metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SnapshotConfig {
+	pub block_number: u32,
+	pub round: u32,
+	pub data_source: ElectionDataSource,
+}
+
+/// Nominator in snapshot (raw data)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SnapshotNominator {
+	pub account: String,
+	pub stake: String, // Value in planck
+	pub targets: Vec<String>,
+}
+
+/// Snapshot response data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SnapshotResult {
+	pub validators: Vec<String>,
+	pub nominators: Vec<SnapshotNominator>,
+	pub config: SnapshotConfig,
 }

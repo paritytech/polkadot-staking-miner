@@ -3,12 +3,9 @@ use polkadot_sdk::pallet_election_provider_multi_block::unsigned::miner::MinerCo
 
 use crate::{
 	client::Client,
-	commands::types::{ElectionDataSource, ElectionOverrides, PredictConfig},
+	commands::types::{NominatorsPrediction, PredictConfig, ValidatorsPrediction},
 	dynamic::{
-		election_data::{
-			PredictionContext, apply_overrides, build_predictions_from_solution,
-			convert_election_data_to_snapshots, get_election_data,
-		},
+		election_data::{PredictionContext, build_predictions_from_solution, fetch_snapshots},
 		multi_block::mine_solution,
 		update_metadata_constants,
 	},
@@ -16,14 +13,58 @@ use crate::{
 	prelude::{AccountId, LOG_TARGET},
 	runtime::multi_block::{self as runtime},
 	static_types::multi_block::Pages,
-	utils::{
-		TimedFuture, get_block_hash, get_chain_properties, read_data_from_json_file,
-		write_data_to_json_file,
-	},
+	utils::{TimedFuture, get_block_hash, get_chain_properties, write_data_to_json_file},
 };
 
 /// Run the election prediction with the given configuration
 pub async fn predict_cmd<T>(client: Client, config: PredictConfig) -> Result<(), Error>
+where
+	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
+	T::Solution: Send,
+	T::Pages: Send,
+	T::TargetSnapshotPerBlock: Send,
+	T::VoterSnapshotPerBlock: Send,
+	T::MaxVotesPerVoter: Send,
+{
+	let output_dir_str = config.output_dir.clone().unwrap_or_else(|| "results".to_string());
+	let (validators_prediction, nominators_prediction) =
+		run_prediction::<T>(client, config).await?;
+
+	// Determine output file paths
+	// Create output directory if it doesn't exist
+	let output_dir = std::path::Path::new(&output_dir_str);
+	std::fs::create_dir_all(output_dir).map_err(|e| {
+		Error::Other(format!("Failed to create output directory {}: {}", output_dir.display(), e))
+	})?;
+
+	let validators_output = output_dir.join("validators_prediction.json");
+	let nominators_output = output_dir.join("nominators_prediction.json");
+	// Save validators prediction
+	write_data_to_json_file(&validators_prediction, &validators_output).await?;
+
+	log::info!(
+		target: LOG_TARGET,
+		"Validators prediction saved to {}",
+		validators_output.display()
+	);
+
+	// Save nominators prediction
+	write_data_to_json_file(&nominators_prediction, &nominators_output).await?;
+
+	log::info!(
+		target: LOG_TARGET,
+		"Nominators prediction saved to {}",
+		nominators_output.display()
+	);
+
+	Ok(())
+}
+
+/// Core prediction logic reusable by CLI and Server
+pub async fn run_prediction<T>(
+	client: Client,
+	config: PredictConfig,
+) -> Result<(ValidatorsPrediction, NominatorsPrediction), Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
 	T::Solution: Send,
@@ -85,30 +126,8 @@ where
 		},
 	};
 
-	// Fetch election data
-	let (candidates, nominators, data_source) =
-		get_election_data::<T>(n_pages, current_round, storage).await?;
-
-	// Apply overrides if provided
-	let (candidates, nominators) = if let Some(overrides_path) = &config.overrides {
-		log::info!(target: LOG_TARGET, "Applying overrides from {overrides_path}");
-		let overrides: ElectionOverrides = read_data_from_json_file(overrides_path).await?;
-		apply_overrides(candidates, nominators, overrides)?
-	} else {
-		(candidates, nominators)
-	};
-
-	// Convert raw data to snapshots
-	let (target_snapshot, mut voter_snapshot) =
-		convert_election_data_to_snapshots::<T>(candidates, nominators)?;
-
-	// When fetching from staking data, voters come from BagsList in descending order (highest
-	// stake first). The SDK expects page 0 (lsp) to contain lowest stake voters and page n-1
-	// (msp) to contain highest stake voters. Reversing ensures correct page assignment during
-	// pagination.
-	if matches!(data_source, ElectionDataSource::Staking) {
-		voter_snapshot.reverse();
-	}
+	let (target_snapshot, voter_snapshot, data_source) =
+		fetch_snapshots::<T>(n_pages, current_round, &storage, config.overrides).await?;
 
 	log::debug!(
 		target: LOG_TARGET,
@@ -176,32 +195,5 @@ where
 		&prediction_ctx,
 	)?;
 
-	// Determine output file paths
-	// Create output directory if it doesn't exist
-	let output_dir = std::path::Path::new(&config.output_dir);
-	std::fs::create_dir_all(output_dir).map_err(|e| {
-		Error::Other(format!("Failed to create output directory {}: {}", output_dir.display(), e))
-	})?;
-
-	let validators_output = output_dir.join("validators_prediction.json");
-	let nominators_output = output_dir.join("nominators_prediction.json");
-	// Save validators prediction
-	write_data_to_json_file(&validators_prediction, &validators_output).await?;
-
-	log::info!(
-		target: LOG_TARGET,
-		"Validators prediction saved to {}",
-		validators_output.display()
-	);
-
-	// Save nominators prediction
-	write_data_to_json_file(&nominators_prediction, &nominators_output).await?;
-
-	log::info!(
-		target: LOG_TARGET,
-		"Nominators prediction saved to {}",
-		nominators_output.display()
-	);
-
-	Ok(())
+	Ok((validators_prediction, nominators_prediction))
 }

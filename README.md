@@ -410,6 +410,121 @@ automatically resolve relative paths from the current working directory.
 4. **Output Generation**: Creates detailed JSON files with predictions, including validator and
    nominator perspectives.
 
+## Server
+
+The `server` command starts a REST API server that provides endpoints for running election simulations and fetching raw election data.
+
+### Basic Usage
+
+```bash
+cargo run -- --uri wss://polkadot-asset-hub-rpc.polkadot.io server --port 8080
+```
+
+### Command Options
+
+| Option   | Description                                 | Default Value |
+| :------- | :------------------------------------------ | :------------ |
+| `--port` | The port to listen on for REST API requests. | `8080`        |
+
+---
+
+### API Endpoints
+
+#### 1. `POST /simulate`
+
+Runs a full election simulation and returns the predicted validator set and nominator allocations.
+
+**Query Parameters:**
+- `block` (optional): Block number at which to run the simulation. Overrides `block_number` in JSON body.
+
+**Request Body (JSON):**
+
+```json
+{
+  "desired_validators": 600,
+  "block_number": 11465562,
+  "balancing_iterations": 10,
+  "do_reduce": true,
+  "algorithm": "SeqPhragmen",
+  "overrides": {
+    "candidates_include": ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG"],
+    "candidates_exclude": [],
+    "voters_include": [
+      ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG", 1000000, ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG"]]
+    ],
+    "voters_exclude": []
+  }
+}
+```
+
+| Parameter | Type | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `desired_validators` | `number` | Number of validators for the prediction | Fetched from chain |
+| `balancing_iterations` | `number` | Number of balancing iterations | `10` |
+| `do_reduce` | `boolean` | Reduce the solution to prevent further trimming | `false` |
+| `algorithm` | `string` | Election algorithm: `SeqPhragmen` or `Phragmms` | `SeqPhragmen` |
+| `overrides` | `object` | Overrides object | `null` |
+| `block_number` | `number` | Block number at which to run the prediction | Latest block |
+
+**Example Request:**
+```bash
+curl -X POST "http://localhost:8080/simulate?block=11465562" \
+     -H "Content-Type: application/json" \
+     -d '{"do_reduce": true}'
+```
+
+**Response Format:**
+```json
+{
+  "result": {
+    "run_parameters": {
+      "block_number": 11465562,
+      "desired_validators": 600,
+      "balancing_iterations": 10,
+      "do_reduce": true,
+      "algorithm": "SeqPhragmen"
+    },
+    "validators": { ... },  // similar to predict's validators_prediction.json
+    "nominators": { ... }   // similar to predict's nominators_prediction.json
+  }
+}
+```
+
+#### 2. `GET /snapshot`
+
+Fetches the raw election snapshot data (validators and nominators) directly from the chain (or synthesizes it from staking storage).
+
+**Query Parameters:**
+- `block` (optional): Block number to fetch the snapshot from.
+
+**Example Request:**
+```bash
+curl "http://localhost:8080/snapshot?block=12928418"
+```
+
+**Response Format:**
+```json
+{
+  "result": {
+    "validators": ["5Grwva...", "5FHneW..."], // target snapshot
+    "nominators": [                           // voter snapshot
+      {
+        "account": "5FHneW...",
+        "stake": "1000000000000",
+        "targets": ["5Grwva..."]
+      }
+    ],
+    "config": {
+      "block_number": 12928418,
+      "round": 469,
+      "data_source": "snapshot"
+    }
+  }
+}
+```
+
+---
+
 ## Update metadata
 
 The binary itself embeds [multi-block static metadata](./artifacts/multi_block.scale) to generate a
