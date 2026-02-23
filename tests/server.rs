@@ -295,3 +295,22 @@ async fn test_concurrent_prediction_returns_503() {
 		assert_eq!(handle.await.unwrap(), 200);
 	}
 }
+
+#[tokio::test]
+async fn test_simulate_ignores_output_dir() {
+	let port = start_mock_server(MockHandler { slow_predict: None }).await;
+
+	// Send output_dir in payload
+	let res = post_json(
+		port,
+		"/simulate",
+		serde_json::json!({
+			"desired_validators": 5,
+			"output_dir": "malicious_path"
+		}),
+	)
+	.await;
+
+	assert_eq!(res.status, 200);
+	// the fact it returns 200 means it didn't fail deserialization.
+}

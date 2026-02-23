@@ -16,7 +16,7 @@ use crate::{
 	static_types::multi_block::Pages,
 	utils::{encode_account_id, get_block_hash, get_ss58_prefix},
 };
-use http_body_util::{BodyExt, Full};
+use http_body_util::{BodyExt, Full, Limited};
 use hyper::{Method, Request, Response, body::Bytes, header::CONTENT_TYPE, service::service_fn};
 use hyper_util::{
 	rt::{TokioExecutor, TokioIo},
@@ -38,7 +38,8 @@ type Body = Full<Bytes>;
 pub const MAX_BODY_SIZE: u64 = 1024 * 1024;
 pub const MAX_CONCURRENT_CONNECTIONS: usize = 25;
 pub const MAX_CONCURRENT_PREDICTIONS: usize = 1;
-pub const SIMULATE_TIMEOUT: Duration = Duration::from_secs(600);
+pub const SIMULATE_TIMEOUT: Duration = Duration::from_secs(600); // 10 min
+pub const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(120); // 2 min
 
 /// Abstracts the two data-fetching operations the HTTP server needs.
 pub trait ServerHandler: Send + Sync + Clone + 'static {
@@ -162,16 +163,16 @@ async fn handle_request<H: ServerHandler>(
 					.and_then(|(_, value)| value.parse::<u32>().ok())
 			});
 
-			let body_bytes = match req.collect().await {
-				Ok(collected) => {
-					let bytes = collected.to_bytes();
-					if bytes.len() as u64 > MAX_BODY_SIZE {
-						return error_response(413, "Request body too large".to_string());
-					}
-					bytes
-				},
-				Err(_) => return error_response(400, "Failed to read body".to_string()),
-			};
+			let body_bytes =
+				match Limited::new(req.into_body(), MAX_BODY_SIZE as usize).collect().await {
+					Ok(collected) => collected.to_bytes(),
+					Err(e) => {
+						if e.is::<http_body_util::LengthLimitError>() {
+							return error_response(413, "Request body too large".to_string());
+						}
+						return error_response(400, "Failed to read body".to_string());
+					},
+				};
 
 			let mut predict_config: PredictConfig = match serde_json::from_slice(&body_bytes) {
 				Ok(config) => config,
@@ -233,11 +234,16 @@ async fn handle_request<H: ServerHandler>(
 					.and_then(|(_, value)| value.parse::<u32>().ok())
 			});
 
-			match handler.snapshot(query_block_number).await {
-				Ok(snapshot_data) => json_response(&serde_json::json!({ "result": snapshot_data })),
-				Err(e) => {
+			match timeout(SNAPSHOT_TIMEOUT, handler.snapshot(query_block_number)).await {
+				Ok(Ok(snapshot_data)) =>
+					json_response(&serde_json::json!({ "result": snapshot_data })),
+				Ok(Err(e)) => {
 					log::error!(target: LOG_TARGET, "Snapshot fetch failed: {e:?}");
 					error_response(500, "Internal Server Error".to_string())
+				},
+				Err(_) => {
+					log::error!(target: LOG_TARGET, "Snapshot fetch timed out after {SNAPSHOT_TIMEOUT:?}");
+					error_response(504, "Gateway Timeout: Snapshot fetch took too long".to_string())
 				},
 			}
 		},

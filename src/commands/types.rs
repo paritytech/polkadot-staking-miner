@@ -134,7 +134,7 @@ pub struct PredictConfig {
 
 	/// Output directory for prediction results
 	#[clap(long, default_value = "results")]
-	#[serde(default)]
+	#[serde(skip)]
 	pub output_dir: Option<String>,
 
 	/// Number of balancing iterations for the sequential phragmen algorithm.
