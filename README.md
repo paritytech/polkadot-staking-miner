@@ -463,7 +463,7 @@ Runs a full election simulation and returns the predicted validator set and nomi
 | `balancing_iterations` | `number` | Number of balancing iterations | `10` |
 | `do_reduce` | `boolean` | Reduce the solution to prevent further trimming | `false` |
 | `algorithm` | `string` | Election algorithm: `SeqPhragmen` or `Phragmms` | `SeqPhragmen` |
-| `overrides` | `string` | Overrides object | `null` |
+| `overrides` | `object` | Overrides object | `null` |
 | `block_number` | `number` | Block number at which to run the prediction | Latest block |
 
 **Example Request:**
@@ -484,8 +484,8 @@ curl -X POST "http://localhost:8080/simulate?block=11465562" \
       "do_reduce": true,
       "algorithm": "SeqPhragmen"
     },
-    "validators": { ... },  // similar to predict's validators_output.json
-    "nominators": { ... }   // similar to predict's nominators_output.json
+    "validators": { ... },  // similar to predict's validators_prediction.json
+    "nominators": { ... }   // similar to predict's nominators_prediction.json
   }
 }
 ```

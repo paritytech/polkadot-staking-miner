@@ -106,7 +106,6 @@ pub struct MultiBlockMonitorConfig {
 	pub algorithm: ElectionAlgorithm,
 }
 
-/// CLI configuration for election prediction
 /// Path or raw data for election overrides
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
@@ -124,6 +123,7 @@ impl std::str::FromStr for OverridesConfig {
 	}
 }
 
+/// CLI configuration for election prediction
 #[derive(Debug, Clone, clap::Parser, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct PredictConfig {
@@ -177,6 +177,10 @@ pub struct ServerConfig {
 	/// The port to listen on for REST API requests.
 	#[clap(long, short, env = "PORT", default_value_t = 8080)]
 	pub port: u16,
+
+	/// The address to listen on for REST API requests.
+	#[clap(long, short, default_value = "127.0.0.1")]
+	pub listen: String,
 }
 
 /// Validator prediction output
@@ -297,7 +301,7 @@ pub struct SimulateResult {
 pub struct SnapshotConfig {
 	pub block_number: u32,
 	pub round: u32,
-	pub data_source: String,
+	pub data_source: ElectionDataSource,
 }
 
 /// Nominator in snapshot (raw data)

@@ -4,8 +4,9 @@ use crate::{
 	commands::{
 		predict::run_prediction,
 		types::{
-			PredictConfig, ServerConfig, SimulateResult, SimulateRunParameters, SnapshotConfig,
-			SnapshotNominator, SnapshotResult,
+			NominatorsPrediction, PredictConfig, ServerConfig, SimulateResult,
+			SimulateRunParameters, SnapshotConfig, SnapshotNominator, SnapshotResult,
+			ValidatorsPrediction,
 		},
 	},
 	dynamic::election_data::fetch_snapshots,
@@ -22,10 +23,68 @@ use hyper_util::{
 	server::conn::auto::Builder,
 };
 use polkadot_sdk::pallet_election_provider_multi_block::unsigned::miner::MinerConfig;
-use std::net::SocketAddr;
-use tokio::net::TcpListener;
+use std::{
+	net::{IpAddr, SocketAddr},
+	sync::Arc,
+};
+use tokio::{
+	net::TcpListener,
+	sync::Semaphore,
+	time::{Duration, timeout},
+};
 
 type Body = Full<Bytes>;
+
+pub const MAX_BODY_SIZE: u64 = 1024 * 1024;
+pub const MAX_CONCURRENT_CONNECTIONS: usize = 25;
+pub const MAX_CONCURRENT_PREDICTIONS: usize = 1;
+pub const SIMULATE_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// Abstracts the two data-fetching operations the HTTP server needs.
+pub trait ServerHandler: Send + Sync + Clone + 'static {
+	fn predict(
+		&self,
+		config: PredictConfig,
+	) -> impl std::future::Future<Output = Result<(ValidatorsPrediction, NominatorsPrediction), Error>>
+	+ Send;
+
+	fn snapshot(
+		&self,
+		block_number: Option<u32>,
+	) -> impl std::future::Future<Output = Result<SnapshotResult, Error>> + Send;
+}
+
+struct ClientHandler<T> {
+	client: Client,
+	_phantom: std::marker::PhantomData<T>,
+}
+
+impl<T> Clone for ClientHandler<T> {
+	fn clone(&self) -> Self {
+		Self { client: self.client.clone(), _phantom: std::marker::PhantomData }
+	}
+}
+
+impl<T> ServerHandler for ClientHandler<T>
+where
+	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
+	T::Solution: Send,
+	T::Pages: Send,
+	T::TargetSnapshotPerBlock: Send,
+	T::VoterSnapshotPerBlock: Send,
+	T::MaxVotesPerVoter: Send,
+{
+	async fn predict(
+		&self,
+		config: PredictConfig,
+	) -> Result<(ValidatorsPrediction, NominatorsPrediction), Error> {
+		run_prediction::<T>(self.client.clone(), config).await
+	}
+
+	async fn snapshot(&self, block_number: Option<u32>) -> Result<SnapshotResult, Error> {
+		fetch_snapshot_data::<T>(self.client.clone(), block_number).await
+	}
+}
 
 pub async fn server_cmd<T>(client: Client, config: ServerConfig) -> Result<(), Error>
 where
@@ -36,12 +95,24 @@ where
 	T::VoterSnapshotPerBlock: Send,
 	T::MaxVotesPerVoter: Send,
 {
-	let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
+	let handler = ClientHandler::<T> { client, _phantom: std::marker::PhantomData };
+	serve(handler, config).await
+}
+
+pub async fn serve<H: ServerHandler>(handler: H, config: ServerConfig) -> Result<(), Error> {
+	let listen_addr: IpAddr = config
+		.listen
+		.parse()
+		.map_err(|e| Error::Other(format!("Invalid listen address '{}': {}", config.listen, e)))?;
+	let addr = SocketAddr::from((listen_addr, config.port));
 	let listener = TcpListener::bind(&addr)
 		.await
-		.map_err(|e| Error::Other(format!("Failed to bind to port {}: {}", config.port, e)))?;
+		.map_err(|e| Error::Other(format!("Failed to bind to {addr}: {e}")))?;
 
 	log::info!(target: LOG_TARGET, "REST API server listening on http://{addr}");
+
+	let connection_semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
+	let prediction_semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_PREDICTIONS));
 
 	loop {
 		let (stream, _) = match listener.accept().await {
@@ -52,13 +123,20 @@ where
 			},
 		};
 
-		let client_clone = client.clone();
+		let permit = match connection_semaphore.clone().acquire_owned().await {
+			Ok(permit) => permit,
+			Err(_) => break Ok(()), // Closed
+		};
+
+		let handler_clone = handler.clone();
+		let prediction_semaphore_clone = prediction_semaphore.clone();
 		let io = TokioIo::new(stream);
-		let builder = Builder::new(TokioExecutor::new());
-		let conn = builder
+		let conn = Builder::new(TokioExecutor::new())
 			.serve_connection_with_upgrades(
 				io,
-				service_fn(move |req| handle_request::<T>(client_clone.clone(), req)),
+				service_fn(move |req| {
+					handle_request(handler_clone.clone(), req, prediction_semaphore_clone.clone())
+				}),
 			)
 			.into_owned();
 
@@ -66,47 +144,58 @@ where
 			if let Err(e) = conn.await {
 				log::error!(target: LOG_TARGET, "Error serving connection: {e}");
 			}
+			drop(permit);
 		});
 	}
 }
 
-async fn handle_request<T>(
-	client: Client,
+async fn handle_request<H: ServerHandler>(
+	handler: H,
 	req: Request<hyper::body::Incoming>,
-) -> Result<Response<Body>, hyper::Error>
-where
-	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
-	T::Solution: Send,
-	T::Pages: Send,
-	T::TargetSnapshotPerBlock: Send,
-	T::VoterSnapshotPerBlock: Send,
-	T::MaxVotesPerVoter: Send,
-{
+	prediction_semaphore: Arc<Semaphore>,
+) -> Result<Response<Body>, hyper::Error> {
 	match (req.method(), req.uri().path()) {
 		(&Method::POST, "/simulate") => {
-			let query = req.uri().query().unwrap_or("");
-			let query_block_number =
-				parse_query_param(query, "block").and_then(|s| s.parse::<u32>().ok());
+			let query_block_number = req.uri().query().and_then(|query| {
+				url::form_urlencoded::parse(query.as_bytes())
+					.find(|(key, _)| key == "block")
+					.and_then(|(_, value)| value.parse::<u32>().ok())
+			});
 
 			let body_bytes = match req.collect().await {
-				Ok(collected) => collected.to_bytes(),
-				Err(e) => return error_response(400, format!("Failed to read body: {e}")),
+				Ok(collected) => {
+					let bytes = collected.to_bytes();
+					if bytes.len() as u64 > MAX_BODY_SIZE {
+						return error_response(413, "Request body too large".to_string());
+					}
+					bytes
+				},
+				Err(_) => return error_response(400, "Failed to read body".to_string()),
 			};
 
 			let mut predict_config: PredictConfig = match serde_json::from_slice(&body_bytes) {
 				Ok(config) => config,
-				Err(e) => return error_response(400, format!("Invalid JSON: {e}")),
+				Err(_) => return error_response(400, "Invalid JSON".to_string()),
 			};
 
-			// Override block number if provided via query param
 			if let Some(num) = query_block_number {
 				predict_config.block_number = Some(num);
 			}
 
-			log::info!(target: LOG_TARGET, "Received /simulate request with config: {predict_config:?}");
+			log::info!(
+				target: LOG_TARGET,
+				"Received /simulate request: {predict_config:?}"
+			);
 
-			match run_prediction::<T>(client, predict_config.clone()).await {
-				Ok((validators, nominators)) => {
+			// Reject immediately if a prediction is already running
+			let Ok(_permit) = prediction_semaphore.try_acquire() else {
+				return error_response(503, "A prediction is already in progress".to_string());
+			};
+
+			let result = timeout(SIMULATE_TIMEOUT, handler.predict(predict_config.clone())).await;
+
+			match result {
+				Ok(Ok((validators, nominators))) => {
 					// Build run_parameters with actual values used
 					let metadata = &validators.metadata;
 					let run_parameters = SimulateRunParameters {
@@ -126,23 +215,29 @@ where
 						}
 					}))
 				},
-				Err(e) => {
+				Ok(Err(e)) => {
 					log::error!(target: LOG_TARGET, "Prediction failed: {e:?}");
-					error_response(500, format!("Prediction failed: {e:?}"))
+					error_response(500, "Internal Server Error: Prediction failed".to_string())
+				},
+				Err(_) => {
+					log::error!(target: LOG_TARGET, "Prediction timed out after {SIMULATE_TIMEOUT:?}");
+					error_response(504, "Gateway Timeout: Prediction took too long".to_string())
 				},
 			}
 		},
 
 		(&Method::GET, "/snapshot") => {
-			let query = req.uri().query().unwrap_or("");
-			let query_block_number =
-				parse_query_param(query, "block").and_then(|s| s.parse::<u32>().ok());
+			let query_block_number = req.uri().query().and_then(|query| {
+				url::form_urlencoded::parse(query.as_bytes())
+					.find(|(key, _)| key == "block")
+					.and_then(|(_, value)| value.parse::<u32>().ok())
+			});
 
-			match fetch_snapshot_data::<T>(client, query_block_number).await {
+			match handler.snapshot(query_block_number).await {
 				Ok(snapshot_data) => json_response(&serde_json::json!({ "result": snapshot_data })),
 				Err(e) => {
 					log::error!(target: LOG_TARGET, "Snapshot fetch failed: {e:?}");
-					error_response(500, format!("Snapshot fetch failed: {e:?}"))
+					error_response(500, "Internal Server Error".to_string())
 				},
 			}
 		},
@@ -168,7 +263,7 @@ fn json_response(result: &serde_json::Value) -> Result<Response<Body>, hyper::Er
 			})),
 		Err(e) => {
 			log::error!(target: LOG_TARGET, "Failed to serialize JSON: {e}");
-			error_response(500, format!("Serialization error: {e}"))
+			error_response(500, "Failed to serialize JSON".to_string())
 		},
 	}
 }
@@ -209,15 +304,15 @@ where
 {
 	let n_pages = Pages::get();
 
-	// Determine block number and storage
+	// Get block number and storage
 	let (block_number, storage) = if let Some(num) = block_number {
 		let block_hash = get_block_hash(&client, num).await?;
 		let storage =
 			crate::utils::storage_at(Some(block_hash), &*client.chain_api().await).await?;
 		(num, storage)
 	} else {
-		let storage = client.chain_api().await.storage().at_latest().await?;
 		let block = client.chain_api().await.blocks().at_latest().await?;
+		let storage = client.chain_api().await.storage().at(block.hash());
 		(block.number(), storage)
 	};
 
@@ -225,7 +320,6 @@ where
 		.fetch_or_default(&runtime::storage().multi_block_election().round())
 		.await?;
 
-	// Use the refactored fetch_snapshots function from election_data.rs
 	let (target_snapshot, voter_snapshot, data_source) =
 		fetch_snapshots::<T>(n_pages, current_round, &storage, None).await?;
 
@@ -249,46 +343,29 @@ where
 		})
 		.collect();
 
-	let data_source_str = match data_source {
-		crate::commands::types::ElectionDataSource::Snapshot => "snapshot",
-		crate::commands::types::ElectionDataSource::Staking => "staking",
-	}
-	.to_string();
-
 	Ok(SnapshotResult {
 		validators,
 		nominators: snapshot_nominators,
-		config: SnapshotConfig { block_number, round: current_round, data_source: data_source_str },
-	})
-}
-
-/// Parse query parameter from query string
-fn parse_query_param(query: &str, param_name: &str) -> Option<String> {
-	query.split('&').find_map(|pair| {
-		let mut parts = pair.split('=');
-		match (parts.next(), parts.next()) {
-			(Some(key), Some(value)) if key == param_name => Some(value.to_string()),
-			_ => None,
-		}
+		config: SnapshotConfig { block_number, round: current_round, data_source },
 	})
 }
 
 #[cfg(test)]
 mod tests {
-	use super::*;
 
 	#[test]
-	fn test_parse_query_param() {
+	fn test_query_parsing() {
+		// Mock query strings for testing url-based parsing logic
 		let query = "block=123&other=abc";
-		assert_eq!(parse_query_param(query, "block"), Some("123".to_string()));
-		assert_eq!(parse_query_param(query, "other"), Some("abc".to_string()));
-		assert_eq!(parse_query_param(query, "nonexistent"), None);
+		let parsed = url::form_urlencoded::parse(query.as_bytes())
+			.find(|(key, _)| key == "block")
+			.and_then(|(_, value)| value.parse::<u32>().ok());
+		assert_eq!(parsed, Some(123));
 
 		let empty_query = "";
-		assert_eq!(parse_query_param(empty_query, "block"), None);
-
-		let malformed = "block&other=abc";
-		assert_eq!(parse_query_param(malformed, "block"), None);
-		assert_eq!(parse_query_param(malformed, "other"), Some("abc".to_string()));
+		let parsed = url::form_urlencoded::parse(empty_query.as_bytes())
+			.find(|(key, _)| key == "block")
+			.and_then(|(_, value)| value.parse::<u32>().ok());
+		assert_eq!(parsed, None);
 	}
 }
