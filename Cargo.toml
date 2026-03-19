@@ -13,7 +13,7 @@ resolver = "2"
 [dependencies]
 codec = { package = "parity-scale-codec", version = "3.7.5" }
 scale-info = { package = "scale-info", version = "2.11.6" }
-clap = { version = "4.5", features = ["derive", "env"] }
+clap = { version = "4.6", features = ["derive", "env"] }
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 jsonrpsee = { version = "0.26.0", features = ["ws-client"] }
 log = "0.4"
@@ -21,7 +21,7 @@ serde = "1.0"
 serde_json = "1.0"
 futures = "0.3"
 thiserror = "2.0"
-tokio = { version = "1.49", features = [
+tokio = { version = "1.50", features = [
   "macros",
   "rt-multi-thread",
   "sync",
@@ -64,7 +64,7 @@ url = "2.5.8"
 anyhow = "1"
 assert_cmd = "2.1"
 regex = "1"
-tempfile = "3.25"
+tempfile = "3.27"
 
 [features]
 integration-tests = []
