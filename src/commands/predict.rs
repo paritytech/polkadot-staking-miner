@@ -74,7 +74,9 @@ where
 	T::MaxVotesPerVoter: Send,
 {
 	// Update metadata constants
-	update_metadata_constants(&*client.chain_api().await)?;
+	update_metadata_constants(
+		&client.chain_api().await.at_current_block().await.map_err(subxt::Error::from)?,
+	)?;
 	crate::dynamic::set_balancing_iterations(config.balancing_iterations);
 	crate::dynamic::set_algorithm(config.algorithm);
 
@@ -87,35 +89,39 @@ where
 		client
 			.chain_api()
 			.await
-			.blocks()
-			.at_latest()
+			.at_current_block()
 			.await
 			.map_err(|e| Error::Other(format!("Failed to fetch latest block number: {e}")))?
-			.number()
+			.block_number() as u32
 	};
 
 	log::info!(target: LOG_TARGET, "Using block number: {block_number}");
 
-	// Get storage at the specified block number
-	let storage = if let Some(block_num) = config.block_number {
+	// Get AtBlock at the specified block number
+	let at_block = if let Some(block_num) = config.block_number {
 		// Get block hash from block number
 		let block_hash = get_block_hash(&client, block_num).await?;
 
 		crate::utils::storage_at(Some(block_hash), &*client.chain_api().await).await?
 	} else {
-		client.chain_api().await.storage().at_latest().await?
+		client.chain_api().await.at_current_block().await.map_err(subxt::Error::from)?
 	};
 
-	let current_round = storage
-		.fetch_or_default(&runtime::storage().multi_block_election().round())
-		.await?;
+	let current_round = at_block
+		.storage()
+		.fetch(runtime::storage().multi_block_election().round(), ())
+		.await
+		.map_err(subxt::Error::from)?
+		.decode()
+		.map_err(subxt::Error::from)?;
 
 	let desired_targets = match config.desired_validators {
 		Some(targets) => targets,
 		None => {
 			// Fetch from chain
-			storage
-				.fetch(&runtime::storage().staking().validator_count())
+			at_block
+				.storage()
+				.try_fetch(runtime::storage().staking().validator_count(), ())
 				.await
 				.map_err(|e| {
 					Error::Other(format!("Failed to fetch Desired Targets from chain: {e}"))
@@ -123,11 +129,13 @@ where
 				.ok_or_else(|| {
 					Error::Other("Desired validators not found in chain storage".to_string())
 				})?
+				.decode()
+				.map_err(|e| Error::Other(format!("Failed to decode Desired Targets: {e}")))?
 		},
 	};
 
 	let (target_snapshot, voter_snapshot, data_source) =
-		fetch_snapshots::<T>(n_pages, current_round, &storage, config.overrides).await?;
+		fetch_snapshots::<T>(n_pages, current_round, &at_block, config.overrides).await?;
 
 	log::debug!(
 		target: LOG_TARGET,

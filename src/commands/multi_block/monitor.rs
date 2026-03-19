@@ -6,7 +6,7 @@ use crate::{
 	},
 	dynamic::multi_block as dynamic,
 	error::{ChannelFailureError, Error, TaskFailureError, TimeoutError::*},
-	prelude::{AccountId, ExtrinsicParamsBuilder, LOG_TARGET, Storage},
+	prelude::{AccountId, AtBlock, ExtrinsicParamsBuilder, LOG_TARGET},
 	prometheus,
 	runtime::multi_block::{
 		self as runtime, runtime_types::pallet_election_provider_multi_block::types::Phase,
@@ -23,7 +23,6 @@ use polkadot_sdk::{
 };
 use std::collections::HashSet;
 
-use subxt::backend::StreamOf;
 use tokio::sync::mpsc;
 
 /// Number of previous rounds to scan for old submissions during clear old rounds cleanup.
@@ -61,10 +60,12 @@ const MAX_SUBSCRIPTION_RECREATION_ATTEMPTS: u32 = 3;
 const ERA_PRUNING_TIMEOUT_SECS: u64 = 30;
 
 async fn signed_phase(client: &Client) -> Result<bool, Error> {
-	let storage = utils::storage_at_head(client).await?;
-	let current_phase = storage
-		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
-		.await?;
+	let at_block = utils::storage_at_head(client).await?;
+	let current_phase = at_block
+		.storage()
+		.fetch(runtime::storage().multi_block_election().current_phase(), ())
+		.await?
+		.decode()?;
 
 	Ok(matches!(current_phase, Phase::Signed(_)))
 }
@@ -80,19 +81,14 @@ enum ListenerAction {
 }
 
 /// Type alias for the finalized block subscription stream
-type SubscriptionStream = StreamOf<
-	Result<
-		subxt::blocks::Block<subxt::PolkadotConfig, subxt::OnlineClient<subxt::PolkadotConfig>>,
-		subxt::Error,
-	>,
->;
+type SubscriptionStream = subxt::client::Blocks<subxt::PolkadotConfig>;
 
 /// Recreate the finalized block subscription with failover support.
 async fn recreate_subscription_with_failover(
 	client: &Client,
 	context: &str,
 ) -> Result<SubscriptionStream, Error> {
-	match client.chain_api().await.blocks().subscribe_finalized().await {
+	match client.chain_api().await.stream_blocks().await {
 		Ok(subscription) => {
 			log::info!(target: LOG_TARGET, "Successfully recreated subscription {context}");
 			Ok(subscription)
@@ -103,7 +99,7 @@ async fn recreate_subscription_with_failover(
 				log::error!(target: LOG_TARGET, "Runtime failover failed: {failover_err:?}");
 				return Err(e.into());
 			}
-			match client.chain_api().await.blocks().subscribe_finalized().await {
+			match client.chain_api().await.stream_blocks().await {
 				Ok(subscription) => {
 					log::info!(target: LOG_TARGET, "Successfully recreated subscription after failover {context}");
 					Ok(subscription)
@@ -162,7 +158,7 @@ where
 
 	let last_phase = state.prev_phase.clone();
 	state.prev_phase = Some(phase.clone());
-	let block_number = at.number;
+	let block_number = at.number as u32;
 
 	match phase {
 		Phase::Off => {
@@ -192,7 +188,7 @@ where
 			// Send NewBlock message for era pruning (non-critical, we can use try_send)
 			let _ = channels
 				.era_pruning_tx
-				.try_send(EraPruningMessage::NewBlock { block_number: at.number });
+				.try_send(EraPruningMessage::NewBlock { block_number: at.number as u32 });
 
 			// Off phase - nothing to do for mining
 			log::trace!(target: LOG_TARGET, "Block #{block_number}, Phase Off - nothing to do");
@@ -286,6 +282,7 @@ where
 				},
 				Some(Err(e)) => {
 					// Handle reconnection case with the reconnecting RPC client
+					let e: subxt::Error = e.into();
 					if e.is_disconnected_will_reconnect() {
 						log::warn!(target: LOG_TARGET, "RPC connection lost, but will reconnect automatically. Continuing...");
 						return Ok(ListenerAction::Continue);
@@ -375,13 +372,6 @@ where
 /// Determine if a listener error is critical and should cause the process to exit
 fn is_critical_listener_error(error: &Error) -> bool {
 	match error {
-		// RPC errors are generally recoverable with the reconnecting client
-		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Rpc(_)) => false,
-		// Storage query failures can happen due to stale block hashes
-		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Runtime(_)) => false,
-		// Transaction errors are not relevant for the listener
-		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Transaction(_)) =>
-			false,
 		// Channel failures are critical - indicates tasks have died
 		Error::ChannelFailure(_) => true,
 		// Task failures are critical - indicates tasks have terminated
@@ -389,9 +379,11 @@ fn is_critical_listener_error(error: &Error) -> bool {
 		// Subscription termination is critical
 		Error::Other(msg) if msg.contains("Subscription terminated") => true,
 		// Everything else is considered recoverable for the listener
-		// This includes temporary issues like:
+		// This includes:
+		// - RPC errors (handled by reconnecting client)
+		// - Storage query failures (stale block hashes)
+		// - Transaction errors (not relevant for the listener)
 		// - BlockDetails creation failures
-		// - Storage access issues
 		// - Temporary network problems
 		_ => false,
 	}
@@ -401,27 +393,31 @@ fn is_critical_listener_error(error: &Error) -> bool {
 async fn get_block_state(
 	client: &Client,
 	block_hash: polkadot_sdk::sp_core::H256,
-) -> Result<(Storage, Phase, u32), Error> {
+) -> Result<(AtBlock, Phase, u32), Error> {
 	let storage_start = std::time::Instant::now();
-	let storage = utils::storage_at(Some(block_hash), &*client.chain_api().await).await?;
+	let at_block = utils::storage_at(Some(block_hash), &*client.chain_api().await).await?;
 	let storage_duration = storage_start.elapsed();
 	prometheus::observe_storage_query_duration(storage_duration.as_millis() as f64);
 
 	let phase_start = std::time::Instant::now();
-	let phase = storage
-		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
-		.await?;
+	let phase = at_block
+		.storage()
+		.fetch(runtime::storage().multi_block_election().current_phase(), ())
+		.await?
+		.decode()?;
 	let phase_duration = phase_start.elapsed();
 	prometheus::observe_storage_query_duration(phase_duration.as_millis() as f64);
 
 	let round_start = std::time::Instant::now();
-	let current_round = storage
-		.fetch_or_default(&runtime::storage().multi_block_election().round())
-		.await?;
+	let current_round = at_block
+		.storage()
+		.fetch(runtime::storage().multi_block_election().round(), ())
+		.await?
+		.decode()?;
 	let round_duration = round_start.elapsed();
 	prometheus::observe_storage_query_duration(round_duration.as_millis() as f64);
 
-	Ok((storage, phase, current_round))
+	Ok((at_block, phase, current_round))
 }
 
 /// Handle round increment by triggering clear old rounds and snapshot cleanup
@@ -592,15 +588,17 @@ where
 
 	// Emit the account info at the start.
 	{
-		let account_info = client
-			.chain_api()
-			.await
-			.storage()
-			.at_latest()
-			.await?
-			.fetch(&runtime::storage().system().account(signer.account_id().clone()))
-			.await?
-			.ok_or(Error::AccountDoesNotExists)?;
+		let account_info = crate::utils::decode_storage_opt(
+			client
+				.chain_api()
+				.await
+				.at_current_block()
+				.await?
+				.storage()
+				.try_fetch(runtime::storage().system().account(), (*signer.account_id(),))
+				.await?,
+		)?
+		.ok_or(Error::AccountDoesNotExists)?;
 		prometheus::set_balance(account_info.data.free as f64);
 
 		log::info!(
@@ -761,7 +759,7 @@ where
 	T::VoterSnapshotPerBlock: Send + Sync + 'static,
 	T::MaxVotesPerVoter: Send + Sync + 'static,
 {
-	let mut subscription = client.chain_api().await.blocks().subscribe_finalized().await?;
+	let mut subscription = client.chain_api().await.stream_blocks().await?;
 	let mut state = ListenerState {
 		prev_round: None,
 		prev_phase: None,
@@ -943,9 +941,13 @@ where
 /// Returns (era_count, era_index) where era_count is the total number of eras in the map
 /// and era_index is Some(oldest_era) if there is at least one era to prune, None if map is empty
 async fn get_pruneable_era_index(client: &Client) -> Result<(u32, Option<u32>), Error> {
-	let storage = utils::storage_at_head(client).await?;
+	let at_block = utils::storage_at_head(client).await?;
 
-	let iter = match storage.iter(runtime::storage().staking().era_pruning_state_iter()).await {
+	let iter = match at_block
+		.storage()
+		.iter(runtime::storage().staking().era_pruning_state(), ())
+		.await
+	{
 		Ok(iter) => iter,
 		Err(_) => {
 			// Handle older runtimes that don't have EraPruningState storage
@@ -961,8 +963,9 @@ async fn get_pruneable_era_index(client: &Client) -> Result<(u32, Option<u32>), 
 			// `key_bytes`. Or use the new subxt Storage APIs when available.
 
 			// Format: concat(twox64(era_index), era_index) - extract the last 4 bytes as u32
-			if storage_entry.key_bytes.len() >= 4 {
-				let era_bytes = &storage_entry.key_bytes[storage_entry.key_bytes.len() - 4..];
+			let key_bytes = storage_entry.key_bytes();
+			if key_bytes.len() >= 4 {
+				let era_bytes = &key_bytes[key_bytes.len() - 4..];
 				if let Ok(era_index) = u32::decode(&mut &era_bytes[..]) {
 					acc.push(era_index);
 				}
@@ -985,9 +988,10 @@ async fn call_prune_era_step(client: &Client, signer: &Signer, era: u32) -> Resu
 	let tx = runtime::tx().staking().prune_era_step(era);
 
 	let chain_api = client.chain_api().await;
-	let nonce = chain_api.tx().account_nonce(signer.account_id()).await?;
+	let mut tx_client = chain_api.tx().await?;
+	let nonce = tx_client.account_nonce(signer.account_id()).await?;
 	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
-	let xt = chain_api.tx().create_signed(&tx, &**signer, xt_cfg).await?;
+	let xt = tx_client.create_signed(&tx, &**signer, xt_cfg).await?;
 
 	// Wait for finalization to avoid to spam the same exact transaction at the next block, and get
 	// an InvalidTransaction::Stale ("Transaction is outdated") in return.
@@ -1118,7 +1122,7 @@ where
 	T::VoterSnapshotPerBlock: Send,
 	T::MaxVotesPerVoter: Send + Sync + 'static,
 {
-	let BlockDetails { storage, phase, round, n_pages, desired_targets, block_number, .. } = state;
+	let BlockDetails { at_block, phase, round, n_pages, desired_targets, block_number, .. } = state;
 
 	log::trace!(target: LOG_TARGET, "Processing block #{block_number} (round {round}, phase {phase:?})");
 
@@ -1128,9 +1132,15 @@ where
 		std::time::Duration::from_secs(BALANCE_FETCH_TIMEOUT_SECS),
 		async {
 			let start_time = std::time::Instant::now();
-			let result = storage
-				.fetch(&runtime::storage().system().account(signer.account_id().clone()))
-				.await?;
+			let result = crate::utils::decode_storage_opt(
+				at_block
+					.storage()
+					.try_fetch(
+						runtime::storage().system().account(),
+						(*signer.account_id(),),
+					)
+					.await?,
+			)?;
 			let duration = start_time.elapsed();
 			prometheus::observe_balance_fetch_duration(duration.as_millis() as f64);
 			Ok::<_, Error>(result)
@@ -1152,7 +1162,7 @@ where
 	// Handle different phases
 	match phase {
 		Phase::Snapshot(_) => {
-			dynamic::fetch_missing_snapshots_lossy::<T>(snapshot, &storage, round).await?;
+			dynamic::fetch_missing_snapshots_lossy::<T>(snapshot, &at_block, round).await?;
 			return Ok(());
 		},
 		Phase::Signed(blocks_remaining) =>
@@ -1166,7 +1176,7 @@ where
 	}
 
 	// Fetch snapshots if needed
-	dynamic::fetch_missing_snapshots::<T>(snapshot, &storage, round).await?;
+	dynamic::fetch_missing_snapshots::<T>(snapshot, &at_block, round).await?;
 	let (target_snapshot, voter_snapshot) = snapshot.get();
 
 	// Check if we already submitted for this round with timeout to prevent hanging
@@ -1175,8 +1185,8 @@ where
 		std::time::Duration::from_secs(CHECK_EXISTING_SUBMISSION_TIMEOUT_SECS),
 		async {
 			let start_time = std::time::Instant::now();
-			let storage = utils::storage_at_head(&client).await?;
-			let result = has_submitted(&storage, round, signer.account_id(), n_pages).await?;
+			let at_block_head = utils::storage_at_head(&client).await?;
+			let result = has_submitted(&at_block_head, round, signer.account_id(), n_pages).await?;
 			let duration = start_time.elapsed();
 			prometheus::observe_check_existing_submission_duration(duration.as_millis() as f64);
 			Ok::<_, Error>(result)
@@ -1573,14 +1583,16 @@ where
 
 /// Whether the computed score is better than the current best score
 async fn score_better(
-	storage: &Storage,
+	at_block: &AtBlock,
 	score: ElectionScore,
 	round: u32,
 	submission_strategy: SubmissionStrategy,
 ) -> Result<bool, Error> {
-	let scores = storage
-		.fetch_or_default(&runtime::storage().multi_block_election_signed().sorted_scores(round))
-		.await?;
+	let scores = at_block
+		.storage()
+		.fetch(runtime::storage().multi_block_election_signed().sorted_scores(), (round,))
+		.await?
+		.decode()?;
 
 	if scores
 		.0
@@ -1596,18 +1608,20 @@ async fn score_better(
 /// Whether the current account has registered the score and submitted all pages for the given
 /// round.
 async fn get_submission(
-	storage: &Storage,
+	at_block: &AtBlock,
 	round: u32,
 	who: &subxt::config::substrate::AccountId32,
 	n_pages: u32,
 ) -> Result<CurrentSubmission, Error> {
-	let maybe_submission = storage
-		.fetch(
-			&runtime::storage()
-				.multi_block_election_signed()
-				.submission_metadata_storage(round, who.clone()),
-		)
-		.await?;
+	let maybe_submission = crate::utils::decode_storage_opt(
+		at_block
+			.storage()
+			.try_fetch(
+				runtime::storage().multi_block_election_signed().submission_metadata_storage(),
+				(round, *who),
+			)
+			.await?,
+	)?;
 
 	let Some(submission) = maybe_submission else {
 		return Ok(CurrentSubmission::NotStarted);
@@ -1635,12 +1649,12 @@ async fn get_submission(
 /// Whether the current account has registered the score and submitted all pages for the given
 /// round.
 async fn has_submitted(
-	storage: &Storage,
+	at_block: &AtBlock,
 	round: u32,
 	who: &subxt::config::substrate::AccountId32,
 	n_pages: u32,
 ) -> Result<bool, Error> {
-	match get_submission(storage, round, who, n_pages).await? {
+	match get_submission(at_block, round, who, n_pages).await? {
 		CurrentSubmission::Done(_) => Ok(true),
 		_ => Ok(false),
 	}
@@ -1675,7 +1689,7 @@ async fn execute_shady_behavior(
 	// invalid page (to simulate an early failure in the validation)
 	let mut i = 0;
 	let tx_status = loop {
-		let nonce = client.chain_api().await.tx().account_nonce(signer.account_id()).await?;
+		let nonce = client.chain_api().await.tx().await?.account_nonce(signer.account_id()).await?;
 
 		// Register score only
 		match dynamic::submit_inner(
@@ -1689,7 +1703,11 @@ async fn execute_shady_behavior(
 		{
 			Ok(tx) => break tx,
 			Err(Error::Subxt(boxed_err))
-				if matches!(boxed_err.as_ref(), subxt::Error::Transaction(_)) =>
+				if matches!(
+					boxed_err.as_ref(),
+					subxt::Error::TransactionProgressError(_) |
+						subxt::Error::TransactionStatusError(_)
+				) =>
 			{
 				i += 1;
 				if i >= 10 {
@@ -1705,7 +1723,7 @@ async fn execute_shady_behavior(
 	// Wait for the malicious score registration to be included
 	let tx = utils::wait_tx_in_finalized_block(tx_status).await?;
 	let events = tx.wait_for_success().await?;
-	if !events.has::<runtime::multi_block_election_signed::events::Registered>()? {
+	if !events.has::<runtime::multi_block_election_signed::events::Registered>() {
 		return Err(Error::MissingTxEvent("Register malicious score".to_string()));
 	};
 
@@ -1763,7 +1781,7 @@ where
 	T::VoterSnapshotPerBlock: Send + Sync + 'static,
 	T::MaxVotesPerVoter: Send + Sync + 'static,
 {
-	let storage = utils::storage_at_head(&client).await?;
+	let at_block = utils::storage_at_head(&client).await?;
 	let mut cleaned_count = 0u32;
 	let mut found_count = 0u32;
 
@@ -1797,13 +1815,15 @@ where
 		log::trace!(target: LOG_TARGET, "Scanning round {old_round} for old submissions");
 
 		// Check if we have a submission for this old round
-		let maybe_submission = storage
-			.fetch(
-				&runtime::storage()
-					.multi_block_election_signed()
-					.submission_metadata_storage(old_round, signer.account_id().clone()),
-			)
-			.await?;
+		let maybe_submission = crate::utils::decode_storage_opt(
+			at_block
+				.storage()
+				.try_fetch(
+					runtime::storage().multi_block_election_signed().submission_metadata_storage(),
+					(old_round, *signer.account_id()),
+				)
+				.await?,
+		)?;
 
 		if let Some(submission) = maybe_submission {
 			found_count += 1;
@@ -1875,9 +1895,10 @@ async fn clear_old_round_data(
 		.clear_old_round_data(round, witness_pages);
 
 	let chain_api = client.chain_api().await;
-	let nonce = chain_api.tx().account_nonce(signer.account_id()).await?;
+	let mut tx_client = chain_api.tx().await?;
+	let nonce = tx_client.account_nonce(signer.account_id()).await?;
 	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
-	let xt = chain_api.tx().create_signed(&tx, &**signer, xt_cfg).await?;
+	let xt = tx_client.create_signed(&tx, &**signer, xt_cfg).await?;
 
 	// Submit without waiting for finalization to avoid blocking (fire-and-forget approach)
 	// This prevents potential resource contention with listener task's storage queries
@@ -1899,11 +1920,24 @@ fn is_critical_miner_error(error: &Error) -> bool {
 		Error::WrongPageCount { .. } |
 		Error::WrongRound { .. } |
 		Error::Timeout(_) => false,
-		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Runtime(_)) => false, /* e.g. Subxt(Runtime(Module(ModuleError(<MultiBlockElectionSigned::Duplicate>)))) */
-		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Transaction(_)) =>
-			false, /* e.g. Subxt(Transaction(Invalid("Transaction is invalid (eg because of a bad */
-		// nonce, signature etc)"))))
-		Error::Subxt(boxed_err) if matches!(boxed_err.as_ref(), subxt::Error::Rpc(_)) => false, /* e.g. Subxt(Rpc(ClientError(User(UserError { code: -32801, message: "Invalid block hash" })))) */
+		Error::Subxt(boxed_err)
+			if matches!(
+				boxed_err.as_ref(),
+				// Runtime/dispatch errors (e.g. MultiBlockElectionSigned::Duplicate)
+				subxt::Error::ExtrinsicError(_) |
+					subxt::Error::TransactionFinalizedSuccessError(_) |
+					// Transaction lifecycle errors
+					subxt::Error::TransactionProgressError(_) |
+					subxt::Error::TransactionStatusError(_) |
+					subxt::Error::TransactionEventsError(_) |
+					// RPC errors (e.g. invalid block hash)
+					subxt::Error::OtherRpcClientError(_) |
+					subxt::Error::BackendError(_) |
+					// Storage errors
+					subxt::Error::StorageError(_) |
+					subxt::Error::StorageValueError(_)
+			) =>
+			false,
 		// Phase timing errors should not be critical - these are expected conditions
 		Error::InsufficientSignedPhaseBlocks { .. } => false,
 		Error::PhaseChangedDuringSubmission { .. } => false,

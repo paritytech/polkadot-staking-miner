@@ -10,10 +10,9 @@ use std::{
 	},
 	time::Duration,
 };
-use subxt::backend::{
-	chain_head::{ChainHeadBackend, ChainHeadBackendBuilder},
-	legacy::LegacyBackend,
-	rpc::reconnecting_rpc_client::{ExponentialBackoff, RpcClient as ReconnectingRpcClient},
+use subxt::backend::{ChainHeadBackend, ChainHeadBackendBuilder, LegacyBackend};
+use subxt_rpcs::client::reconnecting_rpc_client::{
+	ExponentialBackoff, RpcClient as ReconnectingRpcClient,
 };
 use tokio::sync::RwLock;
 
@@ -200,7 +199,7 @@ impl Client {
 				client
 			} else {
 				let backend: ChainHeadBackend<Config> = ChainHeadBackendBuilder::default()
-					.build_with_background_driver(reconnecting_rpc);
+					.build_with_background_driver(reconnecting_rpc.clone());
 				let client = ChainClient::from_backend(Arc::new(backend)).await?;
 				log::info!(target: LOG_TARGET, "Connected to {uri} with ChainHead backend");
 				client

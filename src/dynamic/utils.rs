@@ -29,20 +29,19 @@ pub fn to_scale_value<T: scale_info::TypeInfo + 'static + Encode>(val: T) -> Res
 		.map_err(|e| decode_error::<T>(e))
 }
 
-pub fn storage_addr<P: subxt::storage::StorageKey>(
-	storage: PalletItem,
-	params: P,
-) -> subxt::storage::DynamicAddress<P> {
+/// Create a dynamic storage address (without keys baked in).
+/// Keys are passed separately to `fetch`/`try_fetch`/`iter`.
+pub fn storage_addr(storage: PalletItem) -> subxt::storage::DynamicAddress {
 	let (pallet, variant) = storage.into_parts();
-	subxt::dynamic::storage(pallet, variant, params)
+	subxt::dynamic::storage(pallet, variant)
 }
 
 pub fn tx(
 	tx: PalletItem,
 	call_data: impl Into<scale_value::Composite<()>>,
-) -> subxt::tx::DynamicPayload {
+) -> subxt::tx::DynamicPayload<scale_value::Composite<()>> {
 	let (pallet, variant) = tx.into_parts();
-	subxt::dynamic::tx(pallet, variant, call_data)
+	subxt::dynamic::tx(pallet, variant, call_data.into())
 }
 
 pub fn decode_error<T>(err: impl std::error::Error) -> Error {

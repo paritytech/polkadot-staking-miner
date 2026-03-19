@@ -237,14 +237,6 @@ mod hidden {
 		.unwrap()
 	});
 
-	static UPDATER_SUBSCRIPTION_STALLS: Lazy<Counter> = Lazy::new(|| {
-		register_counter!(opts!(
-			"staking_miner_updater_subscription_stalls_total",
-			"Total number of times the updater subscription was detected as stalled and recreated"
-		))
-		.unwrap()
-	});
-
 	static ENDPOINT_SWITCHES: Lazy<Counter> = Lazy::new(|| {
 		register_counter!(opts!(
 			"staking_miner_endpoint_switches_total",
@@ -468,10 +460,6 @@ mod hidden {
 
 	pub fn on_listener_subscription_stall() {
 		LISTENER_SUBSCRIPTION_STALLS.inc();
-	}
-
-	pub fn on_updater_subscription_stall() {
-		UPDATER_SUBSCRIPTION_STALLS.inc();
 	}
 
 	pub fn on_endpoint_switch() {

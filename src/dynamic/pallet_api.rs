@@ -1,7 +1,7 @@
 use crate::{
 	dynamic::utils::invalid_metadata_error,
 	error::Error,
-	prelude::{ChainClient, LOG_TARGET},
+	prelude::{AtBlock, LOG_TARGET},
 };
 use serde::de::DeserializeOwned;
 use std::marker::PhantomData;
@@ -40,15 +40,13 @@ impl<T: DeserializeOwned + std::fmt::Display> PalletConstant<T> {
 		Self { inner: PalletItem::new(pallet, variant), _marker: PhantomData }
 	}
 
-	pub fn fetch(&self, api: &ChainClient) -> Result<T, Error> {
+	pub fn fetch(&self, at_block: &AtBlock) -> Result<T, Error> {
 		let (pallet, variant) = self.inner.into_parts();
 
-		let val = api
+		let val: scale_value::Value = at_block
 			.constants()
-			.at(&subxt::dynamic::constant(pallet, variant))
-			.map_err(|e| invalid_metadata_error(variant.to_string(), e))?
-			.to_value()
-			.map_err(|e| Error::Subxt(Box::new(e.into())))?;
+			.entry(subxt::dynamic::constant(pallet, variant))
+			.map_err(|e| invalid_metadata_error(variant.to_string(), e))?;
 
 		let val = scale_value::serde::from_value::<_, T>(val).map_err(|e| {
 			Error::InvalidMetadata(format!(

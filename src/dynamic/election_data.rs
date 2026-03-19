@@ -26,7 +26,7 @@ use crate::{
 	},
 	dynamic::staking::{fetch_candidates, fetch_voters},
 	error::Error,
-	prelude::{AccountId, LOG_TARGET, Storage},
+	prelude::{AccountId, AtBlock, LOG_TARGET},
 	static_types::multi_block::VoterSnapshotPerBlock,
 	utils::{encode_account_id, planck_to_token, planck_to_token_u64, read_data_from_json_file},
 };
@@ -399,7 +399,7 @@ where
 pub(crate) async fn get_election_data<T>(
 	n_pages: u32,
 	round: u32,
-	storage: Storage,
+	at_block: AtBlock,
 ) -> Result<(Vec<ValidatorData>, Vec<NominatorData>, ElectionDataSource), Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
@@ -413,7 +413,7 @@ where
 	// if snapshot is not available fetch from staking
 	log::info!(target: LOG_TARGET, "Trying to fetch data from snapshot");
 
-	match try_fetch_snapshot::<T>(n_pages, round, &storage).await {
+	match try_fetch_snapshot::<T>(n_pages, round, &at_block).await {
 		Ok((target_snapshot, voter_pages)) => {
 			log::info!(target: LOG_TARGET, "Snapshot found");
 
@@ -434,13 +434,13 @@ where
 		Err(err) => {
 			log::warn!(target: LOG_TARGET, "Fetching from Snapshot failed: {err}. Falling back to staking pallet");
 
-			let candidates = fetch_candidates(&storage)
+			let candidates = fetch_candidates(&at_block)
 				.await
 				.map_err(|e| Error::Other(format!("Failed to fetch candidates: {e}")))?;
 
 			let voter_limit = (T::Pages::get() * T::VoterSnapshotPerBlock::get()) as usize;
 
-			let voters = fetch_voters(voter_limit, &storage)
+			let voters = fetch_voters(voter_limit, &at_block)
 				.await
 				.map_err(|e| Error::Other(format!("Failed to fetch voters: {e}")))?;
 
@@ -453,7 +453,7 @@ where
 pub(crate) async fn fetch_snapshots<T>(
 	n_pages: u32,
 	current_round: u32,
-	storage: &Storage,
+	at_block: &AtBlock,
 	overrides: Option<OverridesConfig>,
 ) -> Result<(TargetSnapshotPageOf<T>, Vec<VoterSnapshotPageOf<T>>, ElectionDataSource), Error>
 where
@@ -466,7 +466,7 @@ where
 {
 	// Fetch election data
 	let (candidates, nominators, data_source) =
-		get_election_data::<T>(n_pages, current_round, storage.clone()).await?;
+		get_election_data::<T>(n_pages, current_round, at_block.clone()).await?;
 
 	// Apply overrides if provided
 	let (candidates, nominators) = if let Some(overrides_config) = overrides {

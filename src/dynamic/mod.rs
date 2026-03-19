@@ -7,7 +7,7 @@
 //! The reason behind this is that subxt's static codegen generates a concrete type for NposSolution
 //! and we want to be generic over the solution type to work across different runtimes.
 
-use crate::{error::Error, prelude::ChainClient, static_types};
+use crate::{error::Error, prelude::AtBlock, static_types};
 
 pub mod election_data;
 pub mod multi_block;
@@ -21,27 +21,27 @@ use static_types::multi_block::{
 };
 
 /// Read the constants from the metadata and updates the static types.
-pub fn update_metadata_constants(api: &ChainClient) -> Result<(), Error> {
+pub fn update_metadata_constants(at_block: &AtBlock) -> Result<(), Error> {
 	use polkadot_sdk::sp_runtime::Percent;
 
-	let pages: u32 = pallet_api::multi_block::constants::PAGES.fetch(api)?;
+	let pages: u32 = pallet_api::multi_block::constants::PAGES.fetch(at_block)?;
 	Pages::set(pages);
 	TargetSnapshotPerBlock::set(
-		pallet_api::multi_block::constants::TARGET_SNAPSHOT_PER_BLOCK.fetch(api)?,
+		pallet_api::multi_block::constants::TARGET_SNAPSHOT_PER_BLOCK.fetch(at_block)?,
 	);
 	VoterSnapshotPerBlock::set(
-		pallet_api::multi_block::constants::VOTER_SNAPSHOT_PER_BLOCK.fetch(api)?,
+		pallet_api::multi_block::constants::VOTER_SNAPSHOT_PER_BLOCK.fetch(at_block)?,
 	);
 
-	let block_len = pallet_api::system::constants::BLOCK_LENGTH.fetch(api)?;
+	let block_len = pallet_api::system::constants::BLOCK_LENGTH.fetch(at_block)?;
 
 	// As instructed, a reasonable default max length is 75% of the total block length.
 	MaxLength::set(Percent::from_percent(75) * block_len.total());
 	MaxWinnersPerPage::set(
-		pallet_api::multi_block_verifier::constants::MAX_WINNERS_PER_PAGE.fetch(api)?,
+		pallet_api::multi_block_verifier::constants::MAX_WINNERS_PER_PAGE.fetch(at_block)?,
 	);
 	MaxBackersPerWinner::set(
-		pallet_api::multi_block_verifier::constants::MAX_BACKERS_PER_WINNER.fetch(api)?,
+		pallet_api::multi_block_verifier::constants::MAX_BACKERS_PER_WINNER.fetch(at_block)?,
 	);
 
 	Ok(())

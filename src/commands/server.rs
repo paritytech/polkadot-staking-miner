@@ -310,24 +310,27 @@ where
 {
 	let n_pages = Pages::get();
 
-	// Get block number and storage
-	let (block_number, storage) = if let Some(num) = block_number {
+	// Get block number and at_block handle
+	let (block_number, at_block) = if let Some(num) = block_number {
 		let block_hash = get_block_hash(&client, num).await?;
-		let storage =
+		let at_block =
 			crate::utils::storage_at(Some(block_hash), &*client.chain_api().await).await?;
-		(num, storage)
+		(num, at_block)
 	} else {
-		let block = client.chain_api().await.blocks().at_latest().await?;
-		let storage = client.chain_api().await.storage().at(block.hash());
-		(block.number(), storage)
+		let at_block = client.chain_api().await.at_current_block().await?;
+		(at_block.block_number() as u32, at_block)
 	};
 
-	let current_round = storage
-		.fetch_or_default(&runtime::storage().multi_block_election().round())
-		.await?;
+	let current_round = crate::utils::decode_storage_opt(
+		at_block
+			.storage()
+			.try_fetch(runtime::storage().multi_block_election().round(), ())
+			.await?,
+	)?
+	.unwrap_or_default();
 
 	let (target_snapshot, voter_snapshot, data_source) =
-		fetch_snapshots::<T>(n_pages, current_round, &storage, None).await?;
+		fetch_snapshots::<T>(n_pages, current_round, &at_block, None).await?;
 
 	let ss58_prefix = get_ss58_prefix(&client).await?;
 

@@ -4,7 +4,7 @@ use crate::{
 	commands::types::{NominatorData, ValidatorData},
 	dynamic::{pallet_api, utils::storage_addr},
 	error::Error,
-	prelude::{AccountId, STAKING_LOG_TARGET as LOG_TARGET, Storage},
+	prelude::{AccountId, AtBlock, STAKING_LOG_TARGET as LOG_TARGET},
 };
 use codec::{Decode, Encode};
 use scale_value::At;
@@ -15,11 +15,11 @@ use std::{
 use subxt::dynamic::Value;
 
 /// Fetch all candidate validators (stash AccountId) with their active stake
-pub(crate) async fn fetch_candidates(storage: &Storage) -> Result<Vec<ValidatorData>, Error> {
+pub(crate) async fn fetch_candidates(storage: &AtBlock) -> Result<Vec<ValidatorData>, Error> {
 	log::debug!(target: LOG_TARGET, "Fetching candidate validators (Staking::Validators keys)");
 
-	let validators_addr = storage_addr(pallet_api::staking::storage::VALIDATORS, vec![]);
-	let mut iter = storage.iter(validators_addr).await?;
+	let validators_addr = storage_addr(pallet_api::staking::storage::VALIDATORS);
+	let mut iter = storage.storage().iter(validators_addr, Vec::<Value>::new()).await?;
 
 	let mut candidate_accounts: Vec<AccountId> = Vec::new();
 	let mut count: usize = 0;
@@ -30,7 +30,7 @@ pub(crate) async fn fetch_candidates(storage: &Storage) -> Result<Vec<ValidatorD
 			Err(e) => return Err(Error::Other(format!("storage iteration error: {e}"))),
 		};
 
-		let key_bytes = kv.key_bytes;
+		let key_bytes = kv.key_bytes();
 		if key_bytes.len() < 32 {
 			return Err(Error::Other(format!(
 				"unexpected key length {} (< 32); cannot decode AccountId",
@@ -69,11 +69,13 @@ pub(crate) async fn fetch_candidates(storage: &Storage) -> Result<Vec<ValidatorD
 		stake_futures.push(async move {
 			let bytes_vec: Vec<u8> = account.encode();
 			let params: Vec<Value> = vec![Value::from_bytes(bytes_vec)];
-			let bonded_addr = storage_addr(pallet_api::staking::storage::BONDED, params.clone());
+			let bonded_addr = storage_addr(pallet_api::staking::storage::BONDED);
 
 			// Deterministic Controller lookup: first check Bonded, then fallback to account (Stash)
-			let ledger_key_addr = if let Some(bonded) = storage.fetch(&bonded_addr).await? {
-				let controller_bytes = bonded.encoded();
+			let ledger_key = if let Some(bonded) =
+				storage.storage().try_fetch(bonded_addr, params.clone()).await?
+			{
+				let controller_bytes = bonded.bytes();
 				if controller_bytes.len() < 32 {
 					return Err(Error::Other("Unexpected Bonded key length".into()));
 				}
@@ -82,17 +84,15 @@ pub(crate) async fn fetch_candidates(storage: &Storage) -> Result<Vec<ValidatorD
 					.try_into()
 					.map_err(|_| Error::Other("Failed to slice Controller ID".into()))?;
 				let controller = AccountId::from(arr);
-				storage_addr(
-					pallet_api::staking::storage::LEDGER,
-					vec![Value::from_bytes(controller.encode())],
-				)
+				vec![Value::from_bytes(controller.encode())]
 			} else {
-				storage_addr(pallet_api::staking::storage::LEDGER, params)
+				params
 			};
+			let ledger_addr = storage_addr(pallet_api::staking::storage::LEDGER);
 
 			let mut stake = 0u128;
-			if let Some(ledger) = storage.fetch(&ledger_key_addr).await? &&
-				let Ok(value) = ledger.to_value()
+			if let Some(ledger) = storage.storage().try_fetch(ledger_addr, ledger_key).await? &&
+				let Ok(value) = ledger.decode()
 			{
 				// Try to get 'active' first (self-stake), fallback to 'total' if 'active' not
 				// available
@@ -125,15 +125,15 @@ pub(crate) async fn fetch_candidates(storage: &Storage) -> Result<Vec<ValidatorD
 }
 
 /// Helper to fetch just the validator keys (Set) for O(1) existence checks
-pub(crate) async fn fetch_validator_keys(storage: &Storage) -> Result<HashSet<AccountId>, Error> {
+pub(crate) async fn fetch_validator_keys(storage: &AtBlock) -> Result<HashSet<AccountId>, Error> {
 	log::debug!(target: LOG_TARGET, "Fetching validator keys for existence checks");
-	let validators_addr = storage_addr(pallet_api::staking::storage::VALIDATORS, vec![]);
-	let mut iter = storage.iter(validators_addr).await?;
+	let validators_addr = storage_addr(pallet_api::staking::storage::VALIDATORS);
+	let mut iter = storage.storage().iter(validators_addr, Vec::<Value>::new()).await?;
 	let mut keys = HashSet::new();
 
 	while let Some(next) = iter.next().await {
 		let kv = next.map_err(|e| Error::Other(format!("storage iteration error: {e}")))?;
-		let key_bytes = kv.key_bytes;
+		let key_bytes = kv.key_bytes();
 		if key_bytes.len() >= 32 {
 			let tail = &key_bytes[key_bytes.len() - 32..];
 			if let Ok(arr) = <[u8; 32]>::try_from(tail) {
@@ -180,7 +180,7 @@ struct VoterNode {
 /// Returns the top voters limited by voter_limit, sorted by score (stake) in descending order
 pub(crate) async fn fetch_voter_list(
 	voter_limit: usize,
-	storage: &Storage,
+	storage: &AtBlock,
 ) -> Result<Vec<(AccountId, u64)>, Error> {
 	// Increase voter limit to have a buffer for filtering ineligible voters later
 	let extended_voter_limit = voter_limit.saturating_add(100);
@@ -189,8 +189,8 @@ pub(crate) async fn fetch_voter_list(
 
 	// Fetch all bags (ListBags) - store as HashMap with bag_upper as key
 	log::trace!(target: LOG_TARGET, "Fetching ListBags...");
-	let list_bags_addr = storage_addr(pallet_api::voter_list::storage::LIST_BAGS, vec![]);
-	let mut bags_iter = storage.iter(list_bags_addr).await?;
+	let list_bags_addr = storage_addr(pallet_api::voter_list::storage::LIST_BAGS);
+	let mut bags_iter = storage.storage().iter(list_bags_addr, Vec::<Value>::new()).await?;
 
 	let mut bags: HashMap<u64, ListBag> = HashMap::new();
 
@@ -201,7 +201,7 @@ pub(crate) async fn fetch_voter_list(
 		};
 
 		// Extract bag score (bag_upper) from key (u64)
-		let key_bytes = kv.key_bytes;
+		let key_bytes = kv.key_bytes();
 		let bag_upper = if key_bytes.len() >= 8 {
 			let start = key_bytes.len().saturating_sub(8);
 			u64::from_le_bytes(key_bytes[start..].try_into().unwrap_or([0u8; 8]))
@@ -210,7 +210,7 @@ pub(crate) async fn fetch_voter_list(
 		};
 
 		// Decode the bag structure
-		let bag: ListBag = Decode::decode(&mut &kv.value.encoded()[..])?;
+		let bag: ListBag = Decode::decode(&mut &kv.value().bytes()[..])?;
 
 		// Store bag with its upper bound as key
 		bags.insert(bag_upper, bag);
@@ -222,8 +222,8 @@ pub(crate) async fn fetch_voter_list(
 	log::trace!(target: LOG_TARGET, "Fetching ListNodes...");
 
 	let mut nodes: HashMap<AccountId, VoterNode> = HashMap::new();
-	let list_nodes_addr = storage_addr(pallet_api::voter_list::storage::LIST_NODES, vec![]);
-	let mut nodes_iter = storage.iter(list_nodes_addr).await?;
+	let list_nodes_addr = storage_addr(pallet_api::voter_list::storage::LIST_NODES);
+	let mut nodes_iter = storage.storage().iter(list_nodes_addr, Vec::<Value>::new()).await?;
 
 	let mut nodes_count = 0;
 
@@ -234,7 +234,7 @@ pub(crate) async fn fetch_voter_list(
 		};
 
 		// Extract AccountId from key
-		let key_bytes = &kv.key_bytes;
+		let key_bytes = kv.key_bytes();
 		if key_bytes.len() < 32 {
 			continue;
 		}
@@ -245,7 +245,7 @@ pub(crate) async fn fetch_voter_list(
 		let account_id = AccountId::from(arr);
 
 		// Decode node data using the struct
-		let list_node = match ListNode::decode(&mut &kv.value.encoded()[..]) {
+		let list_node = match ListNode::decode(&mut &kv.value().bytes()[..]) {
 			Ok(node) => node,
 			Err(e) => {
 				log::warn!(
@@ -393,7 +393,7 @@ pub(crate) async fn fetch_voter_list(
 /// Uses concurrent batch processing
 pub(crate) async fn fetch_voters(
 	voter_limit: usize,
-	storage: &Storage,
+	storage: &AtBlock,
 ) -> Result<Vec<NominatorData>, Error> {
 	// Fetch voters from VoterList (BagsList) with their stakes (already sorted)
 	log::debug!(target: LOG_TARGET, "Fetching voters from VoterList...");
@@ -561,7 +561,7 @@ struct Nominations {
 /// Helper to fetch a single batch of nominators
 async fn fetch_voter_batch(
 	voters: &[(AccountId, u64)],
-	storage: &Storage,
+	storage: &AtBlock,
 ) -> Result<Vec<(AccountId, u64, Option<Vec<AccountId>>)>, Error> {
 	let mut batch_results = Vec::with_capacity(voters.len());
 
@@ -576,16 +576,18 @@ async fn fetch_voter_batch(
 		futs.push(async move {
 			let bytes_vec: Vec<u8> = account_id.encode();
 			let params: Vec<Value> = vec![Value::from_bytes(bytes_vec)];
-			let nominators_addr =
-				storage_addr(pallet_api::staking::storage::NOMINATORS, params.clone());
-			let bonded_addr = storage_addr(pallet_api::staking::storage::BONDED, params.clone());
+			let nominators_addr = storage_addr(pallet_api::staking::storage::NOMINATORS);
+			let bonded_addr = storage_addr(pallet_api::staking::storage::BONDED);
 
 			// Fetch targets
-			let nominator_data = storage.fetch(&nominators_addr).await?;
+			let nominator_data =
+				storage.storage().try_fetch(nominators_addr, params.clone()).await?;
 
 			// Deterministic Controller lookup for stake accuracy
-			let ledger_key_addr = if let Some(bonded) = storage.fetch(&bonded_addr).await? {
-				let controller_bytes = bonded.encoded();
+			let ledger_key = if let Some(bonded) =
+				storage.storage().try_fetch(bonded_addr, params.clone()).await?
+			{
+				let controller_bytes = bonded.bytes();
 				if controller_bytes.len() < 32 {
 					return Err(Error::Other("Unexpected Bonded key length".into()));
 				}
@@ -594,19 +596,17 @@ async fn fetch_voter_batch(
 					.try_into()
 					.map_err(|_| Error::Other("Failed to slice Controller ID".into()))?;
 				let controller = AccountId::from(arr);
-				storage_addr(
-					pallet_api::staking::storage::LEDGER,
-					vec![Value::from_bytes(controller.encode())],
-				)
+				vec![Value::from_bytes(controller.encode())]
 			} else {
-				storage_addr(pallet_api::staking::storage::LEDGER, params)
+				params
 			};
+			let ledger_addr = storage_addr(pallet_api::staking::storage::LEDGER);
 
 			// Default to VoterList score, but override with actual Ledger active stake
 			let mut actual_stake = score_stake;
 
-			if let Some(ledger) = storage.fetch(&ledger_key_addr).await? &&
-				let Ok(value) = ledger.to_value()
+			if let Some(ledger) = storage.storage().try_fetch(ledger_addr, ledger_key).await? &&
+				let Ok(value) = ledger.decode()
 			{
 				if let Some(active) = value.at("active").and_then(|v| v.as_u128()) {
 					actual_stake = active as u64;
@@ -624,7 +624,7 @@ async fn fetch_voter_batch(
 
 		let targets = if let Some(data) = nominator_data {
 			// Decode the nominations
-			if let Ok(nominations) = Nominations::decode(&mut &data.encoded()[..]) {
+			if let Ok(nominations) = Nominations::decode(&mut &data.bytes()[..]) {
 				// Only include active nominators (not suppressed)
 				if !nominations.suppressed { Some(nominations.targets) } else { Some(Vec::new()) }
 			} else {
