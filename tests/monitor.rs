@@ -148,7 +148,7 @@ pub async fn wait_for_three_miners_solution(port: u16) -> anyhow::Result<()> {
 
 		let block = block?;
 		let at = block.at().await?;
-		let events = at.events().events().await?;
+		let events = at.events().fetch().await?;
 
 		for ev in events.iter() {
 			let ev = ev?;
