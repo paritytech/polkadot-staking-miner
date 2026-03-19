@@ -130,7 +130,7 @@ pub enum Error {
 
 impl From<subxt_rpcs::Error> for Error {
 	fn from(e: subxt_rpcs::Error) -> Self {
-		Self::Subxt(Box::new(subxt::Error::Rpc(e.into())))
+		Self::Subxt(Box::new(subxt::Error::from(e)))
 	}
 }
 
@@ -140,8 +140,86 @@ impl From<subxt::Error> for Error {
 	}
 }
 
-impl From<subxt::backend::legacy::rpc_methods::DryRunDecodeError> for Error {
-	fn from(_e: subxt::backend::legacy::rpc_methods::DryRunDecodeError) -> Self {
-		Self::Other("Failed to decode dry run result".to_string())
+impl From<subxt::error::StorageError> for Error {
+	fn from(e: subxt::error::StorageError) -> Self {
+		Self::Subxt(Box::new(subxt::Error::from(e)))
+	}
+}
+
+impl From<subxt::error::StorageValueError> for Error {
+	fn from(e: subxt::error::StorageValueError) -> Self {
+		Self::Subxt(Box::new(subxt::Error::from(e)))
+	}
+}
+
+impl From<subxt::error::OnlineClientAtBlockError> for Error {
+	fn from(e: subxt::error::OnlineClientAtBlockError) -> Self {
+		Self::Subxt(Box::new(subxt::Error::from(e)))
+	}
+}
+
+impl From<subxt::error::BlocksError> for Error {
+	fn from(e: subxt::error::BlocksError) -> Self {
+		Self::Subxt(Box::new(subxt::Error::from(e)))
+	}
+}
+
+impl From<subxt::error::ExtrinsicError> for Error {
+	fn from(e: subxt::error::ExtrinsicError) -> Self {
+		Self::Subxt(Box::new(subxt::Error::from(e)))
+	}
+}
+
+impl From<subxt::error::TransactionEventsError> for Error {
+	fn from(e: subxt::error::TransactionEventsError) -> Self {
+		Self::Subxt(Box::new(subxt::Error::from(e)))
+	}
+}
+
+impl From<subxt::error::TransactionFinalizedSuccessError> for Error {
+	fn from(e: subxt::error::TransactionFinalizedSuccessError) -> Self {
+		Self::Subxt(Box::new(subxt::Error::from(e)))
+	}
+}
+
+impl From<subxt::error::TransactionProgressError> for Error {
+	fn from(e: subxt::error::TransactionProgressError) -> Self {
+		Self::Subxt(Box::new(subxt::Error::from(e)))
+	}
+}
+
+impl From<subxt::error::OnlineClientError> for Error {
+	fn from(e: subxt::error::OnlineClientError) -> Self {
+		Self::Subxt(Box::new(subxt::Error::from(e)))
+	}
+}
+
+impl From<subxt::error::EventsError> for Error {
+	fn from(e: subxt::error::EventsError) -> Self {
+		Self::Subxt(Box::new(subxt::Error::from(e)))
+	}
+}
+
+impl From<subxt::error::AccountNonceError> for Error {
+	fn from(e: subxt::error::AccountNonceError) -> Self {
+		Self::Subxt(Box::new(subxt::Error::from(e)))
+	}
+}
+
+impl From<subxt::error::RuntimeApiError> for Error {
+	fn from(e: subxt::error::RuntimeApiError) -> Self {
+		Self::Subxt(Box::new(subxt::Error::from(e)))
+	}
+}
+
+impl From<subxt::error::ConstantError> for Error {
+	fn from(e: subxt::error::ConstantError) -> Self {
+		Self::Subxt(Box::new(subxt::Error::from(e)))
+	}
+}
+
+impl From<subxt::error::StorageKeyError> for Error {
+	fn from(e: subxt::error::StorageKeyError) -> Self {
+		Self::Subxt(Box::new(subxt::Error::from(e)))
 	}
 }

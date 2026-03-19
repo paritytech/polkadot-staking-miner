@@ -1,7 +1,6 @@
-/// The header type. We re-export it here, but we can easily get it from block as well.
-pub type Header =
-	subxt::config::substrate::SubstrateHeader<u32, subxt::config::substrate::DynamicHasher256>;
-/// The header type. We re-export it here, but we can easily get it from block as well.
+/// The header type used by the chain.
+pub type Header = subxt::config::substrate::SubstrateHeader<subxt::config::substrate::H256>;
+/// The hash type.
 pub type Hash = subxt::utils::H256;
 /// Default URI to connect to.
 ///
@@ -22,6 +21,8 @@ pub const SERVER_LOG_TARGET: &str = "polkadot-staking-miner::server";
 pub type ChainClient = subxt::OnlineClient<subxt::PolkadotConfig>;
 /// Config used by the staking-miner
 pub type Config = subxt::PolkadotConfig;
+/// An online client positioned at a specific block.
+pub type AtBlock = subxt::OnlineClientAtBlock<Config>;
 /// Shared client.
 pub static SHARED_CLIENT: once_cell::sync::OnceCell<crate::client::Client> =
 	once_cell::sync::OnceCell::new();
@@ -32,7 +33,5 @@ pub type AccountId = polkadot_sdk::sp_runtime::AccountId32;
 pub type Pair = polkadot_sdk::sp_core::sr25519::Pair;
 /// The accuracy that we use for election computations.
 pub type Accuracy = polkadot_sdk::sp_runtime::Perbill;
-/// Storage type.
-pub type Storage = subxt::storage::Storage<Config, ChainClient>;
 /// Extrinsic params builder.
 pub type ExtrinsicParamsBuilder = subxt::config::DefaultExtrinsicParamsBuilder<Config>;

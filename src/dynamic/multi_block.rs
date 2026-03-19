@@ -11,8 +11,8 @@ use crate::{
 	},
 	error::Error,
 	prelude::{
-		AccountId, ChainClient, Config, ExtrinsicParamsBuilder, Hash,
-		MULTI_BLOCK_LOG_TARGET as LOG_TARGET, Storage,
+		AccountId, AtBlock, Config, ExtrinsicParamsBuilder, Hash,
+		MULTI_BLOCK_LOG_TARGET as LOG_TARGET,
 	},
 	runtime::multi_block::{
 		self as runtime, runtime_types::pallet_election_provider_multi_block::types::Phase,
@@ -33,7 +33,7 @@ use polkadot_sdk::{
 use std::collections::HashSet;
 use subxt::{
 	dynamic::Value,
-	tx::{DynamicPayload, TxProgress},
+	tx::{DynamicPayload, TransactionProgress},
 };
 
 /// A multi-block transaction.
@@ -52,7 +52,7 @@ impl std::fmt::Display for TransactionKind {
 }
 pub struct MultiBlockTransaction {
 	kind: TransactionKind,
-	tx: DynamicPayload,
+	tx: DynamicPayload<scale_value::Composite<()>>,
 }
 
 impl MultiBlockTransaction {
@@ -83,7 +83,7 @@ impl MultiBlockTransaction {
 		})
 	}
 
-	pub fn into_parts(self) -> (TransactionKind, DynamicPayload) {
+	pub fn into_parts(self) -> (TransactionKind, DynamicPayload<scale_value::Composite<()>>) {
 		(self.kind, self.tx)
 	}
 }
@@ -94,14 +94,14 @@ impl MultiBlockTransaction {
 pub(crate) async fn target_snapshot<T: MinerConfig>(
 	page: u32,
 	round: u32,
-	storage: &Storage,
+	storage: &AtBlock,
 ) -> Result<TargetSnapshotPage<T>, Error> {
-	let page_idx = vec![Value::from(round), Value::from(page)];
-	let addr = storage_addr(pallet_api::multi_block::storage::PAGED_TARGET_SNAPSHOT, page_idx);
+	let keys = vec![Value::from(round), Value::from(page)];
+	let addr = storage_addr(pallet_api::multi_block::storage::PAGED_TARGET_SNAPSHOT);
 
-	match storage.fetch(&addr).await {
+	match storage.storage().try_fetch(addr, keys).await {
 		Ok(Some(val)) => {
-			let snapshot: TargetSnapshotPage<T> = Decode::decode(&mut val.encoded())?;
+			let snapshot: TargetSnapshotPage<T> = Decode::decode(&mut val.bytes())?;
 			log::trace!(
 				target: LOG_TARGET,
 				"Target snapshot with len {:?}, hash: {:?}",
@@ -119,19 +119,20 @@ pub(crate) async fn target_snapshot<T: MinerConfig>(
 pub(crate) async fn paged_voter_snapshot<T>(
 	page: u32,
 	round: u32,
-	storage: &Storage,
+	storage: &AtBlock,
 ) -> Result<VoterSnapshotPage<T>, Error>
 where
 	T: MinerConfig,
 {
 	match storage
-		.fetch(&storage_addr(
-			pallet_api::multi_block::storage::PAGED_VOTER_SNAPSHOT,
+		.storage()
+		.try_fetch(
+			storage_addr(pallet_api::multi_block::storage::PAGED_VOTER_SNAPSHOT),
 			vec![Value::from(round), Value::from(page)],
-		))
+		)
 		.await
 	{
-		Ok(Some(val)) => match Decode::decode(&mut val.encoded()) {
+		Ok(Some(val)) => match Decode::decode(&mut val.bytes()) {
 			Ok(s) => {
 				let snapshot: VoterSnapshotPage<T> = s;
 				log::trace!(
@@ -156,7 +157,7 @@ pub(crate) async fn submit_inner(
 	tx: MultiBlockTransaction,
 	nonce: u64,
 	blocks_remaining: u32,
-) -> Result<TxProgress<Config, ChainClient>, Error> {
+) -> Result<TransactionProgress<Config, subxt::client::OnlineClientAtBlockImpl<Config>>, Error> {
 	let (kind, tx) = tx.into_parts();
 
 	log::trace!(target: LOG_TARGET, "submit `{kind}` nonce={nonce}");
@@ -164,7 +165,9 @@ pub(crate) async fn submit_inner(
 	// Set mortality based on SignedPhase duration for precise transaction lifetime
 	let mortality = blocks_remaining + 1;
 	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).mortal(mortality as u64).build();
-	let xt = client.chain_api().await.tx().create_signed(&tx, &*signer, xt_cfg).await?;
+	let chain_api = client.chain_api().await;
+	let mut tx_client = chain_api.tx().await?;
+	let xt = tx_client.create_signed(&tx, &*signer, xt_cfg).await?;
 
 	xt.submit_and_watch()
 		.await
@@ -238,7 +241,7 @@ where
 pub(crate) async fn try_fetch_snapshot<T>(
 	n_pages: u32,
 	round: u32,
-	storage: &Storage,
+	storage: &AtBlock,
 ) -> Result<(TargetSnapshotPageOf<T>, BoundedVec<VoterSnapshotPageOf<T>, T::Pages>), Error>
 where
 	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
@@ -291,7 +294,7 @@ where
 /// but some snapshots may not exist yet which is just ignored.
 pub(crate) async fn fetch_missing_snapshots_lossy<T: MinerConfig>(
 	snapshot: &mut Snapshot<T>,
-	storage: &Storage,
+	storage: &AtBlock,
 	round: u32,
 ) -> Result<(), Error> {
 	let n_pages = snapshot.n_pages;
@@ -312,7 +315,7 @@ pub(crate) async fn fetch_missing_snapshots_lossy<T: MinerConfig>(
 /// Similar to `fetch_missing_snapshots_lossy` but it returns an error if any snapshot is missing.
 pub(crate) async fn fetch_missing_snapshots<T: MinerConfig>(
 	snapshot: &mut Snapshot<T>,
-	storage: &Storage,
+	storage: &AtBlock,
 	round: u32,
 ) -> Result<(), Error> {
 	let n_pages = snapshot.n_pages;
@@ -327,39 +330,41 @@ pub(crate) async fn fetch_missing_snapshots<T: MinerConfig>(
 pub(crate) async fn paged_voter_snapshot_hash(
 	page: u32,
 	round: u32,
-	storage: &Storage,
+	storage: &AtBlock,
 ) -> Result<Hash, Error> {
 	let bytes = storage
-		.fetch(&storage_addr(
-			pallet_api::multi_block::storage::PAGED_VOTER_SNAPSHOT_HASH,
+		.storage()
+		.try_fetch(
+			storage_addr(pallet_api::multi_block::storage::PAGED_VOTER_SNAPSHOT_HASH),
 			vec![Value::from(round), Value::from(page)],
-		))
+		)
 		.await?
 		.ok_or(Error::EmptySnapshot)?;
 
-	Decode::decode(&mut bytes.encoded()).map_err(Into::into)
+	Decode::decode(&mut bytes.bytes()).map_err(Into::into)
 }
 
 pub(crate) async fn target_snapshot_hash(
 	page: u32,
 	round: u32,
-	storage: &Storage,
+	storage: &AtBlock,
 ) -> Result<Hash, Error> {
 	let bytes = storage
-		.fetch(&storage_addr(
-			pallet_api::multi_block::storage::PAGED_TARGET_SNAPSHOT_HASH,
+		.storage()
+		.try_fetch(
+			storage_addr(pallet_api::multi_block::storage::PAGED_TARGET_SNAPSHOT_HASH),
 			vec![Value::from(round), Value::from(page)],
-		))
+		)
 		.await?
 		.ok_or(Error::EmptySnapshot)?;
 
-	Decode::decode(&mut bytes.encoded()).map_err(Into::into)
+	Decode::decode(&mut bytes.bytes()).map_err(Into::into)
 }
 
 pub(crate) async fn check_and_update_voter_snapshot<T: MinerConfig>(
 	page: u32,
 	round: u32,
-	storage: &Storage,
+	storage: &AtBlock,
 	snapshot: &mut Snapshot<T>,
 ) -> Result<(), Error> {
 	let snapshot_hash = paged_voter_snapshot_hash(page, round, storage).await?;
@@ -373,7 +378,7 @@ pub(crate) async fn check_and_update_voter_snapshot<T: MinerConfig>(
 pub(crate) async fn check_and_update_target_snapshot<T: MinerConfig>(
 	page: u32,
 	round: u32,
-	storage: &Storage,
+	storage: &AtBlock,
 	snapshot: &mut Snapshot<T>,
 ) -> Result<(), Error> {
 	let snapshot_hash = target_snapshot_hash(page, round, storage).await?;
@@ -400,9 +405,13 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 
 	// 1. Get current phase and validate
 	let storage = utils::storage_at_head(client).await?;
-	let current_phase = storage
-		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
-		.await?;
+	let current_phase = utils::decode_storage_opt(
+		storage
+			.storage()
+			.try_fetch(runtime::storage().multi_block_election().current_phase(), ())
+			.await?,
+	)?
+	.unwrap_or(Phase::Off);
 
 	validate_signed_phase_or_bail(&current_phase, client, signer, round, min_signed_phase_blocks)
 		.await?;
@@ -410,7 +419,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 
 	let mut i = 0;
 	let tx_status = loop {
-		let nonce = client.chain_api().await.tx().account_nonce(signer.account_id()).await?;
+		let nonce = client.chain_api().await.tx().await?.account_nonce(signer.account_id()).await?;
 
 		// Register score.
 		match submit_inner(
@@ -424,7 +433,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 		{
 			Ok(tx) => break tx,
 			Err(Error::Subxt(boxed_err))
-				if matches!(boxed_err.as_ref(), subxt::Error::Transaction(_)) =>
+				if matches!(boxed_err.as_ref(), subxt::Error::ExtrinsicError(_)) =>
 			{
 				i += 1;
 				if i >= 10 {
@@ -443,7 +452,7 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 	// but it's performed for registering the score only once.
 	let tx = utils::wait_tx_in_finalized_block(tx_status).await?;
 	let events = tx.wait_for_success().await?;
-	if !events.has::<runtime::multi_block_election_signed::events::Registered>()? {
+	if !events.has::<runtime::multi_block_election_signed::events::Registered>() {
 		return Err(Error::MissingTxEvent("Register score".to_string()));
 	};
 
@@ -451,9 +460,13 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 
 	// 3. Get current phase and validate before submitting pages
 	let storage = utils::storage_at_head(client).await?;
-	let current_phase = storage
-		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
-		.await?;
+	let current_phase = utils::decode_storage_opt(
+		storage
+			.storage()
+			.try_fetch(runtime::storage().multi_block_election().current_phase(), ())
+			.await?,
+	)?
+	.unwrap_or(Phase::Off);
 
 	validate_signed_phase_or_bail(&current_phase, client, signer, round, min_signed_phase_blocks)
 		.await?;
@@ -502,9 +515,13 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 
 	// 6. Get current phase and validate before retrying failed pages
 	let storage = utils::storage_at_head(client).await?;
-	let current_phase = storage
-		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
-		.await?;
+	let current_phase = utils::decode_storage_opt(
+		storage
+			.storage()
+			.try_fetch(runtime::storage().multi_block_election().current_phase(), ())
+			.await?,
+	)?
+	.unwrap_or(Phase::Off);
 
 	validate_signed_phase_or_bail(&current_phase, client, signer, round, min_signed_phase_blocks)
 		.await?;
@@ -550,9 +567,13 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 		);
 
 		let storage = utils::storage_at_head(client).await?;
-		let current_phase = storage
-			.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
-			.await?;
+		let current_phase = utils::decode_storage_opt(
+			storage
+				.storage()
+				.try_fetch(runtime::storage().multi_block_election().current_phase(), ())
+				.await?,
+		)?
+		.unwrap_or(Phase::Off);
 
 		validate_signed_phase_or_bail(
 			&current_phase,
@@ -593,14 +614,18 @@ async fn submit_pages_batch<T: MinerConfig + 'static>(
 ) -> Result<SubmissionResult, Error> {
 	// Check phase before submitting this batch
 	let storage = utils::storage_at_head(client).await?;
-	let current_phase = storage
-		.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
-		.await?;
+	let current_phase = utils::decode_storage_opt(
+		storage
+			.storage()
+			.try_fetch(runtime::storage().multi_block_election().current_phase(), ())
+			.await?,
+	)?
+	.unwrap_or(Phase::Off);
 
 	validate_signed_phase_or_bail(&current_phase, client, signer, round, min_signed_phase_blocks)
 		.await?;
 	let mut txs = FuturesUnordered::new();
-	let mut nonce = client.chain_api().await.tx().account_nonce(signer.account_id()).await?;
+	let mut nonce = client.chain_api().await.tx().await?.account_nonce(signer.account_id()).await?;
 
 	// Collect expected pages before consuming the vector
 	let expected_pages: HashSet<u32> = pages_to_submit.iter().map(|(page, _)| *page).collect();
@@ -609,9 +634,13 @@ async fn submit_pages_batch<T: MinerConfig + 'static>(
 	for (page, solution) in pages_to_submit.into_iter() {
 		// Get current phase for precise mortality
 		let storage = utils::storage_at_head(client).await?;
-		let current_phase = storage
-			.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
-			.await?;
+		let current_phase = utils::decode_storage_opt(
+			storage
+				.storage()
+				.try_fetch(runtime::storage().multi_block_election().current_phase(), ())
+				.await?,
+		)?
+		.unwrap_or(Phase::Off);
 		let blocks_remaining = get_signed_phase_blocks_remaining(&current_phase)?;
 
 		let tx_status = submit_inner(
@@ -649,9 +678,10 @@ async fn submit_pages_batch<T: MinerConfig + 'static>(
 				for event in events.iter() {
 					let event = event?;
 
-					if let Some(solution_stored) =
-						event.as_event::<runtime::multi_block_election_signed::events::Stored>()?
-					{
+					if let Some(Ok(solution_stored)) =
+						event
+							.decode_fields_as::<runtime::multi_block_election_signed::events::Stored>(
+							) {
 						let page = solution_stored.2;
 
 						log::debug!(
@@ -734,9 +764,13 @@ pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
 	for chunk in paged_raw_solution.chunks(chunk_size) {
 		// Check phase before each chunk
 		let storage = utils::storage_at_head(client).await?;
-		let current_phase = storage
-			.fetch_or_default(&runtime::storage().multi_block_election().current_phase())
-			.await?;
+		let current_phase = utils::decode_storage_opt(
+			storage
+				.storage()
+				.try_fetch(runtime::storage().multi_block_election().current_phase(), ())
+				.await?,
+		)?
+		.unwrap_or(Phase::Off);
 
 		validate_signed_phase_or_bail(
 			&current_phase,
@@ -800,9 +834,10 @@ pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
 pub(crate) async fn bail(client: &Client, signer: &Signer) -> Result<(), Error> {
 	let bail_tx = runtime::tx().multi_block_election_signed().bail();
 	let chain_api = client.chain_api().await;
-	let nonce = chain_api.tx().account_nonce(signer.account_id()).await?;
+	let mut tx_client = chain_api.tx().await?;
+	let nonce = tx_client.account_nonce(signer.account_id()).await?;
 	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
-	let xt = chain_api.tx().create_signed(&bail_tx, &**signer, xt_cfg).await?;
+	let xt = tx_client.create_signed(&bail_tx, &**signer, xt_cfg).await?;
 	let tx = xt.submit_and_watch().await?;
 	utils::wait_tx_in_finalized_block(tx).await?;
 	Ok(())
@@ -842,13 +877,17 @@ async fn validate_signed_phase_or_bail(
 
 				// Check if we have a partial submission and bail it
 				let storage = utils::storage_at_head(client).await?;
-				let maybe_submission = storage
-					.fetch(
-						&runtime::storage()
-							.multi_block_election_signed()
-							.submission_metadata_storage(round, signer.account_id().clone()),
-					)
-					.await?;
+				let maybe_submission = utils::decode_storage_opt(
+					storage
+						.storage()
+						.try_fetch(
+							runtime::storage()
+								.multi_block_election_signed()
+								.submission_metadata_storage(),
+							(round, *signer.account_id()),
+						)
+						.await?,
+				)?;
 
 				if let Some(submission) = maybe_submission {
 					// We have a submission - check if it's incomplete

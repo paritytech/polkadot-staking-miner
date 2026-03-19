@@ -18,7 +18,7 @@ use crate::{
 	client::Client,
 	commands::types::SubmissionStrategy,
 	error::Error,
-	prelude::{AccountId, ChainClient, Config, Hash, LOG_TARGET, Storage},
+	prelude::{AccountId, AtBlock, ChainClient, Config, Hash, LOG_TARGET},
 };
 use pin_project_lite::pin_project;
 use polkadot_sdk::{
@@ -37,7 +37,10 @@ use std::{
 	task::{Context as TaskContext, Poll},
 	time::{Duration, Instant},
 };
-use subxt::tx::{TxInBlock, TxProgress};
+use subxt::{
+	storage::StorageValue,
+	tx::{TransactionInBlock, TransactionProgress},
+};
 
 pin_project! {
 	pub struct Timed<Fut>
@@ -78,24 +81,34 @@ pub trait TimedFuture: Sized + Future {
 
 impl<F: Future> TimedFuture for F {}
 
-/// Helper to get storage at block.
-pub async fn storage_at(block: Option<Hash>, api: &ChainClient) -> Result<Storage, Error> {
+/// Helper to get a client positioned at a specific block.
+pub async fn storage_at(block: Option<Hash>, api: &ChainClient) -> Result<AtBlock, Error> {
 	if let Some(block_hash) = block {
-		Ok(api.storage().at(block_hash))
+		Ok(api.at_block(block_hash).await?)
 	} else {
-		Ok(api.storage().at_latest().await?)
+		Ok(api.at_current_block().await?)
 	}
 }
 
-pub async fn storage_at_head(api: &Client) -> Result<Storage, Error> {
+pub async fn storage_at_head(api: &Client) -> Result<AtBlock, Error> {
 	let chain_api = api.chain_api().await;
 	let hash = get_latest_finalized_head(&chain_api).await?;
 	storage_at(Some(hash), &chain_api).await
 }
 
+/// Decode an optional `StorageValue` into `Option<T>`.
+///
+/// Shorthand for the common `.map(|v| v.decode()).transpose()?` pattern
+/// when working with `try_fetch` results.
+pub fn decode_storage_opt<'info, V: subxt::ext::scale_decode::DecodeAsType>(
+	val: Option<StorageValue<'info, V>>,
+) -> Result<Option<V>, Error> {
+	val.map(|v| v.decode()).transpose().map_err(Into::into)
+}
+
 pub async fn get_latest_finalized_head(api: &ChainClient) -> Result<Hash, Error> {
-	let finalized_block_ref = api.backend().latest_finalized_block_ref().await?;
-	Ok(finalized_block_ref.hash())
+	let at_block = api.at_current_block().await?;
+	Ok(at_block.block_hash())
 }
 
 /// Returns `true` if `our_score` better the onchain `best_score` according the given strategy.
@@ -116,9 +129,9 @@ pub fn score_passes_strategy(
 }
 
 /// Wait for the transaction to be included in a finalized block.
-pub async fn wait_tx_in_finalized_block(
-	tx: TxProgress<Config, ChainClient>,
-) -> Result<TxInBlock<Config, ChainClient>, Error> {
+pub async fn wait_tx_in_finalized_block<C: subxt::client::OnlineClientAtBlockT<Config>>(
+	tx: TransactionProgress<Config, C>,
+) -> Result<TransactionInBlock<Config, C>, Error> {
 	tx.wait_for_finalized().await.map_err(Into::into)
 }
 
@@ -170,9 +183,8 @@ struct ChainProperties {
 
 /// Get the SS58 prefix from the chain
 pub async fn get_ss58_prefix(client: &Client) -> Result<u16, Error> {
-	match crate::dynamic::pallet_api::system::constants::SS58_PREFIX
-		.fetch(&*client.chain_api().await)
-	{
+	let at_block = client.chain_api().await.at_current_block().await?;
+	match crate::dynamic::pallet_api::system::constants::SS58_PREFIX.fetch(&at_block) {
 		Ok(ss58_prefix) => Ok(ss58_prefix),
 		Err(e) => {
 			log::warn!(target: LOG_TARGET, "Failed to fetch SS58 prefix: {e}");

@@ -1,7 +1,7 @@
 use crate::{
 	client::Client,
 	error::Error,
-	prelude::{AccountId, Hash, Header, LOG_TARGET, Storage},
+	prelude::{AccountId, AtBlock, Hash, Header, LOG_TARGET},
 	runtime::multi_block::{
 		self as runtime, runtime_types::pallet_election_provider_multi_block::types::Phase,
 	},
@@ -84,7 +84,7 @@ impl<T: MinerConfig> Snapshot<T> {
 
 /// Block details related to multi-block.
 pub struct BlockDetails {
-	pub storage: Storage,
+	pub at_block: AtBlock,
 	pub phase: Phase,
 	pub n_pages: u32,
 	pub round: u32,
@@ -100,18 +100,28 @@ impl BlockDetails {
 		block_hash: Hash,
 		round: u32,
 	) -> Result<Self, Error> {
-		let storage = utils::storage_at(Some(block_hash), &*client.chain_api().await).await?;
+		let at_block = utils::storage_at(Some(block_hash), &*client.chain_api().await).await?;
 
-		let desired_targets = storage
-			.fetch(&runtime::storage().multi_block_election().desired_targets(round))
-			.await?
-			.unwrap_or(0);
+		let desired_targets = crate::utils::decode_storage_opt(
+			at_block
+				.storage()
+				.try_fetch(runtime::storage().multi_block_election().desired_targets(), (round,))
+				.await?,
+		)?
+		.unwrap_or(0);
 
 		log::trace!(target: LOG_TARGET, "Processing block={} round={}, phase={:?}", at.number, round, phase);
 
 		let n_pages = static_types::Pages::get();
 
-		Ok(Self { storage, phase, n_pages, round, desired_targets, block_number: at.number })
+		Ok(Self {
+			at_block,
+			phase,
+			n_pages,
+			round,
+			desired_targets,
+			block_number: at.number as u32,
+		})
 	}
 }
 

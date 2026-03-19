@@ -90,10 +90,11 @@ pub async fn wait_for_three_miners_solution(port: u16) -> anyhow::Result<()> {
 	log::info!("Starting to wait for three miners' solutions on port {}", port);
 
 	// API should be ready immediately since run_zombienet waits for it
-	let api = ChainClient::from_url(&format!("ws://127.0.0.1:{}", port)).await?;
+	let api = ChainClient::from_insecure_url(&format!("ws://127.0.0.1:{}", port)).await?;
 
 	// Read pallet constants to calculate proper timeout
-	let constants = read_pallet_constants(&api).await?;
+	let at_block = api.at_current_block().await?;
+	let constants = read_pallet_constants(&at_block).await?;
 
 	// In order for the test to be successful, it is expected that the SignedValidation phase lasts
 	// at least T::Pages() * 2 otherwise only a solution can be fully validated.
@@ -134,10 +135,10 @@ pub async fn wait_for_three_miners_solution(port: u16) -> anyhow::Result<()> {
 	let mut discarded_account: Option<AccountId32> = None;
 	let mut slashed_account: Option<AccountId32> = None;
 
-	let mut blocks_sub = api.blocks().subscribe_finalized().await?;
-	let pages = api
+	let mut blocks_sub = api.stream_blocks().await?;
+	let pages: u32 = at_block
 		.constants()
-		.at(&runtime::constants().multi_block_election().pages())
+		.entry(runtime::constants().multi_block_election().pages())
 		.unwrap();
 
 	'outer: while let Some(block) = blocks_sub.next().await {
@@ -146,13 +147,14 @@ pub async fn wait_for_three_miners_solution(port: u16) -> anyhow::Result<()> {
 		}
 
 		let block = block?;
-		let events = block.events().await?;
+		let at = block.at().await?;
+		let events = at.events().fetch().await?;
 
 		for ev in events.iter() {
 			let ev = ev?;
 
 			// Score registration.
-			if let Some(item) = ev.as_event::<Registered>()? {
+			if let Some(Ok(item)) = ev.decode_fields_as::<Registered>() {
 				if item.1 == alice() {
 					log::info!("Alice score registered");
 					alice_score_submitted = true;
@@ -166,7 +168,7 @@ pub async fn wait_for_three_miners_solution(port: u16) -> anyhow::Result<()> {
 			}
 
 			// Page submission.
-			if let Some(item) = ev.as_event::<Stored>()? {
+			if let Some(Ok(item)) = ev.decode_fields_as::<Stored>() {
 				if item.1 == alice() {
 					log::info!(
 						"Adding Alice page {} to pages_submitted (was size {})",
@@ -196,7 +198,7 @@ pub async fn wait_for_three_miners_solution(port: u16) -> anyhow::Result<()> {
 
 			// Check for reward event - this is sent by the chain upon successful verification of a
 			// solution
-			if let Some(item) = ev.as_event::<Rewarded>()? {
+			if let Some(Ok(item)) = ev.decode_fields_as::<Rewarded>() {
 				if item.1 == alice() {
 					log::info!("Alice rewarded!");
 					rewarded_account = Some(alice());
@@ -208,7 +210,7 @@ pub async fn wait_for_three_miners_solution(port: u16) -> anyhow::Result<()> {
 
 			// Check for slash event - this is sent by the chain once it detects an invalid
 			// submissions.
-			if let Some(item) = ev.as_event::<Slashed>()? {
+			if let Some(Ok(item)) = ev.decode_fields_as::<Slashed>() {
 				if item.1 == charlie() {
 					log::info!("Charlie slashed for incomplete/invalid submission!");
 					slashed_account = Some(charlie());
@@ -217,7 +219,7 @@ pub async fn wait_for_three_miners_solution(port: u16) -> anyhow::Result<()> {
 
 			// Check for discard event - this is sent by the chain at the next round after a miner
 			// has called `clear_old_round_data()` to reclaim deposit back for a discarded solution.
-			if let Some(item) = ev.as_event::<Discarded>()? {
+			if let Some(Ok(item)) = ev.decode_fields_as::<Discarded>() {
 				if item.1 == alice() {
 					log::info!("Alice solution discarded!");
 					discarded_account = Some(alice());
@@ -300,37 +302,33 @@ struct PalletConstants {
 	unsigned_phase: u32,
 }
 
+type AtBlock = subxt::OnlineClientAtBlock<subxt::PolkadotConfig>;
+
 /// Read the MultiBlockElection pallet constants
-async fn read_pallet_constants(api: &ChainClient) -> anyhow::Result<PalletConstants> {
-	let pages = api
+async fn read_pallet_constants(at_block: &AtBlock) -> anyhow::Result<PalletConstants> {
+	let pages: u32 = at_block
 		.constants()
-		.at(&runtime::constants().multi_block_election().pages())
+		.entry(runtime::constants().multi_block_election().pages())
 		.map_err(|e| anyhow::anyhow!("Failed to read Pages constant: {}", e))?;
 
-	let signed_phase = api
+	let signed_phase: scale_value::Value = at_block
 		.constants()
-		.at(&subxt::dynamic::constant("MultiBlockElection", "SignedPhase"))
-		.map_err(|e| anyhow::anyhow!("Failed to read SignedPhase constant: {}", e))?
-		.to_value()
-		.map_err(|e| anyhow::anyhow!("Failed to decode SignedPhase: {}", e))?;
+		.entry(subxt::dynamic::constant("MultiBlockElection", "SignedPhase"))
+		.map_err(|e| anyhow::anyhow!("Failed to read SignedPhase constant: {}", e))?;
 	let signed_phase: u32 = scale_value::serde::from_value(signed_phase)
 		.map_err(|e| anyhow::anyhow!("Failed to deserialize SignedPhase: {}", e))?;
 
-	let signed_validation_phase = api
+	let signed_validation_phase: scale_value::Value = at_block
 		.constants()
-		.at(&subxt::dynamic::constant("MultiBlockElection", "SignedValidationPhase"))
-		.map_err(|e| anyhow::anyhow!("Failed to read SignedValidationPhase constant: {}", e))?
-		.to_value()
-		.map_err(|e| anyhow::anyhow!("Failed to decode SignedValidationPhase: {}", e))?;
+		.entry(subxt::dynamic::constant("MultiBlockElection", "SignedValidationPhase"))
+		.map_err(|e| anyhow::anyhow!("Failed to read SignedValidationPhase constant: {}", e))?;
 	let signed_validation_phase: u32 = scale_value::serde::from_value(signed_validation_phase)
 		.map_err(|e| anyhow::anyhow!("Failed to deserialize SignedValidationPhase: {}", e))?;
 
-	let unsigned_phase = api
+	let unsigned_phase: scale_value::Value = at_block
 		.constants()
-		.at(&subxt::dynamic::constant("MultiBlockElection", "UnsignedPhase"))
-		.map_err(|e| anyhow::anyhow!("Failed to read UnsignedPhase constant: {}", e))?
-		.to_value()
-		.map_err(|e| anyhow::anyhow!("Failed to decode UnsignedPhase: {}", e))?;
+		.entry(subxt::dynamic::constant("MultiBlockElection", "UnsignedPhase"))
+		.map_err(|e| anyhow::anyhow!("Failed to read UnsignedPhase constant: {}", e))?;
 	let unsigned_phase: u32 = scale_value::serde::from_value(unsigned_phase)
 		.map_err(|e| anyhow::anyhow!("Failed to deserialize UnsignedPhase: {}", e))?;
 

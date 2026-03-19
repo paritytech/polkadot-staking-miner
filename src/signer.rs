@@ -51,7 +51,7 @@ impl PairSigner {
 
 impl subxt::tx::Signer<Config> for PairSigner {
 	fn account_id(&self) -> <Config as subxt::Config>::AccountId {
-		self.account_id.clone()
+		self.account_id
 	}
 
 	fn sign(&self, signer_payload: &[u8]) -> <Config as subxt::Config>::Signature {
