@@ -1135,10 +1135,7 @@ where
 			let result = crate::utils::decode_storage_opt(
 				at_block
 					.storage()
-					.try_fetch(
-						runtime::storage().system().account(),
-						(*signer.account_id(),),
-					)
+					.try_fetch(runtime::storage().system().account(), (*signer.account_id(),))
 					.await?,
 			)?;
 			let duration = start_time.elapsed();
