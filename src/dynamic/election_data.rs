@@ -260,7 +260,7 @@ where
 	// Sort winners by backing and enforce desired_targets limit.
 	let mut winners_sorted: Vec<(AccountId, Support<AccountId>)> =
 		winner_support_map.into_iter().collect();
-	winners_sorted.sort_by(|a, b| b.1.total.cmp(&a.1.total));
+	winners_sorted.sort_by_key(|b| std::cmp::Reverse(b.1.total));
 	if winners_sorted.len() > ctx.desired_targets as usize {
 		winners_sorted.truncate(ctx.desired_targets as usize);
 	}
@@ -302,7 +302,7 @@ where
 			.map(|(who, stake)| (who.clone(), *stake))
 			.collect();
 		// Sort by stake descending for consistent ordering
-		validator_nominators.sort_by(|a, b| b.1.cmp(&a.1));
+		validator_nominators.sort_by_key(|b| std::cmp::Reverse(b.1));
 
 		let nominator_allocations = validator_nominators
 			.iter()
