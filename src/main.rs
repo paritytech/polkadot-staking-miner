@@ -245,16 +245,16 @@ async fn runtime_upgrade_task(client: Client, tx: oneshot::Sender<Error>) {
 
 		let current_spec = at_block.spec_version();
 
-		if let Some(prev) = last_spec_version {
-			if current_spec != prev {
-				log::info!(target: LOG_TARGET, "Runtime upgrade detected: spec version {prev} -> {current_spec}");
-				if let Err(e) = dynamic::update_metadata_constants(&at_block) {
-					let _ = tx.send(e);
-					return;
-				}
-				prometheus::on_runtime_upgrade();
-				log::info!(target: LOG_TARGET, "Runtime upgrade to version {current_spec} successful");
+		if let Some(prev) = last_spec_version &&
+			current_spec != prev
+		{
+			log::info!(target: LOG_TARGET, "Runtime upgrade detected: spec version {prev} -> {current_spec}");
+			if let Err(e) = dynamic::update_metadata_constants(&at_block) {
+				let _ = tx.send(e);
+				return;
 			}
+			prometheus::on_runtime_upgrade();
+			log::info!(target: LOG_TARGET, "Runtime upgrade to version {current_spec} successful");
 		}
 		last_spec_version = Some(current_spec);
 	}

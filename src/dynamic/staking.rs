@@ -116,8 +116,7 @@ pub(crate) async fn fetch_candidates(storage: &AtBlock) -> Result<Vec<ValidatorD
 
 	log::debug!(target: LOG_TARGET, "Fetched stakes for {} validators", stakes.len());
 
-	let candidates: Vec<ValidatorData> =
-		candidate_accounts.into_iter().zip(stakes.into_iter()).collect();
+	let candidates: Vec<ValidatorData> = candidate_accounts.into_iter().zip(stakes).collect();
 
 	log::info!(target: LOG_TARGET, "Total registered candidates: {}", candidates.len());
 
