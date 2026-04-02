@@ -46,7 +46,7 @@ pub(crate) async fn fetch_candidates(storage: &AtBlock) -> Result<Vec<ValidatorD
 		candidate_accounts.push(account);
 		count += 1;
 
-		if count % 500 == 0 {
+		if count.is_multiple_of(500) {
 			log::debug!(target: LOG_TARGET, "Fetched {count} candidate accounts...");
 		}
 	}
@@ -487,7 +487,7 @@ pub(crate) async fn fetch_voters(
 						}
 					}
 					processed_count += BATCH_SIZE.min(total - processed_count); // Approximate
-					if processed_count % 5000 == 0 {
+					if processed_count.is_multiple_of(5000) {
 						log::trace!(target: LOG_TARGET, "Processed {processed_count} voters...");
 					}
 				},
@@ -606,11 +606,10 @@ async fn fetch_voter_batch(
 			let mut actual_stake = score_stake;
 
 			if let Some(ledger) = storage.storage().try_fetch(ledger_addr, ledger_key).await? &&
-				let Ok(value) = ledger.decode()
+				let Ok(value) = ledger.decode() &&
+				let Some(active) = value.at("active").and_then(|v| v.as_u128())
 			{
-				if let Some(active) = value.at("active").and_then(|v| v.as_u128()) {
-					actual_stake = active as u64;
-				}
+				actual_stake = active as u64;
 			}
 
 			Result::<_, Error>::Ok((account_id, actual_stake, nominator_data))
