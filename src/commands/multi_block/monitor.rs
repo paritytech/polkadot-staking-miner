@@ -1917,6 +1917,13 @@ fn is_critical_miner_error(error: &Error) -> bool {
 		Error::WrongPageCount { .. } |
 		Error::WrongRound { .. } |
 		Error::Timeout(_) => false,
+		// chainHead_follow emits a `stop` event when the server asks the client to
+		// re-subscribe (e.g. pinned-block budget exceeded). Subxt's auto-resubscribes in the
+		// background, so the next tx uses a fresh subscription.
+		Error::Subxt(boxed_err)
+			if matches!(boxed_err.as_ref(), subxt::Error::Other(_)) &&
+				boxed_err.to_string().contains("chainHead_follow emitted 'stop' event") =>
+			false,
 		Error::Subxt(boxed_err)
 			if matches!(
 				boxed_err.as_ref(),
