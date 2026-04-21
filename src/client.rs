@@ -26,20 +26,21 @@ const MAX_CONNECTION_ATTEMPTS: u32 = 3;
 /// Delay between connection attempts in seconds.
 const CONNECTION_RETRY_DELAY_SECS: u64 = 5;
 
-/// Maximum age (in finalized blocks) a pinned block is allowed to reach before subxt
-/// automatically unpins it.
-/// For a miner running against 2s-block AssetHub, this means 128s, for 500ms-block, 32s - still
-/// acceptable for normal tx finalization.
-/// Because subxt adds one entry to its pinned-blocks map per new finalized block and in the worst
-/// case removes one entry per block that ages past this limit, the map size plateaus at 64
-/// entries. That is well below the substrate chainHead server's 512-pin budget (see
-/// `MAX_PINNED_BLOCKS` in polkadot-sdk as used by default in ChainHeadConfig) and allows other
-/// concurrent subscriptions as well.
-/// Without this cap, subxt defaults to `usize::MAX` — the map is effectively unbounded — so it
-/// would grow until reaching the server's pin budget, at which point the server emits a `stop`
-/// event that kills in-flight transactions.
-/// If a tx exceeds the retention window it loses its pin and fails, but the miner's recovery path
-/// (`Incomplete` on chain → missing-pages branch) handles that cleanly on the next block.
+/// Maximum age (in finalized-block events) a pinned block is allowed to reach before subxt
+/// unpins it. The counter advances only on `FollowEvent::Finalized` (see
+/// `FollowStreamUnpin::next_rel_block_age` in subxt), so the window scales with finalization
+/// cadence: ~128s on 2s-block AssetHub, ~32s on 500ms blocks.
+/// Steady-state pinned-map size is ~64 finalized entries, still well below the substrate
+/// chainHead server's 512-pin budget (`MAX_PINNED_BLOCKS` in polkadot-sdk's default
+/// `ChainHeadConfig`), leaving headroom for concurrent subscriptions.
+/// Without this cap, subxt defaults to `usize::MAX`: the pinned map grows until it hits the
+/// server's budget, at which point the server emits a `stop` event that kills in-flight
+/// transactions.
+/// The cap does not itself produce a tx-level failure; subxt's `transaction_timeout_secs` (default:
+/// 240s) bounds tail latency independently.
+/// If a tx ever takes longer than the window to finalize, the block is age-unpinned server-side but
+/// the tx watch continues until subxt's timeout fires. The miner's recovery path then picks up
+/// cleanly on the next round.
 const MAX_BLOCK_LIFE: usize = 64;
 
 /// Wraps the subxt interfaces to make it easy to use for the staking-miner.
