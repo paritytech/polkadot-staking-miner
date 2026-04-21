@@ -26,21 +26,22 @@ const MAX_CONNECTION_ATTEMPTS: u32 = 3;
 /// Delay between connection attempts in seconds.
 const CONNECTION_RETRY_DELAY_SECS: u64 = 5;
 
-/// Maximum age (in finalized-block events) a pinned block is allowed to reach before subxt
-/// unpins it. The counter advances only on `FollowEvent::Finalized` (see
-/// `FollowStreamUnpin::next_rel_block_age` in subxt), so the window scales with finalization
-/// cadence: ~128s on 2s-block AssetHub, ~32s on 500ms blocks.
-/// Steady-state pinned-map size is ~64 finalized entries, still well below the substrate
-/// chainHead server's 512-pin budget (`MAX_PINNED_BLOCKS` in polkadot-sdk's default
-/// `ChainHeadConfig`), leaving headroom for concurrent subscriptions.
-/// Without this cap, subxt defaults to `usize::MAX`: the pinned map grows until it hits the
-/// server's budget, at which point the server emits a `stop` event that kills in-flight
-/// transactions.
-/// The cap does not itself produce a tx-level failure; subxt's `transaction_timeout_secs` (default:
-/// 240s) bounds tail latency independently.
-/// If a tx ever takes longer than the window to finalize, the block is age-unpinned server-side but
-/// the tx watch continues until subxt's timeout fires. The miner's recovery path then picks up
-/// cleanly on the next round.
+/// Maximum age (in finalized-block events) a pinned block can reach before subxt unpins it.
+/// The counter advances only on `FollowEvent::Finalized` (see
+/// `FollowStreamUnpin::next_rel_block_age` in subxt 0.50), so the window scales with
+/// finalization cadence: ~128s on 2s blocks, ~32s on 500ms — both well under subxt's default
+/// `transaction_timeout_secs` of 240s.
+///
+/// Without this cap, subxt defaults to `usize::MAX`: pinned blocks are released only when
+/// every caller `BlockRef` drops. In practice, each in-flight `submit_and_watch` retains
+/// `BlockRef`s to observed NewBlock/Finalized blocks for the full lifetime of the watch.
+/// The cumulative retention saturates the substrate server's 512-pin budget
+/// (`MAX_PINNED_BLOCKS` in polkadot-sdk's default `ChainHeadConfig`), at which point the
+/// server emits a `chainHead_follow 'stop'` that kills the in-flight tx.
+///
+/// The cap fires age-based unpin in `FollowStreamUnpin::unpin_blocks` unconditionally of
+/// caller `BlockRef` retention — the only subxt 0.50 lever that bypasses tx-watch
+/// retention. Pinned-map size stays at ~64, far below 512.
 const MAX_BLOCK_LIFE: usize = 64;
 
 /// Wraps the subxt interfaces to make it easy to use for the staking-miner.
