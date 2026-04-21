@@ -26,6 +26,22 @@ const MAX_CONNECTION_ATTEMPTS: u32 = 3;
 /// Delay between connection attempts in seconds.
 const CONNECTION_RETRY_DELAY_SECS: u64 = 5;
 
+/// Maximum age (in finalized blocks) a pinned block is allowed to reach before subxt
+/// automatically unpins it.
+/// For a miner running against 2s-block AssetHub, this means 128s, for 500ms-block, 32s - still
+/// acceptable for normal tx finalization.
+/// Because subxt adds one entry to its pinned-blocks map per new finalized block and in the worst
+/// case removes one entry per block that ages past this limit, the map size plateaus at 64
+/// entries. That is well below the substrate chainHead server's 512-pin budget (see
+/// `MAX_PINNED_BLOCKS` in polkadot-sdk as used by default in ChainHeadConfig) and allows other
+/// concurrent subscriptions as well.
+/// Without this cap, subxt defaults to `usize::MAX` — the map is effectively unbounded — so it
+/// would grow until reaching the server's pin budget, at which point the server emits a `stop`
+/// event that kills in-flight transactions.
+/// If a tx exceeds the retention window it loses its pin and fails, but the miner's recovery path
+/// (`Incomplete` on chain → missing-pages branch) handles that cleanly on the next block.
+const MAX_BLOCK_LIFE: usize = 64;
+
 /// Wraps the subxt interfaces to make it easy to use for the staking-miner.
 /// Supports multiple RPC endpoints with failover capability.
 #[derive(Clone, Debug)]
@@ -199,6 +215,7 @@ impl Client {
 				client
 			} else {
 				let backend: ChainHeadBackend<Config> = ChainHeadBackendBuilder::default()
+					.max_block_life(MAX_BLOCK_LIFE)
 					.build_with_background_driver(reconnecting_rpc.clone());
 				let client = ChainClient::from_backend(Arc::new(backend)).await?;
 				log::info!(target: LOG_TARGET, "Connected to {uri} with ChainHead backend");
