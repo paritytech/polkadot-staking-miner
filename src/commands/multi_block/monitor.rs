@@ -1436,6 +1436,9 @@ where
 						}));
 					},
 				}
+				// The submission was started in an earlier process and has now been completed from
+				// here. Count the success so `started`/`success` match across the restart.
+				prometheus::on_submission_success();
 				return Ok(());
 			}
 

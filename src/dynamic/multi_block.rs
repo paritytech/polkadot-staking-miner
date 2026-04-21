@@ -400,9 +400,6 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 	round: u32,
 	min_signed_phase_blocks: u32,
 ) -> Result<(), Error> {
-	// Record that a submission has started
-	crate::prometheus::on_submission_started();
-
 	// 1. Get current phase and validate
 	let storage = utils::storage_at_head(client).await?;
 	let current_phase = utils::decode_storage_opt(
@@ -457,6 +454,9 @@ pub(crate) async fn submit<T: MinerConfig + Send + Sync + 'static>(
 	};
 
 	log::info!(target: LOG_TARGET, "Score registered at block {:?}", tx.block_hash());
+
+	// Only once `register_score` is confirmed on chain, the submission is considered started.
+	crate::prometheus::on_submission_started();
 
 	// 3. Get current phase and validate before submitting pages
 	let storage = utils::storage_at_head(client).await?;
