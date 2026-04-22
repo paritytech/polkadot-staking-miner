@@ -26,6 +26,24 @@ const MAX_CONNECTION_ATTEMPTS: u32 = 3;
 /// Delay between connection attempts in seconds.
 const CONNECTION_RETRY_DELAY_SECS: u64 = 5;
 
+/// Maximum age (in finalized-block events) a pinned block can reach before subxt unpins it.
+/// The counter advances only on `FollowEvent::Finalized` (see
+/// `FollowStreamUnpin::next_rel_block_age` in subxt 0.50), so the window scales with
+/// finalization cadence: ~128s on 2s blocks, ~32s on 500ms — both well under subxt's default
+/// `transaction_timeout_secs` of 240s.
+///
+/// Without this cap, subxt defaults to `usize::MAX`: pinned blocks are released only when
+/// every caller `BlockRef` drops. In practice, each in-flight `submit_and_watch` retains
+/// `BlockRef`s to observed NewBlock/Finalized blocks for the full lifetime of the watch.
+/// The cumulative retention saturates the substrate server's 512-pin budget
+/// (`MAX_PINNED_BLOCKS` in polkadot-sdk's default `ChainHeadConfig`), at which point the
+/// server emits a `chainHead_follow 'stop'` that kills the in-flight tx.
+///
+/// The cap fires age-based unpin in `FollowStreamUnpin::unpin_blocks` unconditionally of
+/// caller `BlockRef` retention — the only subxt 0.50 lever that bypasses tx-watch
+/// retention. Pinned-map size stays at ~64, far below 512.
+const MAX_BLOCK_LIFE: usize = 64;
+
 /// Wraps the subxt interfaces to make it easy to use for the staking-miner.
 /// Supports multiple RPC endpoints with failover capability.
 #[derive(Clone, Debug)]
@@ -199,6 +217,7 @@ impl Client {
 				client
 			} else {
 				let backend: ChainHeadBackend<Config> = ChainHeadBackendBuilder::default()
+					.max_block_life(MAX_BLOCK_LIFE)
 					.build_with_background_driver(reconnecting_rpc.clone());
 				let client = ChainClient::from_backend(Arc::new(backend)).await?;
 				log::info!(target: LOG_TARGET, "Connected to {uri} with ChainHead backend");
