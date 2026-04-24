@@ -1900,12 +1900,15 @@ async fn clear_old_round_data(
 	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
 	let xt = tx_client.create_signed(&tx, &**signer, xt_cfg).await?;
 
-	// Submit without waiting for finalization to avoid blocking (fire-and-forget approach)
-	// This prevents potential resource contention with listener task's storage queries
-	let tx_hash = xt.submit().await?;
+	// Submit and wait for finalization before returning.
+	// We want to space out submissions to avoid overloading the RPC node with multiple potentially
+	// storage-heavy extrinsics in a short time window.
+	// Matches the `submit_and_watch` + `wait_tx_in_finalized_block` pattern used by `bail` and
+	// `prune_era_step` elsewhere in the miner.
+	let tx_progress = xt.submit_and_watch().await?;
+	let tx = utils::wait_tx_in_finalized_block(tx_progress).await?;
 
-	log::debug!(target: LOG_TARGET, "Successfully submitted clear_old_round_data for round {round}, tx_hash: {tx_hash:?}");
-	log::info!(target: LOG_TARGET, "Clearing old rounds: Fire-and-forget submission for round {round} cleanup");
+	log::debug!(target: LOG_TARGET, "Successfully finalized clear_old_round_data for round {round}, tx_hash: {:?}", tx.extrinsic_hash());
 	Ok(())
 }
 
