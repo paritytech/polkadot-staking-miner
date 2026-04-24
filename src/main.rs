@@ -102,6 +102,10 @@ async fn main() -> Result<(), Error> {
 	if let Err(e) = prometheus::run(prometheus_port).await {
 		log::warn!("Failed to start prometheus endpoint: {e}");
 	}
+	// Force-register all Lazy metrics so counters are exposed with value 0 from
+	// the first scrape. Otherwise PromQL `increase()` misses the 0→N transition
+	// and alerts like `increase(...[24h5m]) == 0` fire spuriously.
+	prometheus::init();
 	// Initialize the timestamp so that if connection hangs, the stall detection alert can fire.
 	prometheus::set_last_block_processing_time();
 
