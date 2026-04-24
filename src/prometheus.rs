@@ -399,6 +399,58 @@ mod hidden {
 		.unwrap()
 	});
 
+	/// Force-register every Lazy metric with the default Prometheus registry.
+	///
+	/// Lazy counters are only registered on first access, so a metric that never
+	/// increments before the first scrape does not appear in /metrics at all.
+	/// PromQL `increase()` then treats the eventual 0→N increment as a flat series
+	/// and returns 0, which silently breaks alerts like
+	/// `increase(staking_miner_submissions_success[24h]) == 0`. Forcing
+	/// registration at startup ensures each counter is exposed with value 0 from
+	/// the first scrape, so the 0→N transition is observable.
+	pub fn init() {
+		Lazy::force(&MINED_SOLUTION_DURATION);
+		Lazy::force(&SUBMIT_SOLUTION_AND_WATCH_DURATION);
+		Lazy::force(&BALANCE);
+		Lazy::force(&SCORE_MINIMAL_STAKE);
+		Lazy::force(&SCORE_SUM_STAKE);
+		Lazy::force(&SCORE_SUM_STAKE_SQUARED);
+		Lazy::force(&RUNTIME_UPGRADES);
+		Lazy::force(&SUBMISSIONS_STARTED);
+		Lazy::force(&SUBMISSIONS_SUCCESS);
+		Lazy::force(&CLEAR_OLD_ROUNDS_CLEANUP_SUCCESS);
+		Lazy::force(&CLEAR_OLD_ROUNDS_CLEANUP_FAILURES);
+		Lazy::force(&CLEAR_OLD_ROUNDS_OLD_SUBMISSIONS_FOUND);
+		Lazy::force(&CLEAR_OLD_ROUNDS_OLD_SUBMISSIONS_CLEARED);
+		Lazy::force(&CLEAR_OLD_ROUNDS_CLEANUP_DURATION);
+		Lazy::force(&ERA_PRUNING_SUBMISSIONS_SUCCESS);
+		Lazy::force(&ERA_PRUNING_SUBMISSIONS_FAILURES);
+		Lazy::force(&ERA_PRUNING_STORAGE_MAP_SIZE);
+		Lazy::force(&LISTENER_SUBSCRIPTION_STALLS);
+		Lazy::force(&ENDPOINT_SWITCHES);
+		Lazy::force(&STORAGE_QUERY_DURATION);
+		Lazy::force(&BLOCK_STATE_DURATION);
+		Lazy::force(&BLOCK_DETAILS_DURATION);
+		Lazy::force(&CHECK_EXISTING_SUBMISSION_DURATION);
+		Lazy::force(&BAIL_DURATION);
+		Lazy::force(&BALANCE_FETCH_DURATION);
+		Lazy::force(&PHASE_CHECK_DURATION);
+		Lazy::force(&SCORE_CHECK_DURATION);
+		Lazy::force(&MISSING_PAGES_DURATION);
+		Lazy::force(&LAST_BLOCK_PROCESSING_TIME);
+		Lazy::force(&BLOCK_PROCESSING_STALLS);
+		Lazy::force(&MINING_TIMEOUTS);
+		Lazy::force(&CHECK_EXISTING_SUBMISSION_TIMEOUTS);
+		Lazy::force(&BAIL_TIMEOUTS);
+		Lazy::force(&SUBMIT_TIMEOUTS);
+		Lazy::force(&BALANCE_FETCH_TIMEOUTS);
+		Lazy::force(&PHASE_CHECK_TIMEOUTS);
+		Lazy::force(&SCORE_CHECK_TIMEOUTS);
+		Lazy::force(&MISSING_PAGES_TIMEOUTS);
+		Lazy::force(&ERA_PRUNING_TIMEOUTS);
+		Lazy::force(&CONNECTION_TIMEOUTS);
+	}
+
 	pub fn on_runtime_upgrade() {
 		RUNTIME_UPGRADES.inc();
 	}
