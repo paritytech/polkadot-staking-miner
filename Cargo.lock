@@ -11464,9 +11464,9 @@ dependencies = [
 
 [[package]]
 name = "subxt-rpcs"
-version = "0.50.0"
+version = "0.50.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5929c336747a2f98ad0bcef571529faadcb3e349d4ef12bb7999174840ac957f"
+checksum = "15e4b23044ba59654f30e25cc48f8865e70439ee137764793cdfb0f8452dc638"
 dependencies = [
  "derive-where",
  "finito",
