@@ -545,7 +545,7 @@ enum EraPruningMessage {
 /// - **RPC issues**: Handled transparently by reconnecting RPC client
 ///
 /// ```text
-///
+/// 
 ///                      (finalized blocks)
 /// ┌──────────────────────────────────────────────────────────────────────────┐
 /// │  ┌─────────────┐                      ┌─────────────┐              ┌─────────────┐
