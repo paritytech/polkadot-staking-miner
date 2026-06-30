@@ -18,7 +18,7 @@ use crate::{
 use codec::Decode;
 use futures::TryStreamExt;
 use polkadot_sdk::{
-	pallet_election_provider_multi_block::unsigned::miner::MinerConfig,
+	pallet_election_provider_multi_block::{types::PagedRawSolution, unsigned::miner::MinerConfig},
 	sp_npos_elections::ElectionScore,
 };
 use std::collections::HashSet;
@@ -830,6 +830,12 @@ where
 	// Miner owns the snapshot exclusively
 	let mut snapshot = Snapshot::<T>::new(static_types::Pages::get());
 
+	// The solution mined for the current round. Mining is deterministic for a given snapshot and
+	// the snapshot is fixed for the round, so we mine once and reuse it across the signed phase
+	// instead of re-mining the same solution every block. Cleared on round increment alongside the
+	// snapshot.
+	let mut cached_solution: Option<PagedRawSolution<T>> = None;
+
 	while let Some(message) = miner_rx.recv().await {
 		match message {
 			MinerMessage::ProcessBlock { state } => {
@@ -844,6 +850,7 @@ where
 					client.clone(),
 					state,
 					&mut snapshot,
+					&mut cached_solution,
 					signer.clone(),
 					process_config,
 				)
@@ -862,6 +869,7 @@ where
 			MinerMessage::ClearSnapshots => {
 				log::trace!(target: LOG_TARGET, "Clearing snapshots");
 				snapshot.clear();
+				cached_solution = None;
 			},
 		}
 	}
@@ -1112,6 +1120,7 @@ async fn process_block<T>(
 	client: Client,
 	state: BlockDetails,
 	snapshot: &mut Snapshot<T>,
+	cached_solution: &mut Option<PagedRawSolution<T>>,
 	signer: Signer,
 	config: ProcessConfig,
 ) -> Result<(), Error>
@@ -1173,10 +1182,6 @@ where
 		},
 	}
 
-	// Fetch snapshots if needed
-	dynamic::fetch_missing_snapshots::<T>(snapshot, &at_block, round).await?;
-	let (target_snapshot, voter_snapshot) = snapshot.get();
-
 	// Check if we already submitted for this round with timeout to prevent hanging
 	const CHECK_EXISTING_SUBMISSION_TIMEOUT_SECS: u64 = 300; // 5 minutes
 	let already_submitted = match tokio::time::timeout(
@@ -1208,91 +1213,30 @@ where
 		return Ok(());
 	}
 
-	// Mine the solution with timeout to prevent indefinite hanging
-	const MINING_TIMEOUT_SECS: u64 = 600; // 10 minutes
-	log::debug!(target: LOG_TARGET, "Mining solution for block #{block_number} round {round}");
-
-	let paged_raw_solution = match tokio::time::timeout(
-		std::time::Duration::from_secs(MINING_TIMEOUT_SECS),
-		dynamic::mine_solution::<T>(
-			target_snapshot,
-			voter_snapshot,
-			n_pages,
+	// Mine once per round and reuse the result for the rest of the round. The snapshot is taken
+	// exactly once per round and is never re-taken within it, and Phragmén is deterministic, so
+	// re-mining on every block reproduces a bit-identical solution. We therefore cache it
+	// and let only the cheap on-chain checks below run per block. The cache is cleared on round
+	// increment together with the snapshot.
+	if cached_solution.as_ref().map(|s| s.round) != Some(round) {
+		let solution = mine_and_validate::<T>(
+			snapshot,
+			&at_block,
 			round,
+			n_pages,
 			desired_targets,
 			block_number,
 			config.do_reduce,
 		)
-		.timed(),
-	)
-	.await
-	{
-		Ok((Ok(sol), dur)) => {
-			log::info!(target: LOG_TARGET, "Mining solution took {}ms for block #{}", dur.as_millis(), block_number);
-			prometheus::observe_mined_solution_duration(dur.as_millis() as f64);
-			sol
-		},
-		Ok((Err(e), dur)) => {
-			log::error!(target: LOG_TARGET, "Mining failed after {}ms: {:?}", dur.as_millis(), e);
-			return Err(e);
-		},
-		Err(_) => {
-			log::error!(target: LOG_TARGET, "Mining solution timed out after {MINING_TIMEOUT_SECS} seconds for block #{block_number}");
-			prometheus::on_mining_timeout();
-			return Err(Error::Timeout(Mining { timeout_secs: MINING_TIMEOUT_SECS }));
-		},
-	};
-
-	// Validate the solution similar to OffChainWorker logic (see
-	// OffchainWorkerMiner::check_solution -> Pallet::snapshot_independent_checks in the unsigned
-	// pallet). These checks prevent submitting invalid solutions on chain.
-
-	// Ensure round is current
-	if round != paged_raw_solution.round {
-		log::error!(
-			target: LOG_TARGET,
-			"Solution validation failed: solution is for round {} but current round is {}",
-			paged_raw_solution.round,
-			round
-		);
-		return Err(Error::WrongRound {
-			solution_round: paged_raw_solution.round,
-			current_round: round,
-		});
+		.await?;
+		*cached_solution = Some(solution);
+	} else {
+		log::trace!(target: LOG_TARGET, "Reusing cached solution for round {round}");
 	}
 
-	// Ensure solution pages are no more than the snapshot
-	let solution_page_count = paged_raw_solution.solution_pages.len() as u32;
-	let max_pages = static_types::Pages::get();
-	if solution_page_count > max_pages {
-		log::error!(
-			target: LOG_TARGET,
-			"Solution validation failed: solution has {solution_page_count} pages but maximum is {max_pages}"
-		);
-		return Err(Error::WrongPageCount { solution_pages: solution_page_count, max_pages });
-	}
-
-	// Validate that the solution has the expected number of unique targets
-	let solution_winner_count =
-		paged_raw_solution.winner_count_single_page_target_snapshot() as u32;
-	if desired_targets != solution_winner_count {
-		log::error!(
-			target: LOG_TARGET,
-			"Solution validation failed: desired_targets ({desired_targets}) != solution winner count ({solution_winner_count})"
-		);
-		return Err(Error::SolutionValidation { desired_targets, solution_winner_count });
-	}
-
-	log::debug!(
-		target: LOG_TARGET,
-		"Solution validation passed: desired_targets ({}) == solution winner count ({}), pages ({}) <= max ({}), round ({}) matches current ({})",
-		desired_targets,
-		solution_winner_count,
-		solution_page_count,
-		max_pages,
-		paged_raw_solution.round,
-		round
-	);
+	let paged_raw_solution = cached_solution
+		.as_ref()
+		.expect("cache populated for the current round above; qed");
 
 	// Handle shady behavior if enabled
 	if config.shady {
@@ -1559,7 +1503,7 @@ where
 		dynamic::submit(
 			&client,
 			&signer,
-			paged_raw_solution,
+			paged_raw_solution.clone(),
 			config.chunk_size,
 			round,
 			config.min_signed_phase_blocks,
@@ -1594,6 +1538,121 @@ where
 	};
 
 	Ok(())
+}
+
+/// Mine a fresh solution for `round` and run the snapshot-independent validity checks.
+///
+/// Mirrors `OffchainWorkerMiner::check_solution` (round, page count and winner count) so a
+/// structurally invalid solution is never submitted. Mining is deterministic for a given snapshot,
+/// so callers cache the result and reuse it across the round instead of re-mining every block.
+async fn mine_and_validate<T>(
+	snapshot: &mut Snapshot<T>,
+	at_block: &AtBlock,
+	round: u32,
+	n_pages: u32,
+	desired_targets: u32,
+	block_number: u32,
+	do_reduce: bool,
+) -> Result<PagedRawSolution<T>, Error>
+where
+	T: MinerConfig<AccountId = AccountId> + Send + Sync + 'static,
+	T::Solution: Send + Sync + 'static,
+	T::Pages: Send + Sync + 'static,
+	T::TargetSnapshotPerBlock: Send,
+	T::VoterSnapshotPerBlock: Send,
+	T::MaxVotesPerVoter: Send + Sync + 'static,
+{
+	// Fetch snapshots if needed
+	dynamic::fetch_missing_snapshots::<T>(snapshot, at_block, round).await?;
+	let (target_snapshot, voter_snapshot) = snapshot.get();
+
+	// Mine the solution with timeout to prevent indefinite hanging
+	const MINING_TIMEOUT_SECS: u64 = 600; // 10 minutes
+	log::debug!(target: LOG_TARGET, "Mining solution for block #{block_number} round {round}");
+
+	let paged_raw_solution = match tokio::time::timeout(
+		std::time::Duration::from_secs(MINING_TIMEOUT_SECS),
+		dynamic::mine_solution::<T>(
+			target_snapshot,
+			voter_snapshot,
+			n_pages,
+			round,
+			desired_targets,
+			block_number,
+			do_reduce,
+		)
+		.timed(),
+	)
+	.await
+	{
+		Ok((Ok(sol), dur)) => {
+			log::info!(target: LOG_TARGET, "Mining solution took {}ms for block #{}", dur.as_millis(), block_number);
+			prometheus::observe_mined_solution_duration(dur.as_millis() as f64);
+			sol
+		},
+		Ok((Err(e), dur)) => {
+			log::error!(target: LOG_TARGET, "Mining failed after {}ms: {:?}", dur.as_millis(), e);
+			return Err(e);
+		},
+		Err(_) => {
+			log::error!(target: LOG_TARGET, "Mining solution timed out after {MINING_TIMEOUT_SECS} seconds for block #{block_number}");
+			prometheus::on_mining_timeout();
+			return Err(Error::Timeout(Mining { timeout_secs: MINING_TIMEOUT_SECS }));
+		},
+	};
+
+	// Validate the solution similar to OffChainWorker logic (see
+	// OffchainWorkerMiner::check_solution -> Pallet::snapshot_independent_checks in the unsigned
+	// pallet). These checks prevent submitting invalid solutions on chain.
+
+	// Ensure round is current
+	if round != paged_raw_solution.round {
+		log::error!(
+			target: LOG_TARGET,
+			"Solution validation failed: solution is for round {} but current round is {}",
+			paged_raw_solution.round,
+			round
+		);
+		return Err(Error::WrongRound {
+			solution_round: paged_raw_solution.round,
+			current_round: round,
+		});
+	}
+
+	// Ensure solution pages are no more than the snapshot
+	let solution_page_count = paged_raw_solution.solution_pages.len() as u32;
+	let max_pages = static_types::Pages::get();
+	if solution_page_count > max_pages {
+		log::error!(
+			target: LOG_TARGET,
+			"Solution validation failed: solution has {solution_page_count} pages but maximum is {max_pages}"
+		);
+		return Err(Error::WrongPageCount { solution_pages: solution_page_count, max_pages });
+	}
+
+	// Validate that the solution has the expected number of unique targets
+	let solution_winner_count =
+		paged_raw_solution.winner_count_single_page_target_snapshot() as u32;
+	if desired_targets != solution_winner_count {
+		log::error!(
+			target: LOG_TARGET,
+			"Solution validation failed: desired_targets ({desired_targets}) != solution winner count ({solution_winner_count})"
+		);
+		return Err(Error::SolutionValidation { desired_targets, solution_winner_count });
+	}
+
+	log::debug!(
+		target: LOG_TARGET,
+		"Solution validation passed: desired_targets ({}) == solution winner count ({}), pages ({}) <= max ({}), round ({}) matches current ({})",
+		desired_targets,
+		solution_winner_count,
+		solution_page_count,
+		max_pages,
+		paged_raw_solution.round,
+		round
+	);
+
+	Ok(paged_raw_solution)
 }
 
 /// Fetch the on-chain minimum untrusted score floor, if one is set.
