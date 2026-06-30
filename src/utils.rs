@@ -128,6 +128,18 @@ pub fn score_passes_strategy(
 	}
 }
 
+/// Returns `true` if `score` clears the on-chain minimum untrusted score floor.
+///
+/// Mirrors `MultiBlockElectionVerifier::ensure_score_quality`: with no floor set every solution
+/// qualifies, otherwise the score must be strictly better than the floor. A solution that does not
+/// clear the floor is rejected on-chain as `ScoreTooLow` and its deposit is slashed.
+pub fn meets_minimum_score(
+	score: sp_npos_elections::ElectionScore,
+	minimum: Option<sp_npos_elections::ElectionScore>,
+) -> bool {
+	minimum.is_none_or(|min| score.strict_better(min))
+}
+
 /// Wait for the transaction to be included in a finalized block.
 pub async fn wait_tx_in_finalized_block<C: subxt::client::OnlineClientAtBlockT<Config>>(
 	tx: TransactionProgress<Config, C>,
@@ -343,6 +355,38 @@ mod tests {
 		assert!(score_passes_strategy(s(102), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
 		assert!(score_passes_strategy(s(103), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
 		assert!(score_passes_strategy(s(150), s(100), SubmissionStrategy::ClaimNoWorseThan(two)));
+	}
+
+	#[test]
+	fn meets_minimum_score_works() {
+		// `strict_better` is lexicographic over all three axes in order of significance:
+		// `minimal_stake` (higher better), then `sum_stake` (higher better), then
+		// `sum_stake_squared` (lower better).
+		let score = |minimal_stake, sum_stake, sum_stake_squared| {
+			sp_npos_elections::ElectionScore { minimal_stake, sum_stake, sum_stake_squared }
+		};
+		let floor = score(100, 100, 100);
+
+		// WHEN no floor is set on-chain THEN any score qualifies.
+		assert!(meets_minimum_score(score(0, 0, 0), None));
+
+		// WHEN the score exactly equals the floor THEN it is rejected: the on-chain check requires
+		// a *strictly* better score, so submitting would be slashed as `ScoreTooLow`.
+		assert!(!meets_minimum_score(floor, Some(floor)));
+
+		// `minimal_stake` axis (dominant)
+		// A higher `minimal_stake` wins outright, even with worse `sum_stake`/`sum_stake_squared`.
+		assert!(meets_minimum_score(score(101, 0, 999), Some(floor)));
+		// A lower `minimal_stake` loses outright, even with better lower axes.
+		assert!(!meets_minimum_score(score(99, 999, 0), Some(floor)));
+
+		// `sum_stake` axis (tie-break when `minimal_stake` is equal)
+		assert!(meets_minimum_score(score(100, 101, 999), Some(floor)));
+		assert!(!meets_minimum_score(score(100, 99, 0), Some(floor)));
+
+		// `sum_stake_squared` axis (tie-break when the two above are equal; lower is better)
+		assert!(meets_minimum_score(score(100, 100, 99), Some(floor)));
+		assert!(!meets_minimum_score(score(100, 100, 101), Some(floor)));
 	}
 
 	#[test]

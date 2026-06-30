@@ -13,7 +13,7 @@ use crate::{
 	},
 	signer::Signer,
 	static_types::multi_block as static_types,
-	utils::{self, TimedFuture, score_passes_strategy},
+	utils::{self, TimedFuture, meets_minimum_score, score_passes_strategy},
 };
 use codec::Decode;
 use futures::TryStreamExt;
@@ -545,7 +545,7 @@ enum EraPruningMessage {
 /// - **RPC issues**: Handled transparently by reconnecting RPC client
 ///
 /// ```text
-/// 
+///
 ///                      (finalized blocks)
 /// ┌──────────────────────────────────────────────────────────────────────────┐
 /// │  ┌─────────────┐                      ┌─────────────┐              ┌─────────────┐
@@ -1093,9 +1093,10 @@ where
 /// 3. Fetch missing snapshots if needed
 /// 4. Check if already submitted for this round
 /// 5. Mine the solution
-/// 6. Handle existing submissions (complete/incomplete)
-/// 7. Check score competitiveness
-/// 8. Submit the solution
+/// 6. Reject solutions below the on-chain minimum score (would be slashed as `ScoreTooLow`)
+/// 7. Handle existing submissions (complete/incomplete)
+/// 8. Check score competitiveness
+/// 9. Submit the solution
 ///
 /// No submission lock is needed since the miner task is single-threaded.
 /// Retransmission scenarios are handled after miner restarts or runtime upgrades.
@@ -1296,6 +1297,20 @@ where
 	// Handle shady behavior if enabled
 	if config.shady {
 		return execute_shady_behavior(&client, &signer, &phase).await;
+	}
+
+	// Reject solutions that cannot clear the on-chain minimum score. The verifier rejects any
+	// solution whose score does not strictly exceed `MinimumScore` with `ScoreTooLow` and slashes
+	// the submitter's deposit (see `MultiBlockElectionVerifier::ensure_score_quality`).
+	let minimum = fetch_minimum_score(&at_block).await?;
+	if !meets_minimum_score(paged_raw_solution.score, minimum) {
+		let minimum = minimum.expect("score fails the check only when a floor is set; qed");
+		log::warn!(
+			target: LOG_TARGET,
+			"Mined score {:?} for round {round} does not exceed on-chain minimum {minimum:?}; skipping submission to avoid a slashed deposit",
+			paged_raw_solution.score,
+		);
+		return Err(Error::ScoreBelowMinimum { score: paged_raw_solution.score, minimum });
 	}
 
 	// Handle existing submissions with timeout to prevent indefinite hanging
@@ -1579,6 +1594,20 @@ where
 	};
 
 	Ok(())
+}
+
+/// Fetch the on-chain minimum untrusted score floor, if one is set.
+///
+/// A solution whose score does not strictly exceed this floor is rejected by the verifier with
+/// `ScoreTooLow` and the submitter's deposit is slashed.
+async fn fetch_minimum_score(at_block: &AtBlock) -> Result<Option<ElectionScore>, Error> {
+	let minimum = utils::decode_storage_opt(
+		at_block
+			.storage()
+			.try_fetch(runtime::storage().multi_block_election_verifier().minimum_score(), ())
+			.await?,
+	)?;
+	Ok(minimum.map(|score| score.0))
 }
 
 /// Whether the computed score is better than the current best score
@@ -1922,6 +1951,7 @@ fn is_critical_miner_error(error: &Error) -> bool {
 		Error::SolutionValidation { .. } |
 		Error::WrongPageCount { .. } |
 		Error::WrongRound { .. } |
+		Error::ScoreBelowMinimum { .. } |
 		Error::Timeout(_) => false,
 		Error::Subxt(boxed_err)
 			if matches!(
