@@ -836,16 +836,19 @@ where
 	// snapshot.
 	let mut cached_solution: Option<PagedRawSolution<T>> = None;
 
+	// Derived once from the immutable monitor config; `ProcessConfig` is `Copy`, so each block is
+	// handed its own copy without rebuilding it every iteration.
+	let process_config = ProcessConfig {
+		submission_strategy: config.submission_strategy,
+		do_reduce: config.do_reduce,
+		chunk_size: config.chunk_size,
+		min_signed_phase_blocks: config.min_signed_phase_blocks,
+		shady: config.shady,
+	};
+
 	while let Some(message) = miner_rx.recv().await {
 		match message {
 			MinerMessage::ProcessBlock { state } => {
-				let process_config = ProcessConfig {
-					submission_strategy: config.submission_strategy,
-					do_reduce: config.do_reduce,
-					chunk_size: config.chunk_size,
-					min_signed_phase_blocks: config.min_signed_phase_blocks,
-					shady: config.shady,
-				};
 				match process_block::<T>(
 					client.clone(),
 					state,
@@ -1108,6 +1111,7 @@ where
 ///
 /// No submission lock is needed since the miner task is single-threaded.
 /// Retransmission scenarios are handled after miner restarts or runtime upgrades.
+#[derive(Clone, Copy)]
 struct ProcessConfig {
 	submission_strategy: SubmissionStrategy,
 	do_reduce: bool,
