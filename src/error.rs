@@ -116,6 +116,13 @@ pub enum Error {
 		"Wrong round: solution is for round {solution_round} but current round is {current_round}"
 	)]
 	WrongRound { solution_round: u32, current_round: u32 },
+	#[error(
+		"Mined solution score {score:?} does not exceed on-chain minimum score {minimum:?}; not submitting to avoid a slashed deposit"
+	)]
+	ScoreBelowMinimum {
+		score: polkadot_sdk::sp_npos_elections::ElectionScore,
+		minimum: polkadot_sdk::sp_npos_elections::ElectionScore,
+	},
 	#[error("Operation timed out: {0}")]
 	Timeout(#[from] TimeoutError),
 	#[error("Exceeded maximum subscription recreation attempts ({max_attempts})")]
