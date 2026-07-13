@@ -11310,9 +11310,9 @@ checksum = "734676eb262c623cec13c3155096e08d1f8f29adce39ba17948b18dad1e54142"
 
 [[package]]
 name = "subxt"
-version = "0.50.1"
+version = "0.50.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfdd3390b653a6b7556312314ba2c2b8639433d5a3ae24ce8bcfe940c54c0c5e"
+checksum = "440b28070d3bba98d637791bc7ebbe362f5beb9e749204c16caaf344fef260ba"
 dependencies = [
  "async-trait",
  "derive-where",
