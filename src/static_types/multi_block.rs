@@ -87,7 +87,7 @@ pub mod node {
 			VoterIndex = u16,
 			TargetIndex = u16,
 			Accuracy = Percent,
-			MaxVoters = ConstU32::<704> // same default as Polkadot
+			MaxVoters = VoterSnapshotPerBlock
 		>(16)
 	);
 
@@ -121,7 +121,7 @@ pub mod polkadot {
 			VoterIndex = u32,
 			TargetIndex = u16,
 			Accuracy = PerU16,
-			MaxVoters = ConstU32::<704> // should match VoterSnapshotPerBlock
+			MaxVoters = VoterSnapshotPerBlock
 		>(16)
 	);
 
@@ -155,7 +155,7 @@ pub mod kusama {
 			VoterIndex = u32,
 			TargetIndex = u16,
 			Accuracy = PerU16,
-			MaxVoters = ConstU32::<782> // should match VoterSnapshotPerBlock
+			MaxVoters = VoterSnapshotPerBlock
 		>(24)
 	);
 
@@ -189,7 +189,7 @@ pub mod westend {
 			VoterIndex = u32,
 			TargetIndex = u16,
 			Accuracy = PerU16,
-			MaxVoters = ConstU32::<703> // should match VoterSnapshotPerBlock
+			MaxVoters = VoterSnapshotPerBlock
 		>(16)
 	);
 
@@ -224,7 +224,7 @@ pub mod staking_async {
 			VoterIndex = u32,
 			TargetIndex = u16,
 			Accuracy = PerU16,
-			MaxVoters = ConstU32::<704> // same default as Polkadot
+			MaxVoters = VoterSnapshotPerBlock
 		>(16)
 	);
 
@@ -245,5 +245,47 @@ pub mod staking_async {
 		type TargetSnapshotPerBlock = TargetSnapshotPerBlock;
 		type MaxLength = MaxLength;
 		type Hash = Hash;
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use polkadot_sdk::{
+		frame_election_provider_support::{Error, NposSolution},
+		sp_npos_elections::Assignment,
+	};
+
+	/// The solution's voter bound must follow the chain's `VoterSnapshotPerBlock`, the way the
+	/// runtimes derive their own. A bound below the chain's page size rejects every full voter page
+	/// with `TooManyVoters`, so it is pinned to the constant rather than to a literal.
+	#[test]
+	fn max_voters_follows_the_chain_voter_page_size() {
+		let voters: Vec<AccountId> = (0..8u8).map(|i| AccountId::from([i; 32])).collect();
+		let assignments: Vec<Assignment<AccountId, PerU16>> = voters
+			.iter()
+			.map(|who| Assignment {
+				who: who.clone(),
+				distribution: vec![(voters[0].clone(), PerU16::one())],
+			})
+			.collect();
+		let encode = |voter_count: usize| {
+			westend::NposSolution16::from_assignment(
+				&assignments[..voter_count],
+				|who| voters.iter().position(|v| v == who).map(|i| i as u32),
+				|_| Some(0u16),
+			)
+		};
+
+		// GIVEN a chain whose snapshot pages hold five voters
+		VoterSnapshotPerBlock::set(5);
+
+		// THEN a full page encodes and one voter more is rejected
+		assert!(encode(5).is_ok());
+		assert!(matches!(encode(6), Err(Error::TooManyVoters)));
+
+		// WHEN the runtime raises the page size, the bound moves with it instead of going stale
+		VoterSnapshotPerBlock::set(6);
+		assert!(encode(6).is_ok());
 	}
 }
