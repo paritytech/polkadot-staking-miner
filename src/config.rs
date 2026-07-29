@@ -88,12 +88,12 @@ pub type ExtrinsicParams =
 /// disabled, and enabling it merely costs some pre-dispatch weight for origins that are not
 /// restricted at all — which is every origin the miner signs with.
 ///
-/// A `bool` value is a legitimate shape for a transaction extension; what is missing is a way to
-/// hand subxt a value for an extension it does not implement, so this is the fix rather than a
-/// workaround. It does hardcode that shape, though. Were the extension ever reshaped to
-/// `Option<_>`, this would keep writing a bare `bool` where the runtime expects the new encoding,
-/// so check the value type is still a `bool` whenever a runtime upgrade touches it — a reshape to
-/// `()` needs nothing, since an empty value never reaches this impl.
+/// TODO: this can be simplified once https://github.com/paritytech/subxt/issues/2265.
+/// What is missing before #2265 is fixed, is a way to hand subxt a value for an extension it does
+/// not implement. Note that this workaround does hardcode that shape, though. Were the extension
+/// ever reshaped to `Option<_>`, this would keep writing a bare `bool` where the runtime expects
+/// the new encoding. A reshape to `()` needs nothing instead, since an empty value never reaches
+/// this impl.
 #[derive(Debug)]
 pub struct RestrictOrigins(bool);
 
