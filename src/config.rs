@@ -88,8 +88,8 @@ pub type ExtrinsicParams =
 /// disabled, and enabling it merely costs some pre-dispatch weight for origins that are not
 /// restricted at all — which is every origin the miner signs with.
 ///
-/// TODO: this can be simplified once https://github.com/paritytech/subxt/issues/2265.
-/// What is missing before #2265 is fixed, is a way to hand subxt a value for an extension it does
+/// TODO: this can be greatly simplified once https://github.com/paritytech/subxt/issues/2265 is fixed.
+/// What is missing before that, is a way to hand subxt a value for an extension it does
 /// not implement. Note that this workaround does hardcode that shape, though. Were the extension
 /// ever reshaped to `Option<_>`, this would keep writing a bare `bool` where the runtime expects
 /// the new encoding. A reshape to `()` needs nothing instead, since an empty value never reaches
