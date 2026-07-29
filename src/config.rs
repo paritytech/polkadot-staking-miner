@@ -84,9 +84,9 @@ pub type ExtrinsicParams =
 /// Its value is a `bool` enabling the restriction check, which is the shape `frame-decode` can
 /// neither skip nor default, so a chain carrying this extension cannot be signed for without it.
 ///
-/// Always enabled: the pallet rejects a restricted origin's transaction when the extension is
-/// disabled, and enabling it merely costs some pre-dispatch weight for origins that are not
-/// restricted at all — which is every origin the miner signs with.
+/// Always enabled: `false` asserts "no restriction check needed" and a restricted origin sending it
+/// is rejected with `InvalidTransaction::Call`. That holds for the miner today (Paseo AH restricts
+/// only `DotnsGateway::PersonRegistration` origins), but only by runtime config it cannot control.
 ///
 /// TODO: this can be greatly simplified once https://github.com/paritytech/subxt/issues/2265 is fixed.
 /// What is missing before that, is a way to hand subxt a value for an extension it does
