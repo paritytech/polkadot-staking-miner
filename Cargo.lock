@@ -8277,6 +8277,7 @@ dependencies = [
  "prometheus 0.14.0",
  "regex",
  "scale-info",
+ "scale-info-legacy",
  "scale-value",
  "serde",
  "serde_json",

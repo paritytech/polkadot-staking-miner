@@ -13,6 +13,7 @@ resolver = "2"
 [dependencies]
 codec = { package = "parity-scale-codec", version = "3.7.5" }
 scale-info = { package = "scale-info", version = "2.11.6" }
+scale-info-legacy = "0.4.2"
 clap = { version = "4.6", features = ["derive", "env"] }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 jsonrpsee = { version = "0.26.0", features = ["ws-client"] }

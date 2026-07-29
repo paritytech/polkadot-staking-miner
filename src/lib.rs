@@ -18,6 +18,7 @@
 
 pub mod client;
 pub mod commands;
+pub mod config;
 pub mod dynamic;
 pub mod error;
 pub mod macros;
