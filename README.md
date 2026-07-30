@@ -378,7 +378,9 @@ When using `--overrides`, the file should have the following JSON structure:
 
 ```json
 {
-  "candidates_include": ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG"],
+  "candidates_include": [
+    ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG", 100000000000000]
+  ],
   "candidates_exclude": [],
   "voters_include": [
     ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG", 1000000, ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG"]]
@@ -386,6 +388,22 @@ When using `--overrides`, the file should have the following JSON structure:
   "voters_exclude": []
 }
 ```
+
+Each `candidates_include` entry is `[address, self_stake]`. Since self-stake now has a mandatory
+minimum, an injected candidate without one has no chance of being elected: the target snapshot
+carries no stake, so a candidate's self-stake only reaches the election as a vote for itself. The
+self-stake is therefore materialized as a self-vote, exactly like the implicit self-vote the chain
+builds for its own validators.
+
+`self_stake` is a raw integer in the same unit as the stakes already in the election data — the
+chain's `VoteWeight`, same as the stake in `voters_include`.
+
+An entry whose address is already in the fetched data **overrides** its self-stake, replacing that
+account's existing vote with the self-vote — that is how "what if this validator bonded N?" is
+expressed. `voters_include` is applied afterwards and therefore takes precedence over it.
+
+A bare address (`"candidates_include": ["15S7Yt…"]`, the pre-self-stake format) is still accepted:
+it registers the candidate with no self-stake and leaves that account's votes untouched.
 
 **Note:** Override file paths can be nested (e.g., `data/elections/overrides.json`). The tool will
 automatically resolve relative paths from the current working directory.
@@ -395,11 +413,11 @@ automatically resolve relative paths from the current working directory.
 1. **Data Source**: The tool first tries to fetch data from the chain's snapshot (if available),
    then falls back to the staking pallet. 
 
-2. **Overrides Application**: If `--overrides` is provided, the tool applies the specified modifications to the fetched candidates and voters:
-   - (1) Add candidates that may not exist on-chain.
-   - (2) Remove specific candidates from the election.
-   - (3) Add or override voters with custom stake amounts.
-   - (4) Remove specific voters from the election.
+2. **Overrides Application**: If `--overrides` is provided, the tool applies the specified modifications to the fetched candidates and voters, in this order:
+   - (1) Remove specific candidates from the election.
+   - (2) Add candidates that may not exist on-chain, with an optional self-stake.
+   - (3) Remove specific voters from the election.
+   - (4) Add or override voters with custom stake amounts.
 
 3. **Election Algorithm**: Runs the same Phragmén algorithm (`seq_phragmen`) used by Substrate chains
    to determine:
@@ -447,7 +465,9 @@ Runs a full election simulation and returns the predicted validator set and nomi
   "do_reduce": true,
   "algorithm": "SeqPhragmen",
   "overrides": {
-    "candidates_include": ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG"],
+    "candidates_include": [
+      ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG", 100000000000000]
+    ],
     "candidates_exclude": [],
     "voters_include": [
       ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG", 1000000, ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG"]]

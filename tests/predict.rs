@@ -140,7 +140,7 @@ fn test_output_files_creation() {
 /// Create a temporary overrides file for testing
 fn create_test_overrides_file(temp_dir: &TempDir) -> std::path::PathBuf {
 	let overrides_data = serde_json::json!({
-		"candidates_include": ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG"],
+		"candidates_include": [["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG", 100_000_000_000_000u64]],
 		"candidates_exclude": [],
 		"voters_include": [
 			["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG", 1000000, ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG"]]
@@ -166,8 +166,27 @@ fn test_overrides_file_format_validation() {
 
 	// Validate structure
 	assert_eq!(parsed.candidates_include.len(), 1);
+	assert_eq!(
+		parsed.candidates_include[0].parts(),
+		("15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG", 100_000_000_000_000)
+	);
 	assert_eq!(parsed.voters_include.len(), 1);
 	assert_eq!(parsed.voters_include[0].1, 1000000);
+}
+
+#[test]
+fn test_overrides_file_bare_candidate_address_still_parses() {
+	let overrides_data = serde_json::json!({
+		"candidates_include": ["15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG"],
+	});
+
+	let parsed: polkadot_staking_miner::commands::types::ElectionOverrides =
+		serde_json::from_value(overrides_data).unwrap();
+
+	assert_eq!(
+		parsed.candidates_include[0].parts(),
+		("15S7YtETM31QxYYqubAwRJKRSM4v4Ua6WGFYnx1VuFBnWqdG", 0)
+	);
 }
 
 /// Test invalid overrides file format

@@ -248,11 +248,33 @@ pub(crate) type ValidatorData = (AccountId, u128);
 // Custom Data File Format Types
 // ============================================================================
 
+/// Candidate to add to the election, optionally with an arbitrary self-stake.
+///
+/// Accepts either a bare address (`"addr"`, self-stake 0) or an `["addr", self_stake]` pair. A
+/// candidate's self-stake is what makes it electable, so injecting candidates that are not bonded
+/// on-chain requires the pair form.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum CandidateInclude {
+	Address(String),
+	WithSelfStake(String, u64),
+}
+
+impl CandidateInclude {
+	/// Address and self-stake of the candidate; a bare address has no self-stake.
+	pub fn parts(&self) -> (&str, u64) {
+		match self {
+			Self::Address(address) => (address, 0),
+			Self::WithSelfStake(address, self_stake) => (address, *self_stake),
+		}
+	}
+}
+
 /// JSON format for election overrides
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ElectionOverrides {
 	#[serde(default)]
-	pub candidates_include: Vec<String>,
+	pub candidates_include: Vec<CandidateInclude>,
 	#[serde(default)]
 	pub candidates_exclude: Vec<String>,
 	#[serde(default)]
