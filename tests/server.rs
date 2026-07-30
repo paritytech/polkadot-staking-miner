@@ -8,9 +8,9 @@ use polkadot_staking_miner::{
 	commands::{
 		server::{MAX_BODY_SIZE, MAX_CONCURRENT_PREDICTIONS, ServerHandler, serve},
 		types::{
-			ElectionAlgorithm, ElectionDataSource, NominatorsPrediction, OverridesConfig,
-			PredictConfig, PredictionMetadata, ServerConfig, SnapshotConfig, SnapshotResult,
-			ValidatorsPrediction,
+			CandidateInclude, ElectionAlgorithm, ElectionDataSource, NominatorsPrediction,
+			OverridesConfig, PredictConfig, PredictionMetadata, ServerConfig, SnapshotConfig,
+			SnapshotResult, ValidatorsPrediction,
 		},
 	},
 	error::Error,
@@ -98,18 +98,27 @@ fn test_overrides_config_parsing() {
 		_ => panic!("Expected Path override"),
 	}
 
-	// Test JSON parsing (API style)
+	// Test JSON parsing (API style): candidates_include takes bare addresses and
+	// [address, self_stake] pairs.
 	let json_payload = r#"{
 		"do_reduce": true,
 		"overrides": {
-			"candidates_include": ["acc1"],
+			"candidates_include": ["acc1", ["acc3", 100000000000000]],
 			"voters_include": [["acc2", 1000, ["acc1"]]]
 		}
 	}"#;
 	let config: PredictConfig = serde_json::from_str(json_payload).unwrap();
 	match config.overrides {
 		Some(OverridesConfig::Data(data)) => {
-			assert_eq!(data.candidates_include, vec!["acc1".to_string()]);
+			assert_eq!(
+				data.candidates_include,
+				vec![
+					CandidateInclude::Address("acc1".to_string()),
+					CandidateInclude::WithSelfStake("acc3".to_string(), 100_000_000_000_000),
+				]
+			);
+			assert_eq!(data.candidates_include[0].parts(), ("acc1", 0));
+			assert_eq!(data.candidates_include[1].parts(), ("acc3", 100_000_000_000_000));
 			assert_eq!(data.voters_include.len(), 1);
 		},
 		_ => panic!("Expected Data override"),
