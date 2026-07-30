@@ -88,7 +88,7 @@ where
 	// page is dropped along with every voter in it. Worse, staking data is paginated
 	// strongest-first and then reversed below, which makes the dropped page the strongest one.
 	// Only overrides can exceed the capacity (fetched data is already truncated to it), so let the
-	// weakest voters make room instead, the way the chain's own snapshot keeps the strongest.
+	// weakest voters make room instead: everyone is ranked by stake and the tail is cut.
 	let capacity = (T::Pages::get() as usize).saturating_mul(per_voter_page as usize);
 	if capacity > 0 && voters.len() > capacity {
 		let mut by_stake: Vec<usize> = (0..voters.len()).collect();
@@ -801,6 +801,50 @@ mod tests {
 		assert!(voters.contains(&injected), "injected voter dropped");
 		assert!(voters.contains(&strongest), "strongest voter dropped");
 		assert!(!voters.contains(&weakest), "weakest voter kept");
+	}
+
+	/// An injected self-stake competes for a snapshot slot like any other voter rather than being
+	/// forced in: on chain, whether a validator's self-stake reaches the election depends on where
+	/// it lands in the bags list, so a self-stake too small to make the cut must not displace a
+	/// stronger voter.
+	#[test]
+	fn an_injected_self_stake_too_small_to_make_the_cut_is_dropped() {
+		let capacity = (TEST_PAGES * TEST_VOTERS_PER_PAGE) as usize;
+
+		// GIVEN a voter set exactly at capacity, the weakest of them holding one UNIT
+		let voters: Vec<NominatorData> = (0..capacity)
+			.map(|i| {
+				let who = account((i + 1) as u8);
+				(who.clone(), (capacity - i) as u64 * UNIT, vec![who])
+			})
+			.collect();
+		let weakest = voters[capacity - 1].0.clone();
+		let injected = account(200);
+
+		// WHEN a candidate is injected with a self-stake below all of them
+		let overrides = ElectionOverrides {
+			candidates_include: vec![CandidateInclude::WithSelfStake(
+				injected.to_ss58check(),
+				UNIT / 2,
+			)],
+			..no_overrides()
+		};
+		let (candidates, voters) = apply_overrides(vec![], voters, overrides).unwrap();
+		let (_, voter_snapshot) = convert_election_data_to_snapshots::<TestMinerConfig>(
+			candidates,
+			voters,
+			ElectionDataSource::Staking,
+		)
+		.unwrap();
+
+		// THEN it is the injected voter that makes room, and the existing set is untouched
+		let voters: Vec<AccountId> = voter_snapshot
+			.iter()
+			.flat_map(|page| page.iter().map(|(who, _, _)| who.clone()))
+			.collect();
+		assert_eq!(voters.len(), capacity);
+		assert!(!voters.contains(&injected), "injected voter forced in");
+		assert!(voters.contains(&weakest), "existing voter displaced by a weaker self-stake");
 	}
 
 	/// Run the offline part of the predict pipeline: overrides -> snapshots -> mine -> prediction.
