@@ -10,7 +10,6 @@
 
 use codec::Encode;
 use scale_info::PortableRegistry;
-use scale_info_legacy::TypeRegistrySet;
 use subxt::{
 	config::{
 		ClientState, Config as ConfigT, DefaultExtrinsicParamsBuilder, HashFor, PolkadotConfig,
@@ -54,9 +53,9 @@ impl ConfigT for StakingMinerConfig {
 		self.0.set_metadata_for_spec_version(spec_version, metadata)
 	}
 
-	fn legacy_types_for_spec_version(&'_ self, spec_version: u32) -> Option<TypeRegistrySet<'_>> {
-		self.0.legacy_types_for_spec_version(spec_version)
-	}
+	// `legacy_types_for_spec_version` is deliberately not forwarded: we never set legacy types on
+	// the inner config, so the trait's `None` default is what we want. Asset Hub has no pre-V14
+	// blocks to decode, and this way subxt errors instead of mis-decoding if one ever shows up.
 }
 
 /// Subxt's default transaction extensions, plus the ones the miner implements itself.
