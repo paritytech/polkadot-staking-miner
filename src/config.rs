@@ -2,8 +2,6 @@
 //!
 //! Follows subxt's own Asset Hub recipe (`subxt/examples/config_assethub.rs`): wrap
 //! [`SubstrateConfig`], drop the account index from the address type, and forward the rest.
-//! [`subxt::PolkadotConfig`] is documented as relay-chain only — it preloads relay-chain legacy
-//! types, which would silently mis-decode any pre-V14 Asset Hub metadata.
 //!
 //! The one addition on top is the transaction extensions: Asset Hub runtimes carry extensions
 //! subxt does not implement. Most cost nothing, because subxt's `frame-decode` skips extensions
@@ -28,7 +26,6 @@ use subxt::{
 pub struct StakingMinerConfig(SubstrateConfig);
 
 impl ConfigT for StakingMinerConfig {
-	// Asset Hub, like Polkadot, has no account index on its address type.
 	type Address = <PolkadotConfig as ConfigT>::Address;
 
 	type AccountId = <SubstrateConfig as ConfigT>::AccountId;
@@ -90,8 +87,7 @@ pub type ExtrinsicParams =
 /// neither skip nor default, so a chain carrying this extension cannot be signed for without it.
 ///
 /// Always enabled: `false` asserts "no restriction check needed" and a restricted origin sending it
-/// is rejected with `InvalidTransaction::Call`. That holds for the miner today (Paseo AH restricts
-/// only `DotnsGateway::PersonRegistration` origins), but only by runtime config it cannot control.
+/// is rejected with `InvalidTransaction::Call`.
 ///
 /// TODO: this can be greatly simplified once https://github.com/paritytech/subxt/issues/2265 is fixed.
 /// What is missing before that, is a way to hand subxt a value for an extension it does
