@@ -1,19 +1,22 @@
 //! Subxt configuration for the staking miner.
 //!
-//! Identical to [`subxt::PolkadotConfig`] apart from the transaction extensions: Asset Hub runtimes
-//! carry extensions that subxt does not implement. Most cost nothing, because subxt's
-//! `frame-decode` skips extensions whose value type is empty and encodes `None` for `Option<_>`
-//! ones, but any other shape makes signing fail outright with
-//! `TransactionExtensions(NotFound(..))`.
+//! Follows subxt's own Asset Hub recipe (`subxt/examples/config_assethub.rs`): wrap
+//! [`SubstrateConfig`], drop the account index from the address type, and forward the rest.
+//! [`subxt::PolkadotConfig`] is documented as relay-chain only — it preloads relay-chain legacy
+//! types, which would silently mis-decode any pre-V14 Asset Hub metadata.
+//!
+//! The one addition on top is the transaction extensions: Asset Hub runtimes carry extensions
+//! subxt does not implement. Most cost nothing, because subxt's `frame-decode` skips extensions
+//! whose value type is empty and encodes `None` for `Option<_>` ones, but any other shape makes
+//! signing fail outright with `TransactionExtensions(NotFound(..))`.
 
 use codec::Encode;
 use scale_info::PortableRegistry;
 use scale_info_legacy::TypeRegistrySet;
 use subxt::{
-	PolkadotConfig,
 	config::{
-		ClientState, Config as ConfigT, DefaultExtrinsicParamsBuilder, HashFor,
-		TransactionExtension, TransactionExtensions, transaction_extensions,
+		ClientState, Config as ConfigT, DefaultExtrinsicParamsBuilder, HashFor, PolkadotConfig,
+		SubstrateConfig, TransactionExtension, TransactionExtensions, transaction_extensions,
 	},
 	error::TransactionExtensionError,
 	ext::frame_decode,
@@ -22,15 +25,17 @@ use subxt::{
 
 /// Subxt config used by the staking miner on every supported chain.
 #[derive(Debug, Clone, Default)]
-pub struct StakingMinerConfig(PolkadotConfig);
+pub struct StakingMinerConfig(SubstrateConfig);
 
 impl ConfigT for StakingMinerConfig {
-	type AccountId = <PolkadotConfig as ConfigT>::AccountId;
+	// Asset Hub, like Polkadot, has no account index on its address type.
 	type Address = <PolkadotConfig as ConfigT>::Address;
-	type Signature = <PolkadotConfig as ConfigT>::Signature;
-	type Header = <PolkadotConfig as ConfigT>::Header;
-	type Hasher = <PolkadotConfig as ConfigT>::Hasher;
-	type AssetId = <PolkadotConfig as ConfigT>::AssetId;
+
+	type AccountId = <SubstrateConfig as ConfigT>::AccountId;
+	type Signature = <SubstrateConfig as ConfigT>::Signature;
+	type Header = <SubstrateConfig as ConfigT>::Header;
+	type Hasher = <SubstrateConfig as ConfigT>::Hasher;
+	type AssetId = <SubstrateConfig as ConfigT>::AssetId;
 	type TransactionExtensions = StakingMinerTransactionExtensions;
 
 	fn genesis_hash(&self) -> Option<HashFor<Self>> {
