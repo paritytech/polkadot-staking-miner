@@ -2,7 +2,7 @@
 //! Integration tests for the multi-block monitor (pallet-election-multi-block).
 //! See nightly.yml for instructions on how to run it compared vs a zombienet setup.
 use polkadot_staking_miner::{
-	prelude::ChainClient,
+	prelude::{AtBlock, ChainClient},
 	runtime::multi_block::{
 		self as runtime,
 		multi_block_election_signed::events::{Discarded, Registered, Rewarded, Slashed, Stored},
@@ -301,8 +301,6 @@ struct PalletConstants {
 	signed_validation_phase: u32,
 	unsigned_phase: u32,
 }
-
-type AtBlock = subxt::OnlineClientAtBlock<subxt::PolkadotConfig>;
 
 /// Read the MultiBlockElection pallet constants
 async fn read_pallet_constants(at_block: &AtBlock) -> anyhow::Result<PalletConstants> {
