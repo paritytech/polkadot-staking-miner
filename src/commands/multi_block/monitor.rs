@@ -6,7 +6,7 @@ use crate::{
 	},
 	dynamic::multi_block as dynamic,
 	error::{ChannelFailureError, Error, TaskFailureError, TimeoutError::*},
-	prelude::{AccountId, AtBlock, ExtrinsicParamsBuilder, LOG_TARGET},
+	prelude::{AccountId, AtBlock, Config, ExtrinsicParamsBuilder, LOG_TARGET},
 	prometheus,
 	runtime::multi_block::{
 		self as runtime, runtime_types::pallet_election_provider_multi_block::types::Phase,
@@ -81,7 +81,7 @@ enum ListenerAction {
 }
 
 /// Type alias for the finalized block subscription stream
-type SubscriptionStream = subxt::client::Blocks<subxt::PolkadotConfig>;
+type SubscriptionStream = subxt::client::Blocks<Config>;
 
 /// Recreate the finalized block subscription with failover support.
 async fn recreate_subscription_with_failover(
