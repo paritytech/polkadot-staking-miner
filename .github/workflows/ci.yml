@@ -102,7 +102,9 @@ jobs:
       - name: Check code
         run: |
           ${{ env.RUST_INFO }}
-          cargo check --workspace --all-targets
+          # --all-features so the `integration-tests` gated tests/monitor.rs is compiled here too,
+          # instead of breaking nightly.yml a day after the PR merges.
+          cargo check --workspace --all-targets --all-features
 
   test:
     name: Run tests
