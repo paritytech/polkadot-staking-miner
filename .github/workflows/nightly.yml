@@ -55,8 +55,12 @@ jobs:
         with:
           node-version: "18"
 
-      - name: Install zombienet globally
-        run: npm install -g @zombienet/cli
+      - name: Install zombienet
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSfL \
+            https://github.com/paritytech/zombienet/releases/latest/download/zombienet-linux-x64 \
+            -o /usr/local/bin/zombienet
+          chmod +x /usr/local/bin/zombienet
 
       - name: Verify installations
         run: |
