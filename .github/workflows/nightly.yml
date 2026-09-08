@@ -44,7 +44,7 @@ jobs:
         shell: bash
         run: |
           # Install netcat for port checking
-          apt-get update && apt-get install -y netcat
+          apt-get update && apt-get install -y netcat-openbsd
           # Install just
           curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin
           # Install bun
