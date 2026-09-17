@@ -165,6 +165,14 @@ mod hidden {
 		.unwrap()
 	});
 
+	static SUBMISSIONS_SKIPPED_NOT_COMPETITIVE: Lazy<Counter> = Lazy::new(|| {
+		register_counter!(opts!(
+			"staking_miner_submissions_skipped_not_competitive_total",
+			"Number of rounds where no submission was made because another miner had already registered a better score",
+		))
+		.unwrap()
+	});
+
 	static CLEAR_OLD_ROUNDS_CLEANUP_SUCCESS: Lazy<Counter> = Lazy::new(|| {
 		register_counter!(opts!(
 			"staking_miner_clear_old_rounds_cleanup_success_total",
@@ -418,6 +426,7 @@ mod hidden {
 		Lazy::force(&RUNTIME_UPGRADES);
 		Lazy::force(&SUBMISSIONS_STARTED);
 		Lazy::force(&SUBMISSIONS_SUCCESS);
+		Lazy::force(&SUBMISSIONS_SKIPPED_NOT_COMPETITIVE);
 		Lazy::force(&CLEAR_OLD_ROUNDS_CLEANUP_SUCCESS);
 		Lazy::force(&CLEAR_OLD_ROUNDS_CLEANUP_FAILURES);
 		Lazy::force(&CLEAR_OLD_ROUNDS_OLD_SUBMISSIONS_FOUND);
@@ -479,6 +488,10 @@ mod hidden {
 
 	pub fn on_submission_success() {
 		SUBMISSIONS_SUCCESS.inc();
+	}
+
+	pub fn on_submission_skipped_not_competitive() {
+		SUBMISSIONS_SKIPPED_NOT_COMPETITIVE.inc();
 	}
 
 	pub fn on_clear_old_rounds_cleanup_success(cleared_count: u32) {
