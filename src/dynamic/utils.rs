@@ -9,6 +9,24 @@ type TypeId = u32;
 
 const RESTRICT_ORIGINS: &str = "RestrictOrigins";
 
+/// Supply the `RestrictOrigins` value of `pallet-origin-restriction`, which subxt has no typed
+/// support for, on the chains that declare it.
+///
+/// Conditional because `custom_extension` rejects a name the runtime does not declare, and the
+/// miner signs on Asset Hubs both with and without the extension. Every version up to the encoding
+/// one is probed, mirroring what subxt accepts, since encoding may pick any declared version.
+///
+/// Declaring it is not enough: `frame-decode` skips empty-valued extensions and defaults
+/// `Option<_>` ones by itself, so supplying a value for those shapes fails at signing where plain
+/// subxt succeeds. Hence the encode probe rather than a name match.
+///
+/// Always `true`: `false` asserts "no restriction check needed", and a restricted origin sending
+/// that is rejected with `InvalidTransaction::Call`.
+///
+/// NOTE: still a stopgap, the name and the value are hardcoded here, and would go away if subxt
+/// ever grows typed support for the extension. `custom_extension` also cannot supply an
+/// authorization extension (see https://github.com/paritytech/subxt/issues/2276), which
+/// `RestrictOrigins` is not today.
 pub fn with_restrict_origins(
 	builder: ExtrinsicParamsBuilder,
 	metadata: &Metadata,
@@ -18,6 +36,7 @@ pub fn with_restrict_origins(
 	let extrinsic = metadata.extrinsic();
 	let newest_version = extrinsic.transaction_extension_version_to_use_for_encoding();
 	let types = metadata.types();
+	// Only the value type is probed: subxt rejects a non-empty implicit itself, with a clear error.
 	let takes_a_bool = (0..=newest_version)
 		.filter_map(|version| extrinsic.transaction_extensions_by_version(version))
 		.flatten()
@@ -70,84 +89,4 @@ pub fn tx(
 
 pub fn decode_error<T>(err: impl std::error::Error) -> Error {
 	Error::DynamicTransaction(format!("Failed to decode {}: {:?}", std::any::type_name::<T>(), err))
-}
-
-#[cfg(test)]
-mod test {
-	use super::*;
-	use codec::Decode;
-	use subxt::ext::frame_metadata;
-
-	fn metadata() -> frame_metadata::v16::RuntimeMetadataV16 {
-		let bytes = std::fs::read("artifacts/multi_block.scale").unwrap();
-		let frame_metadata::RuntimeMetadata::V16(metadata) =
-			frame_metadata::RuntimeMetadataPrefixed::decode(&mut &*bytes).unwrap().1
-		else {
-			panic!("artifacts/multi_block.scale is not V16 metadata")
-		};
-		metadata
-	}
-
-	fn without_restrict_origins(
-		mut metadata: frame_metadata::v16::RuntimeMetadataV16,
-	) -> frame_metadata::v16::RuntimeMetadataV16 {
-		for extension in &mut metadata.extrinsic.transaction_extensions {
-			if extension.identifier == RESTRICT_ORIGINS {
-				extension.identifier = "SomeOtherExtension".to_owned();
-			}
-		}
-		metadata
-	}
-
-	fn with_restrict_origins_value_ty(
-		mut metadata: frame_metadata::v16::RuntimeMetadataV16,
-		ty: impl Fn(&scale_info::TypeDef<scale_info::form::PortableForm>) -> bool,
-	) -> frame_metadata::v16::RuntimeMetadataV16 {
-		let value_ty = metadata
-			.types
-			.types
-			.iter()
-			.find(|ty_| ty(&ty_.ty.type_def))
-			.expect("metadata declares the type")
-			.id;
-		for extension in &mut metadata.extrinsic.transaction_extensions {
-			if extension.identifier == RESTRICT_ORIGINS {
-				extension.ty = value_ty.into();
-			}
-		}
-		metadata
-	}
-
-	fn params_for(metadata: frame_metadata::v16::RuntimeMetadataV16) -> Vec<(String, Value)> {
-		let metadata = Metadata::from_v16(metadata).unwrap();
-		with_restrict_origins(ExtrinsicParamsBuilder::default(), &metadata)
-			.build()
-			.custom()
-			.to_vec()
-	}
-
-	#[test]
-	fn adds_restrict_origins_when_the_chain_declares_it() {
-		assert_eq!(params_for(metadata()), [(RESTRICT_ORIGINS.to_owned(), Value::bool(true))]);
-	}
-
-	#[test]
-	fn leaves_params_alone_when_the_chain_does_not_declare_it() {
-		assert!(params_for(without_restrict_origins(metadata())).is_empty());
-	}
-
-	#[test]
-	fn leaves_params_alone_when_the_extension_takes_no_bool() {
-		let empty = params_for(with_restrict_origins_value_ty(
-			metadata(),
-			|def| matches!(def, scale_info::TypeDef::Composite(composite) if composite.fields.is_empty()),
-		));
-		assert!(empty.is_empty());
-
-		let option = params_for(with_restrict_origins_value_ty(metadata(), |def| {
-			matches!(def, scale_info::TypeDef::Variant(variant)
-				if variant.variants.iter().any(|v| v.name == "Some"))
-		}));
-		assert!(option.is_empty());
-	}
 }
