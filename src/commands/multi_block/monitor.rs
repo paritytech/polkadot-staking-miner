@@ -545,7 +545,7 @@ enum EraPruningMessage {
 /// - **RPC issues**: Handled transparently by reconnecting RPC client
 ///
 /// ```text
-/// 
+///
 ///                      (finalized blocks)
 /// ┌──────────────────────────────────────────────────────────────────────────┐
 /// │  ┌─────────────┐                      ┌─────────────┐              ┌─────────────┐
@@ -836,6 +836,10 @@ where
 	// snapshot.
 	let mut cached_solution: Option<PagedRawSolution<T>> = None;
 
+	// The competitiveness check runs on every signed-phase block. The metric refers to rounds
+	// rather than checks.
+	let mut last_outcompeted_round: Option<u32> = None;
+
 	// Derived once from the immutable monitor config; `ProcessConfig` is `Copy`, so each block is
 	// handed its own copy without rebuilding it every iteration.
 	let process_config = ProcessConfig {
@@ -854,6 +858,7 @@ where
 					state,
 					&mut snapshot,
 					&mut cached_solution,
+					&mut last_outcompeted_round,
 					signer.clone(),
 					process_config,
 				)
@@ -1125,6 +1130,7 @@ async fn process_block<T>(
 	state: BlockDetails,
 	snapshot: &mut Snapshot<T>,
 	cached_solution: &mut Option<PagedRawSolution<T>>,
+	last_outcompeted_round: &mut Option<u32>,
 	signer: Signer,
 	config: ProcessConfig,
 ) -> Result<(), Error>
@@ -1493,6 +1499,10 @@ where
 
 		if !is_competitive {
 			log::debug!(target: LOG_TARGET, "Our score is not competitive, skipping submission");
+			if *last_outcompeted_round != Some(round) {
+				*last_outcompeted_round = Some(round);
+				prometheus::on_submission_skipped_not_competitive();
+			}
 			return Ok(());
 		}
 	}

@@ -627,6 +627,9 @@ staking_miner_submissions_started 12
 # HELP staking_miner_submissions_success Number of submissions finished successfully
 # TYPE staking_miner_submissions_success counter
 staking_miner_submissions_success 10
+# HELP staking_miner_submissions_skipped_not_competitive_total Number of rounds where no submission was made because another miner had already registered a better score
+# TYPE staking_miner_submissions_skipped_not_competitive_total counter
+staking_miner_submissions_skipped_not_competitive_total 3
 
 # Solution Quality Metrics
 # HELP staking_miner_score_minimal_stake The minimal winner, in terms of total backing stake
