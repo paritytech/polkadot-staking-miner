@@ -20,7 +20,7 @@ pub const SERVER_LOG_TARGET: &str = "polkadot-staking-miner::server";
 /// Subxt client used by the staking miner on all chains.
 pub type ChainClient = subxt::OnlineClient<Config>;
 /// Config used by the staking-miner
-pub type Config = crate::config::StakingMinerConfig;
+pub type Config = subxt::SubstrateConfig;
 /// An online client positioned at a specific block.
 pub type AtBlock = subxt::OnlineClientAtBlock<Config>;
 /// Shared client.
@@ -34,4 +34,4 @@ pub type Pair = polkadot_sdk::sp_core::sr25519::Pair;
 /// The accuracy that we use for election computations.
 pub type Accuracy = polkadot_sdk::sp_runtime::Perbill;
 /// Extrinsic params builder.
-pub type ExtrinsicParamsBuilder = crate::config::ExtrinsicParamsBuilder;
+pub type ExtrinsicParamsBuilder = subxt::config::DefaultExtrinsicParamsBuilder<Config>;

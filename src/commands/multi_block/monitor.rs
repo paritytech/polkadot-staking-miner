@@ -4,7 +4,7 @@ use crate::{
 		multi_block::types::{BlockDetails, CurrentSubmission, IncompleteSubmission, Snapshot},
 		types::{MultiBlockMonitorConfig, SubmissionStrategy},
 	},
-	dynamic::multi_block as dynamic,
+	dynamic::{multi_block as dynamic, utils::with_restrict_origins},
 	error::{ChannelFailureError, Error, TaskFailureError, TimeoutError::*},
 	prelude::{AccountId, AtBlock, Config, ExtrinsicParamsBuilder, LOG_TARGET},
 	prometheus,
@@ -1004,9 +1004,14 @@ async fn call_prune_era_step(client: &Client, signer: &Signer, era: u32) -> Resu
 	let tx = runtime::tx().staking().prune_era_step(era);
 
 	let chain_api = client.chain_api().await;
-	let mut tx_client = chain_api.tx().await?;
+	let at_block = chain_api.at_current_block().await?;
+	let mut tx_client = at_block.tx();
 	let nonce = tx_client.account_nonce(signer.account_id()).await?;
-	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
+	let xt_cfg = with_restrict_origins(
+		ExtrinsicParamsBuilder::default().nonce(nonce),
+		at_block.metadata_ref(),
+	)
+	.build();
 	let xt = tx_client.create_signed(&tx, &**signer, xt_cfg).await?;
 
 	// Wait for finalization to avoid to spam the same exact transaction at the next block, and get
@@ -1997,9 +2002,14 @@ async fn clear_old_round_data(
 		.clear_old_round_data(round, witness_pages);
 
 	let chain_api = client.chain_api().await;
-	let mut tx_client = chain_api.tx().await?;
+	let at_block = chain_api.at_current_block().await?;
+	let mut tx_client = at_block.tx();
 	let nonce = tx_client.account_nonce(signer.account_id()).await?;
-	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
+	let xt_cfg = with_restrict_origins(
+		ExtrinsicParamsBuilder::default().nonce(nonce),
+		at_block.metadata_ref(),
+	)
+	.build();
 	let xt = tx_client.create_signed(&tx, &**signer, xt_cfg).await?;
 
 	// Submit and wait for finalization before returning.
