@@ -68,6 +68,10 @@ async fn signs_every_submitted_call_on_every_asset_hub() {
 
 		// WHEN each call is signed with the params the miner builds for it
 		// THEN signing succeeds, whatever transaction extensions the chain declares
+		//
+		// Nothing is submitted, so the nonce is arbitrary: these transactions would be rejected
+		// at the pool (stale nonce, unfunded signer) and their calls would fail their own
+		// preconditions anyway. What is under test is that the extrinsic can be built at all.
 		macro_rules! assert_signs {
 			($label:literal, $call:expr) => {{
 				let params = with_restrict_origins(
