@@ -14,7 +14,8 @@ const RESTRICT_ORIGINS: &str = "RestrictOrigins";
 ///
 /// Conditional because `custom_extension` rejects a name the runtime does not declare, and the
 /// miner signs on Asset Hubs both with and without the extension. Every version up to the encoding
-/// one is probed, mirroring what subxt accepts, since encoding may pick any declared version.
+/// one is probed, mirroring what subxt accepts: V4 always uses version 0, while V5 picks the newest
+/// version it has all the data for.
 ///
 /// Declaring it is not enough: `frame-decode` skips empty-valued extensions and defaults
 /// `Option<_>` ones by itself, so supplying a value for those shapes fails at signing where plain
