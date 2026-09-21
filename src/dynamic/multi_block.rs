@@ -7,7 +7,7 @@ use crate::{
 	},
 	dynamic::{
 		pallet_api,
-		utils::{decode_error, storage_addr, to_scale_value, tx},
+		utils::{decode_error, storage_addr, to_scale_value, tx, with_restrict_origins},
 	},
 	error::Error,
 	prelude::{
@@ -164,9 +164,14 @@ pub(crate) async fn submit_inner(
 
 	// Set mortality based on SignedPhase duration for precise transaction lifetime
 	let mortality = blocks_remaining + 1;
-	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).mortal(mortality as u64).build();
 	let chain_api = client.chain_api().await;
-	let mut tx_client = chain_api.tx().await?;
+	let at_block = chain_api.at_current_block().await?;
+	let xt_cfg = with_restrict_origins(
+		ExtrinsicParamsBuilder::default().nonce(nonce).mortal(mortality as u64),
+		at_block.metadata_ref(),
+	)
+	.build();
+	let mut tx_client = at_block.tx();
 	let xt = tx_client.create_signed(&tx, &*signer, xt_cfg).await?;
 
 	xt.submit_and_watch()
@@ -834,9 +839,14 @@ pub(crate) async fn inner_submit_pages_chunked<T: MinerConfig + 'static>(
 pub(crate) async fn bail(client: &Client, signer: &Signer) -> Result<(), Error> {
 	let bail_tx = runtime::tx().multi_block_election_signed().bail();
 	let chain_api = client.chain_api().await;
-	let mut tx_client = chain_api.tx().await?;
+	let at_block = chain_api.at_current_block().await?;
+	let mut tx_client = at_block.tx();
 	let nonce = tx_client.account_nonce(signer.account_id()).await?;
-	let xt_cfg = ExtrinsicParamsBuilder::default().nonce(nonce).build();
+	let xt_cfg = with_restrict_origins(
+		ExtrinsicParamsBuilder::default().nonce(nonce),
+		at_block.metadata_ref(),
+	)
+	.build();
 	let xt = tx_client.create_signed(&bail_tx, &**signer, xt_cfg).await?;
 	let tx = xt.submit_and_watch().await?;
 	utils::wait_tx_in_finalized_block(tx).await?;

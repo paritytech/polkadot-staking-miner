@@ -30,7 +30,6 @@
 
 mod client;
 mod commands;
-mod config;
 mod dynamic;
 mod error;
 mod macros;

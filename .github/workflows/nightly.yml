@@ -20,6 +20,45 @@ jobs:
       - id: set_image
         run: echo "IMAGE=${{ env.IMAGE }}" >> $GITHUB_OUTPUT
 
+  live-signing-test:
+    # Signs every call the miner submits against each live Asset Hub, to catch a runtime
+    # declaring a transaction extension the miner supplies no value for. Independent of the
+    # zombienet job below: it needs only public RPC access, so it runs in parallel and a
+    # provider outage here does not mask the zombienet result.
+    runs-on: parity-large
+    needs: [set-image]
+    container: ${{ needs.set-image.outputs.IMAGE }}
+    strategy:
+      matrix:
+        channel:
+          - name: "Staking Miner Dev"
+            room: "!tXyUlsDAYvDfRKbzKx:parity.io"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          key: ${{ runner.os }}-rust-staking-miner-${{ hashFiles('**/Cargo.lock') }}
+          cache-on-failure: true
+
+      - name: Sign against every live Asset Hub
+        run: |
+          RUST_LOG="polkadot-staking-miner::client=debug" \
+            cargo test --release --features integration-tests \
+            signs_every_submitted_call_on_every_asset_hub -- --nocapture
+
+      - name: Notify live signing failure
+        if: failure()
+        uses: s3krit/matrix-message-action@70ad3fb812ee0e45ff8999d6af11cafad11a6ecf # v0.0.3
+        with:
+          room_id: ${{ matrix.channel.room }}
+          access_token: ${{ secrets.MATRIX_ACCESS_TOKEN }}
+          server: m.parity.io
+          message: |
+            @room Live Asset Hub signing test failed https://github.com/${{ github.repository }}/commit/${{ github.sha }}/checks/${{ github.run_id }}
+
   nightly-test:
     runs-on: parity-large
     needs: [set-image]
