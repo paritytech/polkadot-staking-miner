@@ -1724,7 +1724,12 @@ async fn get_submission(
 		at_block
 			.storage()
 			.try_fetch(
-				runtime::storage().multi_block_election_signed().submission_metadata_storage(),
+				// Skip the type-hash check: runtimes may add fields to `SubmissionMetadata` we
+				// don't read.
+				runtime::storage()
+					.multi_block_election_signed()
+					.submission_metadata_storage()
+					.unvalidated(),
 				(round, *who),
 			)
 			.await?,
@@ -1926,7 +1931,12 @@ where
 			at_block
 				.storage()
 				.try_fetch(
-					runtime::storage().multi_block_election_signed().submission_metadata_storage(),
+					// Skip the type-hash check: runtimes may add fields to `SubmissionMetadata` we
+					// don't read.
+					runtime::storage()
+						.multi_block_election_signed()
+						.submission_metadata_storage()
+						.unvalidated(),
 					(old_round, *signer.account_id()),
 				)
 				.await?,
