@@ -104,6 +104,12 @@ pub mod multi_block_signed {
 		pub const SUBMIT_PAGE: PalletItem = PalletItem::new(NAME, "submit_page");
 		pub const REGISTER: PalletItem = PalletItem::new(NAME, "register");
 	}
+
+	pub mod storage {
+		use super::{super::*, *};
+		pub const SUBMISSION_METADATA_STORAGE: PalletItem =
+			PalletItem::new(NAME, "SubmissionMetadataStorage");
+	}
 }
 
 pub mod system {

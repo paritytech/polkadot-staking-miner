@@ -1720,15 +1720,7 @@ async fn get_submission(
 	who: &subxt::config::substrate::AccountId32,
 	n_pages: u32,
 ) -> Result<CurrentSubmission, Error> {
-	let maybe_submission = crate::utils::decode_storage_opt(
-		at_block
-			.storage()
-			.try_fetch(
-				runtime::storage().multi_block_election_signed().submission_metadata_storage(),
-				(round, *who),
-			)
-			.await?,
-	)?;
+	let maybe_submission = dynamic::submission_metadata(at_block, round, *who).await?;
 
 	let Some(submission) = maybe_submission else {
 		return Ok(CurrentSubmission::NotStarted);
@@ -1736,7 +1728,6 @@ async fn get_submission(
 
 	let pages: HashSet<u32> = submission
 		.pages
-		.0
 		.into_iter()
 		.enumerate()
 		.filter_map(|(i, submitted)| if submitted { Some(i as u32) } else { None })
@@ -1922,15 +1913,8 @@ where
 		log::trace!(target: LOG_TARGET, "Scanning round {old_round} for old submissions");
 
 		// Check if we have a submission for this old round
-		let maybe_submission = crate::utils::decode_storage_opt(
-			at_block
-				.storage()
-				.try_fetch(
-					runtime::storage().multi_block_election_signed().submission_metadata_storage(),
-					(old_round, *signer.account_id()),
-				)
-				.await?,
-		)?;
+		let maybe_submission =
+			dynamic::submission_metadata(&at_block, old_round, *signer.account_id()).await?;
 
 		if let Some(submission) = maybe_submission {
 			found_count += 1;
@@ -1938,12 +1922,12 @@ where
 				target: LOG_TARGET,
 				"Found old submission in round {} with {} pages, attempting cleanup",
 				old_round,
-				submission.pages.0.len()
+				submission.pages.len()
 			);
 
 			// Calculate witness pages - count the number of true values in the pages bitfield
 			let witness_pages =
-				submission.pages.0.iter().filter(|&&submitted| submitted).count() as u32;
+				submission.pages.iter().filter(|&&submitted| submitted).count() as u32;
 
 			if witness_pages == 0 {
 				log::warn!(

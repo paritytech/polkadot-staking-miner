@@ -32,8 +32,11 @@ use polkadot_sdk::{
 };
 use std::collections::HashSet;
 use subxt::{
+	config::substrate::AccountId32,
 	dynamic::Value,
+	ext::scale_decode::DecodeAsType,
 	tx::{DynamicPayload, TransactionProgress},
+	utils::Static,
 };
 
 /// A multi-block transaction.
@@ -148,6 +151,29 @@ where
 		Ok(None) => Err(Error::EmptySnapshot),
 		Err(err) => Err(err.into()),
 	}
+}
+
+/// The fields of a signed `SubmissionMetadata` the miner reads.
+///
+/// Decoded by field name against the chain's types, so it stays compatible with runtimes that add,
+/// remove or reorder the other fields.
+#[derive(Debug, DecodeAsType)]
+#[decode_as_type(crate_path = "subxt::ext::scale_decode")]
+pub(crate) struct SubmissionMetadata {
+	pub claimed_score: Static<ElectionScore>,
+	pub pages: Vec<bool>,
+}
+
+/// Fetches the signed submission metadata of `who` for `round`, if any.
+pub(crate) async fn submission_metadata(
+	at_block: &AtBlock,
+	round: u32,
+	who: AccountId32,
+) -> Result<Option<SubmissionMetadata>, Error> {
+	let (pallet, entry) =
+		pallet_api::multi_block_signed::storage::SUBMISSION_METADATA_STORAGE.into_parts();
+	let addr = subxt::dynamic::storage::<(u32, AccountId32), SubmissionMetadata>(pallet, entry);
+	utils::decode_storage_opt(at_block.storage().try_fetch(addr, (round, who)).await?)
 }
 
 /// Submits a transaction and returns the progress.
@@ -935,5 +961,85 @@ async fn validate_signed_phase_or_bail(
 				round,
 			})
 		},
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::dynamic::utils::make_type;
+	use codec::Encode;
+	use polkadot_sdk::frame_support::traits::ConstU32;
+
+	fn score() -> ElectionScore {
+		ElectionScore { minimal_stake: 10, sum_stake: 20, sum_stake_squared: 30 }
+	}
+
+	fn pages() -> BoundedVec<bool, ConstU32<4>> {
+		BoundedVec::truncate_from(vec![true, false, true, false])
+	}
+
+	fn decode<T: Encode + scale_info::TypeInfo + 'static>(value: T) -> SubmissionMetadata {
+		let (id, types) = make_type::<T>();
+		SubmissionMetadata::decode_as_type(&mut &value.encode()[..], id, &types).expect("decodes")
+	}
+
+	fn assert_read(meta: SubmissionMetadata) {
+		assert_eq!(meta.claimed_score.0, score());
+		assert_eq!(meta.pages, vec![true, false, true, false]);
+	}
+
+	#[test]
+	fn submission_metadata_decodes_before_and_after_base_deposit() {
+		// GIVEN the layout before polkadot-sdk#13722 and the one after, which adds `base`
+		#[derive(Encode, scale_info::TypeInfo)]
+		struct Before {
+			claimed_score: ElectionScore,
+			deposit: u128,
+			reward: u128,
+			fee: u128,
+			pages: BoundedVec<bool, ConstU32<4>>,
+		}
+		#[derive(Encode, scale_info::TypeInfo)]
+		struct After {
+			claimed_score: ElectionScore,
+			deposit: u128,
+			reward: u128,
+			fee: u128,
+			pages: BoundedVec<bool, ConstU32<4>>,
+			base: u128,
+		}
+
+		// WHEN either is decoded THEN the miner reads the same score and pages, so one binary
+		// works on runtimes on both sides of the upgrade
+		assert_read(decode(Before {
+			claimed_score: score(),
+			deposit: 1,
+			reward: 2,
+			fee: 3,
+			pages: pages(),
+		}));
+		assert_read(decode(After {
+			claimed_score: score(),
+			deposit: 1,
+			reward: 2,
+			fee: 3,
+			pages: pages(),
+			base: 4,
+		}));
+	}
+
+	#[test]
+	fn submission_metadata_decodes_by_name_not_position() {
+		// GIVEN a runtime that inserts a field before `pages`
+		#[derive(Encode, scale_info::TypeInfo)]
+		struct Reordered {
+			base: u128,
+			pages: BoundedVec<bool, ConstU32<4>>,
+			claimed_score: ElectionScore,
+		}
+
+		// WHEN decoded THEN fields are matched by name, not misread from their old offsets
+		assert_read(decode(Reordered { base: 4, pages: pages(), claimed_score: score() }));
 	}
 }
